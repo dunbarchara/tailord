@@ -14,10 +14,6 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    environment: 
-      name: production
-      url: ${{ steps.deployment.outputs.page_url }}
-
     permissions:
       id-token: write
       contents: read
@@ -25,19 +21,6 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Generate date and build number
-      id: generate_tag
-      run: |
-          # Get current date in YYYYMMDD format
-          BUILD_DATE=$(date +'%Y%m%d')
-          # Get the unique run number for the current workflow
-          BUILD_NUM=${{ github.run_number }}
-          # Combine them into a tag name, e.g., 'v20260104.1'
-          TAG_NAME="$BUILD_DATE.$BUILD_NUM"
-          # Set the tag name as an output for subsequent steps
-          echo "Generated tag name: $TAG_NAME"
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
     - name: Configure AWS credentials (OIDC)
       uses: aws-actions/configure-aws-credentials@v4
@@ -50,7 +33,7 @@ jobs:
 
     - name: Build and push Docker image
       env:
-        IMAGE_TAG: ${{ steps.generate_tag.outputs.TAG_NAME }}"
+        IMAGE_TAG: ${{ github.sha }}
       run: |
         docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
         docker tag $ECR_REPOSITORY:$IMAGE_TAG \
