@@ -7,6 +7,10 @@ on:
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: tailord
+  ECS_CLUSTER: tailord-cluster
+  ECS_SERVICE: tailord-service
+  TASK_DEFINITION_FAMILY: tailord-task
+  TASK_CONTAINER: tailord
 
 jobs:
 
@@ -46,6 +50,7 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Login to Amazon ECR
+      id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
     - name: Build and push Docker image
@@ -58,3 +63,18 @@ jobs:
         docker push \
           $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
         
+    - name: Render new task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition-family: ${{ env.TASK_DEFINITION_FAMILY }}
+        container-name: ${{ env.TASK_CONTAINER }}
+        image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.generate_tag.outputs.TAG_NAME }}
+
+    - name: Deploy to ECS service
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        cluster: ${{ env.ECS_CLUSTER }}
+        service: ${{ env.ECS_SERVICE }}
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        wait-for-service-stability: true
