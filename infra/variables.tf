@@ -16,3 +16,13 @@ variable "desired_count" {
 variable "container_port" {
   default = 3000
 }
+
+variable "domain_name" {
+  type    = string
+  default = "tailord.app"
+}
+
+variable "cloudflare_zone_id" {
+  sensitive = true
+  type      = string
+}
