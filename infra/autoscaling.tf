@@ -36,11 +36,4 @@ resource "aws_autoscaling_group" "ecs" {
     id      = aws_launch_template.ecs.id
     version = aws_launch_template.ecs.latest_version
   }
-
-  instance_refresh {
-    strategy = "Rolling"
-    preferences {
-      min_healthy_percentage = 50
-    }
-  }
 }
