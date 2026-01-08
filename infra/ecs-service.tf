@@ -1,7 +1,7 @@
 resource "aws_ecs_service" "service" {
   name            = "${var.project_name}-service"
   cluster         = aws_ecs_cluster.cluster.id
-  task_definition = aws_ecs_task_definition.task.arn
+  task_definition = aws_ecs_task_definition.task.arn_without_revision
   desired_count   = var.desired_count
   launch_type     = "EC2"
 
