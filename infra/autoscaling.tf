@@ -1,7 +1,7 @@
 resource "aws_launch_template" "ecs" {
   name_prefix   = "${var.project_name}-ecs-lt-"
   image_id      = data.aws_ssm_parameter.ecs_ami.value
-  instance_type = "t3.micro"
+  instance_type = "t3.small"
 
   # Automatically set the default version to the latest version on each update
   update_default_version = true
@@ -35,5 +35,13 @@ resource "aws_autoscaling_group" "ecs" {
   launch_template {
     id      = aws_launch_template.ecs.id
     version = aws_launch_template.ecs.latest_version
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+    triggers = ["launch_template"]
   }
 }
