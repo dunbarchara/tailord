@@ -1,0 +1,21 @@
+[project]
+name = "tailord-backend"
+version = "0.1.0"
+description = "FastAPI backend for Tailord"
+readme = "README.md"
+requires-python = ">=3.14"
+
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "playwright",
+  "openai",
+  "slowapi",
+  "python-dotenv",
+  "pydantic_settings"
+]
+
+[tool.uv]
+dev-dependencies = [
+  "pytest",
+]

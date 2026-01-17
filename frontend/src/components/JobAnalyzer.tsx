@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { JobAnalysis } from "../types/job";
+import { analyzeJob } from "@/lib/api";
 import ResultSection from "./ResultSection";
 
 export default function JobAnalyzer() {
@@ -10,7 +11,7 @@ export default function JobAnalyzer() {
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<JobAnalysis | null>(null);
 
-    const analyzeJob = async () => {
+    const onAnalyze = async () => {
         if (!url) return;
 
         setLoading(true);
@@ -18,17 +19,7 @@ export default function JobAnalyzer() {
         setResult(null);
 
         try {
-            const res = await fetch("/api/analyze", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url }),
-            });
-
-            if (!res.ok) {
-                throw new Error("Failed to analyze job posting");
-            }
-
-            const data: JobAnalysis = await res.json();
+            const data = await analyzeJob(url);
             setResult(data);
         } catch (err: any) {
             setError(err.message || "Something went wrong");
@@ -48,7 +39,7 @@ export default function JobAnalyzer() {
                     className="flex-1 border rounded px-3 py-2 text-zinc-600 dark:text-zinc-500"
                 />
                 <button
-                    onClick={analyzeJob}
+                    onClick={onAnalyze}
                     disabled={loading}
                     className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px] font-medium hover:cursor-pointer"
 
