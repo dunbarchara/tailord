@@ -1,5 +1,5 @@
 import Image from "next/image";
-import JobAnalyzer from "@/components/JobAnalyzer";
+import JobAnalyzer from "../components/JobAnalyzer";
 
 
 export default function Home() {
@@ -12,7 +12,7 @@ export default function Home() {
                         Tailord
                     </h1>
                     <h2 className="leading-0 tracking-tight text-zinc-600 dark:text-zinc-500">
-                        v20260116.2
+                        v20260116.3
                     </h2>
                     <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-300">
                         Paste a job posting URL and extract requirements, skills, and qualifications.

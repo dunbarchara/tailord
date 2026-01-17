@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { JobAnalysis } from "@/types/job";
+import { JobAnalysis } from "../types/job";
 import ResultSection from "./ResultSection";
 
 export default function JobAnalyzer() {
