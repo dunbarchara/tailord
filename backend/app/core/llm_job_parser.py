@@ -25,6 +25,17 @@ Technical skills:
 - Do not generalize; extract exact names even outside Skills sections.
 - Deduplicate while preserving capitalization.
 
+Summary extraction:
+- "summary" must describe the ROLE, not the company.
+- Select the most role-specific paragraph from the posting.
+- Prefer paragraphs that mention:
+  team name, responsibilities, scope of work, systems, or impact of the role.
+- Deprioritize or ignore paragraphs focused on:
+  company mission, users, growth, values, or trust.
+- If a later paragraph is more role-specific than an earlier one, choose the later paragraph.
+- Only use company-level description if no role-specific content exists.
+- If no role-specific description exists, set summary to null.
+
 """
 
 
