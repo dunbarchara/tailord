@@ -8,8 +8,8 @@ async def get_rendered_content(url: str) -> str:
         await page.goto(url, timeout=60000)
         await page.wait_for_load_state()
         
-        html = await page.content()
+        content = await page.content()
         
         await browser.close()
         
-        return html
+        return content
