@@ -1,10 +1,17 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    # 🔐 Backend API auth
+    # Environment
+    environment: str = "local"  # local | production
+
+    # Logging
+    log_level: str = "INFO"
+    log_dir: str = "logs"
+
+    # Auth
     api_key: str | None = None
 
-    # 🤖 LLM config
+    # LLM config
     llm_provider: str = "openai"
     llm_base_url: str | None = None
     llm_api_key: str | None = None

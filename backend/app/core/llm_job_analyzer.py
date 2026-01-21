@@ -1,6 +1,6 @@
 # backend/app/analyzer.py
 import json
-from app.llm_client import get_llm_client
+from app.clients.llm_client import get_llm_client
 from app.config import settings
 
 def analyze_job(text: str) -> dict:

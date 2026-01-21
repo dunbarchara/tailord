@@ -49,6 +49,9 @@ backend/build/
 backend/dist/
 backend/*.egg-info/
 
+# local logs
+backend/logs/
+
 # pytest
 backend/.pytest_cache/
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { JobAnalysis } from "../types/job";
-import { analyzeJob } from "@/lib/api";
+import { analyzeJob, parseJob } from "@/lib/api";
 import ResultSection from "./ResultSection";
 
 export default function JobAnalyzer() {
@@ -10,6 +10,7 @@ export default function JobAnalyzer() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<JobAnalysis | null>(null);
+    const [dataParse, setDataParse] = useState(null);
 
     const onAnalyze = async () => {
         if (!url) return;
@@ -28,6 +29,23 @@ export default function JobAnalyzer() {
         }
     };
 
+    const onParse = async () => {
+        if (!url) return;
+
+        setLoading(true);
+        setError(null);
+        setDataParse(null);
+
+        try {
+            const data = await parseJob(url);
+            setDataParse(data);
+        } catch (err: any) {
+            setError(err.message || "Something went wrong");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="rounded-xl">
             <div className="flex gap-3">
@@ -39,17 +57,23 @@ export default function JobAnalyzer() {
                     className="flex-1 border rounded px-3 py-2 text-zinc-600 dark:text-zinc-500"
                 />
                 <button
-                    onClick={onAnalyze}
+                    onClick={onParse}
                     disabled={loading}
                     className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px] font-medium hover:cursor-pointer"
 
                 >
-                    {loading ? "Analyzing..." : "Analyze"}
+                    {loading ? "Parse..." : "Parse"}
                 </button>
             </div>
 
             {error && (
                 <p className="text-red-600 mt-4">{error}</p>
+            )}
+
+            {dataParse && (
+                <pre className="whitespace-pre-w">
+                    {JSON.stringify(dataParse, null, 2)}
+                </pre>
             )}
 
             {result && (
