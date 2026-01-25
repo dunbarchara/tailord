@@ -1,20 +1,26 @@
-from fastapi import APIRouter, Request
-from app.models.mvp_schemas import GeneratedOutput
+from fastapi import APIRouter, Request, Depends
+from app.models.mvp_schemas import GenerateInput, GeneratedOutput
 from app.services.mvp_profile_store import get_profile
 from app.core.mvp_llm import generate_match
+
+from sqlalchemy.orm import Session
+from app.models.database import Job, Profile
+from app.core.deps_database import get_db
 
 router = APIRouter()
 
 @router.post("/generate", response_model=GeneratedOutput)
 def generate(
-    request: Request
+    data: GenerateInput,
+    request: Request,
+    db: Session = Depends(get_db)
 ):
-    profile = get_profile()
-    job = request.app.state.job_cache.get("job")
+    job = db.get(Job, data.job_id)
+    profile = db.query(Profile).order_by(Profile.updated_at.desc()).first()
 
-    if not job:
-        return {"content": "No job found. Please analyze a job first."}
+    if not job or not profile:
+        return {"content": "Missing job or profile"}
 
-    content = generate_match(profile, job)
+    content = generate_match(profile.raw_profile, job.extracted_job)
     return {"content": content}
 

@@ -42,9 +42,10 @@ export async function submitJob(jsonBody: string) {
   return res.json();
 }
 
-export async function generateMatch() {
+export async function generateMatch(jsonBody: string) {
   const res = await fetch("/api/generate", {
     method: "POST",
+    body: jsonBody,
   });
 
   if (!res.ok) throw new Error("Failed");

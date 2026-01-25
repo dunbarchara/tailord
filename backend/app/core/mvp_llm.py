@@ -1,4 +1,5 @@
 import os
+import json
 from app.clients.llm_client import get_llm_client
 from app.config import settings
 import logging
@@ -7,7 +8,17 @@ logger = logging.getLogger(__name__)
 
 llm_temperature = 0.2
 
-def extract_profile(resume_text, repos):
+SEMANTIC_SYSTEM_PROMPT_PROFILE = """
+You are an AI expert in extracting structured software engineer profile data. Return only a JSON object matching the canonical schema.
+
+Rules:
+- Return valid JSON only; no markdown or explanations.
+- Use null for missing scalar fields, [] for missing lists.
+- If unsure about a field, leave it null/empty.
+
+"""
+
+def extract_profile(resume_text, repos) -> dict:
     prompt = f"""
 Extract a concise software engineer profile.
 
@@ -27,19 +38,22 @@ Return JSON with:
     
     resp = client.chat.completions.create(
         model=settings.llm_model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": SEMANTIC_SYSTEM_PROMPT_PROFILE},
+            {"role": "user", "content": prompt}
+        ],
         temperature=llm_temperature
     )
     
     content_profile = resp.choices[0].message.content
     logger.debug(f"\n\n===== LLM RESPONSE - PROFILE ({settings.llm_model}) ({llm_temperature}) =====\n" + str(content_profile))
 
-    return content_profile
+    return json.loads(content_profile)
 
 
 
 
-SEMANTIC_SYSTEM_PROMPT = """
+SEMANTIC_SYSTEM_PROMPT_JOB = """
 You are an AI expert in extracting structured job posting data. Return only a JSON object matching the canonical schema.
 
 Rules:
@@ -62,7 +76,7 @@ Technical skills:
 
 """
 
-SEMANTIC_USER_PROMPT = """
+SEMANTIC_USER_PROMPT_JOB = """
 Extract job data from the following job posting in JSON matching this schema:
 
 {
@@ -87,14 +101,14 @@ Instructions:
 """
 
 
-def extract_job(job_posting_markdown):
+def extract_job(job_posting_markdown) -> dict:
     client = get_llm_client()
-    prompt = SEMANTIC_USER_PROMPT.replace("___JOB_MARKDOWN___", job_posting_markdown)
+    prompt = SEMANTIC_USER_PROMPT_JOB.replace("___JOB_MARKDOWN___", job_posting_markdown)
     
     resp = client.chat.completions.create(
         model=settings.llm_model,
         messages=[
-            {"role": "system", "content": SEMANTIC_SYSTEM_PROMPT},
+            {"role": "system", "content": SEMANTIC_SYSTEM_PROMPT_JOB},
             {"role": "user", "content": prompt}
         ],
         temperature=llm_temperature
@@ -103,7 +117,7 @@ def extract_job(job_posting_markdown):
     content_job = resp.choices[0].message.content
     logger.debug(f"\n\n===== LLM RESPONSE - JOB ({settings.llm_model}) ({llm_temperature}) =====\n" + str(content_job))
 
-    return content_job
+    return json.loads(content_job)
 
 
 def generate_match(profile, job):
@@ -121,7 +135,7 @@ Only use information from the profile.
 """
     client = get_llm_client()
 
-    logger.debug("\n\n===== SEMANTIC_USER_PROMPT =====\n" + prompt)
+    logger.debug("\n\n===== SEMANTIC_USER_PROMPT_JOB =====\n" + prompt)
     
     resp = client.chat.completions.create(
         model=settings.llm_model,
