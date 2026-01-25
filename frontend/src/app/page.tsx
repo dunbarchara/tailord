@@ -14,9 +14,6 @@ export default function Home() {
                     <h2 className="leading-0 tracking-tight text-zinc-600 dark:text-zinc-500">
                         v20260120.1
                     </h2>
-                    <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-300">
-                        Paste a job posting URL and extract requirements, skills, and qualifications.
-                    </p>
 
                     <JobAnalyzer />
                 </div>
