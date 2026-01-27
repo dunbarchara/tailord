@@ -1,26 +1,39 @@
 @import "tailwindcss";
-
+/* app/globals.css or styles/themes/claude.css */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand Colors - Claude inspired */
+  --color-brand-primary: #CC785C;
+  --color-brand-secondary: #A86850;
+  --color-brand-accent: #E89B7F;
+  
+  /* Surface Colors */
+  --color-surface-base: #F4EFE6;
+  --color-surface-elevated: #FFFFFF;
+  --color-surface-overlay: #FDFCFA;
+  
+  /* Text Colors */
+  --color-text-primary: #1F0E09;
+  --color-text-secondary: #5C4A42;
+  --color-text-tertiary: #8C7B73;
+  --color-text-inverse: #FFFFFF;
+  
+  /* Border Colors */
+  --color-border-default: #D4C4B8;
+  --color-border-subtle: #E8DED3;
+  --color-border-strong: #B8A599;
+  
+  /* Radius */
+  --radius-card: 12px;
+  --radius-button: 8px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Dark mode variant */
+.dark {
+  --color-surface-base: #1F0E09;
+  --color-surface-elevated: #2D1D16;
+  --color-surface-overlay: #3A2A22;
+  
+  --color-text-primary: #F4EFE6;
+  --color-text-secondary: #D4C4B8;
+  --color-text-tertiary: #A89A8F;
 }

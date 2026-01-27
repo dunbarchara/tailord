@@ -1,0 +1,116 @@
+/**
+ * Forest Theme
+ * 
+ * Design Philosophy:
+ * - Natural, earthy green tones inspired by forest environments
+ * - High contrast for excellent readability (WCAG AAA where possible)
+ * - Calming, organic aesthetic
+ * - Sage green backgrounds provide visual comfort
+ * - Maintains Claude's spacing, radius, and accessibility standards
+ */
+
+[data-theme="forest"] {
+  /* Brand Colors */
+  --color-brand-primary: #059669;
+  --color-brand-primary-hover: #047857;
+  --color-brand-primary-active: #065F46;
+  --color-brand-secondary: #047857;
+  --color-brand-accent: #34D399;
+  --color-brand-accent-subtle: #6EE7B7;
+  
+  /* Surface Colors - Soft sage greens */
+  --color-surface-base: #F0FDF4;           /* Main background - soft mint */
+  --color-surface-elevated: #FFFFFF;        /* Cards, modals - pure white */
+  --color-surface-overlay: #FAFDFB;         /* Hover states - barely off-white */
+  --color-surface-sunken: #DCFCE7;          /* Input backgrounds, wells */
+  --color-surface-inverse: #052E16;         /* Dark mode surface */
+  
+  /* Text Colors - Deep forest greens and grays */
+  --color-text-primary: #052E16;            /* Primary text - deep forest */
+  --color-text-secondary: #365C48;          /* Secondary text - forest green */
+  --color-text-tertiary: #6B8779;           /* Tertiary text - sage */
+  --color-text-disabled: #9CA8A0;           /* Disabled text */
+  --color-text-inverse: #FFFFFF;            /* Text on dark backgrounds */
+  --color-text-link: #059669;               /* Links - brand primary */
+  --color-text-link-hover: #065F46;         /* Link hover state */
+  
+  /* Border Colors - Natural greens and grays */
+  --color-border-default: #BBD4C5;          /* Default borders */
+  --color-border-subtle: #D1E7DD;           /* Subtle borders */
+  --color-border-strong: #86A896;           /* Strong emphasis borders */
+  --color-border-focus: #059669;            /* Focus rings */
+  
+  /* Semantic Colors - Status and feedback */
+  --color-success: #047857;                 /* Natural success green */
+  --color-success-bg: #ECFDF5;
+  --color-success-border: #6EE7B7;
+  
+  --color-warning: #D97706;                 /* Warm amber warning */
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FCD34D;
+  
+  --color-error: #DC2626;                   /* Clear red error */
+  --color-error-bg: #FEF2F2;
+  --color-error-border: #FCA5A5;
+  
+  --color-info: #0891B2;                    /* Teal info */
+  --color-info-bg: #ECFEFF;
+  --color-info-border: #67E8F9;
+  
+  /* Shadows - Slightly green-tinted */
+  --shadow-sm: 0 1px 2px 0 rgba(5, 46, 22, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(5, 46, 22, 0.08), 0 2px 4px -1px rgba(5, 46, 22, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(5, 46, 22, 0.08), 0 4px 6px -2px rgba(5, 46, 22, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(5, 46, 22, 0.08), 0 10px 10px -5px rgba(5, 46, 22, 0.04);
+  
+  /* Border Radius - Same as Claude theme */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-button: 8px;
+  --radius-card: 12px;
+  --radius-full: 9999px;
+  
+  /* Spacing Scale - Same generous whitespace */
+  --space-xs: 0.25rem;   /* 4px */
+  --space-sm: 0.5rem;    /* 8px */
+  --space-md: 1rem;      /* 16px */
+  --space-lg: 1.5rem;    /* 24px */
+  --space-xl: 2rem;      /* 32px */
+  --space-2xl: 3rem;     /* 48px */
+  
+  /* Typography - Same weights */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  /* Transitions - Same timing */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark Mode Variant for Forest Theme */
+[data-theme="forest"].dark,
+[data-theme="forest"] .dark {
+  --color-surface-base: #052E16;
+  --color-surface-elevated: #14532D;
+  --color-surface-overlay: #166534;
+  --color-surface-sunken: #022C12;
+  
+  --color-text-primary: #F0FDF4;
+  --color-text-secondary: #BBF7D0;
+  --color-text-tertiary: #86EFAC;
+  --color-text-disabled: #4ADE80;
+  
+  --color-border-default: #166534;
+  --color-border-subtle: #14532D;
+  --color-border-strong: #15803D;
+  
+  /* Adjust brand colors for dark mode readability */
+  --color-brand-primary: #34D399;
+  --color-brand-primary-hover: #6EE7B7;
+  --color-brand-accent: #10B981;
+}
