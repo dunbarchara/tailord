@@ -19,3 +19,36 @@ export async function parseJob(url: string) {
 
   return res.json();
 }
+
+export async function submitProfile(jsonBody: string) {
+  const res = await fetch("/api/profile", {
+    method: "POST",
+    body: jsonBody,
+  });
+
+  if (!res.ok) throw new Error("Failed");
+
+  return res.json();
+}
+
+export async function submitJob(jsonBody: string) {
+  const res = await fetch("/api/job", {
+    method: "POST",
+    body: jsonBody,
+  });
+
+  if (!res.ok) throw new Error("Failed");
+
+  return res.json();
+}
+
+export async function generateMatch(jsonBody: string) {
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    body: jsonBody,
+  });
+
+  if (!res.ok) throw new Error("Failed");
+
+  return res.json();
+}

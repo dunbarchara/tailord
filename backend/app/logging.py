@@ -30,6 +30,7 @@ def setup_logging() -> None:
             log_dir / "app.log",
             maxBytes=5 * 1024 * 1024,  # 5 MB
             backupCount=5,
+            encoding='utf-8',
         )
         file_handler.setFormatter(formatter)
         handlers.append(file_handler)
