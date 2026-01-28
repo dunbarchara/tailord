@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { ThemeProvider } from '@/components/ThemeProvider';
+import ClientWrapper from "@/components/ClientWrapper"
 
 export const metadata: Metadata = {
   title: 'Tailord',
@@ -32,9 +32,8 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        <ThemeProvider>
-          {children}
-        </ThemeProvider>
+        {/* ClientWrapper handles SessionProvider */}
+        <ClientWrapper>{children}</ClientWrapper>
       </body>
     </html>
   );

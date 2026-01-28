@@ -10,7 +10,7 @@ export default function RegisterPage() {
         googleText="Sign up with Google"
         emailText="Continue with email"
         showSSO={true}
-        onEmailSubmit={(email) => alert(`Registration submitted for: ${email}`)}
+        authAction="Register"
       />
     </div>
   )

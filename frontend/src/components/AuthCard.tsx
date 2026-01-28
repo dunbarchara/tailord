@@ -7,7 +7,7 @@ interface AuthCardProps {
   title: string
   googleText?: string
   emailText?: string
-  onEmailSubmit?: (email: string) => void
+  authAction: string
   showSSO?: boolean
 }
 
@@ -15,25 +15,25 @@ export function AuthCard({
   title,
   googleText = "Continue with Google",
   emailText = "Continue with email",
-  onEmailSubmit,
+  authAction,
   showSSO = false,
 }: AuthCardProps) {
   const [email, setEmail] = useState("")
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (onEmailSubmit) onEmailSubmit(email)
+     alert(`${authAction} submitted for: ${email}`)
   }
 
   return (
-    <div className="mt-8 mx-4 sm:mx-auto p-7 max-w-md min-w-xs text-center border border-border rounded-2xl flex flex-col bg-white space-y-4">
+    <div className="mt-8 mx-auto p-7 max-w-md min-w-xs text-center border border-border rounded-2xl flex flex-col bg-surface-elevated space-y-4 text-text-primary">
       <h1 className="text-2xl font-semibold">{title}</h1>
 
       <div className="flex flex-col gap-5">
         {/* Google button */}
         <button
-          onClick={() => signIn("google")}
-          className="inline-flex items-center justify-center relative h-11 rounded-lg px-5 w-full gap-2 border border-border cursor-pointer hover:bg-gray-50 transition active:scale-95"
+          onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+          className="inline-flex items-center justify-center relative h-11 rounded-lg px-5 w-full gap-2 border border-border cursor-pointer hover:hover:bg-surface-overlay transition active:scale-95"
         >
           <img src="/images/google.svg" alt="Google logo" className="w-4 h-4" />
           {googleText}
@@ -54,7 +54,7 @@ export function AuthCard({
 
           <button
             type="submit"
-            className="inline-flex items-center justify-center relative h-11 rounded-lg px-5 w-full cursor-pointer bg-gray-900 text-white hover:bg-gray-800 font-semibold active:scale-95"
+            className="inline-flex items-center justify-center relative h-11 rounded-lg px-5 w-full cursor-pointer  bg-brand-primary hover:bg-brand-primary-hover text-text-inverse font-semibold active:scale-95"
           >
             {emailText}
           </button>
@@ -79,7 +79,7 @@ export function AuthCard({
           target="_blank"
           rel="noopener noreferrer"
           className="underline underline-offset-2"
-          href="https://www.example.com/privacy"
+          href="/"
         >
           Privacy Policy
         </a>{" "}

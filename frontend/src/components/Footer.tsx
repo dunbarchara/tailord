@@ -51,6 +51,7 @@ export function Footer() {
   return (
     <footer className="border-t border-border-subtle bg-surface-base">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8 lg:py-16">
+{/*
         <div className="xl:grid xl:grid-cols-3 xl:gap-8">
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -154,8 +155,9 @@ export function Footer() {
             </div>
           </div>
         </div>
-
-        <div className="mt-12 border-t border-border-subtle pt-8">
+*/}
+        {/*className="mt-12 border-t border-border-subtle pt-8"*/}
+        <div>
           <p className="text-xs leading-5 text-text-tertiary">
             &copy; {new Date().getFullYear()} Tailord. All rights reserved.
           </p>
