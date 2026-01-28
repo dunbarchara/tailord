@@ -1,0 +1,116 @@
+/**
+ * Tailord Theme
+ * 
+ * Design Philosophy:
+ * - Warm, approachable copper/terracotta tones
+ * - High contrast for excellent readability (WCAG AAA where possible)
+ * - Sophisticated, professional aesthetic
+ * - Cream backgrounds reduce eye strain vs pure white
+ */
+
+[data-theme="claudeold"],
+:root {
+  /* Brand Colors */
+  --color-brand-primary: #CC785C;
+  --color-brand-primary-hover: #B8684D;
+  --color-brand-primary-active: #A45840;
+  --color-brand-secondary: #A86850;
+  --color-brand-accent: #E89B7F;
+  --color-brand-accent-subtle: #F4BFA8;
+  
+  /* Surface Colors - Warm creams and whites */
+  --color-surface-base: #F4EFE6;           /* Main background - soft cream */
+  --color-surface-elevated: #FFFFFF;        /* Cards, modals - pure white */
+  --color-surface-overlay: #FDFCFA;         /* Hover states - barely off-white */
+  --color-surface-sunken: #EBE3D5;          /* Input backgrounds, wells */
+  --color-surface-inverse: #1F0E09;         /* Dark mode surface */
+  
+  /* Text Colors - Deep browns for warmth */
+  --color-text-primary: #1F0E09;            /* Primary text - deep espresso */
+  --color-text-secondary: #5C4A42;          /* Secondary text - medium brown */
+  --color-text-tertiary: #8C7B73;           /* Tertiary text - warm gray */
+  --color-text-disabled: #B8ADA5;           /* Disabled text */
+  --color-text-inverse: #FFFFFF;            /* Text on dark backgrounds */
+  --color-text-link: #CC785C;               /* Links - brand primary */
+  --color-text-link-hover: #A45840;         /* Link hover state */
+  
+  /* Border Colors - Subtle warm grays */
+  --color-border-default: #D4C4B8;          /* Default borders */
+  --color-border-subtle: #E8DED3;           /* Subtle borders */
+  --color-border-strong: #B8A599;           /* Strong emphasis borders */
+  --color-border-focus: #CC785C;            /* Focus rings */
+  
+  /* Semantic Colors - Status and feedback */
+  --color-success: #2D7D4F;                 /* Success green with warmth */
+  --color-success-bg: #E8F5ED;
+  --color-success-border: #9DDCB6;
+  
+  --color-warning: #C97316;                 /* Warm amber warning */
+  --color-warning-bg: #FEF3E8;
+  --color-warning-border: #F4C896;
+  
+  --color-error: #C53030;                   /* Clear red error */
+  --color-error-bg: #FEE8E8;
+  --color-error-border: #F5A5A5;
+  
+  --color-info: #2563A8;                    /* Muted blue info */
+  --color-info-bg: #E8F2FB;
+  --color-info-border: #9DCAEF;
+  
+  /* Shadows - Subtle, warm-tinted */
+  --shadow-sm: 0 1px 2px 0 rgba(31, 14, 9, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(31, 14, 9, 0.08), 0 2px 4px -1px rgba(31, 14, 9, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(31, 14, 9, 0.08), 0 4px 6px -2px rgba(31, 14, 9, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(31, 14, 9, 0.08), 0 10px 10px -5px rgba(31, 14, 9, 0.04);
+  
+  /* Border Radius - Friendly, rounded */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-button: 8px;
+  --radius-card: 12px;
+  --radius-full: 9999px;
+  
+  /* Spacing Scale - Generous whitespace */
+  --space-xs: 0.25rem;   /* 4px */
+  --space-sm: 0.5rem;    /* 8px */
+  --space-md: 1rem;      /* 16px */
+  --space-lg: 1.5rem;    /* 24px */
+  --space-xl: 2rem;      /* 32px */
+  --space-2xl: 3rem;     /* 48px */
+  
+  /* Typography */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark Mode Variant for Tailord Theme */
+[data-theme="claudeold"].dark,
+[data-theme="claudeold"] .dark {
+  --color-surface-base: #1F0E09;
+  --color-surface-elevated: #2D1D16;
+  --color-surface-overlay: #3A2A22;
+  --color-surface-sunken: #160A05;
+  
+  --color-text-primary: #F4EFE6;
+  --color-text-secondary: #D4C4B8;
+  --color-text-tertiary: #A89A8F;
+  --color-text-disabled: #6B5F57;
+  
+  --color-border-default: #4A3A32;
+  --color-border-subtle: #3A2A22;
+  --color-border-strong: #5C4A42;
+  
+  /* Adjust brand colors for dark mode readability */
+  --color-brand-primary: #E89B7F;
+  --color-brand-primary-hover: #F4BFA8;
+  --color-brand-accent: #CC785C;
+}

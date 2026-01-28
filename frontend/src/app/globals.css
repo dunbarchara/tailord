@@ -1,39 +1,270 @@
-@import "tailwindcss";
-/* app/globals.css or styles/themes/claude.css */
-:root {
-  /* Brand Colors - Claude inspired */
-  --color-brand-primary: #CC785C;
-  --color-brand-secondary: #A86850;
-  --color-brand-accent: #E89B7F;
-  
-  /* Surface Colors */
-  --color-surface-base: #F4EFE6;
-  --color-surface-elevated: #FFFFFF;
-  --color-surface-overlay: #FDFCFA;
-  
-  /* Text Colors */
-  --color-text-primary: #1F0E09;
-  --color-text-secondary: #5C4A42;
-  --color-text-tertiary: #8C7B73;
-  --color-text-inverse: #FFFFFF;
-  
-  /* Border Colors */
-  --color-border-default: #D4C4B8;
-  --color-border-subtle: #E8DED3;
-  --color-border-strong: #B8A599;
-  
-  /* Radius */
-  --radius-card: 12px;
-  --radius-button: 8px;
+@import 'tailwindcss';
+
+@import '../styles/themes/claude.css' layer(utilities);
+@import '../styles/themes/tailord.css' layer(utilities);
+@import '../styles/themes/hollow.css' layer(utilities);
+
+/*@import '../styles/themes/claude-dark.css' layer(utilities);
+@import '../styles/themes/claude-light.css' layer(utilities);
+@import '../styles/themes/claudeold.css' layer(utilities);
+@import '../styles/themes/forest.css' layer(utilities);
+@import '../styles/themes/ocean.css' layer(utilities);
+@import '../styles/themes/tailordxclaude.css' layer(utilities);
+*/
+
+@theme {
+  --color-brand-primary: var(--color-brand-primary);
+  --color-brand-primary-hover: var(--color-brand-primary-hover);
+  --color-brand-primary-active: var(--color-brand-primary-active);
+  --color-brand-secondary: var(--color-brand-secondary);
+  --color-brand-accent: var(--color-brand-accent);
+
+  --color-surface-base: var(--color-surface-base);
+  --color-surface-elevated: var(--color-surface-elevated);
+  --color-surface-overlay: var(--color-surface-overlay);
+  --color-surface-sunken: var(--color-surface-sunken);
+  --color-surface-border: var(--color-surface-border);
+
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-text-disabled: var(--color-text-disabled);
+  --color-text-inverse: var(--color-text-inverse);
+  --color-text-link: var(--color-text-link);
+
+  --color-border-default: var(--color-border-default);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border-strong: var(--color-border-strong);
+  --color-border-focus: var(--color-border-focus);
+
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+
+  --color-error: var(--color-error);
+  --color-error-bg: var(--color-error-bg);
+
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  --spacing-xs: var(--space-xs);
+  --spacing-sm: var(--space-sm);
+  --spacing-md: var(--space-md);
+  --spacing-lg: var(--space-lg);
+  --spacing-xl: var(--space-xl);
+  --spacing-2xl: var(--space-2xl);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+
+  --transition-duration-fast: var(--transition-fast);
+  --transition-duration-base: var(--transition-base);
+  --transition-duration-slow: var(--transition-slow);
 }
 
-/* Dark mode variant */
-.dark {
-  --color-surface-base: #1F0E09;
-  --color-surface-elevated: #2D1D16;
-  --color-surface-overlay: #3A2A22;
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility text-gradient {
+  /* Text gradient utility */
+  @apply bg-linear-to-r from-brand-primary to-brand-accent bg-clip-text text-transparent;
+}
+
+@utility animate-fade-in {
+  /* Smooth fade-in animation */
+  animation: fadeIn 0.6s ease-out forwards;
+  opacity: 0;
+}
+
+@utility animate-slide-up {
+  /* Slide up animation */
+  animation: slideUp 0.6s ease-out forwards;
+  opacity: 0;
+}
+
+@utility animate-float {
+  /* Float animation for decorative elements */
+  animation: float 6s ease-in-out infinite;
+}
+
+@utility noise {
+  /* Subtle grain/noise texture */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.025;
+    pointer-events: none;
+  }
+}
+
+@utility custom-scrollbar {
+  /* Custom scrollbar for webkit browsers */
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: var(--color-surface-sunken);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: var(--radius-full);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-tertiary);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border-default;
+  }
   
-  --color-text-primary: #F4EFE6;
-  --color-text-secondary: #D4C4B8;
-  --color-text-tertiary: #A89A8F;
+  body {
+    @apply bg-surface-base text-text-primary transition-colors duration-300;
+    font-family: var(--font-sans);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+
+  @keyframes fadeIn {
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+}
+
+/* Focus visible styles */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+}
+
+
+
+
+/*
+
+!!!!! NOTICE !!!!!
+
+Tailwind v4 treats spacing differently. max-w- classes emit css referencing --space defs,
+which are much smaller (like <48px) so the temp fix is below, defining max-w- explicitly.
+
+TODO: Switch to using defined consistent tokens, such as max-w-content ... as seen below
+
+*/
+@layer theme {
+  :root {
+    /* Layout widths (NOT spacing) */
+    --max-w-content: 42rem;
+    --max-w-prose: 65ch;
+    --max-w-page: 80rem;
+  }
+}
+
+@theme inline {
+  --width-3xs: var(--container-3xs);
+  --width-2xs: var(--container-2xs);
+  --width-xs: var(--container-xs);
+  --width-sm: var(--container-sm);
+  --width-md: var(--container-md);
+  --width-lg: var(--container-lg);
+  --width-xl: var(--container-xl);
+  --width-2xl: var(--container-2xl);
+  --width-3xl: var(--container-3xl);
+  --width-4xl: var(--container-4xl);
+  --width-5xl: var(--container-5xl);
+  --width-6xl: var(--container-6xl);
+  --width-7xl: var(--container-7xl);
+
+  --min-width-3xs: var(--container-3xs);
+  --min-width-2xs: var(--container-2xs);
+  --min-width-xs: var(--container-xs);
+  --min-width-sm: var(--container-sm);
+  --min-width-md: var(--container-md);
+  --min-width-lg: var(--container-lg);
+  --min-width-xl: var(--container-xl);
+  --min-width-2xl: var(--container-2xl);
+  --min-width-3xl: var(--container-3xl);
+  --min-width-4xl: var(--container-4xl);
+  --min-width-5xl: var(--container-5xl);
+  --min-width-6xl: var(--container-6xl);
+  --min-width-7xl: var(--container-7xl);
+
+  --max-width-3xs: var(--container-3xs);
+  --max-width-2xs: var(--container-2xs);
+  --max-width-xs: var(--container-xs);
+  --max-width-sm: var(--container-sm);
+  --max-width-md: var(--container-md);
+  --max-width-lg: var(--container-lg);
+  --max-width-xl: var(--container-xl);
+  --max-width-2xl: var(--container-2xl);
+  --max-width-3xl: var(--container-3xl);
+  --max-width-4xl: var(--container-4xl);
+  --max-width-5xl: var(--container-5xl);
+  --max-width-6xl: var(--container-6xl);
+  --max-width-7xl: var(--container-7xl);
 }

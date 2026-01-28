@@ -1,90 +1,77 @@
-/**
- * TailorD Theme
- * 
- * Design Philosophy:
- * - Modern, monochromatic design with strategic gold accents
- * - High contrast for excellent readability (WCAG AAA where possible)
- * - Sleek, professional aesthetic with minimalist feel
- * - Concrete grays provide clean, neutral canvas
- * - Maintains Claude's spacing, radius, and accessibility standards
- */
+/* =========================================================
+   Paper Mode – Light
+   ========================================================= */
 
-[data-theme="tailord"] {
-  /* Brand Colors - Gold accents on neutral base */
-  --color-brand-primary: #F8D005;
-  --color-brand-primary-hover: #DFBB05;
-  --color-brand-primary-active: #957D03;
-  --color-brand-secondary: #DFBB05;
-  --color-brand-accent: #FCEC9B;
-  --color-brand-accent-subtle: #FDF3C1;
+[data-theme="tailord"],
+:root {
+  /* Brand Colors */
+  --color-brand-primary: #2A2A2A;          /* Ink */
+  --color-brand-primary-hover: #1F1F1F;
+  --color-brand-primary-active: #1A1A1A;
+  --color-brand-secondary: #FBFAF8;
+  --color-brand-accent: #2A2A2A;
   
-  /* Surface Colors - Concrete palette for clean neutrals */
-  --color-surface-base: #F2F2F2;           /* Main background - light concrete */
-  --color-surface-elevated: #FEFEFE;        /* Cards, modals - near white */
-  --color-surface-overlay: #FAFAFA;         /* Hover states - subtle concrete */
-  --color-surface-sunken: #E8E8E8;          /* Input backgrounds, wells */
-  --color-surface-inverse: #1D1C1C;         /* Dark mode surface - shark */
+  /* Surface Colors */
+  --color-surface-base: #FBFAF8;           /* Paper */
+  --color-surface-elevated: #FFFFFF;       /* Raised sheet */
+  --color-surface-overlay: #F3F2EF;        /* Hover */
+  --color-surface-sunken: #EFEDE9;         /* Inputs */
+  --color-surface-border: #E1DED8;         /* Pencil line */
   
-  /* Text Colors - Shark palette for depth and hierarchy */
-  --color-text-primary: #1D1C1C;            /* Primary text - deep shark */
-  --color-text-secondary: #616060;          /* Secondary text - medium shark */
-  --color-text-tertiary: #A5A4A4;           /* Tertiary text - light shark */
-  --color-text-disabled: #C7C6C6;           /* Disabled text */
-  --color-text-inverse: #FEFEFE;            /* Text on dark backgrounds */
-  --color-text-link: #F8D005;               /* Links - gold accent */
-  --color-text-link-hover: #957D03;         /* Link hover state */
+  /* Text Colors */
+  --color-text-primary: #2A2A2A;            /* Ink */
+  --color-text-secondary: #5A5A5A;
+  --color-text-tertiary: #7A7A7A;
+  --color-text-disabled: #A0A0A0;
+  --color-text-inverse: #FBFAF8;
+  --color-text-link: #2A2A2A;
   
-  /* Border Colors - Stack palette for subtle definition */
-  --color-border-default: #D1D2D1;          /* Default borders - stack */
-  --color-border-subtle: #E3E3E3;           /* Subtle borders */
-  --color-border-strong: #AFB0AF;           /* Strong emphasis borders */
-  --color-border-focus: #F8D005;            /* Focus rings - gold */
+  /* Border Colors */
+  --color-border-default: #E1DED8;
+  --color-border-subtle: #EEECE7;
+  --color-border-strong: #CFCAC2;
+  --color-border-focus: #2A2A2A;
   
-  /* Semantic Colors - Status and feedback */
-  --color-success: #2D7D4F;                 /* Success green */
-  --color-success-bg: #E8F5ED;
-  --color-success-border: #9DDCB6;
+  /* Semantic Colors – Quiet, editorial */
+  --color-success: #3A3A3A;
+  --color-success-bg: #F1EFEA;
+  --color-warning: #4A4A4A;
+  --color-warning-bg: #F3F1EC;
+  --color-error: #333333;
+  --color-error-bg: #EEECE7;
+  --color-info: #3F3F3F;
+  --color-info-bg: #F4F2ED;
   
-  --color-warning: #F8D005;                 /* Gold warning (matches brand) */
-  --color-warning-bg: #FFFDF3;
-  --color-warning-border: #FCEC9B;
+  /* Shadows – Paper lift */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.025);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.045),
+               0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.06),
+               0 4px 6px -2px rgba(0, 0, 0, 0.035);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08),
+               0 10px 10px -5px rgba(0, 0, 0, 0.04);
   
-  --color-error: #C53030;                   /* Clear red error */
-  --color-error-bg: #FEE8E8;
-  --color-error-border: #F5A5A5;
-  
-  --color-info: #2563A8;                    /* Muted blue info */
-  --color-info-bg: #E8F2FB;
-  --color-info-border: #9DCAEF;
-  
-  /* Shadows - Neutral gray shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(29, 28, 28, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(29, 28, 28, 0.08), 0 2px 4px -1px rgba(29, 28, 28, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(29, 28, 28, 0.08), 0 4px 6px -2px rgba(29, 28, 28, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(29, 28, 28, 0.08), 0 10px 10px -5px rgba(29, 28, 28, 0.04);
-  
-  /* Border Radius - Friendly, rounded */
+  /* Border Radius */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --radius-button: 8px;
-  --radius-card: 12px;
   --radius-full: 9999px;
   
-  /* Spacing Scale - Generous whitespace */
-  --space-xs: 0.25rem;   /* 4px */
-  --space-sm: 0.5rem;    /* 8px */
-  --space-md: 1rem;      /* 16px */
-  --space-lg: 1.5rem;    /* 24px */
-  --space-xl: 2rem;      /* 32px */
-  --space-2xl: 3rem;     /* 48px */
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
   
   /* Typography */
-  --font-weight-normal: 400;
-  --font-weight-medium: 500;
-  --font-weight-semibold: 600;
-  --font-weight-bold: 700;
+  --font-sans: ui-sans-serif, system-ui, -apple-system,
+               BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono",
+               Consolas, "Liberation Mono", Menlo, monospace;
   
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -92,34 +79,56 @@
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Dark Mode Variant for TailorD Theme */
+/* =========================================================
+   Paper Mode – Dark
+   ========================================================= */
+
 [data-theme="tailord"].dark,
 [data-theme="tailord"] .dark {
-  /* Surface Colors - Shark palette for dark mode */
-  --color-surface-base: #1D1C1C;
-  --color-surface-elevated: #2A2B2A;
-  --color-surface-overlay: #3F403F;
-  --color-surface-sunken: #111111;
+  /* Brand Colors */
+  --color-brand-primary: #E8E6E1;          /* Chalk ink */
+  --color-brand-primary-hover: #F0EEE9;
+  --color-brand-primary-active: #F6F4EF;
+  --color-brand-secondary: #1B1B1A;
+  --color-brand-accent: #E8E6E1;
   
-  /* Text Colors - Inverted for dark mode */
-  --color-text-primary: #F2F2F2;
-  --color-text-secondary: #C7C6C6;
-  --color-text-tertiary: #A5A4A4;
-  --color-text-disabled: #616060;
+  /* Surface Colors */
+  --color-surface-base: #1B1B1A;            /* Charcoal */
+  --color-surface-elevated: #222221;
+  --color-surface-overlay: #2C2C2A;
+  --color-surface-sunken: #151514;
+  --color-surface-border: #333331;
   
-  /* Border Colors - Stack palette adjusted for dark */
-  --color-border-default: #555555;
-  --color-border-subtle: #3F403F;
-  --color-border-strong: #7F807F;
+  /* Text Colors */
+  --color-text-primary: #E8E6E1;            /* Warm off-white */
+  --color-text-secondary: #BDBBB6;
+  --color-text-tertiary: #8E8C87;
+  --color-text-disabled: #5F5E5A;
+  --color-text-inverse: #1B1B1A;
+  --color-text-link: #E8E6E1;
   
-  /* Adjust brand colors for dark mode readability */
-  --color-brand-primary: #FADE50;
-  --color-brand-primary-hover: #FCEC9B;
-  --color-brand-accent: #F8D005;
+  /* Border Colors */
+  --color-border-default: #333331;
+  --color-border-subtle: #2A2A28;
+  --color-border-strong: #444441;
+  --color-border-focus: #E8E6E1;
   
-  /* Shadows - Deeper for dark mode */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  /* Semantic Colors */
+  --color-success: #D8D6D1;
+  --color-success-bg: rgba(232, 230, 225, 0.07);
+  --color-warning: #CBC9C4;
+  --color-warning-bg: rgba(232, 230, 225, 0.06);
+  --color-error: #E0DED9;
+  --color-error-bg: rgba(232, 230, 225, 0.08);
+  --color-info: #D8D6D1;
+  --color-info-bg: rgba(232, 230, 225, 0.07);
+  
+  /* Shadows – Ambient depth */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.55),
+               0 2px 4px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6),
+               0 4px 6px -2px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.65),
+               0 10px 10px -5px rgba(0, 0, 0, 0.5);
 }

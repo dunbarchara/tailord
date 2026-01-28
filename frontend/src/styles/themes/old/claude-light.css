@@ -6,7 +6,8 @@
  * Colors extracted from claude.ai (January 2025)
  */
 
-[data-theme="claude"] {
+[data-theme="claude"],
+:root {
   /* Brand Colors - Tailord's signature copper/orange */
   --color-brand-primary: #CC785C;
   --color-brand-primary-hover: #B86A4F;

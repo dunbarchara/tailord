@@ -1,12 +1,12 @@
 /**
- * TailorDX Claude Theme
+ * TailorDX Tailord Theme
  * 
  * Design Philosophy:
- * - Luxurious gold tones replacing Claude's copper/terracotta
+ * - Luxurious gold tones replacing Tailord's copper/terracotta
  * - High contrast for excellent readability (WCAG AAA where possible)
  * - Sophisticated, professional aesthetic with premium feel
  * - Warm cream backgrounds reduce eye strain vs pure white
- * - Maintains Claude's spacing, radius, and accessibility standards
+ * - Maintains Tailord's spacing, radius, and accessibility standards
  */
 
 [data-theme="tailordxclaude"] {
@@ -92,7 +92,7 @@
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Dark Mode Variant for TailorDX Claude Theme */
+/* Dark Mode Variant for TailorDX Tailord Theme */
 [data-theme="tailordxclaude"].dark,
 [data-theme="tailordxclaude"] .dark {
   --color-surface-base: #4A3E02;

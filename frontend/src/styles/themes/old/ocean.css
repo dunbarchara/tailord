@@ -6,7 +6,7 @@
  * - High contrast for excellent readability (WCAG AAA where possible)
  * - Professional, trustworthy aesthetic
  * - Light blue-gray backgrounds reduce eye strain
- * - Maintains Claude's spacing, radius, and accessibility standards
+ * - Maintains Tailord's spacing, radius, and accessibility standards
  */
 
 [data-theme="ocean"] {
@@ -63,7 +63,7 @@
   --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.04);
   --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.08), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
   
-  /* Border Radius - Same as Claude theme */
+  /* Border Radius - Same as Tailord theme */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
