@@ -20,10 +20,8 @@ export function Header() {
                 {/* Logo */}
                 <div className="flex lg:flex-1">
                     <Link href="/" className="-m-1.5 p-1.5 flex items-center gap-2 group">
-                        <div className="h-7 w-7 rounded-md bg-brand-primary flex items-center justify-center transition-transform group-hover:scale-105">
-                            <span className="text-text-inverse font-semibold text-sm">T</span>
-                        </div>
-                        <span className="text-lg font-semibold text-text-primary">Tailord</span>
+                        <img src="/logo.svg" alt="Tailord logo" className="h-7 w-7 dark:invert transition-transform group-hover:scale-105" />
+                        <span className="text-2xl font-display text-text-primary">Tailord</span>
                     </Link>
                 </div>
 
