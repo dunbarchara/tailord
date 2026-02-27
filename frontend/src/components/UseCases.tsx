@@ -38,7 +38,7 @@ export function UseCases() {
             Built for the way you work
           </h2>
           <p className="mt-6 text-lg leading-8 text-text-secondary">
-            Whether you're writing, coding, researching, or creating, Tailord adapts to your needs.
+            Whether you&apos;re writing, coding, researching, or creating, Tailord adapts to your needs.
           </p>
         </div>
 

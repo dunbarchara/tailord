@@ -1,9 +1,6 @@
 import { Header } from '@/components/Header';
 import { Hero } from '@/components/Hero';
-import { Features } from '@/components/Features';
 import { FeaturesTailord } from '@/components/FeaturesTailord';
-import { UseCases } from '@/components/UseCases';
-import { CTA } from '@/components/CTA';
 import { Footer } from '@/components/Footer';
 
 export default function Home() {
@@ -12,11 +9,6 @@ export default function Home() {
       <Header />
       <Hero />
       <FeaturesTailord />
-      {/*
-      <Features />
-      <UseCases />
-      <CTA />
-      */}
       <Footer />
     </main>
   );

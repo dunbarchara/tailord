@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useTheme } from './ThemeProvider';
 import { Moon, Sun, Menu, X } from 'lucide-react';
 import { useSession, signOut } from "next-auth/react"
+import { Button } from '@/components/ui/button';
 
 export function Header() {
     const { data: session, status } = useSession()
-    const { theme, setTheme, darkMode, setDarkMode, toggleTheme } = useTheme();
+    const { darkMode, setDarkMode } = useTheme();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    
+
     if (status === "loading") return null
 
     return (
@@ -28,77 +29,55 @@ export function Header() {
 
                 {/* Mobile menu button */}
                 <div className="flex lg:hidden gap-3 items-center">
-                    <button
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setDarkMode(!darkMode)}
-                        className="p-2 rounded-md hover:bg-surface-overlay transition-colors"
                         aria-label="Toggle theme"
                     >
-                        {darkMode ? (
-                            <Sun className="h-5 w-5 text-text-secondary" />
-                        ) : (
-                            <Moon className="h-5 w-5 text-text-secondary" />
-                        )}
-                    </button>
-                    <button
-                        type="button"
-                        className="p-2 rounded-md text-text-secondary hover:bg-surface-overlay"
+                        {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                     >
                         <span className="sr-only">Open main menu</span>
-                        {mobileMenuOpen ? (
-                            <X className="h-6 w-6" />
-                        ) : (
-                            <Menu className="h-6 w-6" />
-                        )}
-                    </button>
+                        {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+                    </Button>
                 </div>
-
-                {/* Desktop navigation */}
-                {/*<div className="hidden lg:flex lg:gap-x-8 items-center">
-          <Link href="/product" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
-            Product
-          </Link>
-          <Link href="/research" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
-            Research
-          </Link>
-          <Link href="/company" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
-            Company
-          </Link>
-          <Link href="/news" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
-            News
-          </Link>
-        </div>*/}
-
 
                 {/* Desktop actions */}
                 <div className="hidden lg:flex lg:flex-1 lg:justify-end lg:gap-x-4 items-center">
-                    <button
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setDarkMode(!darkMode)}
-                        className="p-2 rounded-md hover:bg-surface-overlay transition-colors"
                         aria-label="Toggle theme"
                     >
-                        {darkMode ? (<Sun className="h-5 w-5 text-text-secondary" />) : (<Moon className="h-5 w-5 text-text-secondary" />)}
-                    </button>
+                        {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                    </Button>
 
                     {session ? (
                         <>
-                            <button onClick={() => signOut({ callbackUrl: "/" })}
-                                className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors px-3 py-2 cursor-pointer"
+                            <Button
+                                variant="ghost"
+                                onClick={() => signOut({ callbackUrl: "/" })}
                             >
                                 Sign out
-                            </button>
-                            <Link href="/dashboard" className="text-sm font-medium text-text-inverse bg-brand-primary hover:bg-brand-primary-hover rounded-md px-4 py-2 transition-colors shadow-sm">
-                                Dashboard
-                            </Link>
+                            </Button>
+                            <Button asChild>
+                                <Link href="/dashboard">Dashboard</Link>
+                            </Button>
                         </>
                     ) : (
                         <>
-                            <Link href="/login" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors px-3 py-2">
-                                Log in
-                            </Link>
-                            <Link href="/register" className="text-sm font-medium text-text-inverse bg-brand-primary hover:bg-brand-primary-hover rounded-md px-4 py-2 transition-colors shadow-sm">
-                                Get started
-                            </Link>
+                            <Button variant="ghost" asChild>
+                                <Link href="/login">Log in</Link>
+                            </Button>
+                            <Button asChild>
+                                <Link href="/register">Get started</Link>
+                            </Button>
                         </>
                     )}
                 </div>
@@ -108,44 +87,12 @@ export function Header() {
             {mobileMenuOpen && (
                 <div className="lg:hidden border-t border-border-subtle animate-fade-in">
                     <div className="space-y-1 px-6 py-4">
-                        {/*<Link
-              href="/product"
-              className="block px-3 py-2 text-base font-medium text-text-secondary hover:text-text-primary hover:bg-surface-overlay rounded-md transition-colors"
-            >
-              Product
-            </Link>
-            <Link
-              href="/research"
-              className="block px-3 py-2 text-base font-medium text-text-secondary hover:text-text-primary hover:bg-surface-overlay rounded-md transition-colors"
-            >
-              Research
-            </Link>
-            <Link
-              href="/company"
-              className="block px-3 py-2 text-base font-medium text-text-secondary hover:text-text-primary hover:bg-surface-overlay rounded-md transition-colors"
-            >
-              Company
-            </Link>
-            <Link
-              href="/news"
-              className="block px-3 py-2 text-base font-medium text-text-secondary hover:text-text-primary hover:bg-surface-overlay rounded-md transition-colors"
-            >
-              News
-            </Link>*/}
-                        {/*<div className="pt-4 border-t border-border-subtle mt-4">*/}
-                        <Link
-                            href="/login"
-                            className="block px-3 py-2 text-base font-medium text-text-secondary hover:text-text-primary hover:bg-surface-overlay rounded-md transition-colors"
-                        >
-                            Log in
-                        </Link>
-                        <Link
-                            href="/signup"
-                            className="mt-2 block px-4 py-2.5 text-base font-medium text-text-inverse bg-brand-primary hover:bg-brand-primary-hover rounded-md transition-colors text-center"
-                        >
-                            Get started
-                        </Link>
-                        {/*</div>*/}
+                        <Button variant="ghost" className="w-full justify-start" asChild>
+                            <Link href="/login">Log in</Link>
+                        </Button>
+                        <Button className="w-full mt-2" asChild>
+                            <Link href="/register">Get started</Link>
+                        </Button>
                     </div>
                 </div>
             )}

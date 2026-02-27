@@ -1,13 +1,15 @@
 'use client';
 
-import { Download, Copy, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
 import { useState } from 'react';
+import { Download, Copy, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface TailoringDetailProps {
   tailoringId: string;
 }
 
-// Mock data - in production, fetch based on tailoringId
+// Placeholder data — replace with real fetch when backend is wired
 const mockTailoring = {
   id: '1',
   jobTitle: 'Senior Frontend Engineer',
@@ -36,25 +38,16 @@ const mockTailoring = {
 
 I am writing to express my strong interest in the Senior Frontend Engineer position at TechCorp. With over 5 years of specialized experience in React development and a proven track record of building scalable component systems, I am confident I would be a valuable addition to your team.
 
-In my current role at StartupXYZ, I led the development of a comprehensive component library that reduced development time by 40% and improved code consistency across 15+ product teams. This experience directly aligns with your need for someone who can architect robust, reusable frontend solutions.
-
-My expertise in TypeScript, modern build tools, and performance optimization would allow me to contribute immediately to your team's goals. I'm particularly excited about TechCorp's focus on developer experience and would love to bring my component architecture knowledge to help scale your engineering organization.
-
-While I notice GraphQL is a key technology in your stack, I'm a quick learner who has successfully adopted new technologies throughout my career. My strong foundation in REST APIs and state management would facilitate a smooth transition.
-
-I would welcome the opportunity to discuss how my experience in building scalable frontend systems can contribute to TechCorp's continued success.
-
 Best regards,
 John Doe`,
   resumeHighlights: [
     'Led development of component library serving 15+ teams',
     'Reduced bundle size by 60% through code splitting and lazy loading',
     'Mentored 5 junior developers in React best practices',
-    'Implemented automated visual regression testing',
-    'Improved Lighthouse performance score from 65 to 95',
   ],
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -78,155 +71,136 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 {mockTailoring.company} • Created {mockTailoring.createdAt}
               </p>
             </div>
-            
-            <a
-              href={mockTailoring.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border-default hover:bg-surface-overlay transition-colors text-sm font-medium text-text-primary flex-shrink-0"
-            >
-              View Posting
-              <ExternalLink className="h-4 w-4" />
-            </a>
+            <Button variant="outline" size="sm" asChild>
+              <a href={mockTailoring.url} target="_blank" rel="noopener noreferrer" className="gap-2">
+                View Posting
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </Button>
           </div>
 
-          {/* Match Score */}
-          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-lg bg-success-bg border border-success-border">
+          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-lg bg-success-bg border border-success/20">
             <Sparkles className="h-5 w-5 text-success" />
-            <div>
-              <span className="text-sm font-medium text-text-primary">
-                {mockTailoring.matchScore}% Match
-              </span>
-              <span className="text-sm text-text-secondary ml-2">
-                Strong fit for this role
-              </span>
-            </div>
+            <span className="text-sm font-medium text-text-primary">
+              {mockTailoring.matchScore}% Match
+            </span>
+            <span className="text-sm text-text-secondary">Strong fit for this role</span>
           </div>
         </div>
 
         {/* AI Analysis */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-text-primary">
-            AI Analysis
-          </h2>
-
+          <h2 className="text-lg font-semibold text-text-primary">AI Analysis</h2>
           <div className="grid md:grid-cols-2 gap-4">
-            {/* Strengths */}
-            <div className="p-6 rounded-xl bg-surface-elevated border border-border-subtle">
-              <h3 className="font-semibold text-text-primary mb-4 flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-success" />
-                Your Strengths
-              </h3>
-              <ul className="space-y-3">
-                {mockTailoring.analysis.strengths.map((strength, i) => (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <div className="h-2 w-2 rounded-full bg-success" />
+                  Your Strengths
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3">
+                  {mockTailoring.analysis.strengths.map((strength, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
+                      <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0 mt-0.5" />
+                      <span>{strength}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <div className="h-2 w-2 rounded-full bg-warning" />
+                  Potential Gaps
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3">
+                  {mockTailoring.analysis.gaps.map((gap, i) => (
+                    <li key={i} className="text-sm text-text-secondary">• {gap}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-brand-primary/20 bg-brand-primary/5">
+            <CardHeader>
+              <CardTitle className="text-base">Recommendations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {mockTailoring.analysis.recommendations.map((rec, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                    <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0 mt-0.5" />
-                    <span>{strength}</span>
+                    <span className="text-brand-primary mt-0.5">→</span>
+                    <span>{rec}</span>
                   </li>
                 ))}
               </ul>
-            </div>
-
-            {/* Gaps */}
-            <div className="p-6 rounded-xl bg-surface-elevated border border-border-subtle">
-              <h3 className="font-semibold text-text-primary mb-4 flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-warning" />
-                Potential Gaps
-              </h3>
-              <ul className="space-y-3">
-                {mockTailoring.analysis.gaps.map((gap, i) => (
-                  <li key={i} className="text-sm text-text-secondary">
-                    • {gap}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* Recommendations */}
-          <div className="p-6 rounded-xl bg-brand-primary/5 border border-brand-primary/20">
-            <h3 className="font-semibold text-text-primary mb-4">
-              Recommendations
-            </h3>
-            <ul className="space-y-2">
-              {mockTailoring.analysis.recommendations.map((rec, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                  <span className="text-brand-primary mt-0.5">→</span>
-                  <span>{rec}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Cover Letter */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-text-primary">
-              Generated Cover Letter
-            </h2>
+            <h2 className="text-lg font-semibold text-text-primary">Generated Cover Letter</h2>
             <div className="flex gap-2">
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => handleCopy(mockTailoring.coverLetter, 'cover-letter')}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border-default hover:bg-surface-overlay transition-colors text-sm"
+                className="gap-2"
               >
                 {copied === 'cover-letter' ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                    Copied
-                  </>
+                  <><CheckCircle2 className="h-4 w-4 text-success" />Copied</>
                 ) : (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    Copy
-                  </>
+                  <><Copy className="h-4 w-4" />Copy</>
                 )}
-              </button>
-              <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border-default hover:bg-surface-overlay transition-colors text-sm">
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2">
                 <Download className="h-4 w-4" />
                 Download
-              </button>
+              </Button>
             </div>
           </div>
-
-          <div className="p-6 rounded-xl bg-surface-elevated border border-border-subtle">
-            <pre className="whitespace-pre-wrap font-sans text-sm text-text-secondary leading-relaxed">
-              {mockTailoring.coverLetter}
-            </pre>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <pre className="whitespace-pre-wrap font-sans text-sm text-text-secondary leading-relaxed">
+                {mockTailoring.coverLetter}
+              </pre>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Resume Highlights */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-text-primary">
-            Resume Highlights to Emphasize
-          </h2>
-
-          <div className="p-6 rounded-xl bg-surface-elevated border border-border-subtle space-y-3">
-            {mockTailoring.resumeHighlights.map((highlight, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-3 pb-3 border-b border-border-subtle last:border-0 last:pb-0"
-              >
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-xs font-semibold mt-0.5">
-                  {i + 1}
+          <h2 className="text-lg font-semibold text-text-primary">Resume Highlights to Emphasize</h2>
+          <Card>
+            <CardContent className="pt-6 space-y-3">
+              {mockTailoring.resumeHighlights.map((highlight, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-3 pb-3 border-b border-border-subtle last:border-0 last:pb-0"
+                >
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-xs font-semibold mt-0.5">
+                    {i + 1}
+                  </div>
+                  <p className="text-sm text-text-secondary flex-1">{highlight}</p>
                 </div>
-                <p className="text-sm text-text-secondary flex-1">
-                  {highlight}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Actions */}
         <div className="flex gap-3 pt-4 border-t border-border-subtle">
-          <button className="px-6 py-3 rounded-lg bg-brand-primary text-text-inverse font-medium hover:bg-brand-primary-hover transition-colors">
-            Apply Now
-          </button>
-          <button className="px-6 py-3 rounded-lg border border-border-default text-text-primary font-medium hover:bg-surface-overlay transition-colors">
-            Edit Content
-          </button>
+          <Button>Apply Now</Button>
+          <Button variant="outline">Edit Content</Button>
         </div>
       </div>
     </div>

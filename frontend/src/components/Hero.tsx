@@ -2,13 +2,8 @@
 
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import { AuthCard } from "@/components/AuthCard"
 
 export function Hero() {
-
-    const handleEmailSubmit = (email: string) => {
-        alert(`Email submitted: ${email}`)
-    }
     return (
         <>
             

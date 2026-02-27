@@ -1,30 +1,4 @@
-'use client';
-
-import { Brain, Shield, Zap, Users } from 'lucide-react';
 import Link from 'next/link';
-
-const features = [
-    {
-        name: 'Advanced reasoning',
-        description: 'Tailord can handle complex multi-step tasks with nuanced understanding and sophisticated reasoning capabilities.',
-        icon: Brain,
-    },
-    {
-        name: 'Vision capabilities',
-        description: 'Upload images and PDFs to have Tailord analyze, interpret, and discuss visual content alongside text.',
-        icon: Zap,
-    },
-    {
-        name: 'Secure and trustworthy',
-        description: 'Built with safety at the core. Tailord is designed to be helpful, harmless, and honest in all interactions.',
-        icon: Shield,
-    },
-    {
-        name: 'Team collaboration',
-        description: 'Share conversations, create team workspaces, and collaborate on projects with your colleagues.',
-        icon: Users,
-    },
-];
 
 export function FeaturesTailord() {
     return (

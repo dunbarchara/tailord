@@ -12,12 +12,10 @@ export default async function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-100">
+    <div className="min-h-screen flex items-center justify-center bg-surface-base">
       <AuthCard
         title="Sign in"
         googleText="Sign in with Google"
-        emailText="Continue with email"
-        authAction="Login"
       />
     </div>
   )
