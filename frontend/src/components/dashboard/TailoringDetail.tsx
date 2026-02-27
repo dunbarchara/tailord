@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Copy, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
+import { Copy, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -9,7 +9,7 @@ interface TailoringDetailProps {
   tailoringId: string;
 }
 
-// Placeholder data — replace with real fetch when backend is wired
+// Placeholder — replace with real fetch when backend is wired
 const mockTailoring = {
   id: '1',
   jobTitle: 'Senior Frontend Engineer',
@@ -40,71 +40,63 @@ I am writing to express my strong interest in the Senior Frontend Engineer posit
 
 Best regards,
 John Doe`,
-  resumeHighlights: [
-    'Led development of component library serving 15+ teams',
-    'Reduced bundle size by 60% through code splitting and lazy loading',
-    'Mentored 5 junior developers in React best practices',
-  ],
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mockTailoring.coverLetter);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
-      <div className="max-w-5xl mx-auto p-6 lg:p-8 space-y-8">
+      <div className="max-w-3xl mx-auto p-6 lg:p-8 space-y-8">
         {/* Header */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-semibold text-text-primary truncate">
                 {mockTailoring.jobTitle}
               </h1>
               <p className="text-text-secondary mt-1">
-                {mockTailoring.company} • Created {mockTailoring.createdAt}
+                {mockTailoring.company} · {mockTailoring.createdAt}
               </p>
             </div>
             <Button variant="outline" size="sm" asChild>
               <a href={mockTailoring.url} target="_blank" rel="noopener noreferrer" className="gap-2">
-                View Posting
                 <ExternalLink className="h-4 w-4" />
+                View Posting
               </a>
             </Button>
           </div>
 
-          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-lg bg-success-bg border border-success/20">
-            <Sparkles className="h-5 w-5 text-success" />
-            <span className="text-sm font-medium text-text-primary">
-              {mockTailoring.matchScore}% Match
-            </span>
-            <span className="text-sm text-text-secondary">Strong fit for this role</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-success-bg border border-success/20">
+            <Sparkles className="h-4 w-4 text-success" />
+            <span className="text-sm font-medium text-text-primary">{mockTailoring.matchScore}% match</span>
           </div>
         </div>
 
-        {/* AI Analysis */}
+        {/* Analysis */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-text-primary">AI Analysis</h2>
+          <h2 className="text-base font-semibold text-text-primary">Analysis</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
                   <div className="h-2 w-2 rounded-full bg-success" />
-                  Your Strengths
+                  Strengths
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="space-y-3">
+                <ul className="space-y-2">
                   {mockTailoring.analysis.strengths.map((strength, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
                       <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0 mt-0.5" />
-                      <span>{strength}</span>
+                      {strength}
                     </li>
                   ))}
                 </ul>
@@ -112,32 +104,32 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
                   <div className="h-2 w-2 rounded-full bg-warning" />
-                  Potential Gaps
+                  Gaps
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ul className="space-y-3">
+                <ul className="space-y-2">
                   {mockTailoring.analysis.gaps.map((gap, i) => (
-                    <li key={i} className="text-sm text-text-secondary">• {gap}</li>
+                    <li key={i} className="text-sm text-text-secondary">· {gap}</li>
                   ))}
                 </ul>
               </CardContent>
             </Card>
           </div>
 
-          <Card className="border-brand-primary/20 bg-brand-primary/5">
-            <CardHeader>
-              <CardTitle className="text-base">Recommendations</CardTitle>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">Recommendations</CardTitle>
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
                 {mockTailoring.analysis.recommendations.map((rec, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                    <span className="text-brand-primary mt-0.5">→</span>
-                    <span>{rec}</span>
+                    <span className="text-brand-primary mt-0.5 flex-shrink-0">→</span>
+                    {rec}
                   </li>
                 ))}
               </ul>
@@ -146,27 +138,21 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
 
         {/* Cover Letter */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-text-primary">Generated Cover Letter</h2>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleCopy(mockTailoring.coverLetter, 'cover-letter')}
-                className="gap-2"
-              >
-                {copied === 'cover-letter' ? (
-                  <><CheckCircle2 className="h-4 w-4 text-success" />Copied</>
-                ) : (
-                  <><Copy className="h-4 w-4" />Copy</>
-                )}
-              </Button>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Download className="h-4 w-4" />
-                Download
-              </Button>
-            </div>
+            <h2 className="text-base font-semibold text-text-primary">Cover Letter</h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopy}
+              className="gap-2"
+            >
+              {copied ? (
+                <><CheckCircle2 className="h-4 w-4 text-success" />Copied</>
+              ) : (
+                <><Copy className="h-4 w-4" />Copy</>
+              )}
+            </Button>
           </div>
           <Card>
             <CardContent className="pt-6">
@@ -175,32 +161,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               </pre>
             </CardContent>
           </Card>
-        </div>
-
-        {/* Resume Highlights */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-text-primary">Resume Highlights to Emphasize</h2>
-          <Card>
-            <CardContent className="pt-6 space-y-3">
-              {mockTailoring.resumeHighlights.map((highlight, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 pb-3 border-b border-border-subtle last:border-0 last:pb-0"
-                >
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center text-xs font-semibold mt-0.5">
-                    {i + 1}
-                  </div>
-                  <p className="text-sm text-text-secondary flex-1">{highlight}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3 pt-4 border-t border-border-subtle">
-          <Button>Apply Now</Button>
-          <Button variant="outline">Edit Content</Button>
         </div>
       </div>
     </div>
