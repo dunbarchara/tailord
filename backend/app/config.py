@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
 
+    # AWS / S3
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_region: str = "us-east-2"
+    s3_uploads_bucket: str = "tailord-uploads"
+
     class Config:
         env_file = ".env"
 

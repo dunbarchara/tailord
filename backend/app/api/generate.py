@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from app.models.mvp_schemas import GenerateInput, GeneratedOutput
-from app.services.mvp_profile_store import get_profile
 from app.core.mvp_llm import generate_match
+from app.auth import require_api_key
+from app.core.deps_user import get_current_user
 
 from sqlalchemy.orm import Session
-from app.models.database import Job, Profile
+from app.models.database import Job, Resume, User
 from app.core.deps_database import get_db
 
 router = APIRouter()
@@ -12,15 +13,24 @@ router = APIRouter()
 @router.post("/generate", response_model=GeneratedOutput)
 def generate(
     data: GenerateInput,
-    request: Request,
+    _: str = Depends(require_api_key),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    job = db.get(Job, data.job_id)
-    profile = db.query(Profile).order_by(Profile.updated_at.desc()).first()
+    job = db.query(Job).filter(
+        Job.id == data.job_id,
+        Job.user_id == user.id,
+    ).first()
 
-    if not job or not profile:
-        return {"content": "Missing job or profile"}
+    resume = db.query(Resume).filter(
+        Resume.user_id == user.id,
+        Resume.status == "ready",
+    ).first()
 
-    content = generate_match(profile.raw_profile, job.extracted_job)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not resume or not resume.extracted_profile:
+        raise HTTPException(status_code=404, detail="No processed resume found — upload and process a resume first")
+
+    content = generate_match(resume.extracted_profile, job.extracted_job)
     return {"content": content}
-

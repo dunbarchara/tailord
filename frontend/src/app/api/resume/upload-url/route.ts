@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  return proxyToBackendWithUser('generate', {
+  return proxyToBackendWithUser('resume/upload-url', {
     userId: session.user.id,
     userEmail: session.user.email ?? '',
     userName: session.user.name,
