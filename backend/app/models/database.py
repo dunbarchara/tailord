@@ -45,6 +45,7 @@ class Experience(Base):
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
     github_username: Mapped[str | None] = mapped_column(String, nullable=True)
     github_repos: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    user_input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

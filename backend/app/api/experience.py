@@ -30,6 +30,10 @@ class GitHubRequest(BaseModel):
     github_username: str
 
 
+class UserInputRequest(BaseModel):
+    text: str
+
+
 @router.post("/experience/upload-url")
 def get_upload_url(
     body: UploadUrlRequest,
@@ -122,6 +126,7 @@ def get_experience(
         "error_message": e.error_message,
         "github_username": e.github_username,
         "github_repos": e.github_repos,
+        "user_input_text": e.user_input_text,
         "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None,
         "processed_at": e.processed_at.isoformat() if e.processed_at else None,
     }
@@ -197,3 +202,55 @@ def set_github(
         "status": experience.status,
         "github_username": experience.github_username,
     }
+
+
+@router.delete("/experience/github", status_code=204)
+def remove_github(
+    _: str = Depends(require_api_key),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience or not experience.github_username:
+        raise HTTPException(status_code=404, detail="No GitHub profile connected")
+
+    experience.github_username = None
+    experience.github_repos = None
+    if experience.extracted_profile and "github" in experience.extracted_profile:
+        experience.extracted_profile = {
+            k: v for k, v in experience.extracted_profile.items() if k != "github"
+        } or None
+    db.commit()
+
+
+@router.post("/experience/user-input")
+def set_user_input(
+    body: UserInputRequest,
+    _: str = Depends(require_api_key),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+
+    if experience:
+        experience.user_input_text = body.text
+        profile = experience.extracted_profile or {}
+        experience.extracted_profile = {**profile, "user_input": {"text": body.text}}
+        experience.processed_at = datetime.now(timezone.utc)
+        if experience.status not in ("ready", "processing"):
+            experience.status = "ready"
+    else:
+        experience = Experience(
+            user_id=user.id,
+            s3_key=None,
+            filename=None,
+            status="ready",
+            user_input_text=body.text,
+            extracted_profile={"user_input": {"text": body.text}},
+            processed_at=datetime.now(timezone.utc),
+        )
+        db.add(experience)
+
+    db.commit()
+    db.refresh(experience)
+    return {"experience_id": str(experience.id), "status": experience.status}

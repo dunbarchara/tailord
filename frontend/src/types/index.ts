@@ -47,6 +47,8 @@ export interface GitHubRepo {
   name: string
   description: string | null
   language: string | null
+  star_count: number
+  pushed_at: string | null
 }
 
 export interface SourcedProfile {
@@ -87,7 +89,8 @@ export interface ExperienceRecord {
   extracted_profile: SourcedProfile | null
   error_message: string | null
   github_username: string | null
-  github_repos: object[] | null
+  github_repos: GitHubRepo[] | null
+  user_input_text: string | null
   uploaded_at: string | null
   processed_at: string | null
 }

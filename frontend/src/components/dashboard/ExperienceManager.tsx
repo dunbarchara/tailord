@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import type { ExperienceRecord } from '@/types';
 
 type UploadPhase =
@@ -20,7 +21,7 @@ type UploadPhase =
   | { phase: 'ready'; record: ExperienceRecord }
   | { phase: 'error'; message: string };
 
-type GithubState = 'idle' | 'saving' | 'saved' | 'error';
+type GithubState = 'idle' | 'saving' | 'saved' | 'removing' | 'error';
 type SaveState = 'idle' | 'saving' | 'saved';
 
 export function ExperienceManager() {
@@ -77,6 +78,7 @@ export function ExperienceManager() {
         if (record.status === 'ready') {
           setUploadState({ phase: 'ready', record });
           if (record.github_username) setGithubUrl(record.github_username);
+          if (record.user_input_text) setDirectText(record.user_input_text);
         } else if (record.status === 'processing' || record.status === 'pending') {
           setUploadState({
             phase: 'processing',
@@ -183,17 +185,57 @@ export function ExperienceManager() {
     }
 
     setGithubState('saved');
+    toast.success('GitHub profile added');
 
     // Refetch experience so displayed profile summary updates
     const updated = await fetch('/api/experience').then(r => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
-  const handleDirectSave = (e: React.FormEvent) => {
+  const handleGithubRemove = async () => {
+    setGithubState('removing');
+
+    const res = await fetch('/api/experience/github', { method: 'DELETE' });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.detail ?? `Failed to remove (${res.status})`);
+      setGithubState('idle');
+      return;
+    }
+
+    setGithubUrl('');
+    setGithubState('idle');
+    toast.success('GitHub profile removed');
+
+    const updated = await fetch('/api/experience').then(r => r.json());
+    if (updated) setUploadState({ phase: 'ready', record: updated });
+  };
+
+  const handleDirectSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!directText.trim()) return;
+
     setDirectState('saving');
-    setTimeout(() => setDirectState('saved'), 800);
+
+    const res = await fetch('/api/experience/user-input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: directText }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.detail ?? `Failed to save (${res.status})`);
+      setDirectState('idle');
+      return;
+    }
+
+    setDirectState('saved');
+    toast.success('Additional context saved');
+
+    const updated = await fetch('/api/experience').then(r => r.json());
+    if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
   const renderResumeContent = () => {
@@ -319,33 +361,61 @@ export function ExperienceManager() {
           <div className="flex items-center gap-2">
             <Github className="h-4 w-4 text-text-tertiary" />
             <h2 className="text-sm font-medium text-text-primary">GitHub Profile</h2>
-            {githubState === 'saved' && (
-              <span className="text-xs text-success ml-auto">Profile updated</span>
-            )}
           </div>
-          <form onSubmit={handleGithubSave} className="flex gap-2">
-            <Input
-              type="text"
-              value={githubUrl}
-              onChange={(e) => {
-                setGithubUrl(e.target.value);
-                setGithubState('idle');
-                setGithubError(null);
-              }}
-              placeholder="https://github.com/username or username"
-            />
-            <Button
-              type="submit"
-              variant="outline"
-              size="sm"
-              disabled={!githubUrl.trim() || githubState === 'saving'}
-              className="flex-shrink-0"
-            >
-              {githubState === 'saving' ? 'Saving…' : 'Save'}
-            </Button>
-          </form>
-          {githubState === 'error' && githubError && (
-            <p className="text-xs text-error">{githubError}</p>
+          {uploadState.phase === 'ready' && uploadState.record.github_username ? (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
+              <CheckCircle className="h-4 w-4 text-success flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-text-primary truncate">
+                  {uploadState.record.github_username}
+                </p>
+                <p className="text-xs text-text-tertiary mt-0.5">
+                  {uploadState.record.github_repos?.length ?? 0} repos imported
+                </p>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <button
+                  onClick={() => setGithubState('idle')}
+                  className="text-xs text-text-tertiary hover:text-text-secondary"
+                >
+                  Change
+                </button>
+                <button
+                  onClick={handleGithubRemove}
+                  disabled={githubState === 'removing'}
+                  className="text-xs text-text-tertiary hover:text-error disabled:opacity-50"
+                >
+                  {githubState === 'removing' ? 'Removing…' : 'Remove'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <form onSubmit={handleGithubSave} className="flex gap-2">
+                <Input
+                  type="text"
+                  value={githubUrl}
+                  onChange={(e) => {
+                    setGithubUrl(e.target.value);
+                    setGithubState('idle');
+                    setGithubError(null);
+                  }}
+                  placeholder="https://github.com/username or username"
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  disabled={!githubUrl.trim() || githubState === 'saving'}
+                  className="flex-shrink-0"
+                >
+                  {githubState === 'saving' ? 'Saving…' : 'Save'}
+                </Button>
+              </form>
+              {githubState === 'error' && githubError && (
+                <p className="text-xs text-error">{githubError}</p>
+              )}
+            </>
           )}
         </section>
 

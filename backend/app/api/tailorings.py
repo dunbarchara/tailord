@@ -9,7 +9,7 @@ from app.core.deps_user import get_current_user
 from app.core.extract import extract_markdown_content
 from app.core.mvp_llm import extract_job, generate_tailoring
 from app.core.playwright_helper import get_rendered_content
-from app.models.database import Job, Tailoring, User
+from app.models.database import Experience, Job, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate, TailoringListItem, TailoringResponse
 
 router = APIRouter()
@@ -23,8 +23,11 @@ async def create_tailoring(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    experience = user.experience
-    if not experience or experience.status != "ready" or not experience.extracted_profile:
+    experience = db.query(Experience).filter(
+        Experience.user_id == user.id,
+        Experience.status == "ready",
+    ).first()
+    if not experience or not experience.extracted_profile:
         raise HTTPException(
             status_code=422,
             detail="No experience found — upload a resume or add a GitHub profile first.",
