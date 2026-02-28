@@ -12,12 +12,6 @@ const gfsDidot = GFS_Didot({
 export const metadata: Metadata = {
   title: 'Tailord',
   description: 'Let Tailord showcase your relevant experience.',
-  icons: {
-    icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico' },
-    ],
-  },
 };
 
 export default function RootLayout({
