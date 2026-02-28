@@ -5,7 +5,7 @@ from app.auth import require_api_key
 from app.core.deps_user import get_current_user
 
 from sqlalchemy.orm import Session
-from app.models.database import Job, Resume, User
+from app.models.database import Experience, Job, User
 from app.core.deps_database import get_db
 
 router = APIRouter()
@@ -22,15 +22,15 @@ def generate(
         Job.user_id == user.id,
     ).first()
 
-    resume = db.query(Resume).filter(
-        Resume.user_id == user.id,
-        Resume.status == "ready",
+    experience = db.query(Experience).filter(
+        Experience.user_id == user.id,
+        Experience.status == "ready",
     ).first()
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if not resume or not resume.extracted_profile:
-        raise HTTPException(status_code=404, detail="No processed resume found — upload and process a resume first")
+    if not experience or not experience.extracted_profile:
+        raise HTTPException(status_code=404, detail="No experience found — upload a resume or add a GitHub profile first")
 
-    content = generate_match(resume.extracted_profile, job.extracted_job)
+    content = generate_match(experience.extracted_profile, job.extracted_job)
     return {"content": content}

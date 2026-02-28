@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from app.clients.llm_client import get_llm_client
 from app.clients.s3_client import download_file_bytes
 from app.config import settings
-from app.models.database import Resume
+from app.models.database import Experience
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +68,9 @@ def extract_profile(text: str) -> dict:
     return json.loads(content)
 
 
-def process_resume(resume_id: uuid.UUID, s3_key: str, filename: str) -> None:
+def process_experience(experience_id: uuid.UUID, s3_key: str, filename: str) -> None:
     """
-    Background task: download resume from S3, extract text, run LLM extraction,
+    Background task: download file from S3, extract text, run LLM extraction,
     persist structured profile to DB. Creates its own DB session (request session
     is closed by the time background tasks run).
     """
@@ -78,29 +78,29 @@ def process_resume(resume_id: uuid.UUID, s3_key: str, filename: str) -> None:
 
     db = SessionLocal()
     try:
-        resume = db.get(Resume, resume_id)
-        if not resume:
-            logger.error(f"Resume {resume_id} not found for processing")
+        experience = db.get(Experience, experience_id)
+        if not experience:
+            logger.error(f"Experience {experience_id} not found for processing")
             return
 
         try:
-            resume.status = "processing"
+            experience.status = "processing"
             db.commit()
 
             file_bytes = download_file_bytes(s3_key)
             text = extract_text(file_bytes, filename)
             profile = extract_profile(text)
 
-            resume.extracted_profile = profile
-            resume.status = "ready"
-            resume.processed_at = datetime.now(timezone.utc)
+            experience.extracted_profile = profile
+            experience.status = "ready"
+            experience.processed_at = datetime.now(timezone.utc)
             db.commit()
-            logger.info(f"Resume {resume_id} processed successfully")
+            logger.info(f"Experience {experience_id} processed successfully")
 
         except Exception as e:
-            logger.exception(f"Failed to process resume {resume_id}: {e}")
-            resume.status = "error"
-            resume.error_message = str(e)
+            logger.exception(f"Failed to process experience {experience_id}: {e}")
+            experience.status = "error"
+            experience.error_message = str(e)
             db.commit()
 
     finally:

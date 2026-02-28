@@ -19,8 +19,8 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    resume: Mapped["Resume | None"] = relationship(
-        "Resume", back_populates="user", uselist=False
+    experience: Mapped["Experience | None"] = relationship(
+        "Experience", back_populates="user", uselist=False
     )
     jobs: Mapped[list["Job"]] = relationship("Job", back_populates="user")
     tailorings: Mapped[list["Tailoring"]] = relationship(
@@ -28,8 +28,8 @@ class User(Base):
     )
 
 
-class Resume(Base):
-    __tablename__ = "resumes"
+class Experience(Base):
+    __tablename__ = "experiences"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -37,12 +37,14 @@ class Resume(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), unique=True
     )
-    s3_key: Mapped[str] = mapped_column(String)
-    filename: Mapped[str] = mapped_column(String)
+    s3_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    filename: Mapped[str | None] = mapped_column(String, nullable=True)
     # status: pending | processing | ready | error
     status: Mapped[str] = mapped_column(String, default="pending")
     extracted_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    github_username: Mapped[str | None] = mapped_column(String, nullable=True)
+    github_repos: Mapped[list | None] = mapped_column(JSON, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -50,7 +52,7 @@ class Resume(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="resume")
+    user: Mapped["User"] = relationship("User", back_populates="experience")
 
 
 class Job(Base):

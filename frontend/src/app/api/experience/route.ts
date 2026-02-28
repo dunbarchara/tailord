@@ -17,12 +17,12 @@ export async function GET() {
   const user = await getUserContext()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  return proxyToBackendWithUser('resume', user, { method: 'GET' })
+  return proxyToBackendWithUser('experience', user, { method: 'GET' })
 }
 
 export async function DELETE() {
   const user = await getUserContext()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  return proxyToBackendWithUser('resume', user, { method: 'DELETE' })
+  return proxyToBackendWithUser('experience', user, { method: 'DELETE' })
 }

@@ -14,7 +14,7 @@ export interface TailoringListItem {
   created_at: string
 }
 
-export interface Experience {
+export interface ExperienceInput {
   resumeText?: string
   githubRepos?: string[]
   manualEntries?: string[]
@@ -24,7 +24,7 @@ export interface UserProfile {
   id: string
   email: string
   name?: string
-  experience?: Experience
+  experience?: ExperienceInput
   tailorings?: Tailoring[]
 }
 
@@ -41,7 +41,7 @@ export interface ApiError {
   status: number
 }
 
-export type ResumeStatus = 'pending' | 'processing' | 'ready' | 'error'
+export type ExperienceStatus = 'pending' | 'processing' | 'ready' | 'error'
 
 export interface ExtractedProfile {
   summary: string
@@ -68,12 +68,14 @@ export interface ExtractedProfile {
   certifications: string[]
 }
 
-export interface ResumeRecord {
+export interface ExperienceRecord {
   id: string
-  filename: string
-  status: ResumeStatus
+  filename: string | null
+  status: ExperienceStatus
   extracted_profile: ExtractedProfile | null
   error_message: string | null
+  github_username: string | null
+  github_repos: object[] | null
   uploaded_at: string | null
   processed_at: string | null
 }

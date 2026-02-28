@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api import parse, job, generate, users, resume, tailorings
+from app.api import parse, job, generate, users, experience, tailorings
 from app.config import settings
 from app.logging import setup_logging
 from app.clients.llm_client import validate_llm_config
@@ -21,7 +21,7 @@ def create_app() -> FastAPI:
     app.include_router(job.router)
     app.include_router(generate.router)
     app.include_router(users.router)
-    app.include_router(resume.router)
+    app.include_router(experience.router)
     app.include_router(tailorings.router)
     return app
 

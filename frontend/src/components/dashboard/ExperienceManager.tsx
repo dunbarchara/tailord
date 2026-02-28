@@ -11,21 +11,23 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { ResumeRecord } from '@/types';
+import type { ExperienceRecord } from '@/types';
 
 type UploadPhase =
   | { phase: 'idle' }
   | { phase: 'uploading'; filename: string }
-  | { phase: 'processing'; filename: string; resumeId: string }
-  | { phase: 'ready'; record: ResumeRecord }
+  | { phase: 'processing'; filename: string; experienceId: string }
+  | { phase: 'ready'; record: ExperienceRecord }
   | { phase: 'error'; message: string };
 
+type GithubState = 'idle' | 'saving' | 'saved' | 'error';
 type SaveState = 'idle' | 'saving' | 'saved';
 
 export function ExperienceManager() {
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'idle' });
   const [githubUrl, setGithubUrl] = useState('');
-  const [githubState, setGithubState] = useState<SaveState>('idle');
+  const [githubState, setGithubState] = useState<GithubState>('idle');
+  const [githubError, setGithubError] = useState<string | null>(null);
   const [directText, setDirectText] = useState('');
   const [directState, setDirectState] = useState<SaveState>('idle');
 
@@ -43,9 +45,9 @@ export function ExperienceManager() {
     stopPolling();
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch('/api/resume');
+        const res = await fetch('/api/experience');
         if (!res.ok) return;
-        const record: ResumeRecord | null = await res.json();
+        const record: ExperienceRecord | null = await res.json();
         if (!record) return;
         if (record.status === 'ready') {
           stopPolling();
@@ -67,18 +69,19 @@ export function ExperienceManager() {
   useEffect(() => {
     async function loadInitialState() {
       try {
-        const res = await fetch('/api/resume');
+        const res = await fetch('/api/experience');
         if (!res.ok) return;
-        const record: ResumeRecord | null = await res.json();
+        const record: ExperienceRecord | null = await res.json();
         if (!record) return;
 
         if (record.status === 'ready') {
           setUploadState({ phase: 'ready', record });
+          if (record.github_username) setGithubUrl(record.github_username);
         } else if (record.status === 'processing' || record.status === 'pending') {
           setUploadState({
             phase: 'processing',
-            filename: record.filename,
-            resumeId: record.id,
+            filename: record.filename ?? '',
+            experienceId: record.id,
           });
           startPolling();
         } else if (record.status === 'error') {
@@ -105,7 +108,7 @@ export function ExperienceManager() {
 
     try {
       // Step 1: Get presigned S3 PUT URL
-      const urlRes = await fetch('/api/resume/upload-url', {
+      const urlRes = await fetch('/api/experience/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name }),
@@ -116,7 +119,7 @@ export function ExperienceManager() {
         throw new Error(err.detail ?? `Failed to get upload URL (${urlRes.status})`);
       }
 
-      const { upload_url, s3_key, resume_id } = await urlRes.json();
+      const { upload_url, s3_key, experience_id } = await urlRes.json();
 
       // Step 2: Upload file bytes directly to S3 (no auth headers — presigned URL handles that)
       const uploadRes = await fetch(upload_url, {
@@ -130,12 +133,12 @@ export function ExperienceManager() {
       }
 
       // Step 3: Trigger backend processing
-      setUploadState({ phase: 'processing', filename: file.name, resumeId: resume_id });
+      setUploadState({ phase: 'processing', filename: file.name, experienceId: experience_id });
 
-      await fetch('/api/resume/process', {
+      await fetch('/api/experience/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ s3_key, resume_id }),
+        body: JSON.stringify({ s3_key, experience_id }),
       });
 
       // Step 4: Poll until ready or error
@@ -148,16 +151,42 @@ export function ExperienceManager() {
 
   const handleRemove = async () => {
     stopPolling();
-    await fetch('/api/resume', { method: 'DELETE' }).catch(() => {});
+    await fetch('/api/experience', { method: 'DELETE' }).catch(() => {});
     setUploadState({ phase: 'idle' });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleGithubSave = (e: React.FormEvent) => {
+  function parseGithubUsername(input: string): string {
+    const match = input.match(/github\.com\/([^/]+)/);
+    return match ? match[1] : input.trim();
+  }
+
+  const handleGithubSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!githubUrl.trim()) return;
+    const username = parseGithubUsername(githubUrl);
+    if (!username) return;
+
     setGithubState('saving');
-    setTimeout(() => setGithubState('saved'), 800);
+    setGithubError(null);
+
+    const res = await fetch('/api/experience/github', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ github_username: username }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setGithubError(err.detail ?? `Error ${res.status}`);
+      setGithubState('error');
+      return;
+    }
+
+    setGithubState('saved');
+
+    // Refetch experience so displayed profile summary updates
+    const updated = await fetch('/api/experience').then(r => r.json());
+    if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
   const handleDirectSave = (e: React.FormEvent) => {
@@ -291,18 +320,19 @@ export function ExperienceManager() {
             <Github className="h-4 w-4 text-text-tertiary" />
             <h2 className="text-sm font-medium text-text-primary">GitHub Profile</h2>
             {githubState === 'saved' && (
-              <span className="text-xs text-success ml-auto">Saved</span>
+              <span className="text-xs text-success ml-auto">Profile updated</span>
             )}
           </div>
           <form onSubmit={handleGithubSave} className="flex gap-2">
             <Input
-              type="url"
+              type="text"
               value={githubUrl}
               onChange={(e) => {
                 setGithubUrl(e.target.value);
                 setGithubState('idle');
+                setGithubError(null);
               }}
-              placeholder="https://github.com/username"
+              placeholder="https://github.com/username or username"
             />
             <Button
               type="submit"
@@ -314,6 +344,9 @@ export function ExperienceManager() {
               {githubState === 'saving' ? 'Saving…' : 'Save'}
             </Button>
           </form>
+          {githubState === 'error' && githubError && (
+            <p className="text-xs text-error">{githubError}</p>
+          )}
         </section>
 
         {/* Direct input */}

@@ -23,11 +23,11 @@ async def create_tailoring(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = user.resume
-    if not resume or resume.status != "ready" or not resume.extracted_profile:
+    experience = user.experience
+    if not experience or experience.status != "ready" or not experience.extracted_profile:
         raise HTTPException(
             status_code=422,
-            detail="No resume found — upload and process a resume first.",
+            detail="No experience found — upload a resume or add a GitHub profile first.",
         )
 
     # Scrape and extract job data
@@ -57,7 +57,7 @@ async def create_tailoring(
     candidate_name = user.name or user.email
     try:
         generated_output = generate_tailoring(
-            resume.extracted_profile,
+            experience.extracted_profile,
             extracted_job,
             candidate_name,
         )
