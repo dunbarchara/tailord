@@ -1,152 +1,95 @@
 'use client';
 
-import { useState } from 'react';
-import { Copy, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { Tailoring } from '@/types';
 
 interface TailoringDetailProps {
   tailoringId: string;
 }
 
-// Placeholder — replace with real fetch when backend is wired
-const mockTailoring = {
-  id: '1',
-  jobTitle: 'Senior Frontend Engineer',
-  company: 'TechCorp',
-  url: 'https://techcorp.com/careers/senior-frontend',
-  createdAt: '2 days ago',
-  matchScore: 94,
-  analysis: {
-    strengths: [
-      'Strong React experience (5 years)',
-      'Leadership in component library development',
-      'Experience with TypeScript and modern build tools',
-      'Track record of performance optimization',
-    ],
-    gaps: [
-      'Limited GraphQL experience (they use it extensively)',
-      'No mention of WebGL (nice-to-have for their data viz)',
-    ],
-    recommendations: [
-      'Highlight your component library work in the opening',
-      'Emphasize scalability achievements from previous roles',
-      'Mention your quick learning ability for GraphQL',
-    ],
-  },
-  coverLetter: `Dear Hiring Manager,
-
-I am writing to express my strong interest in the Senior Frontend Engineer position at TechCorp. With over 5 years of specialized experience in React development and a proven track record of building scalable component systems, I am confident I would be a valuable addition to your team.
-
-Best regards,
-John Doe`,
-};
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
+  const [tailoring, setTailoring] = useState<Tailoring | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`/api/tailorings/${tailoringId}`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data?.detail ?? data?.error ?? 'Failed to load tailoring.');
+          return;
+        }
+        setTailoring(await res.json());
+      } catch {
+        setError('Could not reach the server.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [tailoringId]);
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(mockTailoring.coverLetter);
+    if (!tailoring) return;
+    navigator.clipboard.writeText(tailoring.generated_output);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-brand-primary" />
+      </div>
+    );
+  }
+
+  if (error || !tailoring) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex items-center gap-2 text-text-secondary">
+          <AlertCircle className="h-5 w-5 text-error" />
+          <span className="text-sm">{error ?? 'Tailoring not found.'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const createdDate = new Date(tailoring.created_at).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
-      <div className="max-w-3xl mx-auto p-6 lg:p-8 space-y-8">
+      <div className="max-w-3xl mx-auto p-6 lg:p-8 space-y-6">
         {/* Header */}
-        <div className="space-y-3">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-semibold text-text-primary truncate">
-                {mockTailoring.jobTitle}
-              </h1>
-              <p className="text-text-secondary mt-1">
-                {mockTailoring.company} · {mockTailoring.createdAt}
-              </p>
-            </div>
-            <Button variant="outline" size="sm" asChild>
-              <a href={mockTailoring.url} target="_blank" rel="noopener noreferrer" className="gap-2">
-                <ExternalLink className="h-4 w-4" />
-                View Posting
-              </a>
-            </Button>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-semibold text-text-primary truncate">
+              {tailoring.title ?? 'Tailoring'}
+            </h1>
+            <p className="text-text-secondary mt-1">
+              {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
+            </p>
           </div>
-
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-success-bg border border-success/20">
-            <Sparkles className="h-4 w-4 text-success" />
-            <span className="text-sm font-medium text-text-primary">{mockTailoring.matchScore}% match</span>
-          </div>
-        </div>
-
-        {/* Analysis */}
-        <div className="space-y-4">
-          <h2 className="text-base font-semibold text-text-primary">Analysis</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                  <div className="h-2 w-2 rounded-full bg-success" />
-                  Strengths
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {mockTailoring.analysis.strengths.map((strength, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                      <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0 mt-0.5" />
-                      {strength}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                  <div className="h-2 w-2 rounded-full bg-warning" />
-                  Gaps
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {mockTailoring.analysis.gaps.map((gap, i) => (
-                    <li key={i} className="text-sm text-text-secondary">· {gap}</li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Recommendations</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-2">
-                {mockTailoring.analysis.recommendations.map((rec, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                    <span className="text-brand-primary mt-0.5 flex-shrink-0">→</span>
-                    {rec}
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Cover Letter */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-text-primary">Cover Letter</h2>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopy}
-              className="gap-2"
-            >
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {tailoring.job_url && (
+              <Button variant="outline" size="sm" asChild>
+                <a href={tailoring.job_url} target="_blank" rel="noopener noreferrer" className="gap-2">
+                  <ExternalLink className="h-4 w-4" />
+                  View Posting
+                </a>
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={handleCopy} className="gap-2">
               {copied ? (
                 <><CheckCircle2 className="h-4 w-4 text-success" />Copied</>
               ) : (
@@ -154,13 +97,16 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               )}
             </Button>
           </div>
-          <Card>
-            <CardContent className="pt-6">
-              <pre className="whitespace-pre-wrap font-sans text-sm text-text-secondary leading-relaxed">
-                {mockTailoring.coverLetter}
-              </pre>
-            </CardContent>
-          </Card>
+        </div>
+
+        {/* Generated document */}
+        <div className="prose prose-sm max-w-none text-text-primary
+          prose-headings:text-text-primary prose-headings:font-semibold
+          prose-p:text-text-secondary prose-p:leading-relaxed
+          prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs
+          prose-strong:text-text-primary
+          prose-hr:border-border-subtle">
+          <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
         </div>
       </div>
     </div>

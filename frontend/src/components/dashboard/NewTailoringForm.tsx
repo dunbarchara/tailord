@@ -1,33 +1,47 @@
 'use client';
 
 import { useState } from 'react';
-import { Link2, Sparkles, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Link2, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 
-type ProcessingState = 'idle' | 'processing' | 'success' | 'error';
+type ProcessingState = 'idle' | 'processing' | 'error';
 
 export function NewTailoringForm() {
+  const router = useRouter();
   const [url, setUrl] = useState('');
   const [state, setState] = useState<ProcessingState>('idle');
-  const [tailoringId, setTailoringId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
     setState('processing');
-    // TODO: POST to /api/parse then /api/generate
-    setTimeout(() => {
-      setTailoringId(Math.random().toString(36).substring(7));
-      setState('success');
-    }, 3000);
-  };
+    setErrorMessage('');
 
-  const resetForm = () => {
-    setUrl('');
-    setState('idle');
-    setTailoringId(null);
+    try {
+      const res = await fetch('/api/tailorings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_url: url }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const detail = data?.detail ?? data?.error ?? 'Something went wrong.';
+        setErrorMessage(detail);
+        setState('error');
+        return;
+      }
+
+      const tailoring = await res.json();
+      router.push(`/dashboard/tailorings/${tailoring.id}`);
+    } catch {
+      setErrorMessage('Could not reach the server. Please try again.');
+      setState('error');
+    }
   };
 
   return (
@@ -65,29 +79,8 @@ export function NewTailoringForm() {
           {state === 'processing' && (
             <div className="flex items-center gap-2 text-sm text-text-secondary animate-fade-in">
               <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />
-              Analyzing job posting…
+              Analyzing job posting… this takes 15–25 seconds
             </div>
-          )}
-
-          {state === 'success' && tailoringId && (
-            <Card className="border-success/30 bg-success-bg animate-fade-in">
-              <CardContent className="pt-4 pb-4">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-text-primary">Tailoring created</p>
-                    <div className="flex gap-3 mt-3">
-                      <Button asChild size="sm">
-                        <a href={`/dashboard/tailorings/${tailoringId}`}>View Tailoring</a>
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={resetForm}>
-                        Create Another
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           )}
 
           {state === 'error' && (
@@ -96,33 +89,31 @@ export function NewTailoringForm() {
                 <div className="flex items-start gap-3">
                   <AlertCircle className="h-5 w-5 text-error flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-text-primary">Unable to process URL</p>
-                    <p className="text-sm text-text-secondary mt-1">Check the URL and try again.</p>
+                    <p className="text-sm font-medium text-text-primary">Unable to create tailoring</p>
+                    <p className="text-sm text-text-secondary mt-1">{errorMessage}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {state !== 'success' && (
-            <Button
-              type="submit"
-              disabled={!url.trim() || state === 'processing'}
-              className="gap-2"
-            >
-              {state === 'processing' ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Processing…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Create Tailoring
-                </>
-              )}
-            </Button>
-          )}
+          <Button
+            type="submit"
+            disabled={!url.trim() || state === 'processing'}
+            className="gap-2"
+          >
+            {state === 'processing' ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Processing…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Create Tailoring
+              </>
+            )}
+          </Button>
         </form>
       </div>
     </div>

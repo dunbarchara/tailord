@@ -3,13 +3,13 @@ import { TailoringDetail } from '@/components/dashboard/TailoringDetail';
 export default async function TailoringPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ tailoringId: string }>;
 }) {
-  const { id } = await params;
-  
+  const { tailoringId } = await params;
+
   return (
     <div className="h-full">
-      <TailoringDetail tailoringId={id} />
+      <TailoringDetail tailoringId={tailoringId} />
     </div>
   );
 }
