@@ -141,6 +141,24 @@ def extract_job(job_posting_markdown) -> dict:
     return json.loads(_strip_json_fences(content_job))
 
 
+def _format_sourced_profile(sourced_profile: dict) -> str:
+    """Format a source-keyed profile dict into labeled blocks for LLM context."""
+    source_labels = {
+        "resume": "Resume",
+        "github": "GitHub",
+        "user_input": "Direct Input",
+    }
+    sections = []
+    for key, label in source_labels.items():
+        if data := sourced_profile.get(key):
+            sections.append(f"[Source: {label}]\n{json.dumps(data, indent=2)}")
+    # Include any unknown keys without a label, so future sources aren't silently dropped
+    for key, data in sourced_profile.items():
+        if key not in source_labels:
+            sections.append(f"[Source: {key}]\n{json.dumps(data, indent=2)}")
+    return "\n\n".join(sections) if sections else json.dumps(sourced_profile, indent=2)
+
+
 TAILORING_SYSTEM_PROMPT = """
 You are Tailord, an AI that writes sourced advocacy documents on behalf of job candidates.
 
@@ -151,12 +169,13 @@ Rules:
 - This is NOT a cover letter. Do not use cover letter format or salutations.
 - Return valid Markdown only. No preamble, no meta-commentary.
 - Include 3–5 fit claims. Each claim gets its own ## section with an evidence citation.
+- In each citation, identify both the source type (Resume / GitHub / Direct Input) and the specific detail.
 """
 
 TAILORING_USER_PROMPT = """
 Write a sourced candidate advocacy document for {candidate_name} applying to {job_title} at {company}.
 
-CANDIDATE PROFILE:
+CANDIDATE PROFILE (grouped by input source):
 {extracted_profile}
 
 JOB REQUIREMENTS:
@@ -174,7 +193,7 @@ Output format (Markdown):
 
 [2–3 sentences making the sourced case.]
 
-*From: [Role or Project Name, timeframe if available]*
+*Source: [Resume / GitHub / Direct Input] — [specific role, project, or repo]*
 
 ## [Specific Fit Claim 2]
 
@@ -192,7 +211,7 @@ def generate_tailoring(extracted_profile: dict, extracted_job: dict, candidate_n
         candidate_name=candidate_name,
         job_title=job_title,
         company=company,
-        extracted_profile=json.dumps(extracted_profile, indent=2),
+        extracted_profile=_format_sourced_profile(extracted_profile),
         extracted_job=json.dumps(extracted_job, indent=2),
     )
 

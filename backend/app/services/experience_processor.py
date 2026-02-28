@@ -91,7 +91,7 @@ def process_experience(experience_id: uuid.UUID, s3_key: str, filename: str) -> 
             text = extract_text(file_bytes, filename)
             profile = extract_profile(text)
 
-            experience.extracted_profile = profile
+            experience.extracted_profile = {"resume": profile}
             experience.status = "ready"
             experience.processed_at = datetime.now(timezone.utc)
             db.commit()

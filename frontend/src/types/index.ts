@@ -43,6 +43,18 @@ export interface ApiError {
 
 export type ExperienceStatus = 'pending' | 'processing' | 'ready' | 'error'
 
+export interface GitHubRepo {
+  name: string
+  description: string | null
+  language: string | null
+}
+
+export interface SourcedProfile {
+  resume?: ExtractedProfile
+  github?: { repos: GitHubRepo[] }
+  user_input?: { text: string }
+}
+
 export interface ExtractedProfile {
   summary: string
   work_experience: Array<{
@@ -72,7 +84,7 @@ export interface ExperienceRecord {
   id: string
   filename: string | null
   status: ExperienceStatus
-  extracted_profile: ExtractedProfile | null
+  extracted_profile: SourcedProfile | null
   error_message: string | null
   github_username: string | null
   github_repos: object[] | null

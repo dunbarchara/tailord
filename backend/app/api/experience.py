@@ -172,8 +172,8 @@ def set_github(
     if experience:
         experience.github_username = body.github_username
         experience.github_repos = repos
-        if experience.extracted_profile:
-            experience.extracted_profile = {**experience.extracted_profile, "github_repos": repos}
+        profile = experience.extracted_profile or {}
+        experience.extracted_profile = {**profile, "github": {"repos": repos}}
         experience.processed_at = datetime.now(timezone.utc)
         if experience.status not in ("ready", "processing"):
             experience.status = "ready"
@@ -185,7 +185,7 @@ def set_github(
             status="ready",
             github_username=body.github_username,
             github_repos=repos,
-            extracted_profile={"github_repos": repos},
+            extracted_profile={"github": {"repos": repos}},
             processed_at=datetime.now(timezone.utc),
         )
         db.add(experience)
