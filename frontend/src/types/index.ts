@@ -1,11 +1,17 @@
 export interface Tailoring {
   id: string
-  jobTitle: string
-  company: string
-  jobDescription: string
-  generatedOutput: string
-  createdAt: string
-  updatedAt: string
+  title: string | null
+  company: string | null
+  job_url: string
+  generated_output: string
+  created_at: string
+}
+
+export interface TailoringListItem {
+  id: string
+  title: string | null
+  company: string | null
+  created_at: string
 }
 
 export interface Experience {

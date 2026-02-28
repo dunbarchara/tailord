@@ -28,13 +28,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import type { Tailoring } from '@/types';
+import type { TailoringListItem } from '@/types';
 
 interface SidebarProps {
-  tailorings?: Pick<Tailoring, 'id' | 'jobTitle' | 'company'>[];
+  tailorings?: TailoringListItem[];
 }
 
-interface SidebarContentProps extends SidebarProps {
+interface SidebarContentProps {
+  tailorings: TailoringListItem[];
   pathname: string | null;
 }
 
@@ -42,7 +43,7 @@ const navItems = [
   { href: '/dashboard/experience', icon: Briefcase, label: 'My Experience' },
 ];
 
-function SidebarContent({ tailorings = [], pathname }: SidebarContentProps) {
+function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
   const { darkMode, setDarkMode } = useTheme();
   const { data: session } = useSession();
 
@@ -118,8 +119,8 @@ function SidebarContent({ tailorings = [], pathname }: SidebarContentProps) {
                 >
                   <FileText className="h-4 w-4 mt-0.5 flex-shrink-0 text-text-tertiary" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium leading-tight">{tailoring.jobTitle}</p>
-                    <p className="truncate text-xs text-text-tertiary mt-0.5">{tailoring.company}</p>
+                    <p className="truncate text-sm font-medium leading-tight">{tailoring.title ?? 'Untitled'}</p>
+                    <p className="truncate text-xs text-text-tertiary mt-0.5">{tailoring.company ?? ''}</p>
                   </div>
                 </Link>
               );

@@ -8,6 +8,16 @@ logger = logging.getLogger(__name__)
 
 llm_temperature = 0.2
 
+
+def _strip_json_fences(text: str) -> str:
+    """Remove markdown code fences that small LLMs emit despite instructions."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text[text.index("\n") + 1:]  # drop opening fence line
+    if text.endswith("```"):
+        text = text[: text.rfind("```")]
+    return text.strip()
+
 SEMANTIC_SYSTEM_PROMPT_PROFILE = """
 You are an AI expert in extracting structured software engineer profile data. Return only a JSON object matching the canonical schema.
 
@@ -48,7 +58,7 @@ Return JSON with:
     content_profile = resp.choices[0].message.content
     logger.debug(f"\n\n===== LLM RESPONSE - PROFILE ({settings.llm_model}) ({llm_temperature}) =====\n" + str(content_profile))
 
-    return json.loads(content_profile)
+    return json.loads(_strip_json_fences(content_profile))
 
 
 
@@ -74,12 +84,17 @@ Technical skills:
 - Do not generalize; extract exact names even outside Skills sections.
 - Deduplicate while preserving capitalization.
 
+
+!! YOUR RESPONSE MUST BE VALID JSON ONLY !!
+!! DO NOT RETURN CODE FENCES !!
+!! DO NOT INCLUDE '```json' IN YOUR RESPONSE !!
 """
 
 SEMANTIC_USER_PROMPT_JOB = """
 Extract job data from the following job posting in JSON matching this schema:
 
 {
+  "company": string|null,
   "title": string|null,
   "responsibilities": string[],
   "requirements": {"required":string[],"preferred":string[]},
@@ -93,11 +108,17 @@ ___JOB_MARKDOWN___
 ```
 
 Instructions:
-- Return JSON matching the schema; null or [] for missing fields.
-- Do not add extra fields or explanations.
+- Return ONLY valid JSON. Do NOT use markdown, backticks, or code fences.
+- Do not add explanations, comments, or extra text.
+- Include all fields exactly as in the schema.
+- Use null for missing string fields, [] for missing lists.
 - Normalize skills and responsibilities for clarity.
-- Treat markdown headings as section titles and bullets as items.
-- Include all technologies/tools mentioned in the correct skill sections.
+- Classify requirements and skills according to section headings and phrasing.
+- End output exactly at the closing brace of the JSON object.
+
+!! YOUR RESPONSE MUST BE VALID JSON ONLY !!
+!! DO NOT RETURN CODE FENCES !!
+!! DO NOT INCLUDE '```json' IN YOUR RESPONSE !!
 """
 
 
@@ -117,7 +138,78 @@ def extract_job(job_posting_markdown) -> dict:
     content_job = resp.choices[0].message.content
     logger.debug(f"\n\n===== LLM RESPONSE - JOB ({settings.llm_model}) ({llm_temperature}) =====\n" + str(content_job))
 
-    return json.loads(content_job)
+    return json.loads(_strip_json_fences(content_job))
+
+
+TAILORING_SYSTEM_PROMPT = """
+You are Tailord, an AI that writes sourced advocacy documents on behalf of job candidates.
+
+Rules:
+- Write in third person throughout — you are advocating FOR the candidate, never impersonating them.
+- Every claim must be traceable to specific evidence in the candidate's profile. If you cannot source a claim, omit it.
+- Address the document to the hiring company — make it specific to this role and organization.
+- This is NOT a cover letter. Do not use cover letter format or salutations.
+- Return valid Markdown only. No preamble, no meta-commentary.
+- Include 3–5 fit claims. Each claim gets its own ## section with an evidence citation.
+"""
+
+TAILORING_USER_PROMPT = """
+Write a sourced candidate advocacy document for {candidate_name} applying to {job_title} at {company}.
+
+CANDIDATE PROFILE:
+{extracted_profile}
+
+JOB REQUIREMENTS:
+{extracted_job}
+
+Output format (Markdown):
+
+# {candidate_name} — Application for {job_title} at {company}
+
+## Why {company} should talk to {candidate_name}
+
+[Opening paragraph: compelling third-person case for this candidate in this role. No generic filler.]
+
+## [Specific Fit Claim 1 — e.g., "Production-scale React leadership"]
+
+[2–3 sentences making the sourced case.]
+
+*From: [Role or Project Name, timeframe if available]*
+
+## [Specific Fit Claim 2]
+
+...
+
+*(3–5 claims total. Only include a claim if it can be sourced from the profile.)*
+"""
+
+
+def generate_tailoring(extracted_profile: dict, extracted_job: dict, candidate_name: str) -> str:
+    company = extracted_job.get("company") or "the company"
+    job_title = extracted_job.get("title") or "this role"
+
+    prompt = TAILORING_USER_PROMPT.format(
+        candidate_name=candidate_name,
+        job_title=job_title,
+        company=company,
+        extracted_profile=json.dumps(extracted_profile, indent=2),
+        extracted_job=json.dumps(extracted_job, indent=2),
+    )
+
+    client = get_llm_client()
+
+    resp = client.chat.completions.create(
+        model=settings.llm_model,
+        messages=[
+            {"role": "system", "content": TAILORING_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+    )
+
+    content = resp.choices[0].message.content
+    logger.debug(f"\n\n===== LLM RESPONSE - TAILORING ({settings.llm_model}) =====\n" + str(content))
+    return content
 
 
 def generate_match(profile, job):
