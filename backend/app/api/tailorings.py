@@ -85,6 +85,72 @@ async def create_tailoring(
     }
 
 
+@router.post("/tailorings/{tailoring_id}/regenerate")
+def regenerate_tailoring(
+    tailoring_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    experience = db.query(Experience).filter(
+        Experience.user_id == user.id,
+        Experience.status == "ready",
+    ).first()
+    if not experience or not experience.extracted_profile:
+        raise HTTPException(status_code=422, detail="No experience found.")
+
+    candidate_name = user.name or user.email
+    try:
+        generated_output = generate_tailoring(
+            experience.extracted_profile,
+            tailoring.job.extracted_job,
+            candidate_name,
+        )
+    except Exception as e:
+        logger.exception("Tailoring regeneration LLM failed")
+        raise HTTPException(status_code=502, detail=f"Tailoring generation failed: {e}")
+
+    tailoring.generated_output = generated_output
+    db.commit()
+    db.refresh(tailoring)
+
+    return {"id": str(tailoring.id), "generated_output": tailoring.generated_output}
+
+
+@router.delete("/tailorings/{tailoring_id}", status_code=204)
+def delete_tailoring(
+    tailoring_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    job_id = tailoring.job_id
+    db.delete(tailoring)
+    db.flush()  # satisfy FK before deleting job
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if job:
+        db.delete(job)
+
+    db.commit()
+
+
 @router.get("/tailorings/{tailoring_id}")
 def get_tailoring(
     tailoring_id: str,

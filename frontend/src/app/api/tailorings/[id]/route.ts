@@ -23,3 +23,23 @@ export async function GET(
   const { id } = await params
   return proxyToBackendWithUser(`tailorings/${id}`, user, { method: 'GET' })
 }
+
+export async function POST(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getUserContext()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { id } = await params
+  return proxyToBackendWithUser(`tailorings/${id}/regenerate`, user, { method: 'POST' })
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getUserContext()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { id } = await params
+  return proxyToBackendWithUser(`tailorings/${id}`, user, { method: 'DELETE' })
+}

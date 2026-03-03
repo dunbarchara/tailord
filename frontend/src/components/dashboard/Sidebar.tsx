@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from '@/components/ThemeProvider';
 import {
@@ -16,6 +16,7 @@ import {
   X,
   LogOut,
   ChevronsUpDown,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -28,6 +29,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { TailoringListItem } from '@/types';
 
 interface SidebarProps {
@@ -46,6 +55,23 @@ const navItems = [
 function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
   const { darkMode, setDarkMode } = useTheme();
   const { data: session } = useSession();
+  const router = useRouter();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete(id: string) {
+    setDeleting(true);
+    try {
+      await fetch(`/api/tailorings/${id}`, { method: 'DELETE' });
+    } finally {
+      setDeleting(false);
+      setConfirmDeleteId(null);
+      if (pathname === `/dashboard/tailorings/${id}`) {
+        router.push('/dashboard');
+      }
+      router.refresh();
+    }
+  }
 
   const isActive = (href: string) => pathname === href || Boolean(pathname?.startsWith(href));
 
@@ -107,27 +133,50 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
             {tailorings.map((tailoring) => {
               const active = pathname === `/dashboard/tailorings/${tailoring.id}`;
               return (
-                <Link
-                  key={tailoring.id}
-                  href={`/dashboard/tailorings/${tailoring.id}`}
-                  className={cn(
-                    'flex items-start gap-2 px-2 py-2 rounded-md text-sm transition-colors',
-                    active
-                      ? 'bg-surface-overlay text-text-primary'
-                      : 'text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
-                  )}
-                >
-                  <FileText className="h-4 w-4 mt-0.5 flex-shrink-0 text-text-tertiary" />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium leading-tight">{tailoring.title ?? 'Untitled'}</p>
-                    <p className="truncate text-xs text-text-tertiary mt-0.5">{tailoring.company ?? ''}</p>
-                  </div>
-                </Link>
+                <div key={tailoring.id} className="group relative">
+                  <Link
+                    href={`/dashboard/tailorings/${tailoring.id}`}
+                    className={cn(
+                      'flex items-start gap-2 px-2 py-2 pr-8 rounded-md text-sm transition-colors',
+                      active
+                        ? 'bg-surface-overlay text-text-primary'
+                        : 'text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
+                    )}
+                  >
+                    <FileText className="h-4 w-4 mt-0.5 flex-shrink-0 text-text-tertiary" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium leading-tight">{tailoring.title ?? 'Untitled'}</p>
+                      <p className="truncate text-xs text-text-tertiary mt-0.5">{tailoring.company ?? ''}</p>
+                    </div>
+                  </Link>
+                  <button
+                    onClick={(e) => { e.preventDefault(); setConfirmDeleteId(tailoring.id); }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-error"
+                    aria-label="Delete tailoring"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               );
             })}
           </div>
         )}
       </div>
+
+      <Dialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete tailoring?</DialogTitle>
+            <DialogDescription>This will permanently delete this tailoring and cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={deleting} onClick={() => confirmDeleteId && handleDelete(confirmDeleteId)}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bottom section */}
       <div className="px-3 pt-3 pb-3 border-t border-border-subtle">
