@@ -2,8 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { Tailoring } from '@/types';
 
 interface TailoringDetailProps {
@@ -15,6 +25,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -34,6 +46,26 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     }
     load();
   }, [tailoringId]);
+
+  async function handleRegenerate() {
+    setShowRegenConfirm(false);
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data?.detail ?? 'Regeneration failed.');
+        return;
+      }
+      const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
+      setTailoring(updated);
+      toast.success('Tailoring regenerated.');
+    } catch {
+      toast.error('Could not reach the server.');
+    } finally {
+      setRegenerating(false);
+    }
+  }
 
   const handleCopy = () => {
     if (!tailoring) return;
@@ -89,6 +121,12 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 </a>
               </Button>
             )}
+            <Button variant="outline" size="sm" onClick={() => setShowRegenConfirm(true)} disabled={regenerating} className="gap-2">
+              {regenerating
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RotateCcw className="h-4 w-4" />}
+              {regenerating ? 'Regenerating…' : 'Regenerate'}
+            </Button>
             <Button variant="outline" size="sm" onClick={handleCopy} className="gap-2">
               {copied ? (
                 <><CheckCircle2 className="h-4 w-4 text-success" />Copied</>
@@ -100,15 +138,33 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
 
         {/* Generated document */}
-        <div className="prose prose-sm max-w-none text-text-primary
-          prose-headings:text-text-primary prose-headings:font-semibold
-          prose-p:text-text-secondary prose-p:leading-relaxed
-          prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs
-          prose-strong:text-text-primary
-          prose-hr:border-border-subtle">
+        <div className={cn(
+          "prose prose-sm max-w-none text-text-primary",
+          "prose-headings:text-text-primary prose-headings:font-semibold",
+          "prose-p:text-text-secondary prose-p:leading-relaxed",
+          "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
+          "prose-strong:text-text-primary",
+          "prose-hr:border-border-subtle",
+          regenerating && "opacity-40 pointer-events-none"
+        )}>
           <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
         </div>
       </div>
+
+      <Dialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Regenerate tailoring?</DialogTitle>
+            <DialogDescription>
+              This will overwrite the current document with a freshly generated version. You can&apos;t undo this.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRegenConfirm(false)}>Cancel</Button>
+            <Button onClick={handleRegenerate}>Regenerate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

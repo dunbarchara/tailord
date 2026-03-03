@@ -53,21 +53,22 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 
 ---
 
-### Day 3 — Tailoring Regeneration + Delete
+### ✅ Day 3 — Tailoring Regeneration + Delete
 
 **Goal:** A tailoring is not a dead end. Users can regenerate it and delete ones they don't want.
 
 **Tasks:**
-- [ ] Add `POST /tailorings/{id}/regenerate` backend endpoint
+- [x] Add `POST /tailorings/{id}/regenerate` backend endpoint
   - Re-runs `generate_tailoring()` with the same `job_id` and current user experience
   - Replaces the existing `generated_output` in place (simpler than keeping history for MVP)
-- [ ] Add `DELETE /tailorings/{id}` backend endpoint
+- [x] Add `DELETE /tailorings/{id}` backend endpoint
   - Deletes the Tailoring and Job records for that tailoring
-- [ ] Add frontend API routes for both
-- [ ] In `TailoringDetail`: add "Regenerate" button with confirmation (it overwrites)
-  - Show loading state — regeneration takes 15–25 sec
-  - On complete, reload the tailoring content
-- [ ] In the Sidebar tailoring list: add a delete action (small trash icon, confirm dialog)
+- [x] Add frontend API routes for both (GET/POST/DELETE on `/api/tailorings/[id]`)
+- [x] In `TailoringDetail`: "Regenerate" button with confirmation dialog (it overwrites)
+  - Loading/spinner state during regeneration; re-fetches full tailoring on complete
+  - Copy-to-clipboard button with visual feedback
+- [x] In the Sidebar tailoring list: hover trash icon → confirm dialog → delete + redirect if viewing deleted tailoring
+- [x] `router.refresh()` after create (NewTailoringForm) and delete (Sidebar) so sidebar list stays in sync
 
 **Why now:** Without regeneration, every bad output is a permanent failure. This is basic product completeness.
 
@@ -229,7 +230,7 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 |-----|-------|--------|--------|
 | 1 | Experience pivot + GitHub backend | `/experience/github` endpoint, repo fetching, sourced profile architecture | ✅ |
 | 2 | GitHub + context frontend | Experience section fully functional, toasts, GitHub remove | ✅ |
-| 3 | Regenerate + Delete | Tailoring lifecycle complete | |
+| 3 | Regenerate + Delete | Tailoring lifecycle complete | ✅ |
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | |
 | 5 | Polish | Error states, loading states, onboarding flow | |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |

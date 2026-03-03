@@ -38,6 +38,7 @@ export function NewTailoringForm() {
 
       const tailoring = await res.json();
       router.push(`/dashboard/tailorings/${tailoring.id}`);
+      router.refresh();
     } catch {
       setErrorMessage('Could not reach the server. Please try again.');
       setState('error');
