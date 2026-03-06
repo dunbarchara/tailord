@@ -58,6 +58,13 @@ resource "azurerm_postgresql_flexible_server" "tailord" {
   zone                   = "1"
 }
 
+resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
+  name             = "allow-azure-services"
+  server_id        = azurerm_postgresql_flexible_server.tailord.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+
 resource "azurerm_postgresql_flexible_server_database" "tailord" {
   name      = "tailord"
   server_id = azurerm_postgresql_flexible_server.tailord.id
@@ -89,6 +96,10 @@ resource "azurerm_container_app" "backend" {
   resource_group_name          = azurerm_resource_group.tailord.name
   container_app_environment_id = azurerm_container_app_environment.tailord.id
   revision_mode                = "Single"
+
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
 
   identity {
     type         = "UserAssigned"
@@ -172,6 +183,10 @@ resource "azurerm_container_app" "frontend" {
   container_app_environment_id = azurerm_container_app_environment.tailord.id
   revision_mode                = "Single"
 
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.container_apps.id]
@@ -187,6 +202,14 @@ resource "azurerm_container_app" "frontend" {
       env {
         name  = "NEXT_PUBLIC_API_URL"
         value = "https://${azurerm_container_app.backend.ingress[0].fqdn}"
+      }
+      env {
+        name  = "API_BASE_URL"
+        value = "https://${azurerm_container_app.backend.ingress[0].fqdn}"
+      }
+      env {
+        name        = "API_KEY"
+        secret_name = "api-key"
       }
       env {
         name  = "NEXTAUTH_URL"
@@ -211,6 +234,15 @@ resource "azurerm_container_app" "frontend" {
     external_enabled = true
     target_port      = 3000
 
+    dynamic "ip_security_restriction" {
+      for_each = data.cloudflare_ip_ranges.cloudflare.ipv4_cidrs
+      content {
+        name             = "cloudflare-${ip_security_restriction.key}"
+        action           = "Allow"
+        ip_address_range = ip_security_restriction.value
+      }
+    }
+
     traffic_weight {
       latest_revision = true
       percentage      = 100
@@ -220,6 +252,12 @@ resource "azurerm_container_app" "frontend" {
   registry {
     server   = azurerm_container_registry.tailord.login_server
     identity = azurerm_user_assigned_identity.container_apps.id
+  }
+
+  secret {
+    name                = "api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.api_key.versionless_id
+    identity            = azurerm_user_assigned_identity.container_apps.id
   }
 
   secret {
@@ -240,6 +278,11 @@ resource "azurerm_container_app" "frontend" {
     identity            = azurerm_user_assigned_identity.container_apps.id
   }
 }
+
+# -----------------------------
+# CLOUDFLARE IP RANGES
+# -----------------------------
+data "cloudflare_ip_ranges" "cloudflare" {}
 
 # -----------------------------
 # CLOUDFLARE DNS
