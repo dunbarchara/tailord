@@ -56,3 +56,8 @@ variable "llm_api_key" {
   sensitive = true
   type      = string
 }
+
+variable "github_actions_sp_object_id" {
+  description = "Object ID of the GitHub Actions service principal (az ad sp show --id <client-id> --query id -o tsv)"
+  type        = string
+}
