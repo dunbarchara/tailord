@@ -6,18 +6,16 @@ export default withAuth(
     // You can add logging or role checks here later
   },
   {
+    pages: {
+      signIn: "/login",
+    },
     callbacks: {
-      authorized: ({ token }) => {
-        // If there is a session token, user is authenticated
-        return !!token
-      },
+      authorized: ({ token }) => !!token,
     },
   }
 )
 
 // Only protect dashboard routes
-// AUTH TEMPORARILY DISABLED FOR TROUBLESHOOTING — re-enable before merging 
 export const config = {
-  //matcher: ["/dashboard/:path*"],
-  matcher: [], 
+  matcher: ["/dashboard/:path*"],
 }
