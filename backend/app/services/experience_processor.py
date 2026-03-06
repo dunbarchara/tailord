@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.clients.llm_client import get_llm_client
-from app.clients.s3_client import download_file_bytes
+from app.clients.storage_client import get_storage_client
 from app.config import settings
 from app.models.database import Experience
 
@@ -87,7 +87,7 @@ def process_experience(experience_id: uuid.UUID, s3_key: str, filename: str) -> 
             experience.status = "processing"
             db.commit()
 
-            file_bytes = download_file_bytes(s3_key)
+            file_bytes = get_storage_client().download_bytes(s3_key)
             text = extract_text(file_bytes, filename)
             profile = extract_profile(text)
 

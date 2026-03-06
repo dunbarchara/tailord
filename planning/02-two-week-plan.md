@@ -231,6 +231,7 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 | 1 | Experience pivot + GitHub backend | `/experience/github` endpoint, repo fetching, sourced profile architecture | ✅ |
 | 2 | GitHub + context frontend | Experience section fully functional, toasts, GitHub remove | ✅ |
 | 3 | Regenerate + Delete | Tailoring lifecycle complete | ✅ |
+| 3.5 | Cloud-agnostic infra | StorageClient abstraction, Terraform module refactor, Azure provider, backend containerized | ✅ |
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | |
 | 5 | Polish | Error states, loading states, onboarding flow | |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
