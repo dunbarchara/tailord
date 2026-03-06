@@ -71,3 +71,28 @@ jobs:
           --name $BACKEND_APP \
           --resource-group $RESOURCE_GROUP \
           --image $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
+
+    - name: Purge old ACR images (keep last 2)
+      run: |
+        for REPO in tailord-frontend tailord-backend; do
+          TAGS=$(az acr repository show-tags \
+            --name tailord \
+            --repository "$REPO" \
+            --orderby time_asc \
+            --output tsv)
+
+          TAG_COUNT=$(echo "$TAGS" | grep -c .)
+          DELETE_COUNT=$((TAG_COUNT - 2))
+
+          if [ "$DELETE_COUNT" -gt 0 ]; then
+            echo "$TAGS" | head -n "$DELETE_COUNT" | while read -r tag; do
+              echo "Deleting $REPO:$tag"
+              az acr repository delete \
+                --name tailord \
+                --image "$REPO:$tag" \
+                --yes
+            done
+          else
+            echo "$REPO: nothing to purge ($TAG_COUNT image(s))"
+          fi
+        done
