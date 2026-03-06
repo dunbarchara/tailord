@@ -226,10 +226,6 @@ resource "azurerm_container_app" "frontend" {
         value = "https://${var.domain_name}"
       }
       env {
-        name  = "NEXTAUTH_URL_INTERNAL"
-        value = "http://localhost:3000"
-      }
-      env {
         name        = "NEXTAUTH_SECRET"
         secret_name = "nextauth-secret"
       }
