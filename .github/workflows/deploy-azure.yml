@@ -1,11 +1,9 @@
 name: Deploy to Azure Container Apps
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Image tag to deploy (e.g. 20260103.5)'
-        required: true
 
 env:
   ACR_REGISTRY: tailord.azurecr.io
@@ -31,6 +29,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Generate image tag
+      id: generate_tag
+      run: |
+        BUILD_DATE=$(date +'%Y%m%d')
+        BUILD_NUM=${{ github.run_number }}
+        echo "tag_name=$BUILD_DATE.$BUILD_NUM" >> $GITHUB_OUTPUT
+
     - name: Azure login (OIDC)
       uses: azure/login@v2
       with:
@@ -44,25 +49,25 @@ jobs:
     - name: Build and push frontend image
       working-directory: ./frontend/
       run: |
-        docker build -t $ACR_REGISTRY/tailord-frontend:${{ github.event.inputs.tag }} .
-        docker push $ACR_REGISTRY/tailord-frontend:${{ github.event.inputs.tag }}
+        docker build -t $ACR_REGISTRY/tailord-frontend:${{ steps.generate_tag.outputs.tag_name }} .
+        docker push $ACR_REGISTRY/tailord-frontend:${{ steps.generate_tag.outputs.tag_name }}
 
     - name: Build and push backend image
       working-directory: ./backend/
       run: |
-        docker build -t $ACR_REGISTRY/tailord-backend:${{ github.event.inputs.tag }} .
-        docker push $ACR_REGISTRY/tailord-backend:${{ github.event.inputs.tag }}
+        docker build -t $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }} .
+        docker push $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
 
     - name: Deploy frontend Container App
       run: |
         az containerapp update \
           --name $FRONTEND_APP \
           --resource-group $RESOURCE_GROUP \
-          --image $ACR_REGISTRY/tailord-frontend:${{ github.event.inputs.tag }}
+          --image $ACR_REGISTRY/tailord-frontend:${{ steps.generate_tag.outputs.tag_name }}
 
     - name: Deploy backend Container App
       run: |
         az containerapp update \
           --name $BACKEND_APP \
           --resource-group $RESOURCE_GROUP \
-          --image $ACR_REGISTRY/tailord-backend:${{ github.event.inputs.tag }}
+          --image $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
