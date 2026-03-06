@@ -29,6 +29,13 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 # ENV NEXT_TELEMETRY_DISABLED=1
 
+# Server-side env vars are validated at module load during next build.
+# Placeholders satisfy the check — real values are injected at runtime.
+ARG API_BASE_URL=http://localhost:8000
+ARG API_KEY=build-placeholder
+ENV API_BASE_URL=$API_BASE_URL
+ENV API_KEY=$API_KEY
+
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \
