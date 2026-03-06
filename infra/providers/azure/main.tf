@@ -223,11 +223,7 @@ resource "azurerm_container_app" "frontend" {
       }
       env {
         name  = "NEXTAUTH_URL"
-        value = "https://${var.project_name}-frontend.${azurerm_container_app_environment.tailord.default_domain}"
-      }
-      env {
-        name  = "NEXTAUTH_URL_INTERNAL"
-        value = "http://localhost:3000"
+        value = "https://${var.domain_name}"
       }
       env {
         name        = "NEXTAUTH_SECRET"
@@ -247,6 +243,15 @@ resource "azurerm_container_app" "frontend" {
   ingress {
     external_enabled = true
     target_port      = 3000
+
+    dynamic "ip_security_restriction" {
+      for_each = data.cloudflare_ip_ranges.cloudflare.ipv4_cidrs
+      content {
+        name             = "cloudflare-${ip_security_restriction.key}"
+        action           = "Allow"
+        ip_address_range = ip_security_restriction.value
+      }
+    }
 
     traffic_weight {
       latest_revision = true
@@ -285,10 +290,9 @@ resource "azurerm_container_app" "frontend" {
 }
 
 # -----------------------------
-# CLOUDFLARE (disabled — re-enable when adding custom domain)
+# CLOUDFLARE
 # -----------------------------
-# data "cloudflare_ip_ranges" "cloudflare" {}
-#
+data "cloudflare_ip_ranges" "cloudflare" {}
 
 # -----------------------------
 # CLOUDFLARE DNS
