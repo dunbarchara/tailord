@@ -1,0 +1,68 @@
+name: Deploy to Azure Container Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to deploy (e.g. 20260103.5)'
+        required: true
+
+env:
+  ACR_REGISTRY: tailord.azurecr.io
+  FRONTEND_APP: tailord-frontend
+  BACKEND_APP: tailord-backend
+  RESOURCE_GROUP: tailord
+
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production-azure
+      url: https://tailord.app
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure login (OIDC)
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Login to ACR
+      run: az acr login --name tailord
+
+    - name: Build and push frontend image
+      working-directory: ./frontend/
+      run: |
+        docker build -t $ACR_REGISTRY/tailord-frontend:${{ github.event.inputs.tag }} .
+        docker push $ACR_REGISTRY/tailord-frontend:${{ github.event.inputs.tag }}
+
+    - name: Build and push backend image
+      working-directory: ./backend/
+      run: |
+        docker build -t $ACR_REGISTRY/tailord-backend:${{ github.event.inputs.tag }} .
+        docker push $ACR_REGISTRY/tailord-backend:${{ github.event.inputs.tag }}
+
+    - name: Deploy frontend Container App
+      run: |
+        az containerapp update \
+          --name $FRONTEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --image $ACR_REGISTRY/tailord-frontend:${{ github.event.inputs.tag }}
+
+    - name: Deploy backend Container App
+      run: |
+        az containerapp update \
+          --name $BACKEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --image $ACR_REGISTRY/tailord-backend:${{ github.event.inputs.tag }}

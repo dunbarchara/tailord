@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
-from app.clients.s3_client import delete_object, generate_presigned_put_url
+from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user
 from app.models.database import Experience, User
@@ -53,9 +53,9 @@ def get_upload_url(
     if existing:
         if existing.s3_key:
             try:
-                delete_object(existing.s3_key)
+                get_storage_client().delete_object(existing.s3_key)
             except Exception:
-                pass  # S3 cleanup failure is non-fatal
+                pass  # storage cleanup failure is non-fatal
         db.delete(existing)
         db.commit()
 
@@ -71,7 +71,7 @@ def get_upload_url(
     db.commit()
     db.refresh(experience)
 
-    upload_url = generate_presigned_put_url(s3_key)
+    upload_url = get_storage_client().generate_upload_url(s3_key)
 
     return {
         "upload_url": upload_url,
@@ -144,9 +144,9 @@ def delete_experience(
 
     if e.s3_key:
         try:
-            delete_object(e.s3_key)
+            get_storage_client().delete_object(e.s3_key)
         except Exception:
-            pass  # S3 delete failure is non-fatal; proceed with DB cleanup
+            pass  # storage delete failure is non-fatal; proceed with DB cleanup
 
     db.delete(e)
     db.commit()

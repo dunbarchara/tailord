@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: str = "logs"
 
+    # Database
+    database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
+
     # Auth
     api_key: str | None = None
 
@@ -22,6 +25,13 @@ class Settings(BaseSettings):
     aws_secret_access_key: str | None = None
     aws_region: str = "us-east-2"
     s3_uploads_bucket: str = "tailord-uploads"
+
+    # Storage provider
+    storage_provider: str = "aws"  # "aws" | "azure"
+
+    # Azure Blob Storage (used when storage_provider = "azure")
+    azure_storage_connection_string: str | None = None
+    azure_storage_container: str = "tailord-uploads"
 
     class Config:
         env_file = ".env"

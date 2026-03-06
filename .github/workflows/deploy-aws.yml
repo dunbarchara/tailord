@@ -1,0 +1,91 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: tailord
+  ECS_CLUSTER: tailord-cluster
+  ECS_SERVICE: tailord-service
+  TASK_DEFINITION_FAMILY: tailord-task
+
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+      url: https://tailord.app
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Generate image tag
+      id: generate_tag
+      run: |
+        BUILD_DATE=$(date +'%Y%m%d')
+        BUILD_NUM=${{ github.run_number }}
+        TAG_NAME="$BUILD_DATE.$BUILD_NUM"
+        echo "Generated tag name: $TAG_NAME"
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push frontend image
+      env:
+        IMAGE_TAG: ${{ steps.generate_tag.outputs.tag_name }}
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      working-directory: ./frontend/
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY-frontend:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY-frontend:$IMAGE_TAG
+
+    - name: Build and push backend image
+      env:
+        IMAGE_TAG: ${{ steps.generate_tag.outputs.tag_name }}
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      working-directory: ./backend/
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY-backend:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY-backend:$IMAGE_TAG
+
+    - name: Render new task definition (frontend)
+      id: task-def-frontend
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition-family: ${{ env.TASK_DEFINITION_FAMILY }}
+        container-name: frontend
+        image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}-frontend:${{ steps.generate_tag.outputs.tag_name }}
+
+    - name: Render new task definition (backend)
+      id: task-def-backend
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def-frontend.outputs.task-definition }}
+        container-name: backend
+        image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}-backend:${{ steps.generate_tag.outputs.tag_name }}
+
+    - name: Deploy to ECS service
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        cluster: ${{ env.ECS_CLUSTER }}
+        service: ${{ env.ECS_SERVICE }}
+        task-definition: ${{ steps.task-def-backend.outputs.task-definition }}
+        wait-for-service-stability: true
