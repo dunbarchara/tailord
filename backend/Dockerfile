@@ -1,11 +1,10 @@
 # ---------- Base image ----------
-FROM python:3.11-slim AS base
+FROM debian:bookworm-slim AS base
 
-# Prevent Python from writing .pyc files
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies (curl for healthchecks, build-essential for native extensions)
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
@@ -13,16 +12,14 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------- Install uv ----------
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:${PATH}"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # ---------- App directory ----------
 WORKDIR /app
 
-# ---------- Copy dependency files ----------
-COPY pyproject.toml uv.lock ./
-
 # ---------- Install Python dependencies ----------
+# uv will automatically download the Python version required by pyproject.toml
+COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 # ---------- Install Playwright browsers ----------
