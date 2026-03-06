@@ -137,6 +137,10 @@ resource "azurerm_container_app" "backend" {
         name  = "LLM_MODEL"
         value = var.llm_model
       }
+      env {
+        name        = "LLM_API_KEY"
+        secret_name = "llm-api-key"
+      }
     }
   }
 
@@ -170,6 +174,12 @@ resource "azurerm_container_app" "backend" {
   secret {
     name                = "storage-connection-string"
     key_vault_secret_id = azurerm_key_vault_secret.storage_connection_string.versionless_id
+    identity            = azurerm_user_assigned_identity.container_apps.id
+  }
+
+  secret {
+    name                = "llm-api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.llm_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.container_apps.id
   }
 }

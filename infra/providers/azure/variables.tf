@@ -51,3 +51,8 @@ variable "google_client_secret" {
   sensitive = true
   type      = string
 }
+
+variable "llm_api_key" {
+  sensitive = true
+  type      = string
+}
