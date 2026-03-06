@@ -84,3 +84,10 @@ resource "azurerm_key_vault_secret" "google_client_secret" {
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
+
+resource "azurerm_key_vault_secret" "llm_api_key" {
+  name         = "llm-api-key"
+  value        = var.llm_api_key
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}

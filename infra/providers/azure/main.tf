@@ -137,6 +137,10 @@ resource "azurerm_container_app" "backend" {
         name  = "LLM_MODEL"
         value = var.llm_model
       }
+      env {
+        name        = "LLM_API_KEY"
+        secret_name = "llm-api-key"
+      }
     }
   }
 
@@ -170,6 +174,12 @@ resource "azurerm_container_app" "backend" {
   secret {
     name                = "storage-connection-string"
     key_vault_secret_id = azurerm_key_vault_secret.storage_connection_string.versionless_id
+    identity            = azurerm_user_assigned_identity.container_apps.id
+  }
+
+  secret {
+    name                = "llm-api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.llm_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.container_apps.id
   }
 }
@@ -213,7 +223,7 @@ resource "azurerm_container_app" "frontend" {
       }
       env {
         name  = "NEXTAUTH_URL"
-        value = "https://${var.domain_name}"
+        value = "https://${var.project_name}-frontend.${azurerm_container_app_environment.tailord.default_domain}"
       }
       env {
         name  = "NEXTAUTH_URL_INTERNAL"
@@ -237,15 +247,6 @@ resource "azurerm_container_app" "frontend" {
   ingress {
     external_enabled = true
     target_port      = 3000
-
-    dynamic "ip_security_restriction" {
-      for_each = data.cloudflare_ip_ranges.cloudflare.ipv4_cidrs
-      content {
-        name             = "cloudflare-${ip_security_restriction.key}"
-        action           = "Allow"
-        ip_address_range = ip_security_restriction.value
-      }
-    }
 
     traffic_weight {
       latest_revision = true
@@ -284,9 +285,10 @@ resource "azurerm_container_app" "frontend" {
 }
 
 # -----------------------------
-# CLOUDFLARE IP RANGES
+# CLOUDFLARE (disabled — re-enable when adding custom domain)
 # -----------------------------
-data "cloudflare_ip_ranges" "cloudflare" {}
+# data "cloudflare_ip_ranges" "cloudflare" {}
+#
 
 # -----------------------------
 # CLOUDFLARE DNS
