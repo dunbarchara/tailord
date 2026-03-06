@@ -16,6 +16,8 @@ export default withAuth(
 )
 
 // Only protect dashboard routes
+// AUTH TEMPORARILY DISABLED FOR TROUBLESHOOTING — re-enable before merging 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  //matcher: ["/dashboard/:path*"],
+  matcher: [], 
 }
