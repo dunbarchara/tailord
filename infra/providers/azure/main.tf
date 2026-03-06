@@ -285,26 +285,6 @@ resource "azurerm_container_app" "frontend" {
 data "cloudflare_ip_ranges" "cloudflare" {}
 
 # -----------------------------
-# CLOUDFLARE CACHE RULES
-# -----------------------------
-resource "cloudflare_ruleset" "cache_rules" {
-  zone_id = var.cloudflare_zone_id
-  name    = "Cache rules"
-  kind    = "zone"
-  phase   = "http_request_cache_settings"
-
-  rules {
-    action = "set_cache_settings"
-    action_parameters {
-      cache = false
-    }
-    expression  = "(http.request.uri.path wildcard \"/api/*\")"
-    description = "Bypass cache for all API routes including NextAuth callbacks"
-    enabled     = true
-  }
-}
-
-# -----------------------------
 # CLOUDFLARE DNS
 # -----------------------------
 resource "cloudflare_dns_record" "app" {
