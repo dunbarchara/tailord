@@ -12,7 +12,7 @@
 tailord/
 ├── frontend/    # Next.js 16 (App Router) — TypeScript
 ├── backend/     # FastAPI (Python) — LLM pipeline, job parsing
-└── infra/       # Terraform — AWS + Cloudflare IaC
+└── infra/       # Terraform — Azure (active) + AWS (inactive/legacy) + Cloudflare IaC
 ```
 
 ---
@@ -41,7 +41,7 @@ uv run uvicorn app.main:app --reload   # FastAPI dev server on :8000
 - **Styling**: Tailwind CSS 4 with CSS variable-based design tokens (see Design System)
 - **Icons**: Lucide React
 - **No SWR/React Query** — native fetch in API routes
-- **Deployment**: AWS ECS (EC2, `t3.small`) — `next.config.ts` uses `output: 'standalone'` for this reason. Do not add Vercel-specific packages or APIs.
+- **Deployment**: Azure Container Apps — `next.config.ts` uses `output: 'standalone'` for this reason. Do not add Vercel-specific packages or APIs.
 
 ### Backend
 - **FastAPI** + Uvicorn, Python 3.14+
@@ -161,16 +161,19 @@ Tone: structured, professional, clean. Favor whitespace. Strong typographic hier
 
 Managed with Terraform. Do not modify unless working on infra tasks specifically.
 
+**Active provider: Azure** (`infra/providers/azure/`)
+
 | Resource | Detail |
 |----------|--------|
-| Cloud | AWS (us-east-2) |
-| Compute | ECS Service on EC2 (`t3.small`), ASG min 1 / max 4 |
-| Container registry | ECR (`tailord`) |
-| Networking | VPC with public + private subnets, NAT gateway |
-| Load balancer | ALB → HTTPS only; HTTP redirects to HTTPS |
-| TLS | ACM cert for `tailord.app` + `www.tailord.app` |
-| DNS | Cloudflare (proxied CNAMEs) |
-| Logs | CloudWatch `/ecs/tailord` (30-day retention) |
-| State | S3 bucket `tailord-tf-state` + DynamoDB lock |
+| Cloud | Azure |
+| Compute | Azure Container Apps (frontend + backend, 0.5 vCPU / 1Gi each) |
+| Container registry | ACR (`tailord`) |
+| Database | Azure PostgreSQL Flexible Server (B_Standard_B1ms, v16) |
+| Storage | Azure Blob Storage (`tailord-uploads` container) |
+| Secrets | Azure Key Vault |
+| DNS | Cloudflare (proxied CNAMEs → Container App FQDN) |
+| Deploy workflow | `.github/workflows/deploy-azure.yml` |
 
-Container port is **3000** (frontend). The ECS task definition targets the frontend container — the backend is not yet containerized in this config.
+Frontend port: **3000**. Backend port: **8000** (internal ingress only — not publicly exposed).
+
+**Legacy provider: AWS** (`infra/providers/aws/`) — not active, kept for reference.

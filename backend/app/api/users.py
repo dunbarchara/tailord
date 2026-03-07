@@ -21,4 +21,5 @@ def upsert_user(
         "google_sub": user.google_sub,
         "email": user.email,
         "name": user.name,
+        "status": user.status,
     }

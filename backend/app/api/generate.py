@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.models.mvp_schemas import GenerateInput, GeneratedOutput
 from app.core.mvp_llm import generate_match
 from app.auth import require_api_key
-from app.core.deps_user import get_current_user
+from app.core.deps_user import require_approved_user
 
 from sqlalchemy.orm import Session
 from app.models.database import Experience, Job, User
@@ -14,7 +14,7 @@ router = APIRouter()
 def generate(
     data: GenerateInput,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db)
 ):
     job = db.query(Job).filter(

@@ -1,4 +1,4 @@
-from fastapi import Depends, Header
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from app.core.deps_database import get_db
 from app.models.database import User
@@ -31,4 +31,14 @@ def get_current_user(
         db.add(user)
         db.commit()
         db.refresh(user)
+    return user
+
+
+def require_approved_user(user: User = Depends(get_current_user)) -> User:
+    """
+    Extends get_current_user with an approval gate.
+    Raises 403 if the user's status is not 'approved'.
+    """
+    if user.status != "approved":
+        raise HTTPException(status_code=403, detail="Account pending approval")
     return user
