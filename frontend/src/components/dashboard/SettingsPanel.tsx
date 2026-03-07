@@ -73,7 +73,9 @@ export function SettingsPanel() {
               <AvatarFallback className="text-sm">{userInitials}</AvatarFallback>
             </Avatar>
             <div>
-              <p className="font-medium text-text-primary">{session?.user?.name ?? '—'}</p>
+              <p className="font-medium text-text-primary">
+                {[firstName, lastName].filter(Boolean).join(' ') || session?.user?.name || '—'}
+              </p>
               <p className="text-sm text-text-secondary">{session?.user?.email ?? '—'}</p>
             </div>
           </div>

@@ -109,7 +109,7 @@ export function ExperienceManager() {
     setUploadState({ phase: 'uploading', filename: file.name });
 
     try {
-      // Step 1: Get presigned S3 PUT URL
+      // Step 1: Get Azure Blob Storage SAS upload URL
       const urlRes = await fetch('/api/experience/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -121,7 +121,7 @@ export function ExperienceManager() {
         throw new Error(err.detail ?? `Failed to get upload URL (${urlRes.status})`);
       }
 
-      const { upload_url, s3_key, experience_id } = await urlRes.json();
+      const { upload_url, storage_key, experience_id } = await urlRes.json();
 
       // Step 2: Upload file bytes directly to Azure Blob Storage via SAS URL
       // x-ms-blob-type is required by Azure; Content-Type is passed through to the stored blob
@@ -144,7 +144,7 @@ export function ExperienceManager() {
       await fetch('/api/experience/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ s3_key, experience_id }),
+        body: JSON.stringify({ storage_key, experience_id }),
       });
 
       // Step 4: Poll until ready or error

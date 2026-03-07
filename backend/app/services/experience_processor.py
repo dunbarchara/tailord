@@ -55,6 +55,7 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
 
 
 def extract_profile(text: str) -> dict:
+    logger.debug("Running LLM profile extraction (model=%s, text_len=%d)", settings.llm_model, len(text))
     client = get_llm_client()
     response = client.chat.completions.create(
         model=settings.llm_model,
@@ -65,43 +66,53 @@ def extract_profile(text: str) -> dict:
         temperature=0.1,
     )
     content = response.choices[0].message.content
+    logger.debug("LLM profile extraction complete (response_len=%d)", len(content or ""))
     return json.loads(content)
 
 
-def process_experience(experience_id: uuid.UUID, s3_key: str, filename: str) -> None:
+def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str) -> None:
     """
-    Background task: download file from S3, extract text, run LLM extraction,
-    persist structured profile to DB. Creates its own DB session (request session
-    is closed by the time background tasks run).
+    Background task: download file from Azure Blob Storage, extract text, run LLM
+    extraction, persist structured profile to DB. Creates its own DB session since
+    the request session is closed by the time background tasks run.
     """
+    logger.info("process_experience start: experience_id=%s storage_key=%s filename=%s",
+                experience_id, storage_key, filename)
     from app.clients.database import SessionLocal
 
     db = SessionLocal()
     try:
         experience = db.get(Experience, experience_id)
         if not experience:
-            logger.error(f"Experience {experience_id} not found for processing")
+            logger.error("Experience %s not found — aborting background task", experience_id)
             return
 
         try:
             experience.status = "processing"
             db.commit()
+            logger.debug("Status set to processing for experience %s", experience_id)
 
-            file_bytes = get_storage_client().download_bytes(s3_key)
+            logger.debug("Downloading file from blob storage: %s", storage_key)
+            file_bytes = get_storage_client().download_bytes(storage_key)
+            logger.debug("Downloaded %d bytes, extracting text from %s", len(file_bytes), filename)
+
             text = extract_text(file_bytes, filename)
+            logger.debug("Extracted %d chars of text, running LLM profile extraction", len(text))
+
             profile = extract_profile(text)
 
             experience.extracted_profile = {"resume": profile}
             experience.status = "ready"
             experience.processed_at = datetime.now(timezone.utc)
             db.commit()
-            logger.info(f"Experience {experience_id} processed successfully")
+            logger.info("process_experience complete: experience_id=%s", experience_id)
 
         except Exception as e:
-            logger.exception(f"Failed to process experience {experience_id}: {e}")
+            logger.exception("process_experience failed for experience_id=%s: %s", experience_id, e)
             experience.status = "error"
             experience.error_message = str(e)
             db.commit()
 
     finally:
         db.close()
+        logger.debug("DB session closed for experience_id=%s", experience_id)

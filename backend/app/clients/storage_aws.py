@@ -1,7 +1,11 @@
+import logging
+
 import boto3
 
 from app.clients.storage_client import StorageClient
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class S3StorageClient(StorageClient):
@@ -15,7 +19,8 @@ class S3StorageClient(StorageClient):
         )
 
     def generate_upload_url(self, key: str, expires_in: int = 300) -> str:
-        return self._client().generate_presigned_url(
+        logger.debug("Generating S3 presigned PUT URL for key=%s expires_in=%s", key, expires_in)
+        url = self._client().generate_presigned_url(
             "put_object",
             Params={
                 "Bucket": settings.s3_uploads_bucket,
@@ -25,10 +30,17 @@ class S3StorageClient(StorageClient):
             },
             ExpiresIn=expires_in,
         )
+        logger.debug("S3 presigned URL generated for key=%s", key)
+        return url
 
     def download_bytes(self, key: str) -> bytes:
+        logger.debug("Downloading S3 object key=%s bucket=%s", key, settings.s3_uploads_bucket)
         response = self._client().get_object(Bucket=settings.s3_uploads_bucket, Key=key)
-        return response["Body"].read()
+        data = response["Body"].read()
+        logger.debug("Downloaded %d bytes for key=%s", len(data), key)
+        return data
 
     def delete_object(self, key: str) -> None:
+        logger.debug("Deleting S3 object key=%s bucket=%s", key, settings.s3_uploads_bucket)
         self._client().delete_object(Bucket=settings.s3_uploads_bucket, Key=key)
+        logger.debug("Deleted S3 object key=%s", key)
