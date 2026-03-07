@@ -92,6 +92,7 @@ class Tailoring(Base):
         UUID(as_uuid=True), ForeignKey("jobs.id")
     )
     generated_output: Mapped[str] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -11,10 +11,16 @@ The state backend (`tailord-tfstate` resource group, `tailordtfstate` storage ac
 `tfstate` container) must exist before running Terraform. Create it manually:
 
 ```bash
-az group create --name tailord-tfstate --location canadacentral
-az storage account create --name tailordtfstate --resource-group tailord-tfstate --sku Standard_LRS
+az group create --name tailord-tfstate --location canadacentral \
+  --tags project=tailord managed_by=manual
+
+az storage account create --name tailordtfstate --resource-group tailord-tfstate --sku Standard_LRS \
+  --tags project=tailord managed_by=manual
+
 az storage container create --name tfstate --account-name tailordtfstate
 ```
+
+Note: storage containers don't support tags — only the account does.
 
 ---
 
@@ -74,9 +80,33 @@ Required variables (pass via `-var` flags or a `terraform.tfvars` file — never
 | `nextauth_secret` | NextAuth secret (`openssl rand -base64 32`) |
 | `google_client_id` | Google OAuth client ID |
 | `google_client_secret` | Google OAuth client secret |
-| `llm_api_key` | LLM provider API key |
 | `cloudflare_zone_id` | Cloudflare zone ID for tailord.app |
-| `llm_model` | e.g. `gpt-4o-mini` (has default) |
+| `llm_model` | Model deployment name (default: `phi-4-mini`, must match the deployment name created in step 3a) |
+
+Note: `llm_api_key` and `llm_base_url` are no longer input variables — Terraform derives them
+directly from the AI Foundry account it creates (`primary_access_key` and `endpoint`).
+
+### Step 3a: Deploy Phi-4-mini in AI Foundry (manual — model deployments not in Terraform provider)
+
+The AI Foundry account (`tailord-foundry`) is created by `terraform apply` in step 3.
+Terraform also wires its key into Key Vault and its endpoint URL into the backend Container App —
+no manual key retrieval or second apply needed.
+
+The only manual step is deploying the model itself, since pay-per-token serverless deployments
+are not yet supported by the `azurerm` provider:
+
+1. Go to [ai.azure.com](https://ai.azure.com) → select the `tailord-foundry` resource
+2. Open **Model catalog** → search for **Phi-4-mini-instruct** → **Deploy as serverless**
+3. Name the deployment **`phi-4-mini`** (must match the `llm_model` Terraform variable)
+
+The deployment spec is tracked at `infra/providers/azure/endpoints/phi4-mini.yaml` — this file
+is the source of truth for which model is deployed.
+
+**Switching models in the future:**
+1. Add a new spec to `infra/providers/azure/endpoints/`
+2. Deploy it via the portal with the new deployment name
+3. Update `llm_model` in Terraform vars and run `terraform apply` (updates the Container App env)
+4. Delete the old deployment via the portal and remove its spec file
 
 ---
 

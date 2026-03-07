@@ -4,6 +4,7 @@
 resource "azurerm_resource_group" "tailord" {
   name     = var.project_name
   location = var.location
+  tags     = local.tags
 }
 
 # -----------------------------
@@ -15,6 +16,7 @@ resource "azurerm_container_registry" "tailord" {
   location            = azurerm_resource_group.tailord.location
   sku                 = "Basic"
   admin_enabled       = false
+  tags                = local.tags
 }
 
 # -----------------------------
@@ -26,6 +28,7 @@ resource "azurerm_storage_account" "uploads" {
   location                 = azurerm_resource_group.tailord.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
+  tags                     = local.tags
 
   blob_properties {
     cors_rule {
@@ -56,6 +59,7 @@ resource "azurerm_postgresql_flexible_server" "tailord" {
   sku_name               = "B_Standard_B1ms"
   storage_mb             = 32768
   zone                   = "1"
+  tags                   = local.tags
 }
 
 resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
@@ -79,6 +83,7 @@ resource "azurerm_container_app_environment" "tailord" {
   name                = "${var.project_name}-env"
   resource_group_name = azurerm_resource_group.tailord.name
   location            = azurerm_resource_group.tailord.location
+  tags                = local.tags
 }
 
 # Grant managed identity permission to pull images from ACR
@@ -96,6 +101,7 @@ resource "azurerm_container_app" "backend" {
   resource_group_name          = azurerm_resource_group.tailord.name
   container_app_environment_id = azurerm_container_app_environment.tailord.id
   revision_mode                = "Single"
+  tags                         = local.tags
 
   lifecycle {
     ignore_changes = [template[0].container[0].image]
@@ -139,6 +145,10 @@ resource "azurerm_container_app" "backend" {
       env {
         name  = "AZURE_STORAGE_CONTAINER"
         value = azurerm_storage_container.uploads.name
+      }
+      env {
+        name  = "LLM_BASE_URL"
+        value = "${azurerm_cognitive_account.tailord_foundry.endpoint}models"
       }
       env {
         name  = "LLM_MODEL"
@@ -199,6 +209,7 @@ resource "azurerm_container_app" "frontend" {
   resource_group_name          = azurerm_resource_group.tailord.name
   container_app_environment_id = azurerm_container_app_environment.tailord.id
   revision_mode                = "Single"
+  tags                         = local.tags
 
   lifecycle {
     ignore_changes = [template[0].container[0].image]

@@ -11,6 +11,7 @@ resource "azurerm_user_assigned_identity" "container_apps" {
   name                = "${var.project_name}-apps-identity"
   resource_group_name = azurerm_resource_group.tailord.name
   location            = azurerm_resource_group.tailord.location
+  tags                = local.tags
 }
 
 # -----------------------------
@@ -23,6 +24,7 @@ resource "azurerm_key_vault" "tailord" {
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   rbac_authorization_enabled = true
+  tags                       = local.tags
 }
 
 # Terraform deployer — write secrets
@@ -87,7 +89,7 @@ resource "azurerm_key_vault_secret" "google_client_secret" {
 
 resource "azurerm_key_vault_secret" "llm_api_key" {
   name         = "llm-api-key"
-  value        = var.llm_api_key
+  value        = azurerm_cognitive_account.tailord_foundry.primary_access_key
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
