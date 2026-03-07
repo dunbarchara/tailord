@@ -1,4 +1,3 @@
-import os
 import json
 from app.clients.llm_client import get_llm_client
 from app.config import settings
@@ -17,50 +16,6 @@ def _strip_json_fences(text: str) -> str:
     if text.endswith("```"):
         text = text[: text.rfind("```")]
     return text.strip()
-
-SEMANTIC_SYSTEM_PROMPT_PROFILE = """
-You are an AI expert in extracting structured software engineer profile data. Return only a JSON object matching the canonical schema.
-
-Rules:
-- Return valid JSON only; no markdown or explanations.
-- Use null for missing scalar fields, [] for missing lists.
-- If unsure about a field, leave it null/empty.
-
-"""
-
-def extract_profile(resume_text, repos) -> dict:
-    prompt = f"""
-Extract a concise software engineer profile.
-
-Resume:
-{resume_text}
-
-GitHub Repos:
-{repos}
-
-Return JSON with:
-- summary
-- key_skills
-- notable_projects
-"""
-    
-    client = get_llm_client()
-    
-    resp = client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": SEMANTIC_SYSTEM_PROMPT_PROFILE},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=llm_temperature
-    )
-    
-    content_profile = resp.choices[0].message.content
-    logger.debug(f"\n\n===== LLM RESPONSE - PROFILE ({settings.llm_model}) ({llm_temperature}) =====\n" + str(content_profile))
-
-    return json.loads(_strip_json_fences(content_profile))
-
-
 
 
 SEMANTIC_SYSTEM_PROMPT_JOB = """

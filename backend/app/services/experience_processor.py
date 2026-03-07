@@ -32,7 +32,20 @@ You are an AI expert in parsing resumes. Extract structured information from the
 5. Any violation will be treated as invalid output.
 
 **Return JSON exactly as shown above. Nothing else.**
+!! YOUR RESPONSE MUST BE VALID JSON ONLY !!
+!! DO NOT RETURN CODE FENCES !!
+!! DO NOT INCLUDE '```json' IN YOUR RESPONSE !!
 """
+
+
+def _strip_json_fences(text: str) -> str:
+    """Remove markdown code fences that small LLMs emit despite instructions."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text[text.index("\n") + 1:]
+    if text.endswith("```"):
+        text = text[: text.rfind("```")]
+    return text.strip()
 
 
 def extract_text(file_bytes: bytes, filename: str) -> str:
@@ -67,7 +80,8 @@ def extract_profile(text: str) -> dict:
     )
     content = response.choices[0].message.content
     logger.debug("LLM profile extraction complete (response_len=%d)", len(content or ""))
-    return json.loads(content)
+    logger.debug(content)
+    return json.loads(_strip_json_fences(content))
 
 
 def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str) -> None:
