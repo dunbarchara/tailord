@@ -1,57 +1,12 @@
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from app.clients.llm_client import get_llm_client
 from app.clients.storage_client import get_storage_client
-from app.config import settings
 from app.models.database import Experience
+from app.services.profile_extractor import extract_profile
 
 logger = logging.getLogger(__name__)
-
-EXTRACT_SYSTEM_PROMPT = """
-You are a resume parser. You will be given a resume and a JSON template.
-Fill in the template with information extracted from the resume.
-Return only the completed JSON object. Do not add any text outside the JSON.
-"""
-
-EXTRACT_USER_TEMPLATE = """Fill in this JSON template using information from the resume below.
-Rules:
-- Keep all keys exactly as shown.
-- Replace empty strings and arrays with extracted values.
-- Add one object per role to work_experience, one per project, one per degree.
-- For skills.technical, list specific technologies, tools, and languages.
-- For skills.soft, list interpersonal and workplace skills.
-- certifications is a list of strings.
-- If a field has no data, leave it as "" or [].
-- Return only the JSON object. No explanation, no code fences.
-
-JSON TEMPLATE:
-{{
-  "summary": "",
-  "work_experience": [
-    {{"title": "", "company": "", "duration": "", "bullets": []}}
-  ],
-  "skills": {{"technical": [], "soft": []}},
-  "education": [{{"degree": "", "institution": "", "year": ""}}],
-  "projects": [{{"name": "", "description": "", "technologies": []}}],
-  "certifications": []
-}}
-
-RESUME:
-{resume_text}
-"""
-
-
-def _strip_json_fences(text: str) -> str:
-    """Remove markdown code fences that small LLMs emit despite instructions."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = text[text.index("\n") + 1:]
-    if text.endswith("```"):
-        text = text[: text.rfind("```")]
-    return text.strip()
 
 
 def extract_text(file_bytes: bytes, filename: str) -> str:
@@ -73,30 +28,11 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
         return file_bytes.decode("utf-8", errors="replace")
 
 
-def extract_profile(text: str) -> dict:
-    logger.debug("Running LLM profile extraction (model=%s, text_len=%d)", settings.llm_model, len(text))
-    client = get_llm_client()
-    user_message = EXTRACT_USER_TEMPLATE.format(resume_text=text)
-    response = client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.1,
-        response_format={"type": "json_object"},
-    )
-    content = response.choices[0].message.content
-    logger.debug("LLM profile extraction complete (response_len=%d)", len(content or ""))
-    logger.debug(content)
-    return json.loads(_strip_json_fences(content))
-
-
 def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str) -> None:
     """
-    Background task: download file from Azure Blob Storage, extract text, run LLM
-    extraction, persist structured profile to DB. Creates its own DB session since
-    the request session is closed by the time background tasks run.
+    Background task: download file from storage, extract text, run LLM extraction,
+    persist structured profile to DB. Creates its own DB session since the request
+    session is closed by the time background tasks run.
     """
     logger.info("process_experience start: experience_id=%s storage_key=%s filename=%s",
                 experience_id, storage_key, filename)

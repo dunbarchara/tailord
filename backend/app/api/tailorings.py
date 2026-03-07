@@ -8,7 +8,8 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content
-from app.core.mvp_llm import extract_job, generate_tailoring
+from app.services.job_extractor import extract_job
+from app.services.tailoring_generator import generate_tailoring
 from app.core.playwright_helper import get_rendered_content
 from app.models.database import Experience, Job, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate, TailoringListItem, TailoringResponse
