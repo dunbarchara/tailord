@@ -15,6 +15,8 @@ class User(Base):
     google_sub: Mapped[str] = mapped_column(String, unique=True, index=True)
     email: Mapped[str] = mapped_column(String)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
+    preferred_first_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    preferred_last_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # status: pending | approved
     status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     created_at: Mapped[datetime] = mapped_column(

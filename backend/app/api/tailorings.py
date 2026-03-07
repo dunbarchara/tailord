@@ -58,7 +58,8 @@ async def create_tailoring(
     db.refresh(job_record)
 
     # Generate the tailoring document
-    candidate_name = user.name or user.email
+    preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
+    candidate_name = preferred or user.name or user.email
     try:
         generated_output = generate_tailoring(
             experience.extracted_profile,
@@ -109,7 +110,8 @@ def regenerate_tailoring(
     if not experience or not experience.extracted_profile:
         raise HTTPException(status_code=422, detail="No experience found.")
 
-    candidate_name = user.name or user.email
+    preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
+    candidate_name = preferred or user.name or user.email
     try:
         generated_output = generate_tailoring(
             experience.extracted_profile,

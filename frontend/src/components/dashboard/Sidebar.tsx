@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
@@ -58,6 +58,25 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
   const router = useRouter();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [preferredName, setPreferredName] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data) => {
+        const name = [data.preferred_first_name, data.preferred_last_name].filter(Boolean).join(' ');
+        setPreferredName(name || null);
+      })
+      .catch(() => {});
+
+    function onNameChanged(e: Event) {
+      const { firstName, lastName } = (e as CustomEvent).detail;
+      const name = [firstName, lastName].filter(Boolean).join(' ');
+      setPreferredName(name || null);
+    }
+    window.addEventListener('preferred-name-changed', onNameChanged);
+    return () => window.removeEventListener('preferred-name-changed', onNameChanged);
+  }, []);
 
   async function handleDelete(id: string) {
     setDeleting(true);
@@ -191,7 +210,7 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
               </Avatar>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-text-primary truncate leading-tight">
-                  {session?.user?.name ?? 'Account'}
+                  {preferredName ?? session?.user?.name ?? 'Account'}
                 </p>
                 <p className="text-xs text-text-tertiary truncate">
                   {session?.user?.email ?? ''}
@@ -203,7 +222,7 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
           <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-56">
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{session?.user?.name ?? 'Account'}</p>
+                <p className="text-sm font-medium leading-none">{preferredName ?? session?.user?.name ?? 'Account'}</p>
                 <p className="text-xs leading-none text-muted-foreground">{session?.user?.email ?? ''}</p>
               </div>
             </DropdownMenuLabel>
