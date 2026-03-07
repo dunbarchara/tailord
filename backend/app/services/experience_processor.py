@@ -11,30 +11,36 @@ from app.models.database import Experience
 logger = logging.getLogger(__name__)
 
 EXTRACT_SYSTEM_PROMPT = """
-You are an AI expert in parsing resumes. Extract structured information from the resume text and return **only valid JSON**, strictly following this schema:
+You are a resume parser. You will be given a resume and a JSON template.
+Fill in the template with information extracted from the resume.
+Return only the completed JSON object. Do not add any text outside the JSON.
+"""
 
-{
-  "summary": "prose overview of candidate",
+EXTRACT_USER_TEMPLATE = """Fill in this JSON template using information from the resume below.
+Rules:
+- Keep all keys exactly as shown.
+- Replace empty strings and arrays with extracted values.
+- Add one object per role to work_experience, one per project, one per degree.
+- For skills.technical, list specific technologies, tools, and languages.
+- For skills.soft, list interpersonal and workplace skills.
+- certifications is a list of strings.
+- If a field has no data, leave it as "" or [].
+- Return only the JSON object. No explanation, no code fences.
+
+JSON TEMPLATE:
+{{
+  "summary": "",
   "work_experience": [
-    {"title": "", "company": "", "duration": "", "bullets": []}
+    {{"title": "", "company": "", "duration": "", "bullets": []}}
   ],
-  "skills": {"technical": [], "soft": []},
-  "education": [{"degree": "", "institution": "", "year": ""}],
-  "projects": [{"name": "", "description": "", "technologies": []}],
+  "skills": {{"technical": [], "soft": []}},
+  "education": [{{"degree": "", "institution": "", "year": ""}}],
+  "projects": [{{"name": "", "description": "", "technologies": []}}],
   "certifications": []
-}
+}}
 
-**IMPORTANT RULES:**
-1. Output **only JSON**. Do **not** include explanations, text, notes, or markdown.
-2. Do **not** use ```json, ``` or any code fences.
-3. Do **not** add any line breaks, headings, or extra formatting.
-4. If a field is empty, return `""` for strings and `[]` for arrays.
-5. Any violation will be treated as invalid output.
-
-**Return JSON exactly as shown above. Nothing else.**
-!! YOUR RESPONSE MUST BE VALID JSON ONLY !!
-!! DO NOT RETURN CODE FENCES !!
-!! DO NOT INCLUDE '```json' IN YOUR RESPONSE !!
+RESUME:
+{resume_text}
 """
 
 
@@ -70,13 +76,15 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
 def extract_profile(text: str) -> dict:
     logger.debug("Running LLM profile extraction (model=%s, text_len=%d)", settings.llm_model, len(text))
     client = get_llm_client()
+    user_message = EXTRACT_USER_TEMPLATE.format(resume_text=text)
     response = client.chat.completions.create(
         model=settings.llm_model,
         messages=[
             {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
-            {"role": "user", "content": text},
+            {"role": "user", "content": user_message},
         ],
         temperature=0.1,
+        response_format={"type": "json_object"},
     )
     content = response.choices[0].message.content
     logger.debug("LLM profile extraction complete (response_len=%d)", len(content or ""))
