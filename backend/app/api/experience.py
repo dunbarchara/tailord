@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_api_key
 from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
-from app.core.deps_user import get_current_user
+from app.core.deps_user import require_approved_user
 from app.models.database import Experience, User
 from app.services.experience_processor import process_experience
 
@@ -38,7 +38,7 @@ class UserInputRequest(BaseModel):
 def get_upload_url(
     body: UploadUrlRequest,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     ext = body.filename.rsplit(".", 1)[-1].lower() if "." in body.filename else ""
@@ -85,7 +85,7 @@ def trigger_process(
     body: ProcessRequest,
     background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     experience = db.query(Experience).filter(
@@ -112,7 +112,7 @@ def trigger_process(
 @router.get("/experience")
 def get_experience(
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
 ):
     e = user.experience
     if not e:
@@ -135,7 +135,7 @@ def get_experience(
 @router.delete("/experience", status_code=204)
 def delete_experience(
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     e = user.experience
@@ -156,7 +156,7 @@ def delete_experience(
 def get_github_repos(
     username: str,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
 ):
     from app.core.mvp_github import fetch_repos
     return {"username": username, "repos": fetch_repos(username)}
@@ -166,7 +166,7 @@ def get_github_repos(
 def set_github(
     body: GitHubRequest,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     from app.core.mvp_github import fetch_repos
@@ -207,7 +207,7 @@ def set_github(
 @router.delete("/experience/github", status_code=204)
 def remove_github(
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
@@ -227,7 +227,7 @@ def remove_github(
 def set_user_input(
     body: UserInputRequest,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()

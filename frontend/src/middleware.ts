@@ -1,21 +1,32 @@
 import { withAuth } from "next-auth/middleware"
+import { NextResponse } from "next/server"
 
 export default withAuth(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function middleware(req) {
-    // You can add logging or role checks here later
+    const { pathname } = req.nextUrl
+    const status = req.nextauth.token?.status
+
+    // Approved users landing on /pending should go to dashboard
+    if (pathname === "/pending" && status === "approved") {
+      return NextResponse.redirect(new URL("/dashboard", req.url))
+    }
+
+    // Pending users cannot access the dashboard
+    if (pathname.startsWith("/dashboard") && status !== "approved") {
+      return NextResponse.redirect(new URL("/pending", req.url))
+    }
   },
   {
     pages: {
       signIn: "/login",
     },
     callbacks: {
+      // Handles unauthenticated users → redirect to /login
       authorized: ({ token }) => !!token,
     },
   }
 )
 
-// Only protect dashboard routes
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/pending"],
 }

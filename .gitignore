@@ -37,6 +37,9 @@ frontend/next-env.d.ts
 # Python / uv (backend)
 ############################################
 
+# Local dev scripts (never ship to prod)
+backend/dev_*.py
+
 # Python bytecode
 backend/__pycache__/
 backend/**/*.py[cod]

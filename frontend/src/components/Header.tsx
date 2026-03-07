@@ -65,7 +65,10 @@ export function Header() {
                                 Sign out
                             </Button>
                             <Button asChild>
-                                <Link href="/dashboard">Dashboard</Link>
+                                {session.user.status === "approved"
+                                    ? <Link href="/dashboard">Dashboard</Link>
+                                    : <Link href="/pending">Pending</Link>
+                                }
                             </Button>
                         </>
                     ) : (
@@ -85,12 +88,28 @@ export function Header() {
             {mobileMenuOpen && (
                 <div className="lg:hidden border-t border-border-subtle animate-fade-in">
                     <div className="space-y-1 px-6 py-4">
-                        <Button variant="ghost" className="w-full justify-start" asChild>
-                            <Link href="/login">Log in</Link>
-                        </Button>
-                        <Button className="w-full mt-2" asChild>
-                            <Link href="/register">Get started</Link>
-                        </Button>
+                        {session ? (
+                            <>
+                                <Button variant="ghost" className="w-full justify-start" onClick={() => signOut({ callbackUrl: "/" })}>
+                                    Sign out
+                                </Button>
+                                <Button className="w-full mt-2" asChild>
+                                    {session.user.status === "approved"
+                                        ? <Link href="/dashboard">Dashboard</Link>
+                                        : <Link href="/pending">Pending</Link>
+                                    }
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button variant="ghost" className="w-full justify-start" asChild>
+                                    <Link href="/login">Log in</Link>
+                                </Button>
+                                <Button className="w-full mt-2" asChild>
+                                    <Link href="/register">Get started</Link>
+                                </Button>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

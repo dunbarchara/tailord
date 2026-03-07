@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
 from app.core.deps_database import get_db
-from app.core.deps_user import get_current_user
+from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content
 from app.core.mvp_llm import extract_job, generate_tailoring
 from app.core.playwright_helper import get_rendered_content
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 async def create_tailoring(
     body: TailoringCreate,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     experience = db.query(Experience).filter(
@@ -89,7 +89,7 @@ async def create_tailoring(
 def regenerate_tailoring(
     tailoring_id: str,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     tailoring = (
@@ -129,7 +129,7 @@ def regenerate_tailoring(
 def delete_tailoring(
     tailoring_id: str,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     tailoring = (
@@ -155,7 +155,7 @@ def delete_tailoring(
 def get_tailoring(
     tailoring_id: str,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     tailoring = (
@@ -180,7 +180,7 @@ def get_tailoring(
 @router.get("/tailorings")
 def list_tailorings(
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
     tailorings = (

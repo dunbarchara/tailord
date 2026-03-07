@@ -5,7 +5,7 @@ from app.core.mvp_llm import extract_job
 from app.models.mvp_schemas import JobInput
 from app.core.extract import extract_markdown_content
 from app.core.playwright_helper import get_rendered_content
-from app.core.deps_user import get_current_user
+from app.core.deps_user import require_approved_user
 
 from app.models.database import Job, User
 from app.core.deps_database import get_db
@@ -21,7 +21,7 @@ async def create_job(
     data: JobInput,
     request: Request,
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_approved_user),
     db: Session = Depends(get_db)
 ):
     html = await get_rendered_content(data.job_url)

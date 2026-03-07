@@ -25,10 +25,35 @@ export const authOptions: NextAuthOptions = {
       return `${baseUrl}/dashboard`
     },
 
+    async jwt({ token, trigger }) {
+      // Fetch user status on sign-in and on explicit session update
+      // (e.g. when the pending page calls update() to re-check approval)
+      if (trigger === "signIn" || trigger === "update") {
+        try {
+          const res = await fetch(`${process.env.API_BASE_URL}/users/me`, {
+            method: "POST",
+            headers: {
+              "X-API-Key": process.env.API_KEY!,
+              "X-User-Id": token.sub!,
+              "X-User-Email": token.email ?? "",
+              "X-User-Name": token.name ?? "",
+            },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            token.status = data.status
+          }
+        } catch {
+          // Non-fatal: keep existing status if backend is unreachable
+        }
+      }
+      return token
+    },
+
     async session({ session, token }) {
-      // Ensure user exists before mutating
       if (session.user && token.sub) {
         session.user.id = token.sub
+        session.user.status = (token.status as string) ?? "pending"
       }
       return session
     },
