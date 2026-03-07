@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
+from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content
@@ -72,6 +73,7 @@ async def create_tailoring(
         user_id=user.id,
         job_id=job_record.id,
         generated_output=generated_output,
+        model=settings.llm_model,
     )
     db.add(tailoring)
     db.commit()
@@ -119,6 +121,7 @@ def regenerate_tailoring(
         raise HTTPException(status_code=502, detail=f"Tailoring generation failed: {e}")
 
     tailoring.generated_output = generated_output
+    tailoring.model = settings.llm_model
     db.commit()
     db.refresh(tailoring)
 
@@ -173,6 +176,7 @@ def get_tailoring(
         "company": job.extracted_job.get("company") if job.extracted_job else None,
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
+        "model": tailoring.model,
         "created_at": tailoring.created_at.isoformat(),
     }
 

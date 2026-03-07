@@ -29,7 +29,7 @@ variable "api_key" { # Provided once at provision time
 
 variable "llm_model" {
   type    = string
-  default = "gpt-4o-mini"
+  default = "phi-4-mini"
 }
 
 variable "cloudflare_zone_id" {
@@ -48,11 +48,6 @@ variable "google_client_id" {
 }
 
 variable "google_client_secret" {
-  sensitive = true
-  type      = string
-}
-
-variable "llm_api_key" {
   sensitive = true
   type      = string
 }

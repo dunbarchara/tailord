@@ -1,0 +1,10 @@
+# Model deployment spec — source of truth for what is deployed in Azure AI Foundry.
+# Deploy via: ai.azure.com → tailord-foundry → Model catalog → Phi-4-mini-instruct → Deploy as serverless
+# Deployment name must match `name` below (used as the model name in API calls via LLM_MODEL env var).
+#
+# To switch models: add a new file here, deploy via portal, update llm_model/llm_base_url Terraform vars,
+# redeploy the Container App, then delete the old deployment and remove its file.
+
+name: phi-4-mini
+model: Phi-4-mini-instruct
+model_registry: azureml

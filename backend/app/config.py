@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     api_key: str | None = None
 
     # LLM config
-    llm_provider: str = "openai"
+    # llm_base_url: set for Azure AI Foundry or local; omit to use OpenAI directly
+    # llm_api_key: required for OpenAI and Azure AI Foundry
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
