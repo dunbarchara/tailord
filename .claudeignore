@@ -1,0 +1,33 @@
+# Environment files — may contain secrets, API keys, connection strings
+.env
+.env.*
+!.env.example
+
+# Terraform variable files — contain db passwords, API keys, etc.
+*.tfvars
+*.tfvars.json
+
+# Terraform state — can contain plaintext secret values from provisioned resources
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+
+# Local-only backend scripts (gitignored, but may exist on disk)
+backend/dev_*.py
+
+# Dependency lockfiles — large and rarely useful to read directly
+uv.lock
+package-lock.json
+
+# Build artifacts and caches
+node_modules/
+.venv/
+__pycache__/
+.next/

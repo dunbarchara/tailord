@@ -21,16 +21,10 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
 
-    # AWS / S3
-    aws_access_key_id: str | None = None
-    aws_secret_access_key: str | None = None
-    aws_region: str = "us-east-2"
-    s3_uploads_bucket: str = "tailord-uploads"
-
     # Storage provider
-    storage_provider: str = "aws"  # "aws" | "azure"
+    storage_provider: str = "azure"
 
-    # Azure Blob Storage (used when storage_provider = "azure")
+    # Azure Blob Storage
     azure_storage_connection_string: str | None = None
     azure_storage_container: str = "tailord-uploads"
 
