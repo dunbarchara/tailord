@@ -107,6 +107,13 @@ resource "azurerm_container_app" "backend" {
   }
 
   template {
+    max_replicas = 1
+
+    http_scale_rule {
+      name                = "http-scaling"
+      concurrent_requests = 10
+    }
+
     container {
       name   = "backend"
       image  = "${azurerm_container_registry.tailord.login_server}/${var.project_name}-backend:latest"
