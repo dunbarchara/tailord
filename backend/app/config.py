@@ -17,9 +17,11 @@ class Settings(BaseSettings):
     # LLM config
     # llm_base_url: set for Azure AI Foundry or local; omit to use OpenAI directly
     # llm_api_key: required for OpenAI and Azure AI Foundry
+    # llm_api_version: required for Azure AI endpoints (e.g. 2024-05-01-preview); omit for OpenAI/local
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
+    llm_api_version: str | None = None
 
     # Storage provider — switch between "azure" and "aws" via env var
     storage_provider: str = "azure"

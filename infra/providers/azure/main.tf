@@ -135,6 +135,10 @@ resource "azurerm_container_app" "backend" {
         secret_name = "api-key"
       }
       env {
+        name  = "LOG_LEVEL"
+        value = var.log_level
+      }
+      env {
         name  = "STORAGE_PROVIDER"
         value = "azure"
       }
@@ -148,11 +152,15 @@ resource "azurerm_container_app" "backend" {
       }
       env {
         name  = "LLM_BASE_URL"
-        value = "${azurerm_cognitive_account.tailord_foundry.endpoint}models"
+        value = "${azurerm_cognitive_account.tailord_foundry.endpoint}openai/v1/"
       }
       env {
         name  = "LLM_MODEL"
         value = var.llm_model
+      }
+      env {
+        name  = "LLM_API_VERSION"
+        value = var.llm_api_version
       }
       env {
         name        = "LLM_API_KEY"

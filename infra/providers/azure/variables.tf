@@ -32,6 +32,17 @@ variable "llm_model" {
   default = "phi-4-mini"
 }
 
+variable "log_level" {
+  type    = string
+  default = "INFO"
+}
+
+variable "llm_api_version" {
+  description = "API version query param for Azure AI endpoints (e.g. 2024-05-01-preview). Leave empty for OpenAI or local."
+  type        = string
+  default     = ""
+}
+
 variable "cloudflare_zone_id" {
   sensitive = true
   type      = string
