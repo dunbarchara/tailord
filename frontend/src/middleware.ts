@@ -6,8 +6,13 @@ export default withAuth(
     const { pathname } = req.nextUrl
     const status = req.nextauth.token?.status
 
-    // Approved users landing on /pending should go to dashboard
-    if (pathname === "/pending" && status === "approved") {
+    // Backend was unreachable at sign-in — send to loading screen to poll
+    if (status === "checking" && pathname !== "/checking") {
+      return NextResponse.redirect(new URL("/checking", req.url))
+    }
+
+    // Approved users landing on /pending or /checking should go to dashboard
+    if ((pathname === "/pending" || pathname === "/checking") && status === "approved") {
       return NextResponse.redirect(new URL("/dashboard", req.url))
     }
 
@@ -28,5 +33,5 @@ export default withAuth(
 )
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/pending"],
+  matcher: ["/dashboard/:path*", "/pending", "/checking"],
 }

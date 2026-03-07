@@ -44,7 +44,9 @@ export const authOptions: NextAuthOptions = {
             token.status = data.status
           }
         } catch {
-          // Non-fatal: keep existing status if backend is unreachable
+          // Backend unreachable (e.g. cold start) — mark as checking so the
+          // client can poll and show a loading UI instead of blocking here
+          token.status = "checking"
         }
       }
       return token
