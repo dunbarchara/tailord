@@ -46,34 +46,27 @@ Technical skills:
 """
 
 SEMANTIC_USER_PROMPT_JOB = """
-Extract job data from the following job posting in JSON matching this schema:
+Fill in this JSON template using information from the job posting below.
+Rules:
+- Keep all keys exactly as shown.
+- Replace empty strings and arrays with extracted values.
+- Use null for string fields with no data, [] for list fields with no data.
+- skills.technical: specific technologies, tools, languages, frameworks, platforms.
+- skills.soft: interpersonal and workplace skills.
+- requirements.required vs requirements.preferred: classify based on section headings and phrasing ("must have", "nice to have", etc.).
+- Return only the JSON object. No explanation, no code fences.
 
-{
-  "company": string|null,
-  "title": string|null,
-  "responsibilities": string[],
-  "requirements": {"required":string[],"preferred":string[]},
-  "skills": {"technical":string[],"soft":string[]},
-}
+JSON TEMPLATE:
+{{
+  "company": null,
+  "title": null,
+  "responsibilities": [],
+  "requirements": {{"required": [], "preferred": []}},
+  "skills": {{"technical": [], "soft": []}}
+}}
 
-JOB POSTING MARKDOWN:
-
-```
+JOB POSTING:
 ___JOB_MARKDOWN___
-```
-
-Instructions:
-- Return ONLY valid JSON. Do NOT use markdown, backticks, or code fences.
-- Do not add explanations, comments, or extra text.
-- Include all fields exactly as in the schema.
-- Use null for missing string fields, [] for missing lists.
-- Normalize skills and responsibilities for clarity.
-- Classify requirements and skills according to section headings and phrasing.
-- End output exactly at the closing brace of the JSON object.
-
-!! YOUR RESPONSE MUST BE VALID JSON ONLY !!
-!! DO NOT RETURN CODE FENCES !!
-!! DO NOT INCLUDE '```json' IN YOUR RESPONSE !!
 """
 
 
@@ -87,7 +80,8 @@ def extract_job(job_posting_markdown) -> dict:
             {"role": "system", "content": SEMANTIC_SYSTEM_PROMPT_JOB},
             {"role": "user", "content": prompt}
         ],
-        temperature=llm_temperature
+        temperature=llm_temperature,
+        response_format={"type": "json_object"},
     )
     
     content_job = resp.choices[0].message.content
