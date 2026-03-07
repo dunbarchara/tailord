@@ -15,8 +15,8 @@ class StorageClient(ABC):
 
 
 def get_storage_client() -> StorageClient:
-    if settings.storage_provider == "azure":
-        from app.clients.storage_azure import AzureStorageClient
-        return AzureStorageClient()
-    from app.clients.storage_aws import S3StorageClient
-    return S3StorageClient()
+    if settings.storage_provider == "aws":
+        from app.clients.storage_aws import S3StorageClient
+        return S3StorageClient()
+    from app.clients.storage_azure import AzureStorageClient
+    return AzureStorageClient()

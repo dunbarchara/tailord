@@ -136,6 +136,30 @@ Tone: structured, professional, clean. Favor whitespace. Strong typographic hier
 
 ---
 
+## Cloud Portability
+
+The app is **currently deployed on Azure** but is designed to switch providers with minimal code changes. Preserve this when making changes.
+
+**What this means in practice:**
+- App code must not import Azure or AWS SDKs directly — always go through the abstraction layer
+- `StorageClient` (`backend/app/clients/storage_client.py`) is the storage abstraction; `AzureStorageClient` and `S3StorageClient` are the implementations. Add new providers here, not inline.
+- Provider is selected at runtime via `STORAGE_PROVIDER` env var (`"azure"` or `"aws"`)
+- Both `boto3` and `azure-storage-blob` are kept as dependencies so the same Docker image runs on either cloud
+- The LLM client is already cloud-agnostic: OpenAI SDK with configurable `LLM_BASE_URL` works with OpenAI, Azure AI Foundry, Ollama, and any OpenAI-compatible endpoint
+- Use **neutral naming** in API contracts and internal code — `storage_key` not `s3_key`, `storage_provider` not `azure_provider`
+
+**What is intentionally provider-specific:**
+- `infra/providers/azure/` — Terraform and bootstrap docs are expected to be Azure-specific
+- `infra/providers/aws/` — kept for reference if switching back
+- Azure-specific env vars (`AZURE_STORAGE_CONNECTION_STRING`, etc.) are implementation details behind the abstraction
+
+**Never do:**
+- Delete a storage provider implementation to "clean up" — keep both S3 and Azure clients
+- Import `azure.*` or `boto3` directly in app code outside of `clients/storage_*.py`
+- Use cloud-specific terminology in shared API contracts or DB fields
+
+---
+
 ## Constraints
 
 **Never do:**

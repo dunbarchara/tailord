@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -13,6 +14,7 @@ from app.models.database import Experience, User
 from app.services.experience_processor import process_experience
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
 
@@ -22,7 +24,7 @@ class UploadUrlRequest(BaseModel):
 
 
 class ProcessRequest(BaseModel):
-    s3_key: str
+    storage_key: str
     experience_id: str
 
 
@@ -41,6 +43,7 @@ def get_upload_url(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    logger.info("get_upload_url: user=%s filename=%s", user.id, body.filename)
     ext = body.filename.rsplit(".", 1)[-1].lower() if "." in body.filename else ""
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -48,22 +51,24 @@ def get_upload_url(
             detail=f"File type .{ext} not allowed. Supported: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    # Delete existing experience record + S3 object if one already exists
+    # Delete existing experience record + blob if one already exists
     existing = db.query(Experience).filter(Experience.user_id == user.id).first()
     if existing:
+        logger.debug("Deleting existing experience %s for user %s", existing.id, user.id)
         if existing.s3_key:
             try:
                 get_storage_client().delete_object(existing.s3_key)
             except Exception:
-                pass  # storage cleanup failure is non-fatal
+                logger.warning("Storage cleanup failed for key=%s — continuing", existing.s3_key)
         db.delete(existing)
         db.commit()
 
-    s3_key = f"users/{user.google_sub}/{uuid.uuid4()}.{ext}"
+    storage_key = f"users/{user.google_sub}/{uuid.uuid4()}.{ext}"
+    logger.debug("Assigned storage_key=%s", storage_key)
 
     experience = Experience(
         user_id=user.id,
-        s3_key=s3_key,
+        s3_key=storage_key,
         filename=body.filename,
         status="pending",
     )
@@ -71,11 +76,12 @@ def get_upload_url(
     db.commit()
     db.refresh(experience)
 
-    upload_url = get_storage_client().generate_upload_url(s3_key)
+    upload_url = get_storage_client().generate_upload_url(storage_key)
+    logger.info("get_upload_url complete: experience_id=%s", experience.id)
 
     return {
         "upload_url": upload_url,
-        "s3_key": s3_key,
+        "storage_key": storage_key,
         "experience_id": str(experience.id),
     }
 
@@ -88,12 +94,16 @@ def trigger_process(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    logger.info("trigger_process: user=%s storage_key=%s experience_id=%s",
+                user.id, body.storage_key, body.experience_id)
     experience = db.query(Experience).filter(
         Experience.user_id == user.id,
-        Experience.s3_key == body.s3_key,
+        Experience.s3_key == body.storage_key,
     ).first()
 
     if not experience:
+        logger.warning("trigger_process: no experience found for user=%s storage_key=%s",
+                       user.id, body.storage_key)
         raise HTTPException(status_code=404, detail="Experience record not found")
 
     experience.status = "processing"
@@ -105,6 +115,7 @@ def trigger_process(
         experience.s3_key,
         experience.filename,
     )
+    logger.info("trigger_process: background task queued for experience_id=%s", experience.id)
 
     return {"experience_id": str(experience.id), "status": "processing"}
 
@@ -114,6 +125,7 @@ def get_experience(
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
 ):
+    logger.debug("get_experience: user=%s", user.id)
     e = user.experience
     if not e:
         return None
@@ -138,6 +150,7 @@ def delete_experience(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    logger.info("delete_experience: user=%s", user.id)
     e = user.experience
     if not e:
         raise HTTPException(status_code=404, detail="No experience found")
@@ -146,10 +159,11 @@ def delete_experience(
         try:
             get_storage_client().delete_object(e.s3_key)
         except Exception:
-            pass  # storage delete failure is non-fatal; proceed with DB cleanup
+            logger.warning("delete_experience: storage delete failed for key=%s — continuing", e.s3_key)
 
     db.delete(e)
     db.commit()
+    logger.info("delete_experience: complete for user=%s", user.id)
 
 
 @router.get("/experience/github/{username}/repos")
