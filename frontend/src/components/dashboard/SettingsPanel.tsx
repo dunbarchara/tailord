@@ -1,15 +1,59 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from '@/components/ThemeProvider';
 import { Moon, Sun, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 
 export function SettingsPanel() {
   const { data: session } = useSession();
   const { darkMode, setDarkMode } = useTheme();
+
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data) => {
+        setFirstName(data.preferred_first_name ?? '');
+        setLastName(data.preferred_last_name ?? '');
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveStatus('idle');
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preferred_first_name: firstName.trim() || null,
+          preferred_last_name: lastName.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setSaveStatus('saved');
+        window.dispatchEvent(new CustomEvent('preferred-name-changed', {
+          detail: { firstName: firstName.trim(), lastName: lastName.trim() },
+        }));
+      } else {
+        setSaveStatus('error');
+      }
+    } catch {
+      setSaveStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const userInitials = session?.user?.name
     ? session.user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -32,6 +76,37 @@ export function SettingsPanel() {
               <p className="font-medium text-text-primary">{session?.user?.name ?? '—'}</p>
               <p className="text-sm text-text-secondary">{session?.user?.email ?? '—'}</p>
             </div>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Display name */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Display name</h2>
+            <p className="text-xs text-text-tertiary mt-1">
+              Used when generating tailorings. Defaults to your Google name if not set.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Input
+              placeholder="First name"
+              value={firstName}
+              onChange={(e) => { setFirstName(e.target.value); setSaveStatus('idle'); }}
+            />
+            <Input
+              placeholder="Last name"
+              value={lastName}
+              onChange={(e) => { setLastName(e.target.value); setSaveStatus('idle'); }}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : 'Save name'}
+            </Button>
+            {saveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
+            {saveStatus === 'error' && <p className="text-sm text-error">Failed to save</p>}
           </div>
         </section>
 

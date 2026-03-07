@@ -123,11 +123,15 @@ export function ExperienceManager() {
 
       const { upload_url, s3_key, experience_id } = await urlRes.json();
 
-      // Step 2: Upload file bytes directly to S3 (no auth headers — presigned URL handles that)
+      // Step 2: Upload file bytes directly to Azure Blob Storage via SAS URL
+      // x-ms-blob-type is required by Azure; Content-Type is passed through to the stored blob
       const uploadRes = await fetch(upload_url, {
         method: 'PUT',
         body: file,
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-ms-blob-type': 'BlockBlob',
+        },
       });
 
       if (!uploadRes.ok) {
