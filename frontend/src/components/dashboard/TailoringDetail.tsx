@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle, RotateCcw } from 'lucide-react';
+import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle, RotateCcw, Share2, Lock, Link } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -25,8 +25,11 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const [showShareConfirm, setShowShareConfirm] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -67,11 +70,57 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     }
   }
 
+  async function handleShare() {
+    setShowShareConfirm(false);
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data?.detail ?? 'Could not share tailoring.');
+        return;
+      }
+      const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
+      setTailoring(updated);
+      toast.success('Tailoring is now public.');
+    } catch {
+      toast.error('Could not reach the server.');
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function handleUnshare() {
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data?.detail ?? 'Could not make tailoring private.');
+        return;
+      }
+      setTailoring(prev => prev ? { ...prev, is_public: false } : null);
+      toast.success('Tailoring is now private.');
+    } catch {
+      toast.error('Could not reach the server.');
+    } finally {
+      setSharing(false);
+    }
+  }
+
   const handleCopy = () => {
     if (!tailoring) return;
     navigator.clipboard.writeText(tailoring.generated_output);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyLink = () => {
+    if (!tailoring?.public_slug) return;
+    const url = `${window.location.origin}/t/${tailoring.public_slug}`;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   if (loading) {
@@ -98,6 +147,10 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     month: 'short',
     day: 'numeric',
   });
+
+  const shareUrl = tailoring.public_slug
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/t/${tailoring.public_slug}`
+    : null;
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
@@ -127,6 +180,17 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 : <RotateCcw className="h-4 w-4" />}
               {regenerating ? 'Regenerating…' : 'Regenerate'}
             </Button>
+            {tailoring.is_public ? (
+              <Button variant="outline" size="sm" onClick={handleUnshare} disabled={sharing} className="gap-2">
+                {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                Make Private
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setShowShareConfirm(true)} disabled={sharing} className="gap-2">
+                {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+                Share
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleCopy} className="gap-2">
               {copied ? (
                 <><CheckCircle2 className="h-4 w-4 text-success" />Copied</>
@@ -136,6 +200,28 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             </Button>
           </div>
         </div>
+
+        {/* Shareable URL banner */}
+        {tailoring.is_public && shareUrl && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-surface-elevated border border-border-subtle">
+            <Link className="h-4 w-4 text-text-secondary flex-shrink-0" />
+            <a
+              href={shareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-sm text-text-link hover:underline truncate"
+            >
+              {shareUrl}
+            </a>
+            <Button variant="ghost" size="sm" onClick={handleCopyLink} className="gap-1.5 flex-shrink-0">
+              {copiedLink ? (
+                <><CheckCircle2 className="h-3.5 w-3.5 text-success" />Copied</>
+              ) : (
+                <><Copy className="h-3.5 w-3.5" />Copy link</>
+              )}
+            </Button>
+          </div>
+        )}
 
         {/* Generated document */}
         <div className={cn(
@@ -162,6 +248,21 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRegenConfirm(false)}>Cancel</Button>
             <Button onClick={handleRegenerate}>Regenerate</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showShareConfirm} onOpenChange={setShowShareConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Make this tailoring public?</DialogTitle>
+            <DialogDescription>
+              Anyone with the link will be able to view this tailoring without signing in. You can make it private again at any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowShareConfirm(false)}>Cancel</Button>
+            <Button onClick={handleShare}>Share</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
