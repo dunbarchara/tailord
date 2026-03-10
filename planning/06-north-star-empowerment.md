@@ -80,6 +80,45 @@ This philosophy should inform decisions across the platform — not just this on
 
 ---
 
+## Feature Vision: The Interactive Tailoring
+
+A Tailoring today is a static document — a one-way argument for the candidate's fit. That serves the candidate well when preparing an application, but it doesn't serve the moment that actually matters most: the interview itself.
+
+There is a second form a Tailoring could take.
+
+Instead of rendering the candidate's experience as a standalone document, this format re-renders the **job posting** as the frame — with the candidate's experience woven into it. Each requirement, responsibility, or skill from the job description is annotated inline or on hover with sourced evidence from the candidate's profile: specific roles, projects, technologies, or answers they've provided. The job description becomes the shared interface; the candidate's experience becomes the layer on top of it.
+
+### Why this matters in the interview context
+
+Interviews are constrained by time. Both parties arrive with asymmetric information — the interviewer knows the role deeply, the candidate knows their own experience deeply — and the conversation has to bridge that gap in 45 minutes. The failure mode is common: a candidate has directly relevant experience that never surfaces because neither party happened to steer toward it.
+
+An interactive Tailoring shared at the start of a call changes the dynamic. The interviewer can scan the job description they already know and immediately see, attached to each requirement, what the candidate claims as evidence — and choose where to dig in. The candidate isn't waiting to be asked the right question. The shared document becomes an agenda that neither party had to prepare from scratch.
+
+### The shareable format
+
+This is a natural extension of Day 4's public sharing layer. The same `/t/{slug}` URL that serves a static document today could serve either format — toggled at generation time or switchable on the public page. The interactive format is designed to be opened by both parties during a live conversation.
+
+### Technical shape
+
+The interactive Tailoring requires a structured mapping that the static format doesn't: each job requirement must be explicitly linked to sourced evidence rather than synthesized into prose. This implies a different generation pass and a different output schema:
+
+```python
+class RequirementAnnotation(BaseModel):
+    requirement: str            # verbatim or paraphrased from job description
+    category: str               # e.g. "Technical", "Leadership", "Domain"
+    candidate_evidence: list[str]  # sourced claims — specific, not generic
+    evidence_sources: list[str]    # "resume", "github:repo-name", "user_input"
+    strength: str               # "strong" | "partial" | "gap"
+
+class InteractiveTailoring(BaseModel):
+    annotations: list[RequirementAnnotation]
+    overall_fit_summary: str
+```
+
+The frontend renders this as an annotated job description — clean prose from the posting, with expandable or hoverable evidence panels per requirement. Gaps are surfaced honestly, consistent with the empowerment philosophy: a "gap" annotation with a follow-up question is more useful to both parties than silence.
+
+---
+
 ## What This Is Not
 
 - Not a chatbot. The conversational pattern is a metaphor for the interaction model, not a product requirement for a freeform chat interface.
