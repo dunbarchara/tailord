@@ -1,25 +1,40 @@
+from dataclasses import dataclass
 from enum import Enum
 
 
 class JsonMode(Enum):
-    JSON_SCHEMA = "json_schema"  # .parse() with strict Pydantic schema — OpenAI gpt-4o+, Azure AI
+    JSON_SCHEMA = "json_schema"  # .parse() with strict Pydantic schema — OpenAI gpt-4o+ only
     JSON_OBJECT = "json_object"  # {"type": "json_object"} — most compatible endpoints
     NONE = "none"                # unsupported; rely on prompt instructions + post-processing
 
 
-# Maps lowercase model name substrings to JsonMode. First match wins.
+@dataclass
+class ModelCapabilities:
+    json_mode: JsonMode = JsonMode.JSON_OBJECT
+    supports_temperature: bool = True
+
+
+# Maps lowercase model name substrings to ModelCapabilities. First match wins.
 # Add new entries here when onboarding a model with non-standard capabilities.
-_JSON_MODE_REGISTRY: list[tuple[str, JsonMode]] = [
-    ("microsoft_phi-4-mini-instruct", JsonMode.JSON_SCHEMA),
-    ("phi-4-mini",                    JsonMode.JSON_SCHEMA),
-    ("gpt-4o",                        JsonMode.JSON_SCHEMA),  # gpt-4o, gpt-4o-mini, gpt-4o-2024-*
+_CAPABILITIES_REGISTRY: list[tuple[str, ModelCapabilities]] = [
+    ("microsoft_phi-4-mini-instruct", ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
+    ("phi-4-mini",                    ModelCapabilities(json_mode=JsonMode.JSON_OBJECT)),
+    ("gpt-5-nano",                    ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA, supports_temperature=False)),
+    ("gpt-4o",                        ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
 ]
+
+_DEFAULT_CAPABILITIES = ModelCapabilities()
+
+
+def get_capabilities(model: str) -> ModelCapabilities:
+    """Return the full capability profile for the given model name."""
+    model_lower = model.lower()
+    for pattern, caps in _CAPABILITIES_REGISTRY:
+        if pattern in model_lower:
+            return caps
+    return _DEFAULT_CAPABILITIES
 
 
 def get_json_mode(model: str) -> JsonMode:
-    """Return the JSON enforcement mode for the given model name."""
-    model_lower = model.lower()
-    for pattern, mode in _JSON_MODE_REGISTRY:
-        if pattern in model_lower:
-            return mode
-    return JsonMode.JSON_OBJECT
+    """Convenience accessor — prefer get_capabilities() for new code."""
+    return get_capabilities(model).json_mode

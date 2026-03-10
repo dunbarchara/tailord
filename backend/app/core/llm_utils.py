@@ -55,25 +55,25 @@ def llm_parse(
     - INFO:  model, schema, mode, token usage, finish reason, latency (always visible)
     - DEBUG: full request messages and full response content (set LOG_LEVEL=DEBUG to enable)
     """
-    from app.core.model_config import get_json_mode, JsonMode
+    from app.core.model_config import get_capabilities, JsonMode
 
-    mode = get_json_mode(model)
+    caps = get_capabilities(model)
+    mode = caps.json_mode
 
     logger.debug(
         "llm_parse request | model=%s mode=%s schema=%s temperature=%s\n\n%s",
-        model, mode.value, response_model.__name__, temperature,
+        model, mode.value, response_model.__name__,
+        temperature if caps.supports_temperature else "n/a (unsupported)",
         _format_messages(messages),
     )
 
     start = time.perf_counter()
 
     if mode == JsonMode.JSON_SCHEMA:
-        completion = client.beta.chat.completions.parse(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            response_format=response_model,
-        )
+        parse_kwargs: dict = dict(model=model, messages=messages, response_format=response_model)
+        if caps.supports_temperature:
+            parse_kwargs["temperature"] = temperature
+        completion = client.beta.chat.completions.parse(**parse_kwargs)
         elapsed = time.perf_counter() - start
         message = completion.choices[0].message
         usage = completion.usage
@@ -90,7 +90,9 @@ def llm_parse(
         raw_content = message.content
 
     else:
-        kwargs: dict = dict(model=model, messages=messages, temperature=temperature)
+        kwargs: dict = dict(model=model, messages=messages)
+        if caps.supports_temperature:
+            kwargs["temperature"] = temperature
         if mode == JsonMode.JSON_OBJECT:
             kwargs["response_format"] = {"type": "json_object"}
         resp = client.chat.completions.create(**kwargs)
@@ -124,18 +126,22 @@ def llm_generate(
 
     Use this for tasks that return unstructured text rather than JSON.
     """
+    from app.core.model_config import get_capabilities
+
+    caps = get_capabilities(model)
+
     logger.debug(
         "llm_generate request | model=%s label=%s temperature=%s\n\n%s",
-        model, label, temperature,
+        model, label,
+        temperature if caps.supports_temperature else "n/a (unsupported)",
         _format_messages(messages),
     )
 
     start = time.perf_counter()
-    resp = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-    )
+    gen_kwargs: dict = dict(model=model, messages=messages)
+    if caps.supports_temperature:
+        gen_kwargs["temperature"] = temperature
+    resp = client.chat.completions.create(**gen_kwargs)
     elapsed = time.perf_counter() - start
 
     usage = resp.usage
@@ -143,8 +149,9 @@ def llm_generate(
     content = resp.choices[0].message.content
 
     logger.info(
-        "llm_generate | model=%s label=%s tokens=%d+%d=%d finish=%s latency=%.2fs",
+        "llm_generate | model=%s label=%s temp=%s tokens=%d+%d=%d finish=%s latency=%.2fs",
         model, label,
+        temperature if caps.supports_temperature else "n/a",
         usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
         finish_reason, elapsed,
     )

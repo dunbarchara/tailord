@@ -8,7 +8,7 @@
 resource "azurerm_cognitive_account" "tailord_foundry" {
   name                = "${var.project_name}-foundry"
   resource_group_name = azurerm_resource_group.tailord.name
-  location            = azurerm_resource_group.tailord.location
+  location            = "canadaeast"
   kind                = "AIServices"
   sku_name            = "S0"
   tags                = local.tags
