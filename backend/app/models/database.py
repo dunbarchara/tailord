@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, JSON, DateTime, func, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Text, JSON, DateTime, Boolean, func, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.clients.database import Base
@@ -95,6 +95,8 @@ class Tailoring(Base):
     )
     generated_output: Mapped[str] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    public_slug: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

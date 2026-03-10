@@ -74,21 +74,24 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 
 ---
 
-### Day 4 — Shareable Tailoring URLs
+### ✅ Day 4 — Shareable Tailoring URLs
 
 **Goal:** A tailoring can be made public and shared via a URL that doesn't require login.
 
 **Tasks:**
-- [ ] Add `is_public` boolean + `public_slug` (short unique string) columns to `tailorings` table
-  - Generate slug from `{company-slug}-{title-slug}-{random-4chars}` — readable and unique
-- [ ] Add backend endpoint: `GET /tailorings/public/{slug}` — no auth required, returns tailoring data
-- [ ] Add "Share" button in `TailoringDetail`:
-  - First click: prompts "Make this tailoring public?" (confirm)
-  - Enables public access, shows shareable URL, copy-to-clipboard
-  - Toggle to make private again
-- [ ] Add frontend public route: `/t/{slug}` — renders the tailoring without requiring login
-  - Clean, print-friendly layout — just the header and document
-  - Shows "Generated with Tailord" link at the bottom (passive marketing)
+- [x] Add `is_public` boolean + `public_slug` (unique string) columns to `tailorings` table via alembic migration
+  - Slug format: `{company-slug}-{title-slug}-{random-6chars}` — readable and collision-resistant
+- [x] Add backend endpoints: `POST /tailorings/{id}/share`, `DELETE /tailorings/{id}/share`, `GET /tailorings/public/{slug}`
+  - Public endpoint requires no user auth — API key only
+  - Slug generated once on first share, preserved across share/unshare toggles
+- [x] Add share popover in `TailoringDetail` toolbar (Notion-inspired):
+  - `Share` button (private) → popover with "Make public" CTA → confirmation dialog
+  - `Public` button (shared) → popover with shareable URL + copy icon + "Make private" (secondary, behind confirm)
+  - Two-click friction on "Make private" to prevent accidental unpublishing
+- [x] Add frontend public route: `/t/{slug}` — server component, no auth required
+  - Clean, print-friendly layout — document header, prose content, no nav chrome
+  - Shows "Generated with Tailord" footer link
+- [x] Refactored `TailoringDetail` layout: Notion-style 44px toolbar with breadcrumb + icon actions; document body is chrome-free
 
 **Why now:** Shareable URLs unlock multiple things at once — you can share your own work, users can share their tailorings with hiring managers, and it creates organic discovery.
 
@@ -198,6 +201,7 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
   - Auto-generate on user creation from name (e.g., "Chara Dunbar" → "chara-dunbar")
   - If collision, append a number
 - [ ] In Settings: allow the user to see and copy their public profile URL
+- [ ] **If implemented:** migrate `/t/{slug}` URLs to `/t/{username_slug}/{shortcode}` — namespaces sharing URLs under the user's identity and makes the public profile the natural root
 
 **Why this matters for the employment search:** A user's Tailord portfolio page shows *targeted, role-specific documents* — not a generic resume. Sharing `tailord.app/u/chara-dunbar` in an application is itself a signal of craft and product thinking.
 
@@ -232,7 +236,7 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 | 2 | GitHub + context frontend | Experience section fully functional, toasts, GitHub remove | ✅ |
 | 3 | Regenerate + Delete | Tailoring lifecycle complete | ✅ |
 | 3.5 | Cloud-agnostic infra | StorageClient abstraction, Terraform module refactor, Azure provider, backend containerized | ✅ |
-| 4 | Sharing | Public tailoring URLs at `/t/{slug}` | |
+| 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
 | 5 | Polish | Error states, loading states, onboarding flow | |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |

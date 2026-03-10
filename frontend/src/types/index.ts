@@ -4,6 +4,8 @@ export interface Tailoring {
   company: string | null
   job_url: string
   generated_output: string
+  is_public: boolean
+  public_slug: string | null
   created_at: string
 }
 
@@ -11,6 +13,8 @@ export interface TailoringListItem {
   id: string
   title: string | null
   company: string | null
+  is_public: boolean
+  public_slug: string | null
   created_at: string
 }
 

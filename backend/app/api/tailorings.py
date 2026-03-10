@@ -1,4 +1,7 @@
 import logging
+import re
+import random
+import string
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -16,6 +19,17 @@ from app.models.mvp_schemas import TailoringCreate, TailoringListItem, Tailoring
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _generate_slug(company: str | None, title: str | None) -> str:
+    def slugify(s: str) -> str:
+        s = s.lower().strip()
+        s = re.sub(r'[^\w\s-]', '', s)
+        s = re.sub(r'[\s_-]+', '-', s).strip('-')
+        return s[:20]
+    parts = [p for p in [slugify(company or ""), slugify(title or "")] if p]
+    suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+    return '-'.join(parts + [suffix])
 
 
 @router.post("/tailorings")
@@ -180,6 +194,79 @@ def get_tailoring(
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
         "model": tailoring.model,
+        "is_public": tailoring.is_public,
+        "public_slug": tailoring.public_slug,
+        "created_at": tailoring.created_at.isoformat(),
+    }
+
+
+@router.post("/tailorings/{tailoring_id}/share")
+def share_tailoring(
+    tailoring_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    if not tailoring.public_slug:
+        job = tailoring.job
+        company = job.extracted_job.get("company") if job and job.extracted_job else None
+        title = job.extracted_job.get("title") if job and job.extracted_job else None
+        tailoring.public_slug = _generate_slug(company, title)
+
+    tailoring.is_public = True
+    db.commit()
+    db.refresh(tailoring)
+
+    return {"public_slug": tailoring.public_slug}
+
+
+@router.delete("/tailorings/{tailoring_id}/share", status_code=204)
+def unshare_tailoring(
+    tailoring_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    tailoring.is_public = False
+    db.commit()
+
+
+@router.get("/tailorings/public/{slug}")
+def get_public_tailoring(
+    slug: str,
+    _: str = Depends(require_api_key),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.public_slug == slug, Tailoring.is_public.is_(True))
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    job = tailoring.job
+    return {
+        "title": job.extracted_job.get("title") if job and job.extracted_job else None,
+        "company": job.extracted_job.get("company") if job and job.extracted_job else None,
+        "job_url": job.job_url if job else None,
+        "generated_output": tailoring.generated_output,
         "created_at": tailoring.created_at.isoformat(),
     }
 
@@ -202,6 +289,8 @@ def list_tailorings(
             "id": str(t.id),
             "title": t.job.extracted_job.get("title") if t.job and t.job.extracted_job else None,
             "company": t.job.extracted_job.get("company") if t.job and t.job.extracted_job else None,
+            "is_public": t.is_public,
+            "public_slug": t.public_slug,
             "created_at": t.created_at.isoformat(),
         }
         for t in tailorings
