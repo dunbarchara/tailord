@@ -285,6 +285,12 @@
     font-family: var(--font-sans);
   }
 
+  button,
+  [role="button"],
+  a {
+    cursor: pointer;
+  }
+
   html {
     scroll-behavior: smooth;
   }
