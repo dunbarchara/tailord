@@ -10,3 +10,8 @@ output "db_connection_string" {
   value     = "postgresql+psycopg://tailord:${var.db_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord"
   sensitive = true
 }
+
+output "llm_base_url" {
+  description = "Foundry endpoint"
+  value       = azurerm_cognitive_account.tailord_foundry.endpoint
+}
