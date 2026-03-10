@@ -198,6 +198,7 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
   - Auto-generate on user creation from name (e.g., "Chara Dunbar" → "chara-dunbar")
   - If collision, append a number
 - [ ] In Settings: allow the user to see and copy their public profile URL
+- [ ] **If implemented:** migrate `/t/{slug}` URLs to `/t/{username_slug}/{shortcode}` — namespaces sharing URLs under the user's identity and makes the public profile the natural root
 
 **Why this matters for the employment search:** A user's Tailord portfolio page shows *targeted, role-specific documents* — not a generic resume. Sharing `tailord.app/u/chara-dunbar` in an application is itself a signal of craft and product thinking.
 
