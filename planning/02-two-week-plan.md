@@ -226,6 +226,52 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 
 ---
 
+### Day 11 — Security Review
+
+**Goal:** Identify and fix vulnerabilities before this product is referenced publicly or used with real user data.
+
+**Threat model for Tailord:** single-tenant SaaS, authenticated users, LLM pipeline ingesting untrusted content (job URLs, resume text), public endpoints at `/t/{slug}`.
+
+---
+
+#### Prompt Injection
+The LLM pipeline ingests content from two untrusted sources: job postings (scraped from arbitrary URLs) and user-provided resume/additional context text. A malicious job posting could embed instructions designed to manipulate the LLM output — e.g., override the tailoring prompt, exfiltrate experience data, or produce harmful content.
+
+- [ ] Audit `generate_tailoring()` and all LLM calls: are system prompts and user-supplied content cleanly separated? Is user content always in the `user` role, never interpolated into the `system` prompt?
+- [ ] Add a scrape sanitization step: strip `<script>`, hidden text, and suspiciously long invisible elements before passing scraped content to the LLM
+- [ ] Consider capping scraped content length fed to the LLM (e.g., 8k tokens) — limits both injection surface and cost
+- [ ] Review whether LLM output is ever executed, eval'd, or rendered as raw HTML — it should only ever be rendered as Markdown
+
+#### SQL Injection
+- [ ] Confirm all DB queries go through SQLAlchemy ORM parameterization — no raw SQL string interpolation anywhere
+- [ ] Grep for `text(`, `execute(`, `f"SELECT`, `f"INSERT` — any raw SQL needs review
+- [ ] Verify alembic migration scripts don't introduce unsafe patterns
+
+#### Auth & Token Abuse
+- [ ] **API key exposure:** The `X-API-Key` header is used by the frontend to authenticate backend calls. Confirm it is never logged, never returned in error responses, and not accessible to client-side JS (should only live in Next.js API routes server-side)
+- [ ] **Session abuse:** NextAuth JWT sessions — confirm `session.user.id` (google_sub) is validated on every backend call via the `get_current_user` dependency; a forged `X-User-Id` header from a direct backend call should not bypass auth (the backend is internal-only, but belt-and-suspenders)
+- [ ] **Public slug enumeration:** `/t/{slug}` is intentionally public, but verify there's no way to enumerate all public slugs (no `/tailorings/public` list endpoint, no sequential IDs)
+- [ ] **Rate limiting:** No rate limiting exists on the tailoring creation endpoint — a single user could spam LLM calls, running up cost. Add a per-user limit (e.g., 10 tailorings/hour) or at minimum log a warning and review.
+- [ ] **OAuth state validation:** Confirm NextAuth CSRF token / state param is validated on the Google OAuth callback
+
+#### Input Validation & Injection Surface
+- [ ] **URL validation:** `job_url` is passed to Playwright. Confirm it is validated as an HTTP/HTTPS URL before scraping — prevent `file://`, `ftp://`, or SSRF via internal Azure metadata URLs (e.g., `http://169.254.169.254/`)
+- [ ] **File upload:** Resume uploads go directly to Azure Blob via presigned URL — confirm the backend enforces file type (PDF/DOCX/TXT only) and size limits at the presigned URL generation step, not just client-side
+- [ ] **XSS:** Tailoring output is rendered as Markdown. Confirm the Markdown renderer sanitizes HTML — no `dangerouslySetInnerHTML` with raw LLM output
+
+#### Cost & Performance
+- [ ] **LLM token usage:** Add logging of prompt + completion token counts per tailoring generation. Establish a baseline; set an alert threshold.
+- [ ] **Runaway scraping:** Playwright has a timeout now (Day 5), but confirm it applies to both navigation and content extraction, not just page load
+- [ ] **No caching on scrape:** If a user creates two tailorings for the same URL, it scrapes twice. Consider caching the extracted job by URL (already stored in the `Job` record — check if it's being reused or re-scraped)
+- [ ] **DB query patterns:** Check for N+1 queries in the tailoring list endpoint — if it fetches jobs for each tailoring separately, add a join
+
+#### Secrets & Config
+- [ ] Grep for hardcoded secrets, API keys, or connection strings in source (should be zero — all via env vars)
+- [ ] Confirm `.env` files are in `.gitignore` and not tracked
+- [ ] Review Azure Key Vault usage — are all production secrets actually coming from Key Vault, or are any set as plain Container App env vars?
+
+---
+
 ## Day-by-Day Summary
 
 | Day | Focus | Output | Status |
@@ -241,6 +287,7 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 | 8 | Notion polish | Parent page selection, stored export URL | |
 | 9 | Public portfolio | `/u/{slug}` page with public tailorings | |
 | 10 | Documentation + cleanup | README, remove legacy code, screenshots | |
+| 11 | Security review | Prompt injection, SQL injection, token abuse, cost controls, SSRF | |
 
 ---
 
