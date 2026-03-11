@@ -4,6 +4,7 @@ import random
 import string
 
 from fastapi import APIRouter, Depends, HTTPException
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
@@ -53,15 +54,33 @@ async def create_tailoring(
     try:
         html = await get_rendered_content(body.job_url)
         job_markdown = extract_markdown_content(html)
-    except Exception as e:
+    except PlaywrightTimeoutError:
+        logger.exception("Playwright timeout for %s", body.job_url)
+        raise HTTPException(
+            status_code=422,
+            detail="That job URL took too long to load. Try again, or check that the URL is publicly accessible.",
+        )
+    except PlaywrightError:
+        logger.exception("Playwright error for %s", body.job_url)
+        raise HTTPException(
+            status_code=422,
+            detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
+        )
+    except Exception:
         logger.exception("Playwright scrape failed for %s", body.job_url)
-        raise HTTPException(status_code=422, detail=f"Could not fetch that URL: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
+        )
 
     try:
         extracted_job = extract_job(job_markdown)
-    except Exception as e:
+    except Exception:
         logger.exception("Job extraction LLM failed")
-        raise HTTPException(status_code=502, detail=f"Job extraction failed: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail="We scraped the page but couldn't extract a job description. The posting may be in an unsupported format.",
+        )
 
     job_record = Job(
         user_id=user.id,
@@ -81,9 +100,9 @@ async def create_tailoring(
             extracted_job,
             candidate_name,
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Tailoring generation LLM failed")
-        raise HTTPException(status_code=502, detail=f"Tailoring generation failed: {e}")
+        raise HTTPException(status_code=502, detail="Tailoring generation failed. Please try again.")
 
     tailoring = Tailoring(
         user_id=user.id,
@@ -133,9 +152,9 @@ def regenerate_tailoring(
             tailoring.job.extracted_job,
             candidate_name,
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Tailoring regeneration LLM failed")
-        raise HTTPException(status_code=502, detail=f"Tailoring generation failed: {e}")
+        raise HTTPException(status_code=502, detail="Tailoring generation failed. Please try again.")
 
     tailoring.generated_output = generated_output
     tailoring.model = settings.llm_model
@@ -289,6 +308,7 @@ def list_tailorings(
             "id": str(t.id),
             "title": t.job.extracted_job.get("title") if t.job and t.job.extracted_job else None,
             "company": t.job.extracted_job.get("company") if t.job and t.job.extracted_job else None,
+            "job_url": t.job.job_url if t.job else None,
             "is_public": t.is_public,
             "public_slug": t.public_slug,
             "created_at": t.created_at.isoformat(),

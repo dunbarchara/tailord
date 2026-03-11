@@ -97,24 +97,93 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 
 ---
 
-### Day 5 — Polish, Error States, Loading States
+### ✅ Day 5 — Polish, Error States, Loading States
 
 **Goal:** The product feels complete, not like a prototype. No dead ends, no blank screens.
 
 **Tasks:**
-- [ ] Review every async operation and ensure proper loading states exist
-- [ ] Review every error path:
-  - Scrape failure (URL unreachable, blocked by Cloudflare) → clear user message
-  - LLM JSON parse failure → clear user message, suggest retry
-  - Resume processing failure → show error state in experience section, offer re-upload
-- [ ] Add a processing timeout on tailoring creation (currently no timeout — can hang forever)
-  - Set a 90-second timeout on the Playwright + LLM calls combined
-  - Return 408/504 with a clear message if exceeded
-- [ ] Improve the empty state: when no tailorings exist, show a mini onboarding flow
-  - Step 1: "Upload your resume" with a link to `/dashboard/experience`
-  - Step 2: "Paste a job URL" — links to `/dashboard/tailorings/new`
-  - Step indicator showing where they are
-- [ ] Audit the tailoring list in the sidebar: ensure title + company always show (fallback to URL if missing)
+- [x] Error handling across the backend: scrape failures, LLM parse errors, experience processing errors — all return structured messages
+- [x] Add processing timeouts: Playwright scrape + LLM calls now have explicit timeouts (no more infinite hangs)
+- [x] Recent Tailorings component on the dashboard home page — replaces the empty shell, surfaces your most recent work immediately
+- [x] Sidebar search — filter tailorings by title/company as you type
+- [x] Duplicate URL confirmation — creating a new tailoring for a URL that already has one prompts "are you sure?" instead of silently creating a duplicate
+- [x] `lib/tailorings.ts` — shared fetch logic extracted from components
+- [x] **Unplanned:** Documented North Star — wrote `planning/06-north-star-empowerment.md` capturing the product direction (conversational, guided enrichment) that should inform future feature decisions
+
+**What was deprioritized:**
+- Mini onboarding flow (step indicator) — the Recent Tailorings dashboard page serves the same new-user orientation purpose, less overhead
+- Explicit loading state audit — handled implicitly by existing sonner toasts and skeleton states already in place
+
+---
+
+### Day 5.5 — Pipeline Robustness
+
+**Goal:** The core generate-a-tailoring pipeline produces consistently high-quality output, not just output. Right now it works in the happy path — but a scanned PDF, a Cloudflare-gated job URL, a token-truncated response, or an LLM that returns meta-commentary will silently produce a bad tailoring. Fix the pipeline's weak points before adding new surfaces on top of it.
+
+**Current state (from reading the code):**
+- `experience_processor.py`: pypdf does a plain `.extract_text()` join — no structure, no column handling. Scanned PDFs return empty strings and are silently stored as `status=ready`.
+- `tailorings.py` (`create_tailoring`): scrape → extract_job → generate_tailoring is one sequential request with no intermediate saves. If Cloudflare returns a challenge page, `extract_job()` runs on that noise and returns nulls — job is stored with `company=null, title=null`, tailoring is generated from garbage.
+- `llm_utils.py` (`llm_parse` / `llm_generate`): `finish_reason` is logged but never acted on. A response truncated by `max_tokens` (finish_reason=`length`) is stored and shown as if it were complete.
+- `tailoring_generator.py`: `_format_sourced_profile` dumps raw JSON into the prompt. A verbose profile + a detailed job posting can easily push beyond practical token limits, and there's no cap.
+- `profile_extraction.py` prompt: the JSON template approach produces empty-but-valid results for scanned or corrupt files — no minimum signal threshold before marking ready.
+- Job records are re-scraped even when the same URL was already scraped — the stored `extracted_job` on the existing `Job` record isn't checked before re-running Playwright.
+
+---
+
+#### 1. Scrape content gating
+Before calling `extract_job()`, validate that the scraped content is actually a job posting — not a Cloudflare challenge page, a login wall, or near-empty content.
+
+- [ ] Add `is_valid_job_content(markdown: str) -> bool` in `core/extract.py`:
+  - Reject if content is under ~200 chars after stripping whitespace
+  - Reject if it contains known bot-detection signals: "Enable JavaScript", "Checking your browser", "Please verify you are a human", "Access denied", "cf-browser-verification"
+  - Return a descriptive reason so the error message can be specific ("That page appears to be bot-protected" vs "That page didn't contain a job posting")
+- [ ] Gate `extract_job()` call on this check — return 422 with the reason before wasting an LLM call
+
+#### 2. Empty profile detection
+A scanned PDF, a corrupt file, or an image-only resume will produce empty text, which pypdf silently returns as an empty string. The LLM then produces an `ExtractedProfile` with empty arrays that passes Pydantic validation and gets stored as `status=ready`.
+
+- [ ] After `extract_text()`, check minimum signal: if `len(text.strip()) < 100`, fail with a clear error: "We couldn't extract text from this file — it may be a scanned image. Try a text-based PDF or paste your experience directly."
+- [ ] After `extract_profile()`, validate the result has at least one non-empty field (any non-empty `work_experience`, `skills.technical`, or `summary`). If it's all empty, mark as error rather than ready with the message: "Your file was readable, but we couldn't identify any work experience or skills. Try a plain-text PDF or DOCX."
+- [ ] These checks live in `process_experience()` before writing `status=ready`
+
+#### 3. LLM output validation
+The `finish_reason` is logged but silently ignored. A tailoring truncated at token limit looks identical to a complete one.
+
+- [ ] In `llm_generate()`: if `finish_reason == "length"`, raise a new `LLMTruncationError` (similar to `LLMRefusalError`) rather than returning the partial string
+- [ ] In `tailorings.py`: catch `LLMTruncationError` and return 502 with "The generated output was cut short — try again with a shorter job posting, or contact support."
+- [ ] After `generate_tailoring()` returns, validate minimum output quality before storing:
+  - Non-empty string
+  - At least one `##` section header (the prompt requires 3–5 fit claims)
+  - Does not start with "I'm sorry", "I cannot", or "As an AI" (LLM refusal slipping through non-JSON mode)
+  - If validation fails, raise rather than persisting garbage
+
+#### 4. Profile formatting for LLM
+`_format_sourced_profile()` dumps raw JSON into the tailoring prompt. JSON is verbose — field names, quotes, brackets all eat tokens and add noise the model has to parse. A large profile (multiple jobs, many bullets, GitHub repos) can approach or exceed practical limits.
+
+- [ ] Rewrite `_format_sourced_profile()` to produce a compact, human-readable text format instead of raw JSON:
+  ```
+  [Source: Resume]
+  Summary: Senior engineer with 8 years in distributed systems...
+  Work Experience:
+    • Staff Engineer @ Acme Corp (2020–2024): Led migration to microservices; reduced P99 latency by 40%
+  Skills: Python, Go, Kubernetes, Terraform
+  ```
+- [ ] Add a `truncate_to_tokens(text: str, max_tokens: int)` utility — use a character-based heuristic (1 token ≈ 4 chars) to cap profile + job content before passing to the LLM. Log a warning when truncation occurs.
+- [ ] Cap the job posting passed to `extract_job()` as well — if `job_markdown` exceeds ~12k chars, trim to the most relevant sections (look for the job title/responsibilities/requirements sections first)
+
+#### 5. Job URL caching / reuse
+Every `create_tailoring` call runs Playwright + `extract_job()` even when the same URL was scraped an hour ago. The `Job` record already stores `extracted_job` — it just isn't checked.
+
+- [ ] In `create_tailoring()`: before scraping, query for an existing `Job` record matching `(user_id, job_url)`. If found and `extracted_job` is non-null, skip scrape + extraction and reuse the stored result.
+- [ ] If the user explicitly wants a fresh scrape (e.g., the job posting was updated), a future "re-scrape" action can force it — but the default should be reuse.
+- [ ] This also fixes the duplicate URL UX: if an existing Job exists, the frontend already warns the user — now the backend respects it too.
+
+#### 6. Prompt iteration
+The current prompts work, but have rough edges visible in the code: the job extraction prompt has emphatic `!! DO NOT RETURN CODE FENCES !!` lines that signal the model was fighting back. The tailoring prompt passes the full extracted job as a JSON blob, which is redundant since the profile already contains sourced context.
+
+- [ ] Review and iterate the tailoring prompt's `USER_TEMPLATE` — the structured output format is good, but consider whether passing `extracted_job` as raw JSON vs a prose summary produces better fit claims. Test both.
+- [ ] Profile extraction prompt: add explicit instruction for handling sparse input ("If the resume appears to be mostly blank or contains only a name/contact, return all fields empty and do not invent information.")
+- [ ] Job extraction prompt: remove the emphatic CAPS instructions — if the model still emits fences, handle it in `strip_json_fences()` (which already exists) rather than fighting it in the prompt. Calmer prompts produce more consistent output.
 
 ---
 
@@ -228,6 +297,52 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 
 ---
 
+### Day 11 — Security Review
+
+**Goal:** Identify and fix vulnerabilities before this product is referenced publicly or used with real user data.
+
+**Threat model for Tailord:** single-tenant SaaS, authenticated users, LLM pipeline ingesting untrusted content (job URLs, resume text), public endpoints at `/t/{slug}`.
+
+---
+
+#### Prompt Injection
+The LLM pipeline ingests content from two untrusted sources: job postings (scraped from arbitrary URLs) and user-provided resume/additional context text. A malicious job posting could embed instructions designed to manipulate the LLM output — e.g., override the tailoring prompt, exfiltrate experience data, or produce harmful content.
+
+- [ ] Audit `generate_tailoring()` and all LLM calls: are system prompts and user-supplied content cleanly separated? Is user content always in the `user` role, never interpolated into the `system` prompt?
+- [ ] Add a scrape sanitization step: strip `<script>`, hidden text, and suspiciously long invisible elements before passing scraped content to the LLM
+- [ ] Consider capping scraped content length fed to the LLM (e.g., 8k tokens) — limits both injection surface and cost
+- [ ] Review whether LLM output is ever executed, eval'd, or rendered as raw HTML — it should only ever be rendered as Markdown
+
+#### SQL Injection
+- [ ] Confirm all DB queries go through SQLAlchemy ORM parameterization — no raw SQL string interpolation anywhere
+- [ ] Grep for `text(`, `execute(`, `f"SELECT`, `f"INSERT` — any raw SQL needs review
+- [ ] Verify alembic migration scripts don't introduce unsafe patterns
+
+#### Auth & Token Abuse
+- [ ] **API key exposure:** The `X-API-Key` header is used by the frontend to authenticate backend calls. Confirm it is never logged, never returned in error responses, and not accessible to client-side JS (should only live in Next.js API routes server-side)
+- [ ] **Session abuse:** NextAuth JWT sessions — confirm `session.user.id` (google_sub) is validated on every backend call via the `get_current_user` dependency; a forged `X-User-Id` header from a direct backend call should not bypass auth (the backend is internal-only, but belt-and-suspenders)
+- [ ] **Public slug enumeration:** `/t/{slug}` is intentionally public, but verify there's no way to enumerate all public slugs (no `/tailorings/public` list endpoint, no sequential IDs)
+- [ ] **Rate limiting:** No rate limiting exists on the tailoring creation endpoint — a single user could spam LLM calls, running up cost. Add a per-user limit (e.g., 10 tailorings/hour) or at minimum log a warning and review.
+- [ ] **OAuth state validation:** Confirm NextAuth CSRF token / state param is validated on the Google OAuth callback
+
+#### Input Validation & Injection Surface
+- [ ] **URL validation:** `job_url` is passed to Playwright. Confirm it is validated as an HTTP/HTTPS URL before scraping — prevent `file://`, `ftp://`, or SSRF via internal Azure metadata URLs (e.g., `http://169.254.169.254/`)
+- [ ] **File upload:** Resume uploads go directly to Azure Blob via presigned URL — confirm the backend enforces file type (PDF/DOCX/TXT only) and size limits at the presigned URL generation step, not just client-side
+- [ ] **XSS:** Tailoring output is rendered as Markdown. Confirm the Markdown renderer sanitizes HTML — no `dangerouslySetInnerHTML` with raw LLM output
+
+#### Cost & Performance
+- [ ] **LLM token usage:** Add logging of prompt + completion token counts per tailoring generation. Establish a baseline; set an alert threshold.
+- [ ] **Runaway scraping:** Playwright has a timeout now (Day 5), but confirm it applies to both navigation and content extraction, not just page load
+- [ ] **No caching on scrape:** If a user creates two tailorings for the same URL, it scrapes twice. Consider caching the extracted job by URL (already stored in the `Job` record — check if it's being reused or re-scraped)
+- [ ] **DB query patterns:** Check for N+1 queries in the tailoring list endpoint — if it fetches jobs for each tailoring separately, add a join
+
+#### Secrets & Config
+- [ ] Grep for hardcoded secrets, API keys, or connection strings in source (should be zero — all via env vars)
+- [ ] Confirm `.env` files are in `.gitignore` and not tracked
+- [ ] Review Azure Key Vault usage — are all production secrets actually coming from Key Vault, or are any set as plain Container App env vars?
+
+---
+
 ## Day-by-Day Summary
 
 | Day | Focus | Output | Status |
@@ -237,12 +352,14 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 | 3 | Regenerate + Delete | Tailoring lifecycle complete | ✅ |
 | 3.5 | Cloud-agnostic infra | StorageClient abstraction, Terraform module refactor, Azure provider, backend containerized | ✅ |
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
-| 5 | Polish | Error states, loading states, onboarding flow | |
+| 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
+| 5.5 | Pipeline robustness | Scrape gating, empty profile detection, output validation, token budgeting, job URL caching, prompt iteration | |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
 | 9 | Public portfolio | `/u/{slug}` page with public tailorings | |
 | 10 | Documentation + cleanup | README, remove legacy code, screenshots | |
+| 11 | Security review | Prompt injection, SQL injection, token abuse, cost controls, SSRF | |
 
 ---
 

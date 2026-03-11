@@ -9,6 +9,18 @@ from app.services.profile_extractor import extract_profile
 logger = logging.getLogger(__name__)
 
 
+def _friendly_processing_error(exc: Exception) -> str:
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    if "timeout" in name or "timeout" in msg:
+        return "Profile extraction timed out — please try again."
+    if any(k in name or k in msg for k in ("pdf", "pypdf", "docx", "document", "unsupported")):
+        return "Couldn't read this file — try a plain PDF or DOCX."
+    if "decode" in msg or "unicode" in msg or "encoding" in msg:
+        return "Couldn't read this file — try a plain PDF or DOCX."
+    return "Something went wrong while processing your file. Please try uploading again."
+
+
 def extract_text(file_bytes: bytes, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
 
@@ -68,7 +80,7 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
         except Exception as e:
             logger.exception("process_experience failed for experience_id=%s: %s", experience_id, e)
             experience.status = "error"
-            experience.error_message = str(e)
+            experience.error_message = _friendly_processing_error(e)
             db.commit()
 
     finally:

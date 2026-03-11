@@ -17,6 +17,7 @@ import {
   LogOut,
   ChevronsUpDown,
   Trash2,
+  Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -59,6 +60,7 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [preferredName, setPreferredName] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     fetch('/api/users')
@@ -91,6 +93,16 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
       router.refresh();
     }
   }
+
+  const filteredTailorings = query.trim()
+    ? tailorings.filter((t) => {
+        const q = query.toLowerCase();
+        return (
+          t.title?.toLowerCase().includes(q) ||
+          t.company?.toLowerCase().includes(q)
+        );
+      })
+    : tailorings;
 
   const isActive = (href: string) => pathname === href || Boolean(pathname?.startsWith(href));
 
@@ -145,12 +157,36 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
         <p className="text-xs font-medium text-text-tertiary px-2 mb-2 uppercase tracking-wider">
           Tailorings
         </p>
-        {tailorings.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-text-tertiary">No tailorings yet</p>
+        {tailorings.length > 0 && (
+          <div className="relative mb-2">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-tertiary pointer-events-none" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+              placeholder="Search…"
+              className="w-full pl-7 pr-2 py-1.5 text-xs bg-surface-sunken border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-border-focus"
+            />
+          </div>
+        )}
+        {filteredTailorings.length === 0 && query ? (
+          <p className="px-2 py-1.5 text-xs text-text-tertiary">No results</p>
+        ) : filteredTailorings.length === 0 ? (
+          <Link
+            href="/dashboard/tailorings/new"
+            className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors rounded-md hover:bg-surface-overlay"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New tailoring
+          </Link>
         ) : (
           <div className="space-y-0.5">
-            {tailorings.map((tailoring) => {
+            {filteredTailorings.map((tailoring) => {
               const active = pathname === `/dashboard/tailorings/${tailoring.id}`;
+              const label = tailoring.title
+                ?? (tailoring.job_url ? (() => { try { return new URL(tailoring.job_url!).hostname.replace(/^www\./, ''); } catch { return null; } })() : null)
+                ?? 'Untitled';
               return (
                 <div key={tailoring.id} className="group relative">
                   <Link
@@ -164,7 +200,7 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
                   >
                     <FileText className="h-4 w-4 mt-0.5 flex-shrink-0 text-text-tertiary" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium leading-tight">{tailoring.title ?? 'Untitled'}</p>
+                      <p className="truncate text-sm font-medium leading-tight">{label}</p>
                       <p className="truncate text-xs text-text-tertiary mt-0.5">{tailoring.company ?? ''}</p>
                     </div>
                   </Link>
