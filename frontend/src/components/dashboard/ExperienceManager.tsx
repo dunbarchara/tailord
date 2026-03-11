@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { toastError } from '@/lib/utils';
 import type { ExperienceRecord } from '@/types';
 
 type UploadPhase =
@@ -203,7 +204,7 @@ export function ExperienceManager() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toast.error(err.detail ?? `Failed to remove (${res.status})`);
+      toastError(err.detail ?? `Failed to remove (${res.status})`);
       setGithubState('idle');
       return;
     }
@@ -230,7 +231,7 @@ export function ExperienceManager() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toast.error(err.detail ?? `Failed to save (${res.status})`);
+      toastError(err.detail ?? `Failed to save (${res.status})`);
       setDirectState('idle');
       return;
     }

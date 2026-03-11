@@ -17,8 +17,13 @@ export async function proxyToBackend(
 
     if (!res.ok) {
       const text = await res.text()
+      let detail: string = text
+      try {
+        const parsed = JSON.parse(text)
+        if (typeof parsed?.detail === 'string') detail = parsed.detail
+      } catch {}
       return NextResponse.json(
-        { error: `Backend error: ${res.status}`, detail: text },
+        { error: `Backend error: ${res.status}`, detail },
         { status: res.status }
       )
     }
@@ -69,8 +74,13 @@ export async function proxyToBackendWithUser(
 
     if (!res.ok) {
       const text = await res.text()
+      let detail: string = text
+      try {
+        const parsed = JSON.parse(text)
+        if (typeof parsed?.detail === 'string') detail = parsed.detail
+      } catch {}
       return NextResponse.json(
-        { error: `Backend error: ${res.status}`, detail: text },
+        { error: `Backend error: ${res.status}`, detail },
         { status: res.status }
       )
     }

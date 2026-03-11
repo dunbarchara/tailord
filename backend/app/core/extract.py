@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
@@ -142,6 +143,119 @@ def extract_meta_signals(html: str) -> dict:
 
     logger.debug("extract_meta_signals: %s", result)
     return result
+
+
+_BOT_DETECTION_PHRASES = [
+    "enable javascript and cookies to continue",
+    "checking your browser before accessing",
+    "please verify you are a human",
+    "ddos protection by cloudflare",
+    "just a moment...",
+    "cf-browser-verification",
+    "access denied",
+    "403 forbidden",
+]
+
+_JOB_REMOVED_PHRASES = [
+    "this job is no longer available",
+    "this position has been filled",
+    "this job listing has expired",
+    "this posting has been removed",
+    "job listing has expired",
+    "this listing has expired",
+    "this job has expired",
+    "no longer accepting applications",
+    "position has been closed",
+    "this position is no longer available",
+    "this role is no longer available",
+    "this opportunity is no longer available",
+    "this requisition is no longer available",
+    "this job is not available",
+    "this job is closed",
+    "position is filled",
+    "job is no longer active",
+    "job not found",
+    "the job you requested was not found",
+]
+
+_LOGIN_WALL_PHRASES = [
+    "sign in to view this job",
+    "log in to view this job",
+    "please sign in to continue",
+    "create an account to view",
+    "sign in to apply",
+]
+
+_MIN_CONTENT_LENGTH = 200
+
+
+def _markdown_plain_text(markdown: str) -> str:
+    """Strip markdown syntax to get approximate plain text for length checking.
+
+    Removes image tags, link URLs, heading markers, and bare URLs so that the
+    length check reflects readable content, not URL noise embedded in markdown.
+    """
+    text = markdown
+    text = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)       # images: ![alt](url)
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)   # links: [text](url) -> text
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # headings
+    text = re.sub(r'https?://\S+', '', text)                # bare URLs
+    text = re.sub(r'[*_`~]+', '', text)                     # emphasis/code markers
+    return text.strip()
+
+
+def validate_job_content(markdown: str, html: str | None = None) -> tuple[bool, str]:
+    """
+    Check whether scraped content looks like a real job posting.
+
+    Phrase checks run against the full HTML text (if provided) so that phrases
+    inside elements stripped by extract_markdown_content (nav, header, aside, etc.)
+    are still caught. Length check uses the cleaned markdown since that reflects
+    what the LLM will actually receive.
+
+    Returns (True, "") if valid, or (False, user_facing_reason) if not.
+    """
+    md_text = markdown.strip()
+    plain_text = _markdown_plain_text(md_text)
+
+    # Extract full visible text from HTML for phrase matching — broader than
+    # markdown, which strips nav/header/aside where "Job not found" often lives.
+    if html:
+        html_soup = BeautifulSoup(html, "html.parser")
+        for tag in html_soup(["script", "style", "noscript"]):
+            tag.decompose()
+        phrase_text = html_soup.get_text(" ", strip=True).lower()
+    else:
+        phrase_text = plain_text.lower()
+
+    for phrase in _JOB_REMOVED_PHRASES:
+        if phrase in phrase_text:
+            return False, (
+                "That job posting appears to have been removed or has expired. "
+                "Check that the URL still points to an active listing."
+            )
+
+    if len(plain_text) < _MIN_CONTENT_LENGTH:
+        return False, (
+            "That page didn't return enough content to extract a job posting. "
+            "The URL may have redirected, returned an error, or requires a login."
+        )
+
+    for phrase in _BOT_DETECTION_PHRASES:
+        if phrase in phrase_text:
+            return False, (
+                "That job posting is protected by bot detection (e.g. Cloudflare). "
+                "Try opening the URL in a browser and copying the direct posting URL."
+            )
+
+    for phrase in _LOGIN_WALL_PHRASES:
+        if phrase in phrase_text:
+            return False, (
+                "That job posting requires a login to view. "
+                "Try finding a direct link to the posting that doesn't require an account."
+            )
+
+    return True, ""
 
 
 def extract_markdown_content(html: str) -> str:

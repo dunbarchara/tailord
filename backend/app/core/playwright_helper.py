@@ -7,7 +7,7 @@ async def get_rendered_content(url: str) -> str:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             await page.goto(url, timeout=60000)
-            await page.wait_for_load_state(timeout=30000)
+            await page.wait_for_load_state("networkidle", timeout=30000)
             return await page.content()
         finally:
             if browser:

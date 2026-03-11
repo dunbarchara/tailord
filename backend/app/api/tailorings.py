@@ -11,15 +11,48 @@ from app.auth import require_api_key
 from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
-from app.core.extract import extract_markdown_content
+from app.core.extract import extract_markdown_content, validate_job_content
 from app.services.job_extractor import extract_job
 from app.services.tailoring_generator import generate_tailoring
 from app.core.playwright_helper import get_rendered_content
 from app.models.database import Experience, Job, Tailoring, User
-from app.models.mvp_schemas import TailoringCreate, TailoringListItem, TailoringResponse
+from app.models.mvp_schemas import TailoringCreate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _fetch_and_extract_job(url: str) -> dict:
+    """Scrape a job posting URL and return structured extracted_job data."""
+    try:
+        html = await get_rendered_content(url)
+        job_markdown = extract_markdown_content(html)
+    except PlaywrightTimeoutError:
+        logger.exception("Playwright timeout for %s", url)
+        raise HTTPException(
+            status_code=422,
+            detail="That job URL took too long to load. Try again, or check that the URL is publicly accessible.",
+        )
+    except (PlaywrightError, Exception):
+        logger.exception("Playwright scrape failed for %s", url)
+        raise HTTPException(
+            status_code=422,
+            detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
+        )
+
+    valid, reason = validate_job_content(job_markdown, html=html)
+    if not valid:
+        logger.warning("validate_job_content failed for %s: %s", url, reason)
+        raise HTTPException(status_code=422, detail=reason)
+
+    try:
+        return extract_job(job_markdown, html=html)
+    except Exception:
+        logger.exception("Job extraction LLM failed for %s", url)
+        raise HTTPException(
+            status_code=502,
+            detail="We scraped the page but couldn't extract a job description. The posting may be in an unsupported format.",
+        )
 
 
 def _generate_slug(company: str | None, title: str | None) -> str:
@@ -50,37 +83,7 @@ async def create_tailoring(
             detail="No experience found — upload a resume or add a GitHub profile first.",
         )
 
-    # Scrape and extract job data
-    try:
-        html = await get_rendered_content(body.job_url)
-        job_markdown = extract_markdown_content(html)
-    except PlaywrightTimeoutError:
-        logger.exception("Playwright timeout for %s", body.job_url)
-        raise HTTPException(
-            status_code=422,
-            detail="That job URL took too long to load. Try again, or check that the URL is publicly accessible.",
-        )
-    except PlaywrightError:
-        logger.exception("Playwright error for %s", body.job_url)
-        raise HTTPException(
-            status_code=422,
-            detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
-        )
-    except Exception:
-        logger.exception("Playwright scrape failed for %s", body.job_url)
-        raise HTTPException(
-            status_code=422,
-            detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
-        )
-
-    try:
-        extracted_job = extract_job(job_markdown, html=html)
-    except Exception:
-        logger.exception("Job extraction LLM failed")
-        raise HTTPException(
-            status_code=502,
-            detail="We scraped the page but couldn't extract a job description. The posting may be in an unsupported format.",
-        )
+    extracted_job = await _fetch_and_extract_job(body.job_url)
 
     job_record = Job(
         user_id=user.id,
@@ -123,7 +126,7 @@ async def create_tailoring(
 
 
 @router.post("/tailorings/{tailoring_id}/regenerate")
-def regenerate_tailoring(
+async def regenerate_tailoring(
     tailoring_id: str,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
@@ -144,12 +147,22 @@ def regenerate_tailoring(
     if not experience or not experience.extracted_profile:
         raise HTTPException(status_code=422, detail="No experience found.")
 
+    job = tailoring.job
+    job_url = job.job_url
+
+    # Re-scrape and re-extract so title, company, and requirements reflect the
+    # latest data — only the job URL is preserved across regenerations.
+    extracted_job = await _fetch_and_extract_job(job_url)
+
+    job.extracted_job = extracted_job
+    db.commit()
+
     preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
     candidate_name = preferred or user.name or user.email
     try:
         generated_output = generate_tailoring(
             experience.extracted_profile,
-            tailoring.job.extracted_job,
+            extracted_job,
             candidate_name,
         )
     except Exception:

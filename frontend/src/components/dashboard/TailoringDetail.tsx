@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -22,6 +23,7 @@ interface TailoringDetailProps {
 }
 
 export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
+  const router = useRouter();
   const [tailoring, setTailoring] = useState<Tailoring | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,14 +62,15 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       const res = await fetch(`/api/tailorings/${tailoringId}`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.detail ?? 'Regeneration failed.');
+        toastError(data?.detail ?? 'Regeneration failed.');
         return;
       }
       const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
       setTailoring(updated);
+      router.refresh();
       toast.success('Tailoring regenerated.');
     } catch {
-      toast.error('Could not reach the server.');
+      toastError('Could not reach the server.');
     } finally {
       setRegenerating(false);
     }
@@ -80,7 +83,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.detail ?? 'Could not share tailoring.');
+        toastError(data?.detail ?? 'Could not share tailoring.');
         return;
       }
       const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
@@ -88,7 +91,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       setShareOpen(true);
       toast.success('Tailoring is now public.');
     } catch {
-      toast.error('Could not reach the server.');
+      toastError('Could not reach the server.');
     } finally {
       setSharing(false);
     }
@@ -101,14 +104,14 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.detail ?? 'Could not make tailoring private.');
+        toastError(data?.detail ?? 'Could not make tailoring private.');
         return;
       }
       setTailoring(prev => prev ? { ...prev, is_public: false } : null);
       setShareOpen(false);
       toast.success('Tailoring is now private.');
     } catch {
-      toast.error('Could not reach the server.');
+      toastError('Could not reach the server.');
     } finally {
       setSharing(false);
     }
