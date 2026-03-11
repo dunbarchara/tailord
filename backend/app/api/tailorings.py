@@ -74,7 +74,7 @@ async def create_tailoring(
         )
 
     try:
-        extracted_job = extract_job(job_markdown)
+        extracted_job = extract_job(job_markdown, html=html)
     except Exception:
         logger.exception("Job extraction LLM failed")
         raise HTTPException(

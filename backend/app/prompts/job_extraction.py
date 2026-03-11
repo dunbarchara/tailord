@@ -22,13 +22,9 @@ Technical skills:
 - Deduplicate while preserving capitalization.
 
 
-!! YOUR RESPONSE MUST BE VALID JSON ONLY !!
-!! DO NOT RETURN CODE FENCES !!
-!! DO NOT INCLUDE '```json' IN YOUR RESPONSE !!
 """
 
-USER_TEMPLATE = """
-Fill in this JSON template using information from the job posting below.
+USER_TEMPLATE = """{hints_block}Fill in this JSON template using information from the job posting below.
 Rules:
 - Keep all keys exactly as shown.
 - Replace empty strings and arrays with extracted values.
