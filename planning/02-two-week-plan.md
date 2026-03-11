@@ -116,6 +116,77 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 
 ---
 
+### Day 5.5 — Pipeline Robustness
+
+**Goal:** The core generate-a-tailoring pipeline produces consistently high-quality output, not just output. Right now it works in the happy path — but a scanned PDF, a Cloudflare-gated job URL, a token-truncated response, or an LLM that returns meta-commentary will silently produce a bad tailoring. Fix the pipeline's weak points before adding new surfaces on top of it.
+
+**Current state (from reading the code):**
+- `experience_processor.py`: pypdf does a plain `.extract_text()` join — no structure, no column handling. Scanned PDFs return empty strings and are silently stored as `status=ready`.
+- `tailorings.py` (`create_tailoring`): scrape → extract_job → generate_tailoring is one sequential request with no intermediate saves. If Cloudflare returns a challenge page, `extract_job()` runs on that noise and returns nulls — job is stored with `company=null, title=null`, tailoring is generated from garbage.
+- `llm_utils.py` (`llm_parse` / `llm_generate`): `finish_reason` is logged but never acted on. A response truncated by `max_tokens` (finish_reason=`length`) is stored and shown as if it were complete.
+- `tailoring_generator.py`: `_format_sourced_profile` dumps raw JSON into the prompt. A verbose profile + a detailed job posting can easily push beyond practical token limits, and there's no cap.
+- `profile_extraction.py` prompt: the JSON template approach produces empty-but-valid results for scanned or corrupt files — no minimum signal threshold before marking ready.
+- Job records are re-scraped even when the same URL was already scraped — the stored `extracted_job` on the existing `Job` record isn't checked before re-running Playwright.
+
+---
+
+#### 1. Scrape content gating
+Before calling `extract_job()`, validate that the scraped content is actually a job posting — not a Cloudflare challenge page, a login wall, or near-empty content.
+
+- [ ] Add `is_valid_job_content(markdown: str) -> bool` in `core/extract.py`:
+  - Reject if content is under ~200 chars after stripping whitespace
+  - Reject if it contains known bot-detection signals: "Enable JavaScript", "Checking your browser", "Please verify you are a human", "Access denied", "cf-browser-verification"
+  - Return a descriptive reason so the error message can be specific ("That page appears to be bot-protected" vs "That page didn't contain a job posting")
+- [ ] Gate `extract_job()` call on this check — return 422 with the reason before wasting an LLM call
+
+#### 2. Empty profile detection
+A scanned PDF, a corrupt file, or an image-only resume will produce empty text, which pypdf silently returns as an empty string. The LLM then produces an `ExtractedProfile` with empty arrays that passes Pydantic validation and gets stored as `status=ready`.
+
+- [ ] After `extract_text()`, check minimum signal: if `len(text.strip()) < 100`, fail with a clear error: "We couldn't extract text from this file — it may be a scanned image. Try a text-based PDF or paste your experience directly."
+- [ ] After `extract_profile()`, validate the result has at least one non-empty field (any non-empty `work_experience`, `skills.technical`, or `summary`). If it's all empty, mark as error rather than ready with the message: "Your file was readable, but we couldn't identify any work experience or skills. Try a plain-text PDF or DOCX."
+- [ ] These checks live in `process_experience()` before writing `status=ready`
+
+#### 3. LLM output validation
+The `finish_reason` is logged but silently ignored. A tailoring truncated at token limit looks identical to a complete one.
+
+- [ ] In `llm_generate()`: if `finish_reason == "length"`, raise a new `LLMTruncationError` (similar to `LLMRefusalError`) rather than returning the partial string
+- [ ] In `tailorings.py`: catch `LLMTruncationError` and return 502 with "The generated output was cut short — try again with a shorter job posting, or contact support."
+- [ ] After `generate_tailoring()` returns, validate minimum output quality before storing:
+  - Non-empty string
+  - At least one `##` section header (the prompt requires 3–5 fit claims)
+  - Does not start with "I'm sorry", "I cannot", or "As an AI" (LLM refusal slipping through non-JSON mode)
+  - If validation fails, raise rather than persisting garbage
+
+#### 4. Profile formatting for LLM
+`_format_sourced_profile()` dumps raw JSON into the tailoring prompt. JSON is verbose — field names, quotes, brackets all eat tokens and add noise the model has to parse. A large profile (multiple jobs, many bullets, GitHub repos) can approach or exceed practical limits.
+
+- [ ] Rewrite `_format_sourced_profile()` to produce a compact, human-readable text format instead of raw JSON:
+  ```
+  [Source: Resume]
+  Summary: Senior engineer with 8 years in distributed systems...
+  Work Experience:
+    • Staff Engineer @ Acme Corp (2020–2024): Led migration to microservices; reduced P99 latency by 40%
+  Skills: Python, Go, Kubernetes, Terraform
+  ```
+- [ ] Add a `truncate_to_tokens(text: str, max_tokens: int)` utility — use a character-based heuristic (1 token ≈ 4 chars) to cap profile + job content before passing to the LLM. Log a warning when truncation occurs.
+- [ ] Cap the job posting passed to `extract_job()` as well — if `job_markdown` exceeds ~12k chars, trim to the most relevant sections (look for the job title/responsibilities/requirements sections first)
+
+#### 5. Job URL caching / reuse
+Every `create_tailoring` call runs Playwright + `extract_job()` even when the same URL was scraped an hour ago. The `Job` record already stores `extracted_job` — it just isn't checked.
+
+- [ ] In `create_tailoring()`: before scraping, query for an existing `Job` record matching `(user_id, job_url)`. If found and `extracted_job` is non-null, skip scrape + extraction and reuse the stored result.
+- [ ] If the user explicitly wants a fresh scrape (e.g., the job posting was updated), a future "re-scrape" action can force it — but the default should be reuse.
+- [ ] This also fixes the duplicate URL UX: if an existing Job exists, the frontend already warns the user — now the backend respects it too.
+
+#### 6. Prompt iteration
+The current prompts work, but have rough edges visible in the code: the job extraction prompt has emphatic `!! DO NOT RETURN CODE FENCES !!` lines that signal the model was fighting back. The tailoring prompt passes the full extracted job as a JSON blob, which is redundant since the profile already contains sourced context.
+
+- [ ] Review and iterate the tailoring prompt's `USER_TEMPLATE` — the structured output format is good, but consider whether passing `extracted_job` as raw JSON vs a prose summary produces better fit claims. Test both.
+- [ ] Profile extraction prompt: add explicit instruction for handling sparse input ("If the resume appears to be mostly blank or contains only a name/contact, return all fields empty and do not invent information.")
+- [ ] Job extraction prompt: remove the emphatic CAPS instructions — if the model still emits fences, handle it in `strip_json_fences()` (which already exists) rather than fighting it in the prompt. Calmer prompts produce more consistent output.
+
+---
+
 ## Week 2: Notion Integration + Strategic Feature
 
 Week 2's goal is to build the one feature that most clearly demonstrates product sophistication and directly signals relevant skills for the companies you want to work at.
@@ -282,6 +353,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 3.5 | Cloud-agnostic infra | StorageClient abstraction, Terraform module refactor, Azure provider, backend containerized | ✅ |
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
+| 5.5 | Pipeline robustness | Scrape gating, empty profile detection, output validation, token budgeting, job URL caching, prompt iteration | |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
