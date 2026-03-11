@@ -146,11 +146,20 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
           Tailorings
         </p>
         {tailorings.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-text-tertiary">No tailorings yet</p>
+          <Link
+            href="/dashboard/tailorings/new"
+            className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors rounded-md hover:bg-surface-overlay"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New tailoring
+          </Link>
         ) : (
           <div className="space-y-0.5">
             {tailorings.map((tailoring) => {
               const active = pathname === `/dashboard/tailorings/${tailoring.id}`;
+              const label = tailoring.title
+                ?? (tailoring.job_url ? (() => { try { return new URL(tailoring.job_url!).hostname.replace(/^www\./, ''); } catch { return null; } })() : null)
+                ?? 'Untitled';
               return (
                 <div key={tailoring.id} className="group relative">
                   <Link
@@ -164,7 +173,7 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
                   >
                     <FileText className="h-4 w-4 mt-0.5 flex-shrink-0 text-text-tertiary" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium leading-tight">{tailoring.title ?? 'Untitled'}</p>
+                      <p className="truncate text-sm font-medium leading-tight">{label}</p>
                       <p className="truncate text-xs text-text-tertiary mt-0.5">{tailoring.company ?? ''}</p>
                     </div>
                   </Link>

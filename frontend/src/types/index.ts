@@ -13,6 +13,7 @@ export interface TailoringListItem {
   id: string
   title: string | null
   company: string | null
+  job_url: string | null
   is_public: boolean
   public_slug: string | null
   created_at: string
