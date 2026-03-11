@@ -97,24 +97,22 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 
 ---
 
-### Day 5 — Polish, Error States, Loading States
+### ✅ Day 5 — Polish, Error States, Loading States
 
 **Goal:** The product feels complete, not like a prototype. No dead ends, no blank screens.
 
 **Tasks:**
-- [ ] Review every async operation and ensure proper loading states exist
-- [ ] Review every error path:
-  - Scrape failure (URL unreachable, blocked by Cloudflare) → clear user message
-  - LLM JSON parse failure → clear user message, suggest retry
-  - Resume processing failure → show error state in experience section, offer re-upload
-- [ ] Add a processing timeout on tailoring creation (currently no timeout — can hang forever)
-  - Set a 90-second timeout on the Playwright + LLM calls combined
-  - Return 408/504 with a clear message if exceeded
-- [ ] Improve the empty state: when no tailorings exist, show a mini onboarding flow
-  - Step 1: "Upload your resume" with a link to `/dashboard/experience`
-  - Step 2: "Paste a job URL" — links to `/dashboard/tailorings/new`
-  - Step indicator showing where they are
-- [ ] Audit the tailoring list in the sidebar: ensure title + company always show (fallback to URL if missing)
+- [x] Error handling across the backend: scrape failures, LLM parse errors, experience processing errors — all return structured messages
+- [x] Add processing timeouts: Playwright scrape + LLM calls now have explicit timeouts (no more infinite hangs)
+- [x] Recent Tailorings component on the dashboard home page — replaces the empty shell, surfaces your most recent work immediately
+- [x] Sidebar search — filter tailorings by title/company as you type
+- [x] Duplicate URL confirmation — creating a new tailoring for a URL that already has one prompts "are you sure?" instead of silently creating a duplicate
+- [x] `lib/tailorings.ts` — shared fetch logic extracted from components
+- [x] **Unplanned:** Documented North Star — wrote `planning/06-north-star-empowerment.md` capturing the product direction (conversational, guided enrichment) that should inform future feature decisions
+
+**What was deprioritized:**
+- Mini onboarding flow (step indicator) — the Recent Tailorings dashboard page serves the same new-user orientation purpose, less overhead
+- Explicit loading state audit — handled implicitly by existing sonner toasts and skeleton states already in place
 
 ---
 
@@ -237,7 +235,7 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 | 3 | Regenerate + Delete | Tailoring lifecycle complete | ✅ |
 | 3.5 | Cloud-agnostic infra | StorageClient abstraction, Terraform module refactor, Azure provider, backend containerized | ✅ |
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
-| 5 | Polish | Error states, loading states, onboarding flow | |
+| 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
