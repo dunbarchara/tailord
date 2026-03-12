@@ -24,9 +24,52 @@ def _format_sourced_profile(sourced_profile: dict) -> str:
     return "\n\n".join(sections) if sections else json.dumps(sourced_profile, indent=2)
 
 
-def generate_tailoring(extracted_profile: dict, extracted_job: dict, candidate_name: str) -> str:
+def _format_ranked_matches(matches: list[dict]) -> str:
+    """Format pre-scored requirement matches into a labeled block for the LLM."""
+    if not matches:
+        return "(No pre-scored matches available — write claims based on the candidate profile and job context.)"
+
+    score_labels = {2: "STRONG", 1: "PARTIAL"}
+    source_labels = {"resume": "Resume", "github": "GitHub", "user_input": "Direct Input"}
+
+    lines = []
+    for match in matches:
+        score = match.get("score", 0)
+        score_label = score_labels.get(score, "PARTIAL")
+        req = match.get("requirement", "")
+        is_preferred = match.get("is_preferred", False)
+        req_label = "Preferred" if is_preferred else "Required"
+        rationale = match.get("rationale", "")
+        source_key = match.get("experience_source")
+        source_label = source_labels.get(source_key, source_key) if source_key else None
+
+        header = f"[{score_label}] {req_label}: \"{req}\""
+        if source_label and rationale:
+            detail = f"  → {source_label} — {rationale}"
+        elif rationale:
+            detail = f"  → {rationale}"
+        elif source_label:
+            detail = f"  → {source_label}"
+        else:
+            detail = None
+
+        lines.append(header)
+        if detail:
+            lines.append(detail)
+
+    return "\n".join(lines)
+
+
+def generate_tailoring(
+    extracted_profile: dict,
+    extracted_job: dict,
+    candidate_name: str,
+    ranked_matches: list[dict] | None = None,
+) -> str:
     company = extracted_job.get("company") or "the company"
     job_title = extracted_job.get("title") or "this role"
+
+    ranked_matches_block = _format_ranked_matches(ranked_matches if ranked_matches is not None else [])
 
     return llm_generate(
         get_llm_client(),
@@ -37,8 +80,8 @@ def generate_tailoring(extracted_profile: dict, extracted_job: dict, candidate_n
                 candidate_name=candidate_name,
                 job_title=job_title,
                 company=company,
+                ranked_matches_block=ranked_matches_block,
                 extracted_profile=_format_sourced_profile(extracted_profile),
-                extracted_job=json.dumps(extracted_job, indent=2),
             )},
         ],
         temperature=prompt.TEMPERATURE,

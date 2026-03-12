@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, JSON, DateTime, Boolean, func, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Text, JSON, DateTime, Boolean, Integer, func, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.clients.database import Base
@@ -79,6 +79,9 @@ class Job(Base):
     tailorings: Mapped[list["Tailoring"]] = relationship(
         "Tailoring", back_populates="job"
     )
+    chunks: Mapped[list["JobChunk"]] = relationship(
+        "JobChunk", back_populates="job", cascade="all, delete-orphan"
+    )
 
 
 class Tailoring(Base):
@@ -95,6 +98,7 @@ class Tailoring(Base):
     )
     generated_output: Mapped[str] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
+    enrichment_status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     public_slug: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -103,3 +107,24 @@ class Tailoring(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="tailorings")
     job: Mapped["Job"] = relationship("Job", back_populates="tailorings")
+
+
+class JobChunk(Base):
+    __tablename__ = "job_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    section: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    match_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    match_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    experience_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    job: Mapped["Job"] = relationship("Job", back_populates="chunks")

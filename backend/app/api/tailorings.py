@@ -3,7 +3,7 @@ import re
 import random
 import string
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from sqlalchemy.orm import Session
 
@@ -14,16 +14,18 @@ from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
 from app.services.job_extractor import extract_job
 from app.services.tailoring_generator import generate_tailoring
+from app.services.requirement_matcher import match_requirements
+from app.services.chunk_matcher import enrich_job_chunks
 from app.core.playwright_helper import get_rendered_content
-from app.models.database import Experience, Job, Tailoring, User
+from app.models.database import Experience, Job, JobChunk, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def _fetch_and_extract_job(url: str) -> dict:
-    """Scrape a job posting URL and return structured extracted_job data."""
+async def _fetch_and_extract_job(url: str) -> tuple[dict, str]:
+    """Scrape a job posting URL and return (structured extracted_job data, raw job_markdown)."""
     try:
         html = await get_rendered_content(url)
         job_markdown = extract_markdown_content(html)
@@ -46,7 +48,8 @@ async def _fetch_and_extract_job(url: str) -> dict:
         raise HTTPException(status_code=422, detail=reason)
 
     try:
-        return extract_job(job_markdown, html=html)
+        extracted_job = extract_job(job_markdown, html=html)
+        return extracted_job, job_markdown
     except Exception:
         logger.exception("Job extraction LLM failed for %s", url)
         raise HTTPException(
@@ -69,6 +72,7 @@ def _generate_slug(company: str | None, title: str | None) -> str:
 @router.post("/tailorings")
 async def create_tailoring(
     body: TailoringCreate,
+    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -83,7 +87,7 @@ async def create_tailoring(
             detail="No experience found — upload a resume or add a GitHub profile first.",
         )
 
-    extracted_job = await _fetch_and_extract_job(body.job_url)
+    extracted_job, job_markdown = await _fetch_and_extract_job(body.job_url)
 
     job_record = Job(
         user_id=user.id,
@@ -94,6 +98,13 @@ async def create_tailoring(
     db.commit()
     db.refresh(job_record)
 
+    # Score requirements before generating so ranked matches can inform the tailoring
+    try:
+        ranked_matches = match_requirements(extracted_job, experience.extracted_profile)
+    except Exception:
+        logger.exception("Requirement matching failed — proceeding without ranked matches")
+        ranked_matches = []
+
     # Generate the tailoring document
     preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
     candidate_name = preferred or user.name or user.email
@@ -102,6 +113,7 @@ async def create_tailoring(
             experience.extracted_profile,
             extracted_job,
             candidate_name,
+            ranked_matches=ranked_matches,
         )
     except Exception:
         logger.exception("Tailoring generation LLM failed")
@@ -117,6 +129,8 @@ async def create_tailoring(
     db.commit()
     db.refresh(tailoring)
 
+    background_tasks.add_task(enrich_job_chunks, job_record.id, job_markdown, experience.extracted_profile)
+
     return {
         "id": str(tailoring.id),
         "title": extracted_job.get("title"),
@@ -128,6 +142,7 @@ async def create_tailoring(
 @router.post("/tailorings/{tailoring_id}/regenerate")
 async def regenerate_tailoring(
     tailoring_id: str,
+    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -152,10 +167,17 @@ async def regenerate_tailoring(
 
     # Re-scrape and re-extract so title, company, and requirements reflect the
     # latest data — only the job URL is preserved across regenerations.
-    extracted_job = await _fetch_and_extract_job(job_url)
+    extracted_job, job_markdown = await _fetch_and_extract_job(job_url)
 
     job.extracted_job = extracted_job
     db.commit()
+
+    # Score requirements before generating so ranked matches can inform the tailoring
+    try:
+        ranked_matches = match_requirements(extracted_job, experience.extracted_profile)
+    except Exception:
+        logger.exception("Requirement matching failed — proceeding without ranked matches")
+        ranked_matches = []
 
     preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
     candidate_name = preferred or user.name or user.email
@@ -164,6 +186,7 @@ async def regenerate_tailoring(
             experience.extracted_profile,
             extracted_job,
             candidate_name,
+            ranked_matches=ranked_matches,
         )
     except Exception:
         logger.exception("Tailoring regeneration LLM failed")
@@ -171,8 +194,11 @@ async def regenerate_tailoring(
 
     tailoring.generated_output = generated_output
     tailoring.model = settings.llm_model
+    tailoring.enrichment_status = "pending"
     db.commit()
     db.refresh(tailoring)
+
+    background_tasks.add_task(enrich_job_chunks, job.id, job_markdown, experience.extracted_profile)
 
     return {"id": str(tailoring.id), "generated_output": tailoring.generated_output}
 
@@ -229,6 +255,46 @@ def get_tailoring(
         "is_public": tailoring.is_public,
         "public_slug": tailoring.public_slug,
         "created_at": tailoring.created_at.isoformat(),
+    }
+
+
+@router.get("/tailorings/{tailoring_id}/chunks")
+def get_tailoring_chunks(
+    tailoring_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    chunks = (
+        db.query(JobChunk)
+        .filter(JobChunk.job_id == tailoring.job_id)
+        .order_by(JobChunk.position)
+        .all()
+    )
+
+    return {
+        "enrichment_status": tailoring.enrichment_status,
+        "chunks": [
+            {
+                "id": str(c.id),
+                "chunk_type": c.chunk_type,
+                "content": c.content,
+                "position": c.position,
+                "section": c.section,
+                "match_score": c.match_score,
+                "match_rationale": c.match_rationale,
+                "experience_source": c.experience_source,
+            }
+            for c in chunks
+        ],
     }
 
 
