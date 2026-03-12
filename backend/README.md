@@ -15,3 +15,10 @@ Postgres Docker container for DB
 1. /backend - `uv run python init_db.py` (init postgres db's in docker container)
 1. /backend - `uv run python dev_approve.py` (approve user accounts)
 1. /backend - `uv run uvicorn app.main:app --port 8000` (start fastapi backend)
+
+
+
+docker exec -it <postgresContainer> sh
+psql app -U app
+\c app
+\d tailorings

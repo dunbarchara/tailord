@@ -17,7 +17,15 @@ class ModelCapabilities:
 # Maps lowercase model name substrings to ModelCapabilities. First match wins.
 # Add new entries here when onboarding a model with non-standard capabilities.
 _CAPABILITIES_REGISTRY: list[tuple[str, ModelCapabilities]] = [
+
+    # Local
     ("microsoft_phi-4-mini-instruct", ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
+    ("qwen2.5-vl-32b-instruct",       ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
+    ("qwen3.5-9b",                    ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
+    ("gemma-3-12b",                   ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
+    ("gemma-3-4b",                    ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
+
+    # Azure Foundry
     ("phi-4-mini",                    ModelCapabilities(json_mode=JsonMode.JSON_OBJECT)),
     ("gpt-5-nano",                    ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA, supports_temperature=False)),
     ("gpt-4o",                        ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),

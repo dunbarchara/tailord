@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -15,13 +16,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { Tailoring } from '@/types';
+import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
+import type { Tailoring, ChunksResponse } from '@/types';
 
 interface TailoringDetailProps {
   tailoringId: string;
 }
 
 export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
+  const router = useRouter();
   const [tailoring, setTailoring] = useState<Tailoring | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +36,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [showMakePublicConfirm, setShowMakePublicConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'document' | 'analysis'>('document');
+  const [analysisKey, setAnalysisKey] = useState(0);
+  const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -60,14 +66,16 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       const res = await fetch(`/api/tailorings/${tailoringId}`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.detail ?? 'Regeneration failed.');
+        toastError(data?.detail ?? 'Regeneration failed.');
         return;
       }
       const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
       setTailoring(updated);
+      setAnalysisKey(k => k + 1);
+      router.refresh();
       toast.success('Tailoring regenerated.');
     } catch {
-      toast.error('Could not reach the server.');
+      toastError('Could not reach the server.');
     } finally {
       setRegenerating(false);
     }
@@ -80,7 +88,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.detail ?? 'Could not share tailoring.');
+        toastError(data?.detail ?? 'Could not share tailoring.');
         return;
       }
       const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
@@ -88,7 +96,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       setShareOpen(true);
       toast.success('Tailoring is now public.');
     } catch {
-      toast.error('Could not reach the server.');
+      toastError('Could not reach the server.');
     } finally {
       setSharing(false);
     }
@@ -101,14 +109,14 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.detail ?? 'Could not make tailoring private.');
+        toastError(data?.detail ?? 'Could not make tailoring private.');
         return;
       }
       setTailoring(prev => prev ? { ...prev, is_public: false } : null);
       setShareOpen(false);
       toast.success('Tailoring is now private.');
     } catch {
-      toast.error('Could not reach the server.');
+      toastError('Could not reach the server.');
     } finally {
       setSharing(false);
     }
@@ -116,7 +124,11 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
   const handleCopy = () => {
     if (!tailoring) return;
-    navigator.clipboard.writeText(tailoring.generated_output);
+    if (activeTab === 'analysis' && chunksData) {
+      navigator.clipboard.writeText(chunksToMarkdown(chunksData, tailoring.title, tailoring.company));
+    } else {
+      navigator.clipboard.writeText(tailoring.generated_output);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -162,9 +174,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     <div className="h-full flex flex-col">
 
       {/* Toolbar */}
-      <header className="flex items-center justify-between h-11 px-4 border-b border-border-subtle bg-surface-base flex-shrink-0">
+      <header className="relative flex items-center h-11 px-4 border-b border-border-subtle bg-surface-base flex-shrink-0">
         {/* Left: breadcrumb */}
-        <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-4 text-sm">
+        <div className="flex items-center gap-1.5 min-w-0 text-sm" style={{ maxWidth: '40%' }}>
           <span className="font-medium text-text-primary truncate max-w-[180px]">
             {tailoring.title ?? 'Tailoring'}
           </span>
@@ -176,8 +188,26 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           )}
         </div>
 
+        {/* Centre: tabs — absolutely centred in the toolbar */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0">
+          {(['document', 'analysis'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'px-3 h-11 text-xs font-medium border-b-2 transition-colors',
+                activeTab === tab
+                  ? 'border-brand-primary text-text-primary'
+                  : 'border-transparent text-text-tertiary hover:text-text-secondary'
+              )}
+            >
+              {tab === 'document' ? 'Document' : 'Match Analysis'}
+            </button>
+          ))}
+        </div>
+
         {/* Right: actions */}
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
           {tailoring.job_url && (
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" asChild>
               <a href={tailoring.job_url} target="_blank" rel="noopener noreferrer" title="View job posting">
@@ -287,30 +317,33 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
       </header>
 
-      {/* Document */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="max-w-3xl mx-auto px-8 py-10">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-text-primary leading-tight">
-              {tailoring.title ?? 'Tailoring'}
-            </h1>
-            <p className="text-text-secondary mt-2 text-sm">
-              {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
-            </p>
+        {activeTab === 'document' ? (
+          <div className="max-w-3xl mx-auto px-8 py-10">
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold text-text-primary leading-tight">
+                {tailoring.title ?? 'Tailoring'}
+              </h1>
+              <p className="text-text-secondary mt-2 text-sm">
+                {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <div className={cn(
+              "prose prose-sm max-w-none text-text-primary",
+              "prose-headings:text-text-primary prose-headings:font-semibold",
+              "prose-p:text-text-secondary prose-p:leading-relaxed",
+              "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
+              "prose-strong:text-text-primary",
+              "prose-hr:border-border-subtle",
+              regenerating && "opacity-40 pointer-events-none"
+            )}>
+              <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
+            </div>
           </div>
-
-          <div className={cn(
-            "prose prose-sm max-w-none text-text-primary",
-            "prose-headings:text-text-primary prose-headings:font-semibold",
-            "prose-p:text-text-secondary prose-p:leading-relaxed",
-            "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
-            "prose-strong:text-text-primary",
-            "prose-hr:border-border-subtle",
-            regenerating && "opacity-40 pointer-events-none"
-          )}>
-            <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
-          </div>
-        </div>
+        ) : (
+          <MatchAnalysis key={analysisKey} tailoringId={tailoringId} onDataChange={setChunksData} />
+        )}
       </div>
 
       <Dialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>

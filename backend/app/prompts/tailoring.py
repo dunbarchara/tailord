@@ -16,11 +16,11 @@ Rules:
 USER_TEMPLATE = """
 Write a sourced candidate advocacy document for {candidate_name} applying to {job_title} at {company}.
 
-CANDIDATE PROFILE (grouped by input source):
-{extracted_profile}
+PRE-SCORED REQUIREMENT MATCHES (ranked by strength — use these as the basis for fit claims):
+{ranked_matches_block}
 
-JOB REQUIREMENTS:
-{extracted_job}
+CANDIDATE PROFILE (for additional context and sourcing detail):
+{extracted_profile}
 
 Output format (Markdown):
 

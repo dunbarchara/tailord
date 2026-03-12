@@ -12,6 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { toastError } from '@/lib/utils';
+import { ParsedProfile } from '@/components/dashboard/ParsedProfile';
 import type { ExperienceRecord } from '@/types';
 
 type UploadPhase =
@@ -203,7 +205,7 @@ export function ExperienceManager() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toast.error(err.detail ?? `Failed to remove (${res.status})`);
+      toastError(err.detail ?? `Failed to remove (${res.status})`);
       setGithubState('idle');
       return;
     }
@@ -230,7 +232,7 @@ export function ExperienceManager() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toast.error(err.detail ?? `Failed to save (${res.status})`);
+      toastError(err.detail ?? `Failed to save (${res.status})`);
       setDirectState('idle');
       return;
     }
@@ -455,6 +457,17 @@ export function ExperienceManager() {
             </div>
           </form>
         </section>
+
+        {/* Parsed profile */}
+        {uploadState.phase === 'ready' && uploadState.record.extracted_profile && (
+          <section className="space-y-3 pt-4 border-t border-border-subtle">
+            <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
+            <ParsedProfile
+              profile={uploadState.record.extracted_profile}
+              rawResumeText={uploadState.record.raw_resume_text}
+            />
+          </section>
+        )}
       </div>
     </div>
   );
