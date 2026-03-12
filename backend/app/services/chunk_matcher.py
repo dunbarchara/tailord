@@ -12,7 +12,7 @@ from app.services.tailoring_generator import _format_sourced_profile
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 10
+BATCH_SIZE = 5  # Smaller batches improve JSON completion reliability on local/smaller models
 
 
 def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: dict) -> None:
