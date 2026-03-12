@@ -87,6 +87,24 @@ export interface ExtractedProfile {
   certifications: string[]
 }
 
+export type EnrichmentStatus = 'pending' | 'processing' | 'complete' | 'error'
+
+export interface JobChunk {
+  id: string
+  chunk_type: 'header' | 'bullet' | 'paragraph'
+  content: string
+  position: number
+  section: string | null
+  match_score: number | null
+  match_rationale: string | null
+  experience_source: 'resume' | 'github' | 'user_input' | null
+}
+
+export interface ChunksResponse {
+  enrichment_status: EnrichmentStatus
+  chunks: JobChunk[]
+}
+
 export interface ExperienceRecord {
   id: string
   filename: string | null

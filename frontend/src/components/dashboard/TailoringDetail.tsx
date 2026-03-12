@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { MatchAnalysis } from '@/components/dashboard/MatchAnalysis';
 import type { Tailoring } from '@/types';
 
 interface TailoringDetailProps {
@@ -35,6 +36,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [showMakePublicConfirm, setShowMakePublicConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'document' | 'analysis'>('document');
+  const [analysisKey, setAnalysisKey] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -67,6 +70,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       }
       const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
       setTailoring(updated);
+      setAnalysisKey(k => k + 1);
       router.refresh();
       toast.success('Tailoring regenerated.');
     } catch {
@@ -165,9 +169,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     <div className="h-full flex flex-col">
 
       {/* Toolbar */}
-      <header className="flex items-center justify-between h-11 px-4 border-b border-border-subtle bg-surface-base flex-shrink-0">
+      <header className="relative flex items-center h-11 px-4 border-b border-border-subtle bg-surface-base flex-shrink-0">
         {/* Left: breadcrumb */}
-        <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-4 text-sm">
+        <div className="flex items-center gap-1.5 min-w-0 text-sm" style={{ maxWidth: '40%' }}>
           <span className="font-medium text-text-primary truncate max-w-[180px]">
             {tailoring.title ?? 'Tailoring'}
           </span>
@@ -179,8 +183,26 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           )}
         </div>
 
+        {/* Centre: tabs — absolutely centred in the toolbar */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0">
+          {(['document', 'analysis'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'px-3 h-11 text-xs font-medium border-b-2 transition-colors',
+                activeTab === tab
+                  ? 'border-brand-primary text-text-primary'
+                  : 'border-transparent text-text-tertiary hover:text-text-secondary'
+              )}
+            >
+              {tab === 'document' ? 'Document' : 'Match Analysis'}
+            </button>
+          ))}
+        </div>
+
         {/* Right: actions */}
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
           {tailoring.job_url && (
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" asChild>
               <a href={tailoring.job_url} target="_blank" rel="noopener noreferrer" title="View job posting">
@@ -290,30 +312,33 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
       </header>
 
-      {/* Document */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="max-w-3xl mx-auto px-8 py-10">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-text-primary leading-tight">
-              {tailoring.title ?? 'Tailoring'}
-            </h1>
-            <p className="text-text-secondary mt-2 text-sm">
-              {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
-            </p>
+        {activeTab === 'document' ? (
+          <div className="max-w-3xl mx-auto px-8 py-10">
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold text-text-primary leading-tight">
+                {tailoring.title ?? 'Tailoring'}
+              </h1>
+              <p className="text-text-secondary mt-2 text-sm">
+                {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <div className={cn(
+              "prose prose-sm max-w-none text-text-primary",
+              "prose-headings:text-text-primary prose-headings:font-semibold",
+              "prose-p:text-text-secondary prose-p:leading-relaxed",
+              "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
+              "prose-strong:text-text-primary",
+              "prose-hr:border-border-subtle",
+              regenerating && "opacity-40 pointer-events-none"
+            )}>
+              <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
+            </div>
           </div>
-
-          <div className={cn(
-            "prose prose-sm max-w-none text-text-primary",
-            "prose-headings:text-text-primary prose-headings:font-semibold",
-            "prose-p:text-text-secondary prose-p:leading-relaxed",
-            "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
-            "prose-strong:text-text-primary",
-            "prose-hr:border-border-subtle",
-            regenerating && "opacity-40 pointer-events-none"
-          )}>
-            <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
-          </div>
-        </div>
+        ) : (
+          <MatchAnalysis key={analysisKey} tailoringId={tailoringId} />
+        )}
       </div>
 
       <Dialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>
