@@ -23,6 +23,7 @@ _CAPABILITIES_REGISTRY: list[tuple[str, ModelCapabilities]] = [
     ("qwen2.5-vl-32b-instruct",       ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
     ("qwen3.5-9b",                    ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
     ("gemma-3-12b",                   ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
+    ("gemma-3-4b",                    ModelCapabilities(json_mode=JsonMode.JSON_SCHEMA)),
 
     # Azure Foundry
     ("phi-4-mini",                    ModelCapabilities(json_mode=JsonMode.JSON_OBJECT)),

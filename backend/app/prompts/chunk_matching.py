@@ -26,6 +26,62 @@ CRITICAL RULES — read before scoring:
 7. A -1 rationale needs only a one-phrase reason (e.g. "company perk, not a candidate requirement").
 8. experience_source must be "resume", "github", or "user_input". Set to null for -1 or 0.
 9. Return JSON only. No markdown fences. Exactly as many results as input chunks.
+
+---
+
+EXAMPLES — study these before scoring:
+
+EXAMPLE 1 (Strong — use computed YOE, not date arithmetic):
+Profile excerpt:
+  [COMPUTED SIGNALS]
+  Total professional experience: 5.2 years
+  Roles: Software Engineer II @ Acme (01/2021 - 03/2024) [3.2 yrs], Junior Engineer @ Beta (06/2019 - 12/2020) [1.5 yrs]
+Section: Requirements
+Chunk: 1. [BULLET] 3+ years of professional software engineering experience
+Correct output:
+{"results": [{"score": 2, "rationale": "Pre-computed total of 5.2 years exceeds the 3+ year requirement.", "experience_source": "resume"}]}
+
+EXAMPLE 2 (Partial — adjacent skill, not exact match):
+Profile excerpt:
+  [Source: Resume]
+  skills.technical: ["TypeScript", "Node.js", "React", "PostgreSQL"]
+  work_experience bullets: ["Built REST APIs in Node.js", "Maintained a React dashboard for internal tooling"]
+Section: Requirements
+Chunk: 1. [BULLET] Expertise in Vue.js or React for frontend development
+Correct output:
+{"results": [{"score": 1, "rationale": "React is listed in technical skills and used in a prior role for internal tooling, but the profile shows limited React depth — no production-scale or customer-facing React work documented.", "experience_source": "resume"}]}
+
+EXAMPLE 3 (Gap — real requirement, no evidence):
+Profile excerpt:
+  [Source: Resume]
+  skills.technical: ["Python", "Django", "PostgreSQL"]
+  work_experience bullets: ["Built REST APIs", "Managed PostgreSQL databases"]
+Section: Requirements
+Chunk: 1. [BULLET] Experience with Kubernetes or container orchestration
+Correct output:
+{"results": [{"score": 0, "rationale": "No mention of Kubernetes, Docker, or container orchestration in skills, work experience, or projects. The candidate's stack is backend Python with no infrastructure tooling.", "experience_source": null}]}
+
+EXAMPLE 4 (N/A — company perk, nothing for a candidate to have or lack):
+Profile excerpt: [any profile]
+Section: What We Offer
+Chunk: 1. [BULLET] Competitive equity and compensation package
+Correct output:
+{"results": [{"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null}]}
+
+EXAMPLE 5 (mixed batch — each chunk scored independently):
+Profile excerpt:
+  [COMPUTED SIGNALS]
+  Total professional experience: 4.1 years
+  [Source: Resume]
+  education: [{"degree": "Bachelor of Science in Computer Science", "institution": "State University", "year": "2020"}]
+  skills.technical: ["Go", "gRPC", "Kubernetes", "Terraform"]
+Section: Qualifications
+Chunks:
+1. [BULLET] BS/MS in Computer Science or related field
+2. [BULLET] Familiarity with infrastructure as code (Terraform, Pulumi)
+3. [BULLET] Generous PTO and flexible hours
+Correct output:
+{"results": [{"score": 2, "rationale": "Bachelor of Science in Computer Science confirmed in education array.", "experience_source": "resume"}, {"score": 2, "rationale": "Terraform is listed in technical skills and the candidate has Kubernetes experience suggesting hands-on infrastructure work.", "experience_source": "resume"}, {"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null}]}
 """
 
 USER_TEMPLATE = """

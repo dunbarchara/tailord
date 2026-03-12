@@ -2,7 +2,9 @@ import logging
 import re
 import random
 import string
+from functools import partial
 
+import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from sqlalchemy.orm import Session
@@ -98,9 +100,12 @@ async def create_tailoring(
     db.commit()
     db.refresh(job_record)
 
-    # Score requirements before generating so ranked matches can inform the tailoring
+    # Score requirements before generating — offloaded to thread so the event loop
+    # stays free during the LLM call (llm_parse/llm_generate are synchronous).
     try:
-        ranked_matches = match_requirements(extracted_job, experience.extracted_profile)
+        ranked_matches = await anyio.to_thread.run_sync(
+            partial(match_requirements, extracted_job, experience.extracted_profile)
+        )
     except Exception:
         logger.exception("Requirement matching failed — proceeding without ranked matches")
         ranked_matches = []
@@ -109,11 +114,12 @@ async def create_tailoring(
     preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
     candidate_name = preferred or user.name or user.email
     try:
-        generated_output = generate_tailoring(
-            experience.extracted_profile,
-            extracted_job,
-            candidate_name,
-            ranked_matches=ranked_matches,
+        generated_output = await anyio.to_thread.run_sync(
+            partial(generate_tailoring,
+                    experience.extracted_profile,
+                    extracted_job,
+                    candidate_name,
+                    ranked_matches=ranked_matches)
         )
     except Exception:
         logger.exception("Tailoring generation LLM failed")
@@ -172,9 +178,11 @@ async def regenerate_tailoring(
     job.extracted_job = extracted_job
     db.commit()
 
-    # Score requirements before generating so ranked matches can inform the tailoring
+    # Score requirements — offloaded to thread (sync LLM call)
     try:
-        ranked_matches = match_requirements(extracted_job, experience.extracted_profile)
+        ranked_matches = await anyio.to_thread.run_sync(
+            partial(match_requirements, extracted_job, experience.extracted_profile)
+        )
     except Exception:
         logger.exception("Requirement matching failed — proceeding without ranked matches")
         ranked_matches = []
@@ -182,11 +190,12 @@ async def regenerate_tailoring(
     preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
     candidate_name = preferred or user.name or user.email
     try:
-        generated_output = generate_tailoring(
-            experience.extracted_profile,
-            extracted_job,
-            candidate_name,
-            ranked_matches=ranked_matches,
+        generated_output = await anyio.to_thread.run_sync(
+            partial(generate_tailoring,
+                    experience.extracted_profile,
+                    extracted_job,
+                    candidate_name,
+                    ranked_matches=ranked_matches)
         )
     except Exception:
         logger.exception("Tailoring regeneration LLM failed")
