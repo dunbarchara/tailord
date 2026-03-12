@@ -46,6 +46,7 @@ class Experience(Base):
     # status: pending | processing | ready | error
     status: Mapped[str] = mapped_column(String, default="pending")
     extracted_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw_resume_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
     github_username: Mapped[str | None] = mapped_column(String, nullable=True)
     github_repos: Mapped[list | None] = mapped_column(JSON, nullable=True)

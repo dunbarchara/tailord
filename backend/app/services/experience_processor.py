@@ -25,10 +25,9 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
 
     if ext == "pdf":
-        from pypdf import PdfReader
+        from pdfminer.high_level import extract_text as pdfminer_extract
         from io import BytesIO
-        reader = PdfReader(BytesIO(file_bytes))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        return pdfminer_extract(BytesIO(file_bytes))
 
     elif ext in ("doc", "docx"):
         from docx import Document
@@ -67,10 +66,14 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
             logger.debug("Downloaded %d bytes, extracting text from %s", len(file_bytes), filename)
 
             text = extract_text(file_bytes, filename)
-            logger.debug("Extracted %d chars of text, running LLM profile extraction", len(text))
+            logger.debug(
+                "Extracted %d chars of text from %s, running LLM profile extraction\n--- RAW TEXT ---\n%s\n--- END ---",
+                len(text), filename, text[:4000],
+            )
 
             profile = extract_profile(text)
 
+            experience.raw_resume_text = text
             experience.extracted_profile = {"resume": profile}
             experience.status = "ready"
             experience.processed_at = datetime.now(timezone.utc)

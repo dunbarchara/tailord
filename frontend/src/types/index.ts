@@ -110,6 +110,7 @@ export interface ExperienceRecord {
   filename: string | null
   status: ExperienceStatus
   extracted_profile: SourcedProfile | null
+  raw_resume_text: string | null
   error_message: string | null
   github_username: string | null
   github_repos: GitHubRepo[] | null

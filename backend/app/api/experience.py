@@ -135,6 +135,7 @@ def get_experience(
         "filename": e.filename,
         "status": e.status,
         "extracted_profile": e.extracted_profile,
+        "raw_resume_text": e.raw_resume_text,
         "error_message": e.error_message,
         "github_username": e.github_username,
         "github_repos": e.github_repos,

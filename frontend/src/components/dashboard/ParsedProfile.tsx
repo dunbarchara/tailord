@@ -6,6 +6,7 @@ import type { SourcedProfile, ExtractedProfile, GitHubRepo } from '@/types';
 
 interface ParsedProfileProps {
   profile: SourcedProfile;
+  rawResumeText?: string | null;
 }
 
 // ─── Sub-renderers ────────────────────────────────────────────────────────────
@@ -166,15 +167,16 @@ function DirectInputTab({ text }: { text: string }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-type SourceTab = 'resume' | 'github' | 'user_input';
+type SourceTab = 'resume' | 'github' | 'user_input' | 'raw';
 
-export function ParsedProfile({ profile }: ParsedProfileProps) {
+export function ParsedProfile({ profile, rawResumeText }: ParsedProfileProps) {
   const available: SourceTab[] = (
-    ['resume', 'github', 'user_input'] as SourceTab[]
+    ['resume', 'github', 'user_input', 'raw'] as SourceTab[]
   ).filter(s => {
     if (s === 'resume') return !!profile.resume;
     if (s === 'github') return !!profile.github?.repos?.length;
     if (s === 'user_input') return !!profile.user_input?.text;
+    if (s === 'raw') return !!rawResumeText;
     return false;
   });
 
@@ -188,6 +190,7 @@ export function ParsedProfile({ profile }: ParsedProfileProps) {
     resume: 'Resume',
     github: 'GitHub',
     user_input: 'Direct Input',
+    raw: 'Raw Text',
   };
 
   return (
@@ -219,6 +222,9 @@ export function ParsedProfile({ profile }: ParsedProfileProps) {
       )}
       {activeTab === 'user_input' && profile.user_input && (
         <DirectInputTab text={profile.user_input.text} />
+      )}
+      {activeTab === 'raw' && rawResumeText && (
+        <DirectInputTab text={rawResumeText} />
       )}
     </div>
   );

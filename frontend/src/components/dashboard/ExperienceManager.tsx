@@ -462,7 +462,10 @@ export function ExperienceManager() {
         {uploadState.phase === 'ready' && uploadState.record.extracted_profile && (
           <section className="space-y-3 pt-4 border-t border-border-subtle">
             <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
-            <ParsedProfile profile={uploadState.record.extracted_profile} />
+            <ParsedProfile
+              profile={uploadState.record.extracted_profile}
+              rawResumeText={uploadState.record.raw_resume_text}
+            />
           </section>
         )}
       </div>
