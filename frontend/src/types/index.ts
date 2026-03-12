@@ -95,7 +95,7 @@ export interface JobChunk {
   content: string
   position: number
   section: string | null
-  match_score: number | null
+  match_score: number | null  // -1=n/a, 0=gap, 1=partial, 2=strong, null=pending
   match_rationale: string | null
   experience_source: 'resume' | 'github' | 'user_input' | null
 }

@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, Copy, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 
 interface MatchAnalysisProps {
   tailoringId: string;
+  onDataChange?: (data: ChunksResponse) => void;
 }
 
 const POLL_INTERVAL = 3000;
@@ -17,10 +18,58 @@ const SOURCE_LABELS: Record<string, string> = {
   user_input: 'Direct Input',
 };
 
+const SCORE_LABELS: Record<number, string> = {
+  2: 'Strong',
+  1: 'Partial',
+  0: 'Gap',
+  [-1]: 'N/A',
+};
+
+function chunkToMarkdown(chunk: JobChunk): string {
+  const score = chunk.match_score != null ? (SCORE_LABELS[chunk.match_score] ?? String(chunk.match_score)) : 'Pending';
+  const source = chunk.experience_source ? (SOURCE_LABELS[chunk.experience_source] ?? chunk.experience_source) : null;
+  const meta = [
+    `[${chunk.chunk_type.toUpperCase()}]`,
+    `pos:${chunk.position}`,
+    chunk.section ? `section: ${chunk.section}` : null,
+    `score: ${score}`,
+    source ? `source: ${source}` : null,
+  ].filter(Boolean).join(' | ');
+
+  const lines = [`### ${meta}`, chunk.content];
+  if (chunk.match_rationale) lines.push(`> ${chunk.match_rationale}`);
+  return lines.join('\n');
+}
+
+export function chunksToMarkdown(data: ChunksResponse, title?: string | null, company?: string | null): string {
+  const header = [
+    `# Match Analysis${title ? `: ${title}` : ''}${company ? ` @ ${company}` : ''}`,
+    `Status: ${data.enrichment_status}`,
+    '',
+  ].join('\n');
+
+  const nonHeaders = data.chunks.filter(c => c.chunk_type !== 'header');
+  const groups = new Map<string, JobChunk[]>();
+  for (const chunk of nonHeaders) {
+    const key = chunk.section ?? '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(chunk);
+  }
+
+  const sections: string[] = [];
+  for (const [section, chunks] of groups) {
+    if (section) sections.push(`## ${section}`);
+    sections.push(...chunks.map(chunkToMarkdown));
+    sections.push('');
+  }
+
+  return header + sections.join('\n');
+}
+
 function ScoreBadge({ score }: { score: number | null }) {
   if (score === 2) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success flex-shrink-0 w-16">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success flex-shrink-0 w-20">
         <span className="h-1.5 w-1.5 rounded-full bg-success" />
         Strong
       </span>
@@ -28,7 +77,7 @@ function ScoreBadge({ score }: { score: number | null }) {
   }
   if (score === 1) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-warning flex-shrink-0 w-16">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-warning flex-shrink-0 w-20">
         <span className="h-1.5 w-1.5 rounded-full bg-warning" />
         Partial
       </span>
@@ -36,9 +85,17 @@ function ScoreBadge({ score }: { score: number | null }) {
   }
   if (score === 0) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-text-disabled flex-shrink-0 w-16">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-error flex-shrink-0 w-20">
+        <span className="h-1.5 w-1.5 rounded-full bg-error" />
+        Gap
+      </span>
+    );
+  }
+  if (score === -1) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-text-disabled flex-shrink-0 w-20">
         <span className="h-1.5 w-1.5 rounded-full bg-surface-border" />
-        —
+        N/A
       </span>
     );
   }
@@ -55,6 +112,26 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function CopyButton({ getText }: { getText: () => string }) {
+  const [copied, setCopied] = useState(false);
+  const handle = () => {
+    navigator.clipboard.writeText(getText());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handle}
+      className="flex-shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
+      title="Copy chunk"
+    >
+      {copied
+        ? <CheckCircle2 className="h-3 w-3 text-success" />
+        : <Copy className="h-3 w-3" />}
+    </button>
+  );
+}
+
 function ChunkRow({ chunk }: { chunk: JobChunk }) {
   const source = chunk.experience_source
     ? (SOURCE_LABELS[chunk.experience_source] ?? chunk.experience_source)
@@ -63,7 +140,7 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
   return (
     <div className={cn(
       'rounded border border-border-subtle bg-surface-elevated text-xs mb-2',
-      chunk.match_score === 0 && 'opacity-50',
+      (chunk.match_score === 0 || chunk.match_score === -1) && 'opacity-50',
     )}>
       {/* Row 1: metadata */}
       <div className="flex items-center gap-4 px-3 py-1.5 border-b border-border-subtle bg-surface-sunken rounded-t flex-wrap">
@@ -73,6 +150,9 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
         <Field label="section" value={chunk.section} />
         <Field label="score" value={<ScoreBadge score={chunk.match_score} />} />
         {source && <Field label="source" value={source} />}
+        <span className="ml-auto">
+          <CopyButton getText={() => chunkToMarkdown(chunk)} />
+        </span>
       </div>
       {/* Row 2: content */}
       <div className="px-3 py-2 border-b border-border-subtle text-text-secondary leading-relaxed whitespace-pre-wrap">
@@ -97,7 +177,7 @@ function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
   return groups;
 }
 
-export function MatchAnalysis({ tailoringId }: MatchAnalysisProps) {
+export function MatchAnalysis({ tailoringId, onDataChange }: MatchAnalysisProps) {
   const [data, setData] = useState<ChunksResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -113,6 +193,7 @@ export function MatchAnalysis({ tailoringId }: MatchAnalysisProps) {
       }
       const json: ChunksResponse = await res.json();
       setData(json);
+      onDataChange?.(json);
       if (json.enrichment_status === 'complete' || json.enrichment_status === 'error') {
         stopPolling();
       }

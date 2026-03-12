@@ -42,55 +42,68 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
 
         formatted_profile = _format_sourced_profile(extracted_profile)
 
-        # Group chunks by section, then batch
-        # Process all chunks in batches of BATCH_SIZE
-        total = len(chunks)
-        all_results: list[ChunkMatchResult] = []
+        # Group non-header chunks by section, preserving original order
+        from collections import OrderedDict
+        section_map: OrderedDict[str, list] = OrderedDict()
+        for chunk in chunks:
+            if chunk.chunk_type == "header":
+                continue
+            key = chunk.section or "General"
+            section_map.setdefault(key, []).append(chunk)
 
-        for batch_start in range(0, total, BATCH_SIZE):
-            batch = chunks[batch_start: batch_start + BATCH_SIZE]
+        # Map chunk position → match result for final assembly
+        result_map: dict[int, ChunkMatchResult] = {}
 
-            # Determine section label for this batch (use first chunk's section or "General")
-            section = batch[0].section or "General"
+        for section, section_chunks in section_map.items():
+            for batch_start in range(0, len(section_chunks), BATCH_SIZE):
+                batch = section_chunks[batch_start: batch_start + BATCH_SIZE]
 
-            # Build numbered chunks block
-            chunks_block_lines = []
-            for idx, chunk in enumerate(batch, start=1):
-                chunks_block_lines.append(f"{idx}. [{chunk.chunk_type.upper()}] {chunk.content}")
-            chunks_block = "\n".join(chunks_block_lines)
-
-            try:
-                result = llm_parse(
-                    get_llm_client(),
-                    model=settings.llm_model,
-                    messages=[
-                        {"role": "system", "content": prompt.SYSTEM},
-                        {"role": "user", "content": prompt.USER_TEMPLATE.format(
-                            extracted_profile=formatted_profile,
-                            section=section,
-                            chunks_block=chunks_block,
-                        )},
-                    ],
-                    response_model=ChunkMatchBatch,
-                    temperature=prompt.TEMPERATURE,
+                chunks_block = "\n".join(
+                    f"{idx}. [{c.chunk_type.upper()}] {c.content}"
+                    for idx, c in enumerate(batch, start=1)
                 )
-                batch_results = result.results
-            except Exception:
-                logger.exception(
-                    "enrich_job_chunks: LLM batch failed for job_id=%s batch_start=%d",
-                    job_id, batch_start,
-                )
-                batch_results = []
 
-            # Pad results if LLM returned fewer than chunks sent
-            while len(batch_results) < len(batch):
-                batch_results.append(ChunkMatchResult(score=0))
+                try:
+                    result = llm_parse(
+                        get_llm_client(),
+                        model=settings.llm_model,
+                        messages=[
+                            {"role": "system", "content": prompt.SYSTEM},
+                            {"role": "user", "content": prompt.USER_TEMPLATE.format(
+                                extracted_profile=formatted_profile,
+                                section=section,
+                                chunks_block=chunks_block,
+                            )},
+                        ],
+                        response_model=ChunkMatchBatch,
+                        temperature=prompt.TEMPERATURE,
+                    )
+                    batch_results = result.results
+                except Exception:
+                    logger.exception(
+                        "enrich_job_chunks: LLM batch failed for job_id=%s section=%r batch_start=%d",
+                        job_id, section, batch_start,
+                    )
+                    batch_results = []
 
-            all_results.extend(batch_results[: len(batch)])
+                # Pad results if LLM returned fewer than chunks sent
+                while len(batch_results) < len(batch):
+                    batch_results.append(ChunkMatchResult(score=0, rationale="Not evaluated (batch error)"))
+
+                for chunk, match in zip(batch, batch_results):
+                    result_map[chunk.position] = match
+
+        # Build ordered results list (header chunks get a -1 placeholder)
+        all_results: list[tuple] = []  # (chunk, match_result)
+        for chunk in chunks:
+            if chunk.chunk_type == "header":
+                all_results.append((chunk, ChunkMatchResult(score=-1, rationale="Section header")))
+            else:
+                all_results.append((chunk, result_map.get(chunk.position, ChunkMatchResult(score=0, rationale="Not evaluated"))))
 
         # Persist JobChunk rows
         now = datetime.now(timezone.utc)
-        for chunk, match in zip(chunks, all_results):
+        for chunk, match in all_results:
             job_chunk = JobChunk(
                 job_id=job_id,
                 chunk_type=chunk.chunk_type,

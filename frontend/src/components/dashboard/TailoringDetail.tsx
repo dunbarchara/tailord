@@ -16,8 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { MatchAnalysis } from '@/components/dashboard/MatchAnalysis';
-import type { Tailoring } from '@/types';
+import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
+import type { Tailoring, ChunksResponse } from '@/types';
 
 interface TailoringDetailProps {
   tailoringId: string;
@@ -38,6 +38,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [sharing, setSharing] = useState(false);
   const [activeTab, setActiveTab] = useState<'document' | 'analysis'>('document');
   const [analysisKey, setAnalysisKey] = useState(0);
+  const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -123,7 +124,11 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
   const handleCopy = () => {
     if (!tailoring) return;
-    navigator.clipboard.writeText(tailoring.generated_output);
+    if (activeTab === 'analysis' && chunksData) {
+      navigator.clipboard.writeText(chunksToMarkdown(chunksData, tailoring.title, tailoring.company));
+    } else {
+      navigator.clipboard.writeText(tailoring.generated_output);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -337,7 +342,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             </div>
           </div>
         ) : (
-          <MatchAnalysis key={analysisKey} tailoringId={tailoringId} />
+          <MatchAnalysis key={analysisKey} tailoringId={tailoringId} onDataChange={setChunksData} />
         )}
       </div>
 
