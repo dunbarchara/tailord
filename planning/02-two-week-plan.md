@@ -263,6 +263,50 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 
 ---
 
+### Day 8.6 — Streaming + Perceived Performance
+
+**Goal:** The tailoring generation flow feels as responsive as Claude Code — the user starts reading their document within seconds, not after a 60+ second blank wait.
+
+**Context:** The fast pipeline currently takes 60–90 seconds end-to-end before anything renders. This is four sequential operations: Playwright scrape (15–30s on JS-heavy job boards) → job extraction LLM call → fast match LLM call → tailoring generation LLM call. All four must complete before the user sees anything. Wall-clock time is hard to eliminate, but *perceived* time can be dramatically reduced through streaming and honest progress feedback — the same techniques that make Claude Code feel fast.
+
+**Tasks:**
+
+#### 1. Stream the tailoring generation output
+- [ ] Switch `generate_tailoring()` to use `stream=True` on the OpenAI SDK call
+- [ ] Change `POST /tailorings` and `POST /tailorings/{id}/regenerate` to return a `StreamingResponse` using SSE (`text/event-stream`)
+- [ ] Emit `data: <token>` events as the model generates, plus a terminal `data: [DONE]` event
+- [ ] Frontend: replace the single `fetch` call in `NewTailoringForm` with an `EventSource` or `fetch` + `ReadableStream` consumer
+  - Append tokens to a local state string as they arrive
+  - Render with `ReactMarkdown` updating live — user reads as the model writes
+  - TTFT (time to first token) for most models is < 1 second; user is reading within 2–3 seconds of generation starting
+- [ ] Persist the completed output to the DB only after `[DONE]` — same as current behaviour, just deferred to stream end
+
+This is the single highest-leverage change. Wall-clock time is unchanged; perceived time drops from "90 second spinner" to "document appearing in real time."
+
+#### 2. SSE progress events for pre-generation pipeline stages
+- [ ] Extend the SSE stream to include named stage events before generation begins:
+  - `event: stage\ndata: scraping` — Playwright fetch starts
+  - `event: stage\ndata: extracting` — job extraction LLM call starts
+  - `event: stage\ndata: matching` — fast match LLM call starts
+  - `event: stage\ndata: generating` — tailoring generation starts (then token stream follows)
+- [ ] Frontend: render a stage indicator that updates as each event arrives — e.g. "Fetching job posting... → Extracting requirements... → Matching to your profile... → Generating document..."
+- [ ] These are honest pipeline states, not fake progress animations — the message reflects what the backend is actually doing
+
+#### 3. Streaming-aware regeneration
+- [ ] Apply the same streaming approach to `POST /tailorings/{id}/regenerate`
+- [ ] `TailoringDetail` document view enters a live-typing state during regeneration rather than going opaque with a spinner
+
+#### 4. Visual loading treatment (optional, build on top of streaming)
+- [ ] Once streaming is in place, the stage labels above can be paired with a simple animated treatment — e.g. a subtle progress bar that advances at each stage event, or a small icon that changes per stage
+- [ ] A mascot concept (small pixel-art or vector character performing each operation) is brand-differentiating and worth exploring as a design iteration once the underlying stream is live — the mascot reacting to real pipeline events is satisfying in a way that a mascot animating over a spinner is not
+- [ ] Keep it subtle and skippable — not every user wants whimsy
+
+**Note on scrape latency:** The Playwright scrape (15–30s) is the one stage that is fundamentally slow and cannot be streamed. Job URL caching (Day 8.5) eliminates it entirely on retries for the same URL. Together, streaming + caching means: first visit has an honest progress indicator and streaming output; repeat visits skip the slow stage and jump straight to generation.
+
+**Why this is slotted before public portfolio:** A product that feels slow and unresponsive is harder to share confidently. Streaming makes tailoring generation a delight to watch, which matters when users are sharing their tailoring page or showing the product to someone.
+
+---
+
 ### Day 9 — Public Profile / Tailoring Portfolio Page
 
 **Goal:** Each user has a public portfolio page that lists their public tailorings.
@@ -365,6 +409,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
 | 8.5 | Pipeline hardening (deferred) | Empty profile detection, LLM output validation, token budgeting, job URL caching, prompt iteration | |
+| 8.6 | Streaming + perceived performance | SSE streaming for tailoring generation, stage progress events, streaming-aware regeneration | |
 | 9 | Public portfolio | `/u/{slug}` page with public tailorings | |
 | 10 | Documentation + cleanup | README, remove legacy code, screenshots | |
 | 11 | Security review | Prompt injection, SQL injection, token abuse, cost controls, SSRF | |
