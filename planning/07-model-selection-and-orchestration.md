@@ -117,6 +117,14 @@ At 4-bit quantization, rough memory requirements are ~0.55 bytes/parameter.
 
 Qwen2.5's JSON adherence is the primary reason to prefer it over Llama for structured scoring tasks. Exact array length compliance — returning exactly N results for N input chunks — is the most common local model failure point, and Qwen2.5-32B handles it reliably.
 
+**Validated in testing (2026-03-12):** Switching from `microsoft_phi-4-mini-instruct` to `qwen2.5-vl-32b-instruct` on M1 Max 32GB resolved:
+- All batch truncation errors (missing results padded with "Not evaluated (batch error)")
+- Context bleed hallucinations (e.g. health benefits chunk rationale citing Azure/Kubernetes skills)
+- Score/rationale mismatches on multi-constraint output
+- N/A misclassification of company perks
+
+Remaining minor issues after the switch were quality-of-reasoning (rationale citing weaker evidence when stronger exists) rather than correctness failures. No wrong scores, no hallucinations, no batch errors observed across a 33-chunk job posting.
+
 **Batch size:** Reduce `BATCH_SIZE` to 5 (from 10) when running local models. Smaller batches significantly reduce JSON truncation errors — the model has fewer elements to track before closing the array.
 
 ---
