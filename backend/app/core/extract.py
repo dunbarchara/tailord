@@ -258,9 +258,34 @@ def validate_job_content(markdown: str, html: str | None = None) -> tuple[bool, 
     return True, ""
 
 
+# Headings that signal the start of an application form section.
+# Content at or after these headings is not part of the job description.
+_APPLY_SECTION_PATTERNS = re.compile(
+    r'^#+\s*(apply\s+(for|to|now)|submit\s+(your\s+)?application|application\s+form|'
+    r'apply\s+online|how\s+to\s+apply)',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
 def extract_markdown_content(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
+
+    # Remove non-content chrome
     for tag in soup(["noscript", "script", "style", "header", "footer", "nav", "aside"]):
         tag.decompose()
+
+    # Remove application form elements — these are never part of the job description
+    # and ATS platforms (Greenhouse, Lever, etc.) embed full application forms on the same page.
+    for tag in soup(["form", "select", "option", "input", "textarea", "button"]):
+        tag.decompose()
+
     markdown_content = md(str(soup), heading_style="ATX")
-    return reduce_newlines_to_two(markdown_content)
+    markdown_content = reduce_newlines_to_two(markdown_content)
+
+    # Truncate at the first "Apply for this job" / "Apply now" heading — everything
+    # after this is application UI, not job description content.
+    match = _APPLY_SECTION_PATTERNS.search(markdown_content)
+    if match:
+        markdown_content = markdown_content[:match.start()].rstrip()
+
+    return markdown_content
