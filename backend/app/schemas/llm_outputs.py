@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -42,6 +44,17 @@ class JobRequirements(BaseModel):
 class JobSkills(BaseModel):
     technical: list[str] = []
     soft: list[str] = []
+
+
+class AdvocacyStatement(BaseModel):
+    header: str
+    body: str
+    sources: list[Literal["Resume", "GitHub", "Direct Input"]] = []
+
+
+class TailoringContent(BaseModel):
+    advocacy_statements: list[AdvocacyStatement]
+    closing: str
 
 
 class ExtractedJob(BaseModel):

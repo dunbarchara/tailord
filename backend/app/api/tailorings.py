@@ -119,7 +119,8 @@ async def create_tailoring(
                     experience.extracted_profile,
                     extracted_job,
                     candidate_name,
-                    ranked_matches=ranked_matches)
+                    ranked_matches=ranked_matches,
+                    candidate_email=user.email)
         )
     except Exception:
         logger.exception("Tailoring generation LLM failed")
@@ -195,7 +196,8 @@ async def regenerate_tailoring(
                     experience.extracted_profile,
                     extracted_job,
                     candidate_name,
-                    ranked_matches=ranked_matches)
+                    ranked_matches=ranked_matches,
+                    candidate_email=user.email)
         )
     except Exception:
         logger.exception("Tailoring regeneration LLM failed")
