@@ -68,6 +68,13 @@
   --color-info: var(--color-info);
   --color-info-bg: var(--color-info-bg);
 
+  /* Score colors — used exclusively for match scoring indicators in the
+     Posting and Analysis views. Separate from the monochrome success/warning/
+     error state tokens so score visualization doesn't affect the rest of the UI. */
+  --color-score-strong: var(--color-score-strong);
+  --color-score-partial: var(--color-score-partial);
+  --color-score-gap: var(--color-score-gap);
+
   /* Shadows */
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
@@ -140,6 +147,10 @@
   --color-info: #3F3F3F;
   --color-info-bg: #F4F2ED;
 
+  --color-score-strong: #3D7A5A;
+  --color-score-partial: #C48A1A;
+  --color-score-gap: #CC3333;
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.025);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.045), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.035);
@@ -207,10 +218,14 @@
   --color-success-bg: rgba(232, 230, 225, 0.07);
   --color-warning: #CBC9C4;
   --color-warning-bg: rgba(232, 230, 225, 0.06);
-  --color-error: #E0DED9;
+  --color-error: #D45555;
   --color-error-bg: rgba(232, 230, 225, 0.08);
   --color-info: #D8D6D1;
   --color-info-bg: rgba(232, 230, 225, 0.07);
+
+  --color-score-strong: #6BA882;
+  --color-score-partial: #D4A040;
+  --color-score-gap: #D45555;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.55), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
@@ -264,6 +279,13 @@
   --max-width-5xl: var(--container-5xl);
   --max-width-6xl: var(--container-6xl);
   --max-width-7xl: var(--container-7xl);
+}
+
+/* =============================================
+   Sonner toast overrides
+   ============================================= */
+[data-sonner-toast][data-type="error"] {
+  border-left: 4px solid var(--color-error) !important;
 }
 
 /* =============================================

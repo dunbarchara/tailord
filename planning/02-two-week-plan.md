@@ -196,6 +196,15 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 
 **Why separate from Match Analysis:** Match Analysis is a power-user/debug view with metadata rows, rationale, and copy buttons. The Job Posting tab is for reading and orientation — "what does this role actually require?" — and should feel like a clean document, not a data table.
 
+#### Score indicators + expandable rationale
+
+Scored chunks (requirements, responsibilities, qualifications) surface match signal without cluttering the reading view:
+
+- **Left border accent** — a 2px colored left border on each scored chunk: green (strong), yellow (partial), red (gap). N/A chunks (perks, culture, EEO) have no border and are not interactive. Pre-enrichment chunks have no border. This gives passive at-a-glance signal without interrupting reading.
+- **Click to expand rationale** — clicking a scored chunk expands a rationale block beneath it with the LLM's match reasoning and the evidence source (Resume / GitHub / Direct Input). One chunk expanded at a time — selecting another collapses the previous. Clicking the active chunk collapses it.
+- **Source attribution is intentional** — knowing *where* a claim comes from (resume bullet, GitHub repo, direct input) is core to the platform. It sets expectations for candidates and builds trust with hiring managers on the public view. Future: GitHub source could link directly to the relevant repository or file.
+- **Clean degradation** — if enrichment is pending or a chunk has no score, it renders as plain text with no border and no interaction.
+
 ---
 
 **What was deprioritized (moved to Day 8.5):**

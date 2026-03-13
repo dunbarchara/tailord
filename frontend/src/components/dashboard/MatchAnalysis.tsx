@@ -68,24 +68,24 @@ export function chunksToMarkdown(data: ChunksResponse, title?: string | null, co
 function ScoreBadge({ score }: { score: number | null }) {
   if (score === 2) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success flex-shrink-0 w-20">
-        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-score-strong flex-shrink-0 w-20">
+        <span className="h-1.5 w-1.5 rounded-full bg-score-strong" />
         Strong
       </span>
     );
   }
   if (score === 1) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-warning flex-shrink-0 w-20">
-        <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-score-partial flex-shrink-0 w-20">
+        <span className="h-1.5 w-1.5 rounded-full bg-score-partial" />
         Partial
       </span>
     );
   }
   if (score === 0) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-error flex-shrink-0 w-20">
-        <span className="h-1.5 w-1.5 rounded-full bg-error" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-score-gap flex-shrink-0 w-20">
+        <span className="h-1.5 w-1.5 rounded-full bg-score-gap" />
         Gap
       </span>
     );
