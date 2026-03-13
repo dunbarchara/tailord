@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
-import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link } from 'lucide-react';
+import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -206,8 +206,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
       {/* Toolbar */}
       <header className="relative flex items-center h-11 px-4 border-b border-border-subtle bg-surface-base flex-shrink-0">
-        {/* Left: breadcrumb */}
-        <div className="flex items-center gap-1.5 min-w-0 text-sm" style={{ maxWidth: '40%' }}>
+        {/* Left: breadcrumb + date */}
+        <div className="flex items-center gap-1.5 min-w-0 text-sm" style={{ maxWidth: '50%' }}>
           <span className="font-medium text-text-primary truncate max-w-[180px]">
             {tailoring.title ?? 'Tailoring'}
           </span>
@@ -217,6 +217,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <span className="text-text-secondary truncate max-w-[140px]">{tailoring.company}</span>
             </>
           )}
+          <span className="text-text-tertiary flex-shrink-0">·</span>
+          <span className="text-text-tertiary text-xs flex-shrink-0">{createdDate}</span>
         </div>
 
         {/* Centre: tabs — absolutely centred in the toolbar */}
@@ -239,13 +241,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
         {/* Right: actions */}
         <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-          {tailoring.job_url && (
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" asChild>
-              <a href={tailoring.job_url} target="_blank" rel="noopener noreferrer" title="View job posting">
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="sm"
@@ -352,14 +347,24 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'letter' && (
           <div className="max-w-3xl mx-auto px-8 py-10">
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-text-primary leading-tight">
-                {tailoring.title ?? 'Tailoring'}
-              </h1>
-              <p className="text-text-secondary mt-2 text-sm">
-                {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
+            <header className="mb-8 pb-5 border-b border-border-subtle">
+              <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
+                {tailoring.company ?? 'Tailoring'}
               </p>
-            </div>
+              <h1 className="text-xl font-semibold text-text-primary">
+                {tailoring.title ?? ''}
+              </h1>
+              {tailoring.job_url && (
+                <a
+                  href={tailoring.job_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-2 text-sm text-text-link hover:underline"
+                >
+                  View job posting →
+                </a>
+              )}
+            </header>
             <div className={cn(
               "prose prose-sm max-w-none text-text-primary",
               "prose-headings:text-text-primary prose-headings:font-semibold",
