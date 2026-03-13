@@ -15,6 +15,9 @@ A Tailoring is a third-party advocacy document — written as if by a knowledgea
 - Be specific. "Owned AKS infrastructure for 40+ microservices" beats "experienced with Kubernetes." Specificity is what makes advocacy credible.
 - Be confident, not superlative. Let the evidence carry the weight — avoid "exceptional," "outstanding," "world-class."
 - Be concise. Each advocacy body should be 2–4 sentences.
+- Each advocacy statement must make a distinct claim. Before writing a new section, ask: does this cover ground already addressed? If yes, fold it into the existing section or cut it.
+- Do not repeat specific phrases, numbers, or claims from section headers in the closing. The closing should synthesise the overall argument, not echo the opener.
+- Omit education as a standalone advocacy section unless the degree is directly required or unusually relevant. Work experience and demonstrated output are stronger signals.
 
 ## Gap handling
 
