@@ -63,7 +63,7 @@ function scoreBarColor(score: number | null, publicMode?: boolean): string | nul
   return null;
 }
 
-function groupBySection(chunks: JobChunk[], publicMode?: boolean): Map<string, JobChunk[]> {
+function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
   const groups = new Map<string, JobChunk[]>();
   for (const chunk of chunks) {
     if (chunk.chunk_type === 'header') continue;
@@ -187,7 +187,7 @@ export function JobPosting({ data, error, title, company, jobUrl, publicMode, hi
 
   if (error) {
     return (
-      <div className="max-w-3xl mx-auto px-8 py-10 text-sm text-text-secondary">
+      <div className="max-w-3xl mx-auto px-6 py-10 text-sm text-text-secondary">
         Could not load job posting data.
       </div>
     );
@@ -202,10 +202,10 @@ export function JobPosting({ data, error, title, company, jobUrl, publicMode, hi
     );
   }
 
-  const groups = groupBySection(data.chunks, publicMode);
+  const groups = groupBySection(data.chunks);
 
   return (
-    <div className="max-w-3xl mx-auto px-8 py-10">
+    <div className="max-w-3xl mx-auto px-6 py-10">
       {/* Header — matches Letter/public page style */}
       {!hideHeader && (
         <header className="mb-8 pb-5 border-b border-border-subtle">

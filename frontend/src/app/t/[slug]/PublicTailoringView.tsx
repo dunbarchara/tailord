@@ -37,7 +37,8 @@ export function PublicTailoringView({
     <>
       {/* Tab switcher — only when both views are public */}
       {bothPublic && (
-        <div className="flex items-center gap-0 px-6 border-b border-border-subtle">
+        <div className="px-6">
+        <div className="flex items-center gap-0 border-b border-border-subtle">
           {(['letter', 'posting'] as const).map(tab => (
             <button
               key={tab}
@@ -53,6 +54,7 @@ export function PublicTailoringView({
             </button>
           ))}
         </div>
+        </div>
       )}
 
       {/* Letter view */}
@@ -62,7 +64,7 @@ export function PublicTailoringView({
         </main>
       )}
 
-      {/* Posting view — JobPosting handles its own px-8 py-10 padding */}
+      {/* Posting view — JobPosting handles its own px-6 py-10 padding */}
       {showPosting && (
         <JobPosting
           data={chunksData}

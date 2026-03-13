@@ -55,24 +55,26 @@ export default async function PublicTailoringPage({
     <div className="min-h-screen bg-surface-base print:bg-white">
       <div className="max-w-3xl mx-auto">
         {/* Header — always shown regardless of view */}
-        <header className="px-6 pt-12 pb-5 mb-0 border-b border-border-subtle print:pt-6">
-          <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
-            {tailoring.company ?? 'Tailoring'}
-          </p>
-          <h1 className="text-xl font-semibold text-text-primary">
-            {tailoring.title ?? ''}
-          </h1>
-          {tailoring.job_url && (
-            <a
-              href={tailoring.job_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block mt-2 text-sm text-text-link hover:underline print:hidden"
-            >
-              View job posting →
-            </a>
-          )}
-        </header>
+        <div className="px-6">
+          <header className="pt-12 pb-5 border-b border-border-subtle print:pt-6">
+            <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
+              {tailoring.company ?? 'Tailoring'}
+            </p>
+            <h1 className="text-xl font-semibold text-text-primary">
+              {tailoring.title ?? ''}
+            </h1>
+            {tailoring.job_url && (
+              <a
+                href={tailoring.job_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-sm text-text-link hover:underline print:hidden"
+              >
+                View job posting →
+              </a>
+            )}
+          </header>
+        </div>
 
         {/* Content */}
         <PublicTailoringView
@@ -86,14 +88,16 @@ export default async function PublicTailoringPage({
         />
 
         {/* Footer */}
-        <footer className="px-6 mt-0 pt-6 border-t border-border-subtle text-center print:hidden">
-          <p className="text-text-tertiary text-xs pb-6">
-            Generated with{' '}
-            <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
-              Tailord
-            </Link>
-          </p>
-        </footer>
+        <div className="px-6">
+          <footer className="pt-6 pb-6 border-t border-border-subtle text-center print:hidden">
+            <p className="text-text-tertiary text-xs">
+              Generated with{' '}
+              <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
+                Tailord
+              </Link>
+            </p>
+          </footer>
+        </div>
       </div>
     </div>
   )

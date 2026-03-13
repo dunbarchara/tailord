@@ -386,7 +386,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'letter' && (
-          <div className="max-w-3xl mx-auto px-8 py-10">
+          <div className="max-w-3xl mx-auto px-6 py-10">
             <header className="mb-8 pb-5 border-b border-border-subtle">
               <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
                 {tailoring.company ?? 'Tailoring'}
