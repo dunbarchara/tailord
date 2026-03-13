@@ -15,11 +15,19 @@ function stripMarkdown(text: string): string {
   return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
 }
 
+// Matches bare markdown links like [text](url) or ![alt](url) with no surrounding content
+const NOISE_PATTERN = /^(\[.+\]\(.+\)|!\[.*\]\(.+\))$/;
+function isPatternNoise(content: string): boolean {
+  return NOISE_PATTERN.test(content.trim());
+}
+
 function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
   const groups = new Map<string, JobChunk[]>();
   for (const chunk of chunks) {
     if (chunk.chunk_type === 'header') continue;
     if (chunk.section === null) continue; // skip job board chrome (logo, nav, etc.)
+    if (isPatternNoise(chunk.content)) continue;
+    if (chunk.should_render === false) continue;
     const key = chunk.section;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(chunk);

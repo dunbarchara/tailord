@@ -303,6 +303,7 @@ def get_tailoring_chunks(
                 "match_score": c.match_score,
                 "match_rationale": c.match_rationale,
                 "experience_source": c.experience_source,
+                "should_render": c.should_render,
             }
             for c in chunks
         ],

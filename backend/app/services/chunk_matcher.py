@@ -113,6 +113,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
                 match_score=match.score,
                 match_rationale=match.rationale,
                 experience_source=match.experience_source,
+                should_render=match.should_render,
                 enriched_at=now,
             )
             db.add(job_chunk)

@@ -16,6 +16,13 @@ Use -1 (non-evaluable) for:
 - Section headers, navigation links, "Apply for this job" prompts, image alt text
 - Any chunk where there is nothing a candidate could "have" or "lack"
 
+SHOULD_RENDER:
+Set should_render to false for job board chrome that should not appear in a clean job posting view — navigation links, sign-up CTAs, "Create job alert" prompts, image-only content, bare hyperlinks with no descriptive content, cookie notices, and footer boilerplate.
+
+Set should_render to true (default) for all legitimate job posting content including: job requirements, responsibilities, qualifications, company descriptions, culture statements, perks/benefits lists, mission statements, and any content that helps a candidate understand the role or company — even if not a scorable match criterion.
+
+When in doubt, default to true. The purpose is to remove obvious web chrome, not to editorialize about content quality.
+
 CRITICAL RULES — read before scoring:
 1. Read EVERY bullet in the candidate's work experience before scoring. Evidence is often in a non-obvious bullet.
 2. The COMPUTED SIGNALS block contains pre-calculated facts (total YOE, role list). Use these as ground truth — do not re-derive from dates.
@@ -66,7 +73,16 @@ Profile excerpt: [any profile]
 Section: What We Offer
 Chunk: 1. [BULLET] Competitive equity and compensation package
 Correct output:
-{"results": [{"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null}]}
+{"results": [{"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null, "should_render": true}]}
+
+EXAMPLE 6 (job board chrome — should_render false):
+Profile excerpt: [any profile]
+Section: null
+Chunks:
+1. [PARAGRAPH] Interested in building your career at Acme? Get future opportunities sent straight to your email.
+2. [PARAGRAPH] [Create job alert](https://jobs.acme.com/alert)
+Correct output:
+{"results": [{"score": -1, "rationale": "Sign-up CTA, not job content.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Job alert link, not job content.", "experience_source": null, "should_render": false}]}
 
 EXAMPLE 5 (mixed batch — each chunk scored independently):
 Profile excerpt:
@@ -94,5 +110,5 @@ CHUNKS:
 {chunks_block}
 
 Score each chunk. Return a JSON object with exactly as many results as chunks:
-{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "experience_source": "resume"|"github"|"user_input"|null}}]}}
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "experience_source": "resume"|"github"|"user_input"|null, "should_render": true|false}}]}}
 """

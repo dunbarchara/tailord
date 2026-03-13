@@ -10,8 +10,6 @@ interface MatchAnalysisProps {
   error: string | null;
 }
 
-const POLL_INTERVAL = 3000;
-
 const SOURCE_LABELS: Record<string, string> = {
   resume: 'Resume',
   github: 'GitHub',
@@ -34,6 +32,7 @@ function chunkToMarkdown(chunk: JobChunk): string {
     chunk.section ? `section: ${chunk.section}` : null,
     `score: ${score}`,
     source ? `source: ${source}` : null,
+    chunk.should_render === false ? `render: false` : null,
   ].filter(Boolean).join(' | ');
 
   const lines = [`### ${meta}`, chunk.content];
@@ -150,6 +149,12 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
         <Field label="section" value={chunk.section} />
         <Field label="score" value={<ScoreBadge score={chunk.match_score} />} />
         {source && <Field label="source" value={source} />}
+        {chunk.should_render === false && (
+          <span className="inline-flex items-center gap-1 text-xs text-text-disabled">
+            <span className="text-text-tertiary">render:</span>
+            <span className="font-mono text-warning">false</span>
+          </span>
+        )}
         <span className="ml-auto">
           <CopyButton getText={() => chunkToMarkdown(chunk)} />
         </span>
