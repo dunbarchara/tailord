@@ -4,8 +4,9 @@ from datetime import date
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
-from app.core.llm_utils import llm_generate
+from app.core.llm_utils import llm_parse
 from app.prompts import tailoring as prompt
+from app.schemas.llm_outputs import TailoringContent
 
 
 _MONTH_ABBR = {
@@ -145,18 +146,104 @@ def _format_ranked_matches(matches: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _strip_city(institution: str) -> str:
+    """Remove trailing city/state from institution names.
+
+    Handles common delimiters: comma, em dash, en dash, hyphen with spaces.
+    e.g. 'University of Arizona, Tucson, AZ'
+         'University of Arizona — Tucson, AZ'
+         'University of Arizona - Tucson'
+    """
+    return re.split(r"\s*[,—–·•]\s*|\s+-\s+", institution, maxsplit=1)[0].strip()
+
+
+def _extract_education_line(extracted_profile: dict) -> str | None:
+    """Return a compact education string for the candidate brief footer, or None."""
+    education = (extracted_profile.get("resume") or {}).get("education") or []
+    if not education:
+        return None
+    entry = education[0]
+    degree = entry.get("degree", "").strip()
+    institution = _strip_city(entry.get("institution", "").strip())
+    if degree and institution:
+        return f"{degree}, {institution}"
+    return degree or institution or None
+
+
+def _render_tailoring(
+    content: TailoringContent,
+    candidate_name: str,
+    candidate_email: str | None,
+    candidate_linkedin: str | None,
+    company: str,
+    job_title: str,
+    education_line: str | None,
+    job_url: str | None = None,
+) -> str:
+    """Deterministically render a TailoringContent object into the final markdown document."""
+    first_name = candidate_name.split()[0] if candidate_name else candidate_name
+    job_title_md = f"[{job_title}]({job_url})" if job_url else job_title
+
+    lines: list[str] = []
+
+    # Greeting + opening sentence
+    lines += [
+        f"Hello **{company}**,",
+        "",
+        f"Given the requirements in your {job_title_md} job posting, here are some reasons **{candidate_name}** would be a strong fit for the role.",
+        "",
+        "---",
+        "",
+    ]
+
+    # Advocacy sections
+    for stmt in content.advocacy_statements:
+        source_tag = " ".join(f"[{s}]" for s in stmt.sources) if stmt.sources else ""
+        body = f"{stmt.body} *{source_tag}*".strip()
+        lines += [f"**{stmt.header}**", "", body, ""]
+
+    lines += ["---", ""]
+
+    # Closing: LLM synthesis + deterministic contact line
+    closing = content.closing.rstrip()
+    if candidate_email:
+        lines += [closing, ""]
+        lines.append(f"If you're interested in continuing the conversation, {first_name} can be reached at [{candidate_email}](mailto:{candidate_email}).")
+    else:
+        lines.append(closing)
+
+    lines += ["", "---", ""]
+
+    # Candidate brief footer
+    brief_parts = [candidate_name]
+    if education_line:
+        brief_parts.append(education_line)
+    if candidate_email:
+        brief_parts.append(f"[{candidate_email}](mailto:{candidate_email})")
+    if candidate_linkedin:
+        linkedin_url = candidate_linkedin if candidate_linkedin.startswith("http") else f"https://{candidate_linkedin}"
+        brief_parts.append(f"[LinkedIn]({linkedin_url})")
+    lines.append(f"*{' · '.join(brief_parts)}*")
+
+    return "\n".join(lines)
+
+
 def generate_tailoring(
     extracted_profile: dict,
     extracted_job: dict,
     candidate_name: str,
     ranked_matches: list[dict] | None = None,
+    job_url: str | None = None,
 ) -> str:
     company = extracted_job.get("company") or "the company"
     job_title = extracted_job.get("title") or "this role"
+    resume = extracted_profile.get("resume") or {}
+    candidate_email: str | None = resume.get("email") or None
+    candidate_linkedin: str | None = resume.get("linkedin") or None
 
     ranked_matches_block = _format_ranked_matches(ranked_matches if ranked_matches is not None else [])
 
-    return llm_generate(
+    content = llm_parse(
         get_llm_client(),
         model=settings.llm_model,
         messages=[
@@ -169,21 +256,17 @@ def generate_tailoring(
                 extracted_profile=_format_sourced_profile(extracted_profile),
             )},
         ],
+        response_model=TailoringContent,
         temperature=prompt.TEMPERATURE,
-        label="tailoring",
     )
 
-
-def generate_match(profile: dict, job: dict) -> str:
-    return llm_generate(
-        get_llm_client(),
-        model=settings.llm_model,
-        messages=[
-            {"role": "user", "content": prompt.MATCH_USER_TEMPLATE.format(
-                profile=json.dumps(profile, indent=2),
-                job=json.dumps(job, indent=2),
-            )},
-        ],
-        temperature=prompt.MATCH_TEMPERATURE,
-        label="match",
+    return _render_tailoring(
+        content=content,
+        candidate_name=candidate_name,
+        candidate_email=candidate_email,
+        candidate_linkedin=candidate_linkedin,
+        company=company,
+        job_title=job_title,
+        education_line=_extract_education_line(extracted_profile),
+        job_url=job_url,
     )

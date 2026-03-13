@@ -29,6 +29,26 @@ function EmptyField({ label }: { label: string }) {
 function ResumeTab({ resume }: { resume: ExtractedProfile }) {
   return (
     <div className="text-xs">
+      {/* Contact */}
+      {(resume.email || resume.linkedin) && (
+        <Section title="Contact">
+          <div className="space-y-0.5">
+            {resume.email && (
+              <p className="text-text-secondary">
+                <span className="text-text-tertiary w-16 inline-block">Email</span>
+                <a href={`mailto:${resume.email}`} className="text-text-link hover:underline">{resume.email}</a>
+              </p>
+            )}
+            {resume.linkedin && (
+              <p className="text-text-secondary">
+                <span className="text-text-tertiary w-16 inline-block">LinkedIn</span>
+                <a href={resume.linkedin.startsWith('http') ? resume.linkedin : `https://${resume.linkedin}`} target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">{resume.linkedin}</a>
+              </p>
+            )}
+          </div>
+        </Section>
+      )}
+
       {/* Summary */}
       <Section title="Summary">
         {resume.summary
@@ -83,13 +103,18 @@ function ResumeTab({ resume }: { resume: ExtractedProfile }) {
       {/* Education */}
       <Section title="Education">
         {resume.education?.length > 0 ? (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {resume.education.map((e, i) => (
-              <p key={i} className="text-text-secondary">
-                {e.degree}
-                {e.institution && <span className="text-text-tertiary"> — {e.institution}</span>}
-                {e.year && <span className="text-text-tertiary"> ({e.year})</span>}
-              </p>
+              <div key={i}>
+                <p className="text-text-secondary">
+                  {e.degree}
+                  {e.institution && <span className="text-text-tertiary"> — {e.institution}</span>}
+                  {e.year && <span className="text-text-tertiary"> ({e.year})</span>}
+                </p>
+                {e.distinction && (
+                  <p className="text-text-tertiary mt-0.5">{e.distinction}</p>
+                )}
+              </div>
             ))}
           </div>
         ) : <EmptyField label="No education extracted" />}

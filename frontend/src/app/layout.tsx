@@ -29,6 +29,11 @@ export default function RootLayout({
                 try {
                   const theme = localStorage.getItem('theme') || 'tailord';
                   document.documentElement.setAttribute('data-theme', theme);
+                  if (!window.location.pathname.startsWith('/t/')) {
+                    const stored = localStorage.getItem('darkMode');
+                    const dark = stored !== null ? stored === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    if (dark) document.documentElement.classList.add('dark');
+                  }
                 } catch (e) {}
               })();
             `,

@@ -168,6 +168,16 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 - [x] `match_requirements` and `generate_tailoring` wrapped in `anyio.to_thread.run_sync()` — sync LLM calls no longer block the asyncio event loop during request handling
 - [x] Background task (`enrich_job_chunks`) was already correctly deferred post-response via FastAPI `BackgroundTasks`
 
+#### Tailoring format + philosophy ✅
+- [x] Defined the Tailoring product philosophy — third-party advocacy document, not a cover letter or requirements matrix; goal is to earn a conversation, not close a hire (`planning/09-tailoring-philosophy.md`)
+- [x] Agreed output format: direct company greeting, single job-posting reference sentence, candidate-strength headings, brief `[Resume]`/`[GitHub]`/`[Direct Input]` source tags, synthesis closing, compact candidate brief footer
+- [x] Gap handling hierarchy: strong matches lead; partial matches reframe positively; gaps with no signals omitted; gaps with adjacent signals get a brief constructive reframe only when prominent
+- [x] Structured output: LLM now returns `TailoringContent` (`advocacy_statements[]` + `closing`) via `llm_parse` rather than free-form markdown — format is deterministic, owned in `_render_tailoring()`
+- [x] `AdvocacyStatement(header, body, sources[])` + `TailoringContent` added to `schemas/llm_outputs.py`
+- [x] `_render_tailoring()` assembles final markdown from structured content + deterministic data (name, email, education, company, job title)
+- [x] `candidate_email` threaded through from `User` record; education extracted from profile for footer
+- [x] Tailoring generation prompt rewritten to encode the advocacy philosophy and ask for JSON
+
 **What was deprioritized (moved to Day 8.5):**
 - Empty profile detection (minimum text length + field validation before marking ready)
 - LLM output validation (finish_reason=length → LLMTruncationError, minimum quality check before persisting)
@@ -404,7 +414,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 3.5 | Cloud-agnostic infra | StorageClient abstraction, Terraform module refactor, Azure provider, backend containerized | ✅ |
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
-| 5.5 | Pipeline robustness | Scrape gating, PDF extraction, dual pipeline (fast + slow), match analysis tab, parsed profile debug panel, async isolation | ✅ |
+| 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
@@ -435,3 +445,22 @@ If any day runs long, cut in this order (least to most impactful to cut):
 - A mobile app — the web product needs to be complete first
 - Pricing / paywall — premature for portfolio purposes
 - Re-engineering the LLM pipeline — the current one works; don't over-optimize
+
+---
+
+## Future / Backlog
+
+### Azure Document Intelligence for Resume Text Extraction
+
+**Context:** The current pipeline uses `pypdf`/`python-docx` for step 1 (document → raw text) and an LLM prompt for step 2 (raw text → structured JSON). The LLM step is the right approach and aligns with where the industry is moving (newer resume parsing APIs use LLMs internally). The vulnerability is step 1.
+
+**Problem:** Badly formatted PDFs — multi-column layouts, embedded tables, fancy resume templates — produce garbled raw text that no amount of prompt engineering can fix downstream.
+
+**Proposal:** Replace `pypdf` with Azure Document Intelligence's Layout model for PDF text extraction. It is structure-aware (handles columns, tables, reading order) and produces much cleaner output.
+
+**Constraints:**
+- Azure Doc Intelligence SDK must be abstracted behind the existing storage/client abstraction layer (do not import `azure.*` directly in app code per cloud-portability rules)
+- Adds an API call with cost and latency implications — worth benchmarking against current pypdf failures before committing
+- DOCX extraction via `python-docx` is generally reliable; probably not worth replacing
+
+**When to consider:** If users report extraction failures (missing bullets, garbled work history) that can be traced to complex PDF layouts rather than LLM parsing errors. Not urgent until there is evidence of real failures at scale.

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -17,6 +19,7 @@ class Education(BaseModel):
     degree: str = ""
     institution: str = ""
     year: str = ""
+    distinction: str | None = None
 
 
 class Project(BaseModel):
@@ -26,6 +29,8 @@ class Project(BaseModel):
 
 
 class ExtractedProfile(BaseModel):
+    email: str | None = None
+    linkedin: str | None = None
     summary: str = ""
     work_experience: list[WorkExperience] = []
     skills: ProfileSkills = ProfileSkills()
@@ -42,6 +47,17 @@ class JobRequirements(BaseModel):
 class JobSkills(BaseModel):
     technical: list[str] = []
     soft: list[str] = []
+
+
+class AdvocacyStatement(BaseModel):
+    header: str
+    body: str
+    sources: list[Literal["Resume", "GitHub", "Direct Input"]] = []
+
+
+class TailoringContent(BaseModel):
+    advocacy_statements: list[AdvocacyStatement]
+    closing: str
 
 
 class ExtractedJob(BaseModel):

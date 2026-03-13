@@ -14,7 +14,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children, forcedLight = false }: { children: ReactNode; forcedLight?: boolean }) {
   // Lazy initializers read localStorage once on mount (no setState in effect needed)
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'tailord';
@@ -23,7 +23,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const [darkMode, setDarkModeState] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    return localStorage.getItem('darkMode') === 'true';
+    const stored = localStorage.getItem('darkMode');
+    if (stored !== null) return stored === 'true';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
   // Sync theme to document
@@ -32,11 +34,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Sync dark mode to document
+  // Sync dark mode to document (skip on forcedLight pages — inline script already excluded them)
   useEffect(() => {
+    if (forcedLight) return;
     document.documentElement.classList.toggle('dark', darkMode);
     localStorage.setItem('darkMode', String(darkMode));
-  }, [darkMode]);
+  }, [darkMode, forcedLight]);
 
   const setTheme = (t: Theme) => setThemeState(t);
   const setDarkMode = (d: boolean) => setDarkModeState(d);
