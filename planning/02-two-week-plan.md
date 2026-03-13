@@ -154,8 +154,8 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 - [x] `MatchAnalysis` component — polls `/api/tailorings/{id}/chunks` every 3s while pending, displays chunks grouped by section
 - [x] Developer-oriented card layout: metadata row (id, type, pos, section, score, source) + content row + rationale row
 - [x] Score badges: Strong (green), Partial (yellow), Gap (red), N/A (grey), Pending (pulse)
-- [x] Tab switcher in `TailoringDetail` toolbar — absolutely centered regardless of left/right content width
-- [x] Tab-aware copy button: Document tab copies markdown, Match Analysis tab copies all chunks as structured markdown for pasting into Claude Code
+- [x] Tab switcher in `TailoringDetail` toolbar — absolutely centered regardless of left/right content width; tabs renamed: **Letter** (generated document), **Posting** (job view), **Analysis** (debug chunks)
+- [x] Tab-aware copy button: Letter tab copies markdown, Analysis tab copies all chunks as structured markdown for pasting into Claude Code
 - [x] Per-chunk copy button in metadata row
 
 #### Parsed Profile debug panel ✅
@@ -442,7 +442,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
-| 5.6 | Enriched job posting view | Job Posting tab (clean reading view from chunks, separate from Match Analysis debug tab) | |
+| 5.6 | Enriched job posting view | Posting tab (clean reading view from chunks, separate from Analysis debug tab) | ✅ |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |

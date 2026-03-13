@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Loader2, AlertCircle, Copy, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 
 interface MatchAnalysisProps {
-  tailoringId: string;
-  onDataChange?: (data: ChunksResponse) => void;
+  data: ChunksResponse | null;
+  error: string | null;
 }
 
 const POLL_INTERVAL = 3000;
@@ -177,44 +177,7 @@ function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
   return groups;
 }
 
-export function MatchAnalysis({ tailoringId, onDataChange }: MatchAnalysisProps) {
-  const [data, setData] = useState<ChunksResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  async function fetchChunks() {
-    try {
-      const res = await fetch(`/api/tailorings/${tailoringId}/chunks`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body?.detail ?? 'Failed to load match data.');
-        stopPolling();
-        return;
-      }
-      const json: ChunksResponse = await res.json();
-      setData(json);
-      onDataChange?.(json);
-      if (json.enrichment_status === 'complete' || json.enrichment_status === 'error') {
-        stopPolling();
-      }
-    } catch {
-      setError('Could not reach the server.');
-      stopPolling();
-    }
-  }
-
-  function stopPolling() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }
-
-  useEffect(() => {
-    fetchChunks();
-    pollRef.current = setInterval(fetchChunks, POLL_INTERVAL);
-    return () => stopPolling();
-  }, [tailoringId]);
+export function MatchAnalysis({ data, error }: MatchAnalysisProps) {
 
   if (error) {
     return (

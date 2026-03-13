@@ -17,7 +17,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
+import { JobPosting } from '@/components/dashboard/JobPosting';
 import type { Tailoring, ChunksResponse } from '@/types';
+
+const POLL_INTERVAL = 3000;
 
 interface TailoringDetailProps {
   tailoringId: string;
@@ -36,9 +39,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [showMakePublicConfirm, setShowMakePublicConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'document' | 'analysis'>('document');
-  const [analysisKey, setAnalysisKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('letter');
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
+  const [chunksError, setChunksError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -59,6 +62,34 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     load();
   }, [tailoringId]);
 
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    async function fetchChunks() {
+      try {
+        const res = await fetch(`/api/tailorings/${tailoringId}/chunks`);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setChunksError(body?.detail ?? 'Failed to load match data.');
+          if (interval) clearInterval(interval);
+          return;
+        }
+        const json: ChunksResponse = await res.json();
+        setChunksData(json);
+        if (json.enrichment_status === 'complete' || json.enrichment_status === 'error') {
+          if (interval) clearInterval(interval);
+        }
+      } catch {
+        setChunksError('Could not reach the server.');
+        if (interval) clearInterval(interval);
+      }
+    }
+
+    fetchChunks();
+    interval = setInterval(fetchChunks, POLL_INTERVAL);
+    return () => { if (interval) clearInterval(interval); };
+  }, [tailoringId]);
+
   async function handleRegenerate() {
     setShowRegenConfirm(false);
     setRegenerating(true);
@@ -71,7 +102,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       }
       const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
       setTailoring(updated);
-      setAnalysisKey(k => k + 1);
+      setChunksData(null);
       router.refresh();
       toast.success('Tailoring regenerated.');
     } catch {
@@ -190,7 +221,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
         {/* Centre: tabs — absolutely centred in the toolbar */}
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0">
-          {(['document', 'analysis'] as const).map(tab => (
+          {(['letter', 'posting', 'analysis'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -201,7 +232,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                   : 'border-transparent text-text-tertiary hover:text-text-secondary'
               )}
             >
-              {tab === 'document' ? 'Document' : 'Match Analysis'}
+              {tab === 'letter' ? 'Letter' : tab === 'posting' ? 'Posting' : 'Analysis'}
             </button>
           ))}
         </div>
@@ -319,7 +350,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {activeTab === 'document' ? (
+        {activeTab === 'letter' && (
           <div className="max-w-3xl mx-auto px-8 py-10">
             <div className="mb-8">
               <h1 className="text-3xl font-bold text-text-primary leading-tight">
@@ -343,8 +374,18 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
             </div>
           </div>
-        ) : (
-          <MatchAnalysis key={analysisKey} tailoringId={tailoringId} onDataChange={setChunksData} />
+        )}
+        {activeTab === 'posting' && (
+          <JobPosting
+            data={chunksData}
+            error={chunksError}
+            title={tailoring.title}
+            company={tailoring.company}
+            jobUrl={tailoring.job_url}
+          />
+        )}
+        {activeTab === 'analysis' && (
+          <MatchAnalysis data={chunksData} error={chunksError} />
         )}
       </div>
 
