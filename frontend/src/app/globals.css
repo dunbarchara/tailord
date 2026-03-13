@@ -73,6 +73,7 @@
      error state tokens so score visualization doesn't affect the rest of the UI. */
   --color-score-strong: var(--color-score-strong);
   --color-score-partial: var(--color-score-partial);
+  --color-score-partial-public: var(--color-score-partial-public);
   --color-score-gap: var(--color-score-gap);
 
   /* Shadows */
@@ -149,6 +150,7 @@
 
   --color-score-strong: #3D7A5A;
   --color-score-partial: #C48A1A;
+  --color-score-partial-public: #5A9E78;
   --color-score-gap: #CC3333;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.025);
@@ -225,6 +227,7 @@
 
   --color-score-strong: #6BA882;
   --color-score-partial: #D4A040;
+  --color-score-partial-public: #5A8E6E;
   --color-score-gap: #D45555;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);

@@ -11,6 +11,8 @@ interface JobPostingProps {
   title: string | null;
   company: string | null;
   jobUrl: string | null;
+  publicMode?: boolean;
+  hideHeader?: boolean;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -54,14 +56,14 @@ function isPatternNoise(content: string): boolean {
   return NOISE_PATTERN.test(content.trim());
 }
 
-function scoreBarColor(score: number | null): string | null {
+function scoreBarColor(score: number | null, publicMode?: boolean): string | null {
   if (score === 2) return 'bg-score-strong';
-  if (score === 1) return 'bg-score-partial';
-  if (score === 0) return 'bg-score-gap';
+  if (score === 1) return publicMode ? 'bg-score-partial-public' : 'bg-score-partial';
+  if (score === 0) return publicMode ? null : 'bg-score-gap';
   return null;
 }
 
-function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
+function groupBySection(chunks: JobChunk[], publicMode?: boolean): Map<string, JobChunk[]> {
   const groups = new Map<string, JobChunk[]>();
   for (const chunk of chunks) {
     if (chunk.chunk_type === 'header') continue;
@@ -79,12 +81,14 @@ function ChunkItem({
   chunk,
   expandedId,
   setExpandedId,
+  publicMode,
 }: {
   chunk: JobChunk;
   expandedId: string | null;
   setExpandedId: (id: string | null) => void;
+  publicMode?: boolean;
 }) {
-  const barColor = scoreBarColor(chunk.match_score);
+  const barColor = scoreBarColor(chunk.match_score, publicMode);
   const isInteractive = barColor !== null;
   const isExpanded = expandedId === chunk.id;
 
@@ -151,11 +155,13 @@ function SectionBlock({
   chunks,
   expandedId,
   setExpandedId,
+  publicMode,
 }: {
   section: string;
   chunks: JobChunk[];
   expandedId: string | null;
   setExpandedId: (id: string | null) => void;
+  publicMode?: boolean;
 }) {
   const sorted = [...chunks].sort((a, b) => a.position - b.position);
   return (
@@ -169,13 +175,14 @@ function SectionBlock({
           chunk={chunk}
           expandedId={expandedId}
           setExpandedId={setExpandedId}
+          publicMode={publicMode}
         />
       ))}
     </div>
   );
 }
 
-export function JobPosting({ data, error, title, company, jobUrl }: JobPostingProps) {
+export function JobPosting({ data, error, title, company, jobUrl, publicMode, hideHeader }: JobPostingProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (error) {
@@ -195,29 +202,31 @@ export function JobPosting({ data, error, title, company, jobUrl }: JobPostingPr
     );
   }
 
-  const groups = groupBySection(data.chunks);
+  const groups = groupBySection(data.chunks, publicMode);
 
   return (
     <div className="max-w-3xl mx-auto px-8 py-10">
       {/* Header — matches Letter/public page style */}
-      <header className="mb-8 pb-5 border-b border-border-subtle">
-        <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
-          {company ?? 'Company'}
-        </p>
-        <h1 className="text-xl font-semibold text-text-primary">
-          {title ?? 'Job Posting'}
-        </h1>
-        {jobUrl && (
-          <a
-            href={jobUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block mt-2 text-sm text-text-link hover:underline"
-          >
-            View job posting →
-          </a>
-        )}
-      </header>
+      {!hideHeader && (
+        <header className="mb-8 pb-5 border-b border-border-subtle">
+          <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
+            {company ?? 'Company'}
+          </p>
+          <h1 className="text-xl font-semibold text-text-primary">
+            {title ?? 'Job Posting'}
+          </h1>
+          {jobUrl && (
+            <a
+              href={jobUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block mt-2 text-sm text-text-link hover:underline"
+            >
+              View job posting →
+            </a>
+          )}
+        </header>
+      )}
 
       {/* Sections */}
       {groups.size === 0 ? (
@@ -230,6 +239,7 @@ export function JobPosting({ data, error, title, company, jobUrl }: JobPostingPr
             chunks={chunks}
             expandedId={expandedId}
             setExpandedId={setExpandedId}
+            publicMode={publicMode}
           />
         ))
       )}

@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
-import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link } from 'lucide-react';
+import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [regenerating, setRegenerating] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
-  const [showMakePublicConfirm, setShowMakePublicConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('letter');
@@ -112,20 +112,30 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     }
   }
 
-  async function handleShare() {
-    setShowMakePublicConfirm(false);
+  async function handleToggleShare(view: 'letter' | 'posting', value: boolean) {
+    if (!tailoring) return;
     setSharing(true);
     try {
-      const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'POST' });
+      const newLetter = view === 'letter' ? value : tailoring.letter_public;
+      const newPosting = view === 'posting' ? value : tailoring.posting_public;
+      const res = await fetch(`/api/tailorings/${tailoringId}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ letter: newLetter, posting: newPosting }),
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toastError(data?.detail ?? 'Could not share tailoring.');
+        toastError(data?.detail ?? 'Could not update sharing.');
         return;
       }
-      const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
-      setTailoring(updated);
-      setShareOpen(true);
-      toast.success('Tailoring is now public.');
+      const shareData = await res.json();
+      setTailoring(prev => prev ? {
+        ...prev,
+        letter_public: shareData.letter_public,
+        posting_public: shareData.posting_public,
+        is_public: shareData.letter_public || shareData.posting_public,
+        public_slug: shareData.public_slug ?? prev.public_slug,
+      } : null);
     } catch {
       toastError('Could not reach the server.');
     } finally {
@@ -143,7 +153,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         toastError(data?.detail ?? 'Could not make tailoring private.');
         return;
       }
-      setTailoring(prev => prev ? { ...prev, is_public: false } : null);
+      setTailoring(prev => prev ? { ...prev, is_public: false, letter_public: false, posting_public: false } : null);
       setShareOpen(false);
       toast.success('Tailoring is now private.');
     } catch {
@@ -200,6 +210,17 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const shareUrl = tailoring.public_slug
     ? `${window.location.origin}/t/${tailoring.public_slug}`
     : null;
+
+  const letterOn = tailoring.letter_public;
+  const postingOn = tailoring.posting_public;
+  const anyPublic = letterOn || postingOn;
+
+  function ShareButtonLabel() {
+    if (letterOn && postingOn) return <><Globe className="h-3.5 w-3.5" />Public</>;
+    if (letterOn) return <><Globe className="h-3.5 w-3.5" />Public · Letter</>;
+    if (postingOn) return <><Globe className="h-3.5 w-3.5" />Public · Posting</>;
+    return <><Lock className="h-3.5 w-3.5" />Share</>;
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -262,15 +283,13 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 size="sm"
                 className="h-7 gap-1.5 px-2.5 text-xs font-normal ml-1"
               >
-                {tailoring.is_public
-                  ? <><Globe className="h-3.5 w-3.5" />Public</>
-                  : <><Lock className="h-3.5 w-3.5" />Share</>}
+                <ShareButtonLabel />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-80 p-0">
-              {tailoring.is_public && shareUrl ? (
-                <div>
-                  <div className="px-4 pt-4 pb-3">
+              <div className="px-4 pt-4 pb-3">
+                {anyPublic && shareUrl ? (
+                  <>
                     <p className="text-sm font-medium text-text-primary mb-3">Shareable link</p>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-sunken border border-border-subtle">
                       <Link className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
@@ -292,37 +311,57 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                           : <Copy className="h-3.5 w-3.5" />}
                       </button>
                     </div>
-                  </div>
-                  <div className="px-4 pb-4 pt-1 border-t border-border-subtle">
-                    <p className="text-xs text-text-tertiary mb-3 pt-3">Anyone with this link can view the tailoring without signing in.</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs h-8 gap-2"
-                      onClick={() => { setShareOpen(false); setShowMakePrivateConfirm(true); }}
-                      disabled={sharing}
-                    >
-                      <Lock className="h-3.5 w-3.5" />
-                      Make private
-                    </Button>
-                  </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-text-primary mb-1">Share this tailoring</p>
+                    <p className="text-xs text-text-tertiary mb-3">
+                      Publish read-only views — no sign-in required.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* Toggles */}
+              <div className="px-4 pb-3 space-y-3 border-t border-border-subtle pt-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text-primary">Advocacy Letter</span>
+                  <Switch
+                    checked={letterOn}
+                    onCheckedChange={v => handleToggleShare('letter', v)}
+                    disabled={sharing}
+                  />
                 </div>
-              ) : (
-                <div className="px-4 py-4">
-                  <p className="text-sm font-medium text-text-primary mb-1">Share this tailoring</p>
-                  <p className="text-xs text-text-tertiary mb-4">
-                    Publish a read-only link anyone can open — no sign-in required.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text-primary">Job Posting</span>
+                  <Switch
+                    checked={postingOn}
+                    onCheckedChange={v => handleToggleShare('posting', v)}
+                    disabled={sharing}
+                  />
+                </div>
+              </div>
+
+              {/* Note */}
+              <div className="px-4 pb-3 pt-1">
+                <p className="flex items-start gap-1.5 text-xs text-text-tertiary leading-relaxed">
+                  <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                  In the public job posting view, gap matches are hidden and partial matches appear as green.
+                </p>
+              </div>
+
+              {/* Make private */}
+              {anyPublic && (
+                <div className="px-4 pb-4 border-t border-border-subtle pt-3">
                   <Button
+                    variant="outline"
                     size="sm"
                     className="w-full text-xs h-8 gap-2"
-                    onClick={() => { setShareOpen(false); setShowMakePublicConfirm(true); }}
+                    onClick={() => { setShareOpen(false); setShowMakePrivateConfirm(true); }}
                     disabled={sharing}
                   >
-                    {sharing
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <Globe className="h-3.5 w-3.5" />}
-                    Make public
+                    <Lock className="h-3.5 w-3.5" />
+                    Make private
                   </Button>
                 </div>
               )}
@@ -406,21 +445,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRegenConfirm(false)}>Cancel</Button>
             <Button onClick={handleRegenerate}>Regenerate</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showMakePublicConfirm} onOpenChange={setShowMakePublicConfirm}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Make this tailoring public?</DialogTitle>
-            <DialogDescription>
-              Anyone with the link will be able to view this tailoring without signing in. You can make it private again at any time.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMakePublicConfirm(false)}>Cancel</Button>
-            <Button onClick={handleShare}>Make public</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
