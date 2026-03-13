@@ -178,6 +178,26 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 - [x] `candidate_email` threaded through from `User` record; education extracted from profile for footer
 - [x] Tailoring generation prompt rewritten to encode the advocacy philosophy and ask for JSON
 
+---
+
+### Day 5.6 — Enriched Job Posting View
+
+**Goal:** Surface a human-readable, enriched view of the scraped job posting in the tailoring detail — separate from the generated Tailoring document and the Match Analysis debug tab. The Match Analysis chunk view is retained as-is for debugging purposes.
+
+**Tasks:**
+- [ ] Add a third tab in `TailoringDetail`: **"Job Posting"** alongside Document and Match Analysis
+- [ ] Render the job posting using the existing `JobChunk` data (`/api/tailorings/{id}/chunks`), but as a clean reading view rather than a developer card layout:
+  - Section headers rendered as headings
+  - Bullet chunks rendered as bullet lists
+  - Paragraph chunks rendered as prose
+  - Score badges omitted — this view is for reading the job, not debugging the match
+- [ ] Optionally: inline subtle score indicators (e.g. a colored left border or dot on bullets) so the candidate can see at a glance which requirements they match — a lightweight visual layer on top of the clean reading view
+- [ ] If enrichment is still pending, show the un-enriched chunk content without scores (chunks are available as soon as the job is scraped, before scoring completes)
+
+**Why separate from Match Analysis:** Match Analysis is a power-user/debug view with metadata rows, rationale, and copy buttons. The Job Posting tab is for reading and orientation — "what does this role actually require?" — and should feel like a clean document, not a data table.
+
+---
+
 **What was deprioritized (moved to Day 8.5):**
 - Empty profile detection (minimum text length + field validation before marking ready)
 - LLM output validation (finish_reason=length → LLMTruncationError, minimum quality check before persisting)
@@ -311,6 +331,13 @@ This is the single highest-leverage change. Wall-clock time is unchanged; percei
 - [ ] A mascot concept (small pixel-art or vector character performing each operation) is brand-differentiating and worth exploring as a design iteration once the underlying stream is live — the mascot reacting to real pipeline events is satisfying in a way that a mascot animating over a spinner is not
 - [ ] Keep it subtle and skippable — not every user wants whimsy
 
+#### 5. Progressive disclosure — show structure before content is ready
+- [ ] As soon as the job scrape + extraction completes (before match scoring or tailoring generation), enough data exists to render skeleton views of both tabs:
+  - **Job Posting tab:** render the un-enriched chunks immediately — the user can start reading the job description while the rest of the pipeline runs. Score indicators can fade in as chunk enrichment completes.
+  - **Document tab:** render a template shell — greeting, company name, job title, dividers, footer — with placeholder blocks where advocacy sections will appear. Makes it visually obvious something real is being built, not just a spinner.
+- [ ] Both views should clearly signal in-progress state (subtle pulse on placeholders, a "Generating..." label) so the user understands the content is incomplete — not that the product is broken
+- [ ] This is intentionally designed before streaming is in place: it reduces perceived wait time by giving the user something to read immediately after job parsing completes, even if tailoring generation hasn't started yet. When streaming is later added, the Document tab transitions smoothly from skeleton → live token stream → complete.
+
 **Note on scrape latency:** The Playwright scrape (15–30s) is the one stage that is fundamentally slow and cannot be streamed. Job URL caching (Day 8.5) eliminates it entirely on retries for the same URL. Together, streaming + caching means: first visit has an honest progress indicator and streaming output; repeat visits skip the slow stage and jump straight to generation.
 
 **Why this is slotted before public portfolio:** A product that feels slow and unresponsive is harder to share confidently. Streaming makes tailoring generation a delight to watch, which matters when users are sharing their tailoring page or showing the product to someone.
@@ -415,6 +442,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
+| 5.6 | Enriched job posting view | Job Posting tab (clean reading view from chunks, separate from Match Analysis debug tab) | |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
@@ -464,3 +492,22 @@ If any day runs long, cut in this order (least to most impactful to cut):
 - DOCX extraction via `python-docx` is generally reliable; probably not worth replacing
 
 **When to consider:** If users report extraction failures (missing bullets, garbled work history) that can be traced to complex PDF layouts rather than LLM parsing errors. Not urgent until there is evidence of real failures at scale.
+
+---
+
+### Custom Pronouns in User Settings
+
+**Context:** The LLM currently infers pronouns from the candidate's name (e.g. "Charles" → he/him). This is unreliable and excludes candidates who use she/her, they/them, or other pronouns.
+
+**Proposal:** Add a pronouns field to user settings (free-text or a small set of common options: he/him, she/her, they/them, other). Surface it prominently in the settings panel — not buried — since it directly affects generated output.
+
+**Pipeline integration:**
+- Primary: inject the candidate's pronouns into the tailoring system prompt so the LLM uses them natively throughout generation. This is the cleanest approach and handles grammatical agreement naturally (e.g. "they have" not "they has").
+- Safety net: after LLM generation, run a deterministic pronoun replacement pass to catch any gendered pronouns the LLM may have inferred despite instructions. A regex pass over he/him/his/she/her/hers with the correct forms is straightforward for binary pronoun sets; they/them requires more care around verb agreement.
+
+**Schema changes:**
+- Add `pronouns: str | None` to the `User` model
+- Expose via a settings endpoint
+- Pass through to `generate_tailoring()` and into the tailoring prompt
+
+**Note:** If pronouns are not set, default to they/them in the prompt rather than inferring from name — safer and more inclusive default.
