@@ -43,23 +43,17 @@ export default async function PublicTailoringPage({
     )
   }
 
-  const createdDate = new Date(tailoring.created_at).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-
   return (
     <div className="min-h-screen bg-surface-base print:bg-white">
       <div className="max-w-3xl mx-auto px-6 py-12 print:py-6">
         {/* Header */}
-        <header className="mb-10 pb-6 border-b border-border-subtle print:mb-6">
-          <h1 className="text-3xl font-semibold text-text-primary">
-            {tailoring.title ?? 'Tailoring'}
-          </h1>
-          <p className="text-text-secondary mt-2">
-            {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
+        <header className="mb-8 pb-5 border-b border-border-subtle print:mb-6">
+          <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
+            {tailoring.company ?? 'Tailoring'}
           </p>
+          <h1 className="text-xl font-semibold text-text-primary">
+            {tailoring.title ?? ''}
+          </h1>
           {tailoring.job_url && (
             <a
               href={tailoring.job_url}
@@ -73,7 +67,7 @@ export default async function PublicTailoringPage({
         </header>
 
         {/* Content */}
-        <main className="prose prose-sm max-w-none text-text-primary prose-headings:text-text-primary prose-headings:font-semibold prose-p:text-text-secondary prose-p:leading-relaxed prose-strong:text-text-primary prose-hr:border-border-subtle">
+        <main className="prose prose-sm max-w-none text-text-primary prose-headings:text-text-primary prose-headings:font-semibold prose-p:text-text-secondary prose-p:leading-relaxed prose-strong:text-text-primary prose-hr:border-border-subtle prose-hr:my-6 prose-a:text-text-link prose-a:underline prose-a:underline-offset-2">
           <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
         </main>
 
@@ -81,7 +75,7 @@ export default async function PublicTailoringPage({
         <footer className="mt-12 pt-6 border-t border-border-subtle text-center print:hidden">
           <p className="text-text-tertiary text-xs">
             Generated with{' '}
-            <Link href="/" className="text-text-link hover:underline">
+            <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
               Tailord
             </Link>
           </p>

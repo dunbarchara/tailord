@@ -445,3 +445,22 @@ If any day runs long, cut in this order (least to most impactful to cut):
 - A mobile app — the web product needs to be complete first
 - Pricing / paywall — premature for portfolio purposes
 - Re-engineering the LLM pipeline — the current one works; don't over-optimize
+
+---
+
+## Future / Backlog
+
+### Azure Document Intelligence for Resume Text Extraction
+
+**Context:** The current pipeline uses `pypdf`/`python-docx` for step 1 (document → raw text) and an LLM prompt for step 2 (raw text → structured JSON). The LLM step is the right approach and aligns with where the industry is moving (newer resume parsing APIs use LLMs internally). The vulnerability is step 1.
+
+**Problem:** Badly formatted PDFs — multi-column layouts, embedded tables, fancy resume templates — produce garbled raw text that no amount of prompt engineering can fix downstream.
+
+**Proposal:** Replace `pypdf` with Azure Document Intelligence's Layout model for PDF text extraction. It is structure-aware (handles columns, tables, reading order) and produces much cleaner output.
+
+**Constraints:**
+- Azure Doc Intelligence SDK must be abstracted behind the existing storage/client abstraction layer (do not import `azure.*` directly in app code per cloud-portability rules)
+- Adds an API call with cost and latency implications — worth benchmarking against current pypdf failures before committing
+- DOCX extraction via `python-docx` is generally reliable; probably not worth replacing
+
+**When to consider:** If users report extraction failures (missing bullets, garbled work history) that can be traced to complex PDF layouts rather than LLM parsing errors. Not urgent until there is evidence of real failures at scale.

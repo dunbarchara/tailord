@@ -19,6 +19,7 @@ class Education(BaseModel):
     degree: str = ""
     institution: str = ""
     year: str = ""
+    distinction: str | None = None
 
 
 class Project(BaseModel):
@@ -28,6 +29,8 @@ class Project(BaseModel):
 
 
 class ExtractedProfile(BaseModel):
+    email: str | None = None
+    linkedin: str | None = None
     summary: str = ""
     work_experience: list[WorkExperience] = []
     skills: ProfileSkills = ProfileSkills()

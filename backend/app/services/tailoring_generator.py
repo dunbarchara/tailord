@@ -146,6 +146,17 @@ def _format_ranked_matches(matches: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _strip_city(institution: str) -> str:
+    """Remove trailing city/state from institution names.
+
+    Handles common delimiters: comma, em dash, en dash, hyphen with spaces.
+    e.g. 'University of Arizona, Tucson, AZ'
+         'University of Arizona — Tucson, AZ'
+         'University of Arizona - Tucson'
+    """
+    return re.split(r"\s*[,—–·•]\s*|\s+-\s+", institution, maxsplit=1)[0].strip()
+
+
 def _extract_education_line(extracted_profile: dict) -> str | None:
     """Return a compact education string for the candidate brief footer, or None."""
     education = (extracted_profile.get("resume") or {}).get("education") or []
@@ -153,7 +164,7 @@ def _extract_education_line(extracted_profile: dict) -> str | None:
         return None
     entry = education[0]
     degree = entry.get("degree", "").strip()
-    institution = entry.get("institution", "").strip()
+    institution = _strip_city(entry.get("institution", "").strip())
     if degree and institution:
         return f"{degree}, {institution}"
     return degree or institution or None
@@ -163,20 +174,23 @@ def _render_tailoring(
     content: TailoringContent,
     candidate_name: str,
     candidate_email: str | None,
+    candidate_linkedin: str | None,
     company: str,
     job_title: str,
     education_line: str | None,
+    job_url: str | None = None,
 ) -> str:
     """Deterministically render a TailoringContent object into the final markdown document."""
     first_name = candidate_name.split()[0] if candidate_name else candidate_name
+    job_title_md = f"[{job_title}]({job_url})" if job_url else job_title
 
     lines: list[str] = []
 
     # Greeting + opening sentence
     lines += [
-        f"Hello {company},",
+        f"Hello **{company}**,",
         "",
-        f"Given the requirements described in your {job_title} job posting, here are some reasons {candidate_name} would be a strong fit for the role.",
+        f"Given the requirements in your {job_title_md} job posting, here are some reasons **{candidate_name}** would be a strong fit for the role.",
         "",
         "---",
         "",
@@ -185,15 +199,16 @@ def _render_tailoring(
     # Advocacy sections
     for stmt in content.advocacy_statements:
         source_tag = " ".join(f"[{s}]" for s in stmt.sources) if stmt.sources else ""
-        body = f"{stmt.body} {source_tag}".strip()
-        lines += [f"## {stmt.header}", "", body, ""]
+        body = f"{stmt.body} *{source_tag}*".strip()
+        lines += [f"**{stmt.header}**", "", body, ""]
 
     lines += ["---", ""]
 
     # Closing: LLM synthesis + deterministic contact line
     closing = content.closing.rstrip()
     if candidate_email:
-        lines.append(f"{closing} If you're interested in continuing the conversation, {first_name} can be reached at {candidate_email}.")
+        lines += [closing, ""]
+        lines.append(f"If you're interested in continuing the conversation, {first_name} can be reached at [{candidate_email}](mailto:{candidate_email}).")
     else:
         lines.append(closing)
 
@@ -204,7 +219,10 @@ def _render_tailoring(
     if education_line:
         brief_parts.append(education_line)
     if candidate_email:
-        brief_parts.append(candidate_email)
+        brief_parts.append(f"[{candidate_email}](mailto:{candidate_email})")
+    if candidate_linkedin:
+        linkedin_url = candidate_linkedin if candidate_linkedin.startswith("http") else f"https://{candidate_linkedin}"
+        brief_parts.append(f"[LinkedIn]({linkedin_url})")
     lines.append(f"*{' · '.join(brief_parts)}*")
 
     return "\n".join(lines)
@@ -215,10 +233,13 @@ def generate_tailoring(
     extracted_job: dict,
     candidate_name: str,
     ranked_matches: list[dict] | None = None,
-    candidate_email: str | None = None,
+    job_url: str | None = None,
 ) -> str:
     company = extracted_job.get("company") or "the company"
     job_title = extracted_job.get("title") or "this role"
+    resume = extracted_profile.get("resume") or {}
+    candidate_email: str | None = resume.get("email") or None
+    candidate_linkedin: str | None = resume.get("linkedin") or None
 
     ranked_matches_block = _format_ranked_matches(ranked_matches if ranked_matches is not None else [])
 
@@ -243,7 +264,9 @@ def generate_tailoring(
         content=content,
         candidate_name=candidate_name,
         candidate_email=candidate_email,
+        candidate_linkedin=candidate_linkedin,
         company=company,
         job_title=job_title,
         education_line=_extract_education_line(extracted_profile),
+        job_url=job_url,
     )

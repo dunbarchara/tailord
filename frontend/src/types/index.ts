@@ -63,6 +63,8 @@ export interface SourcedProfile {
 }
 
 export interface ExtractedProfile {
+  email?: string | null
+  linkedin?: string | null
   summary: string
   work_experience: Array<{
     title: string
@@ -78,6 +80,7 @@ export interface ExtractedProfile {
     degree: string
     institution: string
     year: string
+    distinction?: string | null
   }>
   projects: Array<{
     name: string

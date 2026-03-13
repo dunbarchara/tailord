@@ -333,9 +333,11 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               "prose prose-sm max-w-none text-text-primary",
               "prose-headings:text-text-primary prose-headings:font-semibold",
               "prose-p:text-text-secondary prose-p:leading-relaxed",
+              "prose-hr:my-6",
               "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
               "prose-strong:text-text-primary",
               "prose-hr:border-border-subtle",
+              "prose-a:text-text-link prose-a:underline prose-a:underline-offset-2",
               regenerating && "opacity-40 pointer-events-none"
             )}>
               <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
