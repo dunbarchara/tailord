@@ -15,6 +15,31 @@ function stripMarkdown(text: string): string {
   return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
 }
 
+// Renders **bold**, *italic*, and [text](url) inline markers as React nodes.
+// Links render as their anchor text only (no href) — the Posting view is for
+// reading, not navigation. The "View job posting →" header link covers that.
+// Chunk data is left unchanged — styling lives in the render layer.
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={i} className="font-medium text-text-primary">{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith('*') && part.endsWith('*')) {
+          return <em key={i}>{part.slice(1, -1)}</em>;
+        }
+        const linkMatch = part.match(/^\[([^\]]+)\]\([^)]+\)$/);
+        if (linkMatch) {
+          return linkMatch[1].replace(/\*\*/g, '').replace(/\*/g, '');
+        }
+        return part;
+      })}
+    </>
+  );
+}
+
 // Matches bare markdown links like [text](url) or ![alt](url) with no surrounding content
 const NOISE_PATTERN = /^(\[.+\]\(.+\)|!\[.*\]\(.+\))$/;
 function isPatternNoise(content: string): boolean {
@@ -47,11 +72,11 @@ function SectionBlock({ section, chunks }: { section: string; chunks: JobChunk[]
         chunk.chunk_type === 'bullet' ? (
           <div key={chunk.id} className="flex gap-2 text-sm text-text-secondary leading-relaxed mb-1.5">
             <span className="text-text-tertiary flex-shrink-0 mt-0.5">·</span>
-            <span>{chunk.content}</span>
+            <span><InlineMarkdown text={chunk.content} /></span>
           </div>
         ) : (
           <p key={chunk.id} className="text-sm text-text-secondary leading-relaxed mb-2">
-            {chunk.content}
+            <InlineMarkdown text={chunk.content} />
           </p>
         )
       ))}

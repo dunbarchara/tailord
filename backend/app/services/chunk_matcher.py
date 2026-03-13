@@ -55,10 +55,27 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
         result_map: dict[int, ChunkMatchResult] = {}
 
         for section, section_chunks in section_map.items():
+            last_paragraph: str | None = None  # most recent paragraph seen in this section
+
             for batch_start in range(0, len(section_chunks), BATCH_SIZE):
                 batch = section_chunks[batch_start: batch_start + BATCH_SIZE]
 
-                chunks_block = "\n".join(
+                # Always carry the most recent paragraph-type chunk seen before
+                # this batch as preceding context. Paragraphs establish the frame
+                # for what follows (e.g. a Fair Chance Act intro governs all the
+                # duty bullets beneath it, regardless of how many batches they
+                # span). Bullets don't carry this framing power, so we skip them.
+                preceding = ""
+                if last_paragraph is not None:
+                    preceding = f"PRECEDING CONTEXT (do not score):\n[PARAGRAPH] {last_paragraph}\n\n"
+
+                # Update last_paragraph with any paragraph in this batch before
+                # moving to the next — so the next batch inherits the latest one.
+                for c in batch:
+                    if c.chunk_type == "paragraph":
+                        last_paragraph = c.content
+
+                chunks_block = preceding + "\n".join(
                     f"{idx}. [{c.chunk_type.upper()}] {c.content}"
                     for idx, c in enumerate(batch, start=1)
                 )
