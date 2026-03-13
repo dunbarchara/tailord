@@ -100,45 +100,45 @@ function ChunkItem({
   );
 
   if (!isInteractive) {
-    return (
-      <div className="flex gap-2 mb-1.5">
-        <div className="w-0.5 flex-shrink-0" />
-        <div className="flex-1">{body}</div>
-      </div>
-    );
+    return <div className="mb-1.5">{body}</div>;
   }
 
   return (
     <div
-      className="flex gap-2 mb-1.5 cursor-pointer select-none group"
+      className={cn(
+        'relative mb-1.5 cursor-pointer select-none group transition-transform duration-200',
+        isExpanded ? 'translate-x-0.5' : 'hover:translate-x-0.5',
+      )}
       onClick={() => setExpandedId(isExpanded ? null : chunk.id)}
     >
-      {/* Score bar — expands on hover */}
-      <div className={cn('flex-shrink-0 rounded-sm transition-all duration-200', barColor, isExpanded ? 'w-1' : 'w-0.5 group-hover:w-1')} />
-      <div className="flex-1">
-        {body}
-        {/* Expandable rationale — grid trick for smooth height animation */}
-        <div className={cn(
-          'grid transition-all duration-200',
-          isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
-        )}>
-          <div className="overflow-hidden">
-            <div className="mt-1.5 mb-0.5 px-2 py-1.5 rounded bg-surface-sunken">
-              {chunk.match_rationale && (
-                <p className="text-xs text-text-tertiary leading-relaxed">{chunk.match_rationale}</p>
-              )}
-              {chunk.match_rationale && chunk.experience_source && (
-                <hr className="my-1.5 border-border-strong" />
-              )}
-              {chunk.experience_source && (
-                <p className="text-xs text-text-tertiary">
-                  Source:{' '}
-                  <span className="font-medium text-text-secondary">
-                    {SOURCE_LABELS[chunk.experience_source] ?? chunk.experience_source}
-                  </span>
-                </p>
-              )}
-            </div>
+      {/* Score bar — counter-translates to stay fixed while content slides; grows rightward by same amount */}
+      <div className={cn(
+        'absolute top-0 bottom-0 -left-3 rounded-sm transition-all duration-200',
+        barColor,
+        isExpanded ? 'w-1 -translate-x-0.5' : 'w-0.5 group-hover:w-1 group-hover:-translate-x-0.5',
+      )} />
+      {body}
+      {/* Expandable rationale — grid trick for smooth height animation */}
+      <div className={cn(
+        'grid transition-all duration-200',
+        isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+      )}>
+        <div className="overflow-hidden">
+          <div className="mt-1.5 mb-0.5 px-2 py-1.5 rounded bg-surface-sunken">
+            {chunk.match_rationale && (
+              <p className="text-xs text-text-tertiary leading-relaxed">{chunk.match_rationale}</p>
+            )}
+            {chunk.match_rationale && chunk.experience_source && (
+              <hr className="my-1.5 border-border-strong" />
+            )}
+            {chunk.experience_source && (
+              <p className="text-xs text-text-tertiary">
+                Source:{' '}
+                <span className="font-medium text-text-secondary">
+                  {SOURCE_LABELS[chunk.experience_source] ?? chunk.experience_source}
+                </span>
+              </p>
+            )}
           </div>
         </div>
       </div>
