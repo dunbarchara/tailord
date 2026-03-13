@@ -28,29 +28,25 @@ function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
 }
 
 function SectionBlock({ section, chunks }: { section: string; chunks: JobChunk[] }) {
-  const bullets = chunks.filter(c => c.chunk_type === 'bullet');
-  const paragraphs = chunks.filter(c => c.chunk_type === 'paragraph');
+  const sorted = [...chunks].sort((a, b) => a.position - b.position);
 
   return (
     <div className="mb-6">
       <h2 className="text-sm font-semibold text-text-primary mb-3 pb-1 border-b border-border-subtle">
         {stripMarkdown(section)}
       </h2>
-      {paragraphs.map(chunk => (
-        <p key={chunk.id} className="text-sm text-text-secondary leading-relaxed mb-2">
-          {chunk.content}
-        </p>
+      {sorted.map(chunk => (
+        chunk.chunk_type === 'bullet' ? (
+          <div key={chunk.id} className="flex gap-2 text-sm text-text-secondary leading-relaxed mb-1.5">
+            <span className="text-text-tertiary flex-shrink-0 mt-0.5">·</span>
+            <span>{chunk.content}</span>
+          </div>
+        ) : (
+          <p key={chunk.id} className="text-sm text-text-secondary leading-relaxed mb-2">
+            {chunk.content}
+          </p>
+        )
       ))}
-      {bullets.length > 0 && (
-        <ul className="space-y-1.5">
-          {bullets.map(chunk => (
-            <li key={chunk.id} className="flex gap-2 text-sm text-text-secondary leading-relaxed">
-              <span className="text-text-tertiary flex-shrink-0 mt-0.5">·</span>
-              <span>{chunk.content}</span>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
