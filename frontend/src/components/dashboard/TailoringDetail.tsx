@@ -334,6 +334,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             size="sm"
             className="h-7 w-7 p-0"
             onClick={handleCopy}
+            disabled={activeTab === 'posting'}
             title={copied ? 'Copied' : 'Copy content'}
           >
             {copied
