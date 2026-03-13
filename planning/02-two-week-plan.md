@@ -511,3 +511,22 @@ If any day runs long, cut in this order (least to most impactful to cut):
 - Pass through to `generate_tailoring()` and into the tailoring prompt
 
 **Note:** If pronouns are not set, default to they/them in the prompt rather than inferring from name — safer and more inclusive default.
+
+---
+
+### Chunk-Informed Letter Regeneration
+
+**Context:** The current Letter is generated during the fast pipeline, before chunk enrichment completes. The slow pipeline produces per-chunk match scores and rationales — pre-computed evidence chains (which bullets in the profile support which job requirements) that the fast letter has to re-derive from scratch.
+
+**Hypothesis:** Once chunk enrichment is complete, triggering a second letter generation pass that feeds the scored chunks as context could produce a more precise, evidence-driven Letter — particularly for postings with rich prose sections that don't map cleanly into the extracted requirements list.
+
+**What it could improve:**
+- Advocacy statements grounded in explicit evidence chains rather than re-derived profile-to-requirement connections
+- More deliberate weighting: strong-match chunks (score=2) lead; gaps handled strategically based on scored context rather than inferred
+- Better coverage of signals that live in paragraph/culture content, not bullet requirements
+
+**Key uncertainty:** The quality delta is likely real but variable. For structured, bullet-heavy postings where extraction captures everything, the fast letter may already be near-ceiling. The improvement would be most noticeable on postings with dense prose sections. The only way to know if it's worth the extra LLM call is to generate both versions for the same tailoring and compare directly.
+
+**Before building:** Generate enriched vs. fast letters side-by-side for 5–10 real tailorings. If the enriched version is clearly more specific and evidence-driven, the UX pattern ("fast draft → enhanced version available") makes sense. If the delta requires squinting, it's not ready to surface to users.
+
+**UX pattern if pursued:** The client already polls for enrichment status — extending this to trigger a letter update when enrichment completes is straightforward. The enhanced letter would need to be stored separately (new DB column) to avoid clobbering the fast letter. The indicator should be specific ("Using full job analysis to strengthen this") not generic ("Processing").
