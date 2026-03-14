@@ -222,22 +222,33 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 
 ---
 
-### Day 6 — Notion OAuth Setup + Settings Page
+### Day 6 — Notion OAuth Setup + Settings Page ✅
 
 **Goal:** Users can connect their Notion workspace to Tailord.
 
 **Tasks:**
-- [ ] Register Tailord as a Notion OAuth app at [notion.so/my-integrations](https://www.notion.so/my-integrations)
+- [x] Register Tailord as a Notion OAuth app at [notion.so/my-integrations](https://www.notion.so/my-integrations)
   - Callback URL: `{NEXTAUTH_URL}/api/auth/notion/callback`
-- [ ] Add Notion OAuth flow:
-  - New NextAuth provider OR a standalone OAuth handler (simpler: standalone)
-  - `/api/auth/notion` — redirects to Notion OAuth
-  - `/api/auth/notion/callback` — exchanges code for access token, stores in DB
-- [ ] Add `notion_access_token TEXT` + `notion_bot_id TEXT` columns to `users` table
-- [ ] In `SettingsPanel`: add "Connected Apps" section
-  - "Connect Notion" button → initiates OAuth
-  - Shows connected state (workspace name) once linked
-  - "Disconnect" button
+  - Tagline: "Export your tailored advocacy documents to Notion, instantly."
+  - Privacy policy and Terms of Use pages created and live at `tailord.app/privacy` and `tailord.app/terms` (required for integration registration)
+- [x] Add Notion OAuth flow — standalone handler (not NextAuth provider):
+  - `GET /api/auth/notion` — fetches auth URL from backend, sets CSRF state cookie, redirects to Notion
+  - `GET /api/auth/notion/callback` — validates state, exchanges code via backend, redirects to `/dashboard/settings?notion=connected`
+  - `DELETE /api/notion` — disconnect proxy
+- [x] Backend `notion` router (`backend/app/api/notion.py`):
+  - `GET /notion/auth-url` — constructs and returns the Notion OAuth authorize URL
+  - `POST /notion/callback` — exchanges code for token via Notion API, stores all workspace fields on the user record
+  - `DELETE /notion/disconnect` — clears all Notion fields
+- [x] DB migration `c2d3e4f5a6b7`: added `notion_access_token`, `notion_bot_id`, `notion_workspace_id`, `notion_workspace_name` to `users` table
+- [x] `_user_response` updated to include `notion_workspace_name`
+- [x] `SettingsPanel`: "Connected Apps" section with Connect/Disconnect button, workspace name display, and error feedback via `?notion=error` query param. Settings page wrapped in `Suspense` for `useSearchParams`.
+- [x] Terraform: `notion_client_id` + `notion_client_secret` added as Key Vault secrets and injected into the backend Container App. `NOTION_REDIRECT_URI` set as plain env var using `var.domain_name`.
+
+**Implementation notes:**
+- Used standalone OAuth handler rather than a NextAuth provider — cleaner separation, avoids re-triggering the NextAuth session flow
+- Single Notion integration handles both local and production (dev mode supports up to 10 workspaces; separate dev integration is a pre-launch task)
+- OAuth tokens stored as plaintext in Postgres for now (Azure encrypts at rest); application-layer encryption is noted in the pre-launch checklist
+- `NOTION_CLIENT_ID` does not need to be in the frontend — the auth URL is constructed entirely server-side in the backend
 
 **Note on Notion OAuth:** Notion uses OAuth 2.0. The access token is scoped to the pages/databases the user explicitly shares with your integration. This is actually a cleaner model than full workspace access.
 
@@ -451,7 +462,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
 | 5.6 | Enriched job posting view + per-view public sharing | Posting tab (score bars, expandable rationale, content alignment); `letter_public`/`posting_public` per-view sharing with redesigned popover, muted public color token, tab switcher on public page | ✅ |
-| 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
+| 6 | Notion OAuth | Connect/disconnect Notion from Settings; legal pages live; Terraform Key Vault secrets for Notion | ✅ |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
 | 8.5 | Pipeline hardening (deferred) | Empty profile detection, LLM output validation, token budgeting, job URL caching, prompt iteration | |
