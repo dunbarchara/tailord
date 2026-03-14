@@ -1,4 +1,5 @@
 import { env } from './env'
+import { logger } from './logger'
 import { NextResponse } from 'next/server'
 
 export async function proxyToBackend(
@@ -22,16 +23,19 @@ export async function proxyToBackend(
         const parsed = JSON.parse(text)
         if (typeof parsed?.detail === 'string') detail = parsed.detail
       } catch {}
+      logger.error('Backend error', { method: 'POST', endpoint, status: res.status, detail })
       return NextResponse.json(
         { error: `Backend error: ${res.status}`, detail },
         { status: res.status }
       )
     }
 
+    logger.info('Backend request', { method: 'POST', endpoint, status: res.status })
     const data = await res.json()
     return NextResponse.json(data, { status: res.status })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
+    logger.error('Backend unreachable', { method: 'POST', endpoint, error: message })
     return NextResponse.json(
       { error: 'Backend unreachable', detail: message },
       { status: 502 }
@@ -66,6 +70,8 @@ export async function proxyToBackendWithUser(
       headers['X-User-Name'] = user.userName
     }
 
+    logger.debug('Backend request', { method, endpoint, userId: user.userId })
+
     const res = await fetch(`${env.apiBaseUrl}/${endpoint}`, {
       method,
       headers,
@@ -79,11 +85,14 @@ export async function proxyToBackendWithUser(
         const parsed = JSON.parse(text)
         if (typeof parsed?.detail === 'string') detail = parsed.detail
       } catch {}
+      logger.error('Backend error', { method, endpoint, status: res.status, detail, userId: user.userId })
       return NextResponse.json(
         { error: `Backend error: ${res.status}`, detail },
         { status: res.status }
       )
     }
+
+    logger.info('Backend response', { method, endpoint, status: res.status, userId: user.userId })
 
     if (res.status === 204) {
       return new NextResponse(null, { status: 204 })
@@ -93,6 +102,7 @@ export async function proxyToBackendWithUser(
     return NextResponse.json(data, { status: res.status })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
+    logger.error('Backend unreachable', { method, endpoint, error: message, userId: user.userId })
     return NextResponse.json(
       { error: 'Backend unreachable', detail: message },
       { status: 502 }
