@@ -553,6 +553,9 @@ Everything below is a non-issue while Tailord is single-user. These items become
 - **Rate limiting** — no per-user rate limiting exists on tailoring creation (each tailoring triggers multiple LLM calls). Add a reasonable limit (e.g. 10 tailorings/day per user) before external users can run up LLM costs unchecked.
 - **Cost controls** — set spend alerts on your LLM provider before external users. A single motivated user could generate significant cost without limits.
 
+#### Security
+- **Application-layer encryption for user OAuth tokens** — currently `notion_access_token` (and any future third-party tokens) are stored as plaintext in Postgres. Azure encrypts at rest by default, which is acceptable for solo use. Before external users, add application-layer encryption: store a single symmetric key in Key Vault, fetch it once at backend startup, and encrypt/decrypt tokens in the app before writing to / after reading from the DB. This is the correct pattern — do not store per-user secrets as individual Key Vault secrets, which doesn't scale and isn't what Key Vault is designed for.
+
 #### Infrastructure
 - **Custom domain email** — `hello@tailord.app` or similar for user-facing communications and legal contact. Currently the privacy policy lists a personal Gmail address.
 - **Monitoring and alerting** — set up basic uptime monitoring and error alerting before relying on the product being available for others.
