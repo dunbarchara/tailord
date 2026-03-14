@@ -61,6 +61,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Static content files read via fs.readFileSync at runtime (privacy, terms pages)
+COPY --from=builder --chown=nextjs:nodejs /app/src/content ./src/content
+
 USER nextjs
 
 EXPOSE 3000
