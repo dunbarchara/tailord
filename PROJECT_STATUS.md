@@ -180,6 +180,7 @@ LLM_BASE_URL=http://localhost:1234/v1
 ```sh
 cd infra/providers/azure
 source .env.prod
+export $(cat .env.prod | xargs)
 terraform apply
 
 # Build and push images separately via CI or manually:
