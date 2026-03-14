@@ -180,30 +180,29 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 
 ---
 
-### Day 5.6 — Enriched Job Posting View
+### ✅ Day 5.6 — Enriched Job Posting View + Per-View Public Sharing
 
-**Goal:** Surface a human-readable, enriched view of the scraped job posting in the tailoring detail — separate from the generated Tailoring document and the Match Analysis debug tab. The Match Analysis chunk view is retained as-is for debugging purposes.
+**Goal:** Surface a human-readable, enriched view of the scraped job posting in the tailoring detail. Extend the sharing system to allow each view (Letter, Posting) to be shared independently.
 
-**Tasks:**
-- [ ] Add a third tab in `TailoringDetail`: **"Job Posting"** alongside Document and Match Analysis
-- [ ] Render the job posting using the existing `JobChunk` data (`/api/tailorings/{id}/chunks`), but as a clean reading view rather than a developer card layout:
-  - Section headers rendered as headings
-  - Bullet chunks rendered as bullet lists
-  - Paragraph chunks rendered as prose
-  - Score badges omitted — this view is for reading the job, not debugging the match
-- [ ] Optionally: inline subtle score indicators (e.g. a colored left border or dot on bullets) so the candidate can see at a glance which requirements they match — a lightweight visual layer on top of the clean reading view
-- [ ] If enrichment is still pending, show the un-enriched chunk content without scores (chunks are available as soon as the job is scraped, before scoring completes)
+#### Enriched Job Posting View ✅
+- [x] **Posting tab** in `TailoringDetail` toolbar — sits alongside Letter and Analysis; renders `JobChunk` data as a clean reading view (sections, bullets, paragraphs), not a debug card layout
+- [x] **Score bar indicators** — 2px absolute-positioned left border per chunk: green (strong), amber (partial), red (gap). N/A chunks have no border and are non-interactive. Pre-enrichment chunks render as plain text.
+- [x] **Click-to-expand rationale** — clicking a scored chunk expands a panel with the LLM's match reasoning and evidence source (Resume / GitHub / Direct Input). One chunk expanded at a time; clicking again collapses. Smooth height animation via CSS grid trick.
+- [x] **Content alignment** — score bars sit at `-left-3` (12px offset) from the content edge, counter-translating on expand so the bar stays anchored while text slides. Letter and Posting views share the same `px-6 py-10` content width (720px at `max-w-3xl`).
+- [x] **Clean degradation** — pending enrichment shows chunks without borders or interaction; errors surface a readable message rather than a blank panel.
 
-**Why separate from Match Analysis:** Match Analysis is a power-user/debug view with metadata rows, rationale, and copy buttons. The Job Posting tab is for reading and orientation — "what does this role actually require?" — and should feel like a clean document, not a data table.
+**Why separate from Match Analysis:** Match Analysis is a developer/debug view with metadata rows, copy buttons, and raw score badges. The Posting tab is for reading and orientation — "what does this role actually require?" — and should feel like a clean document.
 
-#### Score indicators + expandable rationale
-
-Scored chunks (requirements, responsibilities, qualifications) surface match signal without cluttering the reading view:
-
-- **Left border accent** — a 2px colored left border on each scored chunk: green (strong), yellow (partial), red (gap). N/A chunks (perks, culture, EEO) have no border and are not interactive. Pre-enrichment chunks have no border. This gives passive at-a-glance signal without interrupting reading.
-- **Click to expand rationale** — clicking a scored chunk expands a rationale block beneath it with the LLM's match reasoning and the evidence source (Resume / GitHub / Direct Input). One chunk expanded at a time — selecting another collapses the previous. Clicking the active chunk collapses it.
-- **Source attribution is intentional** — knowing *where* a claim comes from (resume bullet, GitHub repo, direct input) is core to the platform. It sets expectations for candidates and builds trust with hiring managers on the public view. Future: GitHub source could link directly to the relevant repository or file.
-- **Clean degradation** — if enrichment is pending or a chunk has no score, it renders as plain text with no border and no interaction.
+#### Per-View Public Sharing ✅
+- [x] **`letter_public` + `posting_public`** columns on `Tailoring` (alembic migration `b8c9d0e1f2a3`), replacing the single `is_public` boolean. `is_public` retained as a SQLAlchemy `@hybrid_property` (`letter_public or posting_public`) for backwards-compatible querying.
+- [x] **Migration backfills** `letter_public = is_public` for existing records; `posting_public` defaults false.
+- [x] **`POST /tailorings/{id}/share`** now accepts `{ letter: bool, posting: bool }` body — updates both flags independently, generates slug on first activation. Returns `{ public_slug, letter_public, posting_public }`.
+- [x] **`DELETE /tailorings/{id}/share`** clears both flags.
+- [x] **`GET /tailorings/public/{slug}`** filters on `letter_public | posting_public`; includes chunks in response only when `posting_public=True`. Gap chunks (score=0) are included but render without a color bar or click interaction — present but unscored in the public view.
+- [x] **Share popover redesigned** — per-view `Switch` toggles (new `Switch` UI component) replace the single "Make public" button. Toolbar button label reflects active state: `Share` / `Public · Letter` / `Public · Posting` / `Public`. Inline note explains the public posting view behavior (gaps rendered plain, partial matches shown as muted green instead of amber).
+- [x] **`--color-score-partial-public`** CSS token (`#5A9E78` light / `#5A8E6E` dark) — muted green used for partial matches on public-facing views.
+- [x] **Public page (`/t/{slug}`) updated** — tab switcher rendered when both views are public; letter-only and posting-only modes work without tabs. `JobPosting` receives `publicMode={true}` and `hideHeader={true}`.
+- [x] **Content alignment on public page** — `px-6` wrapper pattern (padding on outer, `border-b`/`border-t` on inner) prevents borders from extending through padding. All sections — page header, tab switcher, letter content, posting content, footer — resolve to the same 720px content width.
 
 ---
 
@@ -451,7 +450,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
-| 5.6 | Enriched job posting view | Posting tab (clean reading view from chunks, separate from Analysis debug tab) | ✅ |
+| 5.6 | Enriched job posting view + per-view public sharing | Posting tab (score bars, expandable rationale, content alignment); `letter_public`/`posting_public` per-view sharing with redesigned popover, muted public color token, tab switcher on public page | ✅ |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
