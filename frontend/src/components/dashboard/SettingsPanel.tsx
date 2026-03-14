@@ -8,15 +8,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { useSearchParams } from 'next/navigation';
 
 export function SettingsPanel() {
   const { data: session } = useSession();
   const { darkMode, setDarkMode } = useTheme();
 
+  const searchParams = useSearchParams();
+  const notionParam = searchParams.get('notion');
+
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+
+  const [notionWorkspace, setNotionWorkspace] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   useEffect(() => {
     fetch('/api/users')
@@ -24,9 +31,20 @@ export function SettingsPanel() {
       .then((data) => {
         setFirstName(data.preferred_first_name ?? '');
         setLastName(data.preferred_last_name ?? '');
+        setNotionWorkspace(data.notion_workspace_name ?? null);
       })
       .catch(() => {});
   }, []);
+
+  async function handleNotionDisconnect() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch('/api/notion', { method: 'DELETE' });
+      if (res.ok) setNotionWorkspace(null);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -131,6 +149,44 @@ export function SettingsPanel() {
               {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               {darkMode ? 'Light mode' : 'Dark mode'}
             </Button>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Connected apps */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Connected apps</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-text-primary">Notion</p>
+              {notionWorkspace ? (
+                <p className="text-xs text-text-secondary mt-0.5">Connected to <span className="font-medium">{notionWorkspace}</span></p>
+              ) : (
+                <p className="text-xs text-text-tertiary mt-0.5">Export tailorings directly to your Notion workspace</p>
+              )}
+              {notionParam === 'error' && !notionWorkspace && (
+                <p className="text-xs text-error mt-1">Connection failed. Please try again.</p>
+              )}
+            </div>
+            {notionWorkspace ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNotionDisconnect}
+                disabled={disconnecting}
+              >
+                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { window.location.href = '/api/auth/notion'; }}
+              >
+                Connect
+              </Button>
+            )}
           </div>
         </section>
 

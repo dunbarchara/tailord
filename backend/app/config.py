@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     azure_storage_connection_string: str | None = None
     azure_storage_container: str = "tailord-uploads"
 
+    # Notion OAuth
+    notion_client_id: str | None = None
+    notion_client_secret: str | None = None
+    notion_redirect_uri: str = "http://localhost:3000/api/auth/notion/callback"
+
     class Config:
         env_file = ".env"
 

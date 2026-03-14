@@ -166,6 +166,18 @@ resource "azurerm_container_app" "backend" {
         name        = "LLM_API_KEY"
         secret_name = "llm-api-key"
       }
+      env {
+        name        = "NOTION_CLIENT_ID"
+        secret_name = "notion-client-id"
+      }
+      env {
+        name        = "NOTION_CLIENT_SECRET"
+        secret_name = "notion-client-secret"
+      }
+      env {
+        name  = "NOTION_REDIRECT_URI"
+        value = "https://${var.domain_name}/api/auth/notion/callback"
+      }
     }
   }
 
@@ -205,6 +217,18 @@ resource "azurerm_container_app" "backend" {
   secret {
     name                = "llm-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.llm_api_key.versionless_id
+    identity            = azurerm_user_assigned_identity.container_apps.id
+  }
+
+  secret {
+    name                = "notion-client-id"
+    key_vault_secret_id = azurerm_key_vault_secret.notion_client_id.versionless_id
+    identity            = azurerm_user_assigned_identity.container_apps.id
+  }
+
+  secret {
+    name                = "notion-client-secret"
+    key_vault_secret_id = azurerm_key_vault_secret.notion_client_secret.versionless_id
     identity            = azurerm_user_assigned_identity.container_apps.id
   }
 }

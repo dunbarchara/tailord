@@ -19,6 +19,7 @@ def _user_response(user: User) -> dict:
         "preferred_first_name": user.preferred_first_name,
         "preferred_last_name": user.preferred_last_name,
         "status": user.status,
+        "notion_workspace_name": user.notion_workspace_name,
     }
 
 

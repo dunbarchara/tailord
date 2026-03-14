@@ -18,6 +18,11 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     preferred_first_name: Mapped[str | None] = mapped_column(String, nullable=True)
     preferred_last_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Notion OAuth
+    notion_access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_bot_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_workspace_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_workspace_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # status: pending | approved
     status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     created_at: Mapped[datetime] = mapped_column(
