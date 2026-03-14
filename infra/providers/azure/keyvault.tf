@@ -93,3 +93,17 @@ resource "azurerm_key_vault_secret" "llm_api_key" {
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
+
+resource "azurerm_key_vault_secret" "notion_client_id" {
+  name         = "notion-client-id"
+  value        = var.notion_client_id
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "notion_client_secret" {
+  name         = "notion-client-secret"
+  value        = var.notion_client_secret
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}

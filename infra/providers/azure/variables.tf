@@ -67,3 +67,15 @@ variable "github_actions_sp_object_id" {
   description = "Object ID of the GitHub Actions service principal (az ad sp show --id <client-id> --query id -o tsv)"
   type        = string
 }
+
+variable "notion_client_id" {
+  description = "Notion OAuth client ID"
+  sensitive   = true
+  type        = string
+}
+
+variable "notion_client_secret" {
+  description = "Notion OAuth client secret"
+  sensitive   = true
+  type        = string
+}

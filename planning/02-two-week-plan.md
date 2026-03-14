@@ -222,22 +222,33 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 
 ---
 
-### Day 6 — Notion OAuth Setup + Settings Page
+### Day 6 — Notion OAuth Setup + Settings Page ✅
 
 **Goal:** Users can connect their Notion workspace to Tailord.
 
 **Tasks:**
-- [ ] Register Tailord as a Notion OAuth app at [notion.so/my-integrations](https://www.notion.so/my-integrations)
+- [x] Register Tailord as a Notion OAuth app at [notion.so/my-integrations](https://www.notion.so/my-integrations)
   - Callback URL: `{NEXTAUTH_URL}/api/auth/notion/callback`
-- [ ] Add Notion OAuth flow:
-  - New NextAuth provider OR a standalone OAuth handler (simpler: standalone)
-  - `/api/auth/notion` — redirects to Notion OAuth
-  - `/api/auth/notion/callback` — exchanges code for access token, stores in DB
-- [ ] Add `notion_access_token TEXT` + `notion_bot_id TEXT` columns to `users` table
-- [ ] In `SettingsPanel`: add "Connected Apps" section
-  - "Connect Notion" button → initiates OAuth
-  - Shows connected state (workspace name) once linked
-  - "Disconnect" button
+  - Tagline: "Export your tailored advocacy documents to Notion, instantly."
+  - Privacy policy and Terms of Use pages created and live at `tailord.app/privacy` and `tailord.app/terms` (required for integration registration)
+- [x] Add Notion OAuth flow — standalone handler (not NextAuth provider):
+  - `GET /api/auth/notion` — fetches auth URL from backend, sets CSRF state cookie, redirects to Notion
+  - `GET /api/auth/notion/callback` — validates state, exchanges code via backend, redirects to `/dashboard/settings?notion=connected`
+  - `DELETE /api/notion` — disconnect proxy
+- [x] Backend `notion` router (`backend/app/api/notion.py`):
+  - `GET /notion/auth-url` — constructs and returns the Notion OAuth authorize URL
+  - `POST /notion/callback` — exchanges code for token via Notion API, stores all workspace fields on the user record
+  - `DELETE /notion/disconnect` — clears all Notion fields
+- [x] DB migration `c2d3e4f5a6b7`: added `notion_access_token`, `notion_bot_id`, `notion_workspace_id`, `notion_workspace_name` to `users` table
+- [x] `_user_response` updated to include `notion_workspace_name`
+- [x] `SettingsPanel`: "Connected Apps" section with Connect/Disconnect button, workspace name display, and error feedback via `?notion=error` query param. Settings page wrapped in `Suspense` for `useSearchParams`.
+- [x] Terraform: `notion_client_id` + `notion_client_secret` added as Key Vault secrets and injected into the backend Container App. `NOTION_REDIRECT_URI` set as plain env var using `var.domain_name`.
+
+**Implementation notes:**
+- Used standalone OAuth handler rather than a NextAuth provider — cleaner separation, avoids re-triggering the NextAuth session flow
+- Single Notion integration handles both local and production (dev mode supports up to 10 workspaces; separate dev integration is a pre-launch task)
+- OAuth tokens stored as plaintext in Postgres for now (Azure encrypts at rest); application-layer encryption is noted in the pre-launch checklist
+- `NOTION_CLIENT_ID` does not need to be in the frontend — the auth URL is constructed entirely server-side in the backend
 
 **Note on Notion OAuth:** Notion uses OAuth 2.0. The access token is scoped to the pages/databases the user explicitly shares with your integration. This is actually a cleaner model than full workspace access.
 
@@ -451,7 +462,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
 | 5.6 | Enriched job posting view + per-view public sharing | Posting tab (score bars, expandable rationale, content alignment); `letter_public`/`posting_public` per-view sharing with redesigned popover, muted public color token, tab switcher on public page | ✅ |
-| 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
+| 6 | Notion OAuth | Connect/disconnect Notion from Settings; legal pages live; Terraform Key Vault secrets for Notion | ✅ |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
 | 8.5 | Pipeline hardening (deferred) | Empty profile detection, LLM output validation, token budgeting, job URL caching, prompt iteration | |
@@ -522,6 +533,46 @@ If any day runs long, cut in this order (least to most impactful to cut):
 
 ---
 
+### Pre-Launch Checklist — Before Opening to External Users
+
+Everything below is a non-issue while Tailord is single-user. These items become necessary before the product is opened to real external users. None of them require a lawyer, but all of them require deliberate attention.
+
+#### Legal Documents
+- **Rewrite the Privacy Policy** — the current policy was generated with "one US user, no EU/UK users" assumptions. Before external users, commission a proper policy that accurately reflects all data practices, third-party processors, and applicable jurisdictions (at minimum GDPR if any EU users are possible, CCPA if US users).
+- **Rewrite the Terms of Use** — the current terms were generated with minimal configuration. A real terms document should reflect the actual product, acceptable use, AI-generated content disclaimers, and the liability posture you want.
+- **Host both documents on `tailord.app`** — the current pages at `/privacy` and `/terms` serve from `src/content/`. Update the content and ensure the "Last updated" dates are accurate.
+- **Add Privacy and Terms links** to the product footer — at minimum the public tailoring page (`/t/[slug]`) and the marketing/landing page. The dashboard footer is optional but good practice.
+
+#### Cookie Consent
+- Tailord currently uses only essential session cookies (NextAuth JWT). No analytics, no advertising, no tracking.
+- If that remains true, a cookie consent banner is **not required** under GDPR for essential-only cookies — you just need to disclose them in the Privacy Policy (already done).
+- If you ever add analytics (e.g. PostHog, Plausible, Google Analytics), a consent banner becomes required for EU users. Use a lightweight library like `cookie-consent` or a managed solution like Termly's banner widget.
+- **Decision point:** choose an analytics tool (or consciously choose none) before opening to external users, then add the banner if needed.
+
+#### Notion Integration
+- **Separate dev and prod integrations** — currently a single Notion integration handles both `localhost` and `tailord.app`. Before external users, create a separate "Tailord Dev" integration for local development so that test activity doesn't appear in production logs or affect production OAuth flows.
+- **Submit for Notion public review** — the integration currently runs in development mode (max 10 workspaces). To support external users, submit for Notion's public integration review. This requires: live privacy policy URL, live terms URL, integration logo/icon (256×256px minimum), description of permissions requested, and screenshots or a demo. Review is manual and takes days to weeks — submit early.
+- **Scope review** — before public review, audit the permissions your integration requests. Tailord should only request `insert_content` (to create pages). No `read_content`, no `update_content`, no user information beyond what OAuth provides. Minimal scope = faster approval and better user trust.
+- **Notion integration icon** — you need a square logo at 256×256px minimum for the Notion listing. Worth investing in a proper icon before the public submission.
+
+#### Account Management
+- **Account deletion** — the Privacy Policy states users can request deletion by contacting you. Before external users, build a self-serve account deletion flow in Settings. This is required under GDPR (right to erasure) and CCPA. Deletion should remove: User record, Experience record and resume file from storage, all Jobs, all Tailorings, Notion token.
+- **Email on critical actions** — consider transactional emails for account-level events (welcome, account deletion confirmation). Not required but expected by users.
+
+#### Access Control
+- **Remove the manual approval gate** — the `status: pending | approved` field on `User` currently gates access. This was appropriate for solo use. Before external users, decide: open signup, waitlist, or invite-only. The current approval mechanism requires manual intervention which doesn't scale.
+- **Rate limiting** — no per-user rate limiting exists on tailoring creation (each tailoring triggers multiple LLM calls). Add a reasonable limit (e.g. 10 tailorings/day per user) before external users can run up LLM costs unchecked.
+- **Cost controls** — set spend alerts on your LLM provider before external users. A single motivated user could generate significant cost without limits.
+
+#### Security
+- **Application-layer encryption for user OAuth tokens** — currently `notion_access_token` (and any future third-party tokens) are stored as plaintext in Postgres. Azure encrypts at rest by default, which is acceptable for solo use. Before external users, add application-layer encryption: store a single symmetric key in Key Vault, fetch it once at backend startup, and encrypt/decrypt tokens in the app before writing to / after reading from the DB. This is the correct pattern — do not store per-user secrets as individual Key Vault secrets, which doesn't scale and isn't what Key Vault is designed for.
+
+#### Infrastructure
+- **Custom domain email** — `hello@tailord.app` or similar for user-facing communications and legal contact. Currently the privacy policy lists a personal Gmail address.
+- **Monitoring and alerting** — set up basic uptime monitoring and error alerting before relying on the product being available for others.
+
+---
+
 ### Chunk-Informed Letter Regeneration
 
 **Context:** The current Letter is generated during the fast pipeline, before chunk enrichment completes. The slow pipeline produces per-chunk match scores and rationales — pre-computed evidence chains (which bullets in the profile support which job requirements) that the fast letter has to re-derive from scratch.
@@ -538,3 +589,59 @@ If any day runs long, cut in this order (least to most impactful to cut):
 **Before building:** Generate enriched vs. fast letters side-by-side for 5–10 real tailorings. If the enriched version is clearly more specific and evidence-driven, the UX pattern ("fast draft → enhanced version available") makes sense. If the delta requires squinting, it's not ready to surface to users.
 
 **UX pattern if pursued:** The client already polls for enrichment status — extending this to trigger a letter update when enrichment completes is straightforward. The enhanced letter would need to be stored separately (new DB column) to avoid clobbering the fast letter. The indicator should be specific ("Using full job analysis to strengthen this") not generic ("Processing").
+
+---
+
+### North Star — Personal Site Publishing
+
+**The idea:** Tailord already knows a user's experience in structured form — work history, skills, projects, GitHub activity, and now the public tailorings they've produced. A lot of people have resumes and maybe a GitHub profile; far fewer have personal websites. Tailord could bridge that gap by offering a standard template-based personal site that users can publish directly from the platform.
+
+**The integration vision:**
+- User clicks "Publish my site" in Tailord — selects a template, reviews auto-populated content from their Experience, and deploys to Vercel via the Vercel API with one click
+- The deployed site gets a `{username}.tailord.app` subdomain by default (or Tailord walks the user through pointing a custom domain)
+- The site is pre-wired to the Tailord public API — public tailorings automatically appear on the personal site as they're created, no manual export needed
+- A later addition: a limited chat widget on individual tailoring pages that lets a recruiter or hiring manager ask follow-up questions about the candidate's experience, answered via the Tailord API using the user's structured profile as context
+
+**Why this makes sense for Tailord:**
+- Tailord's data advantage is that it holds structured, LLM-processed experience data — a personal site is a natural second output of that data, not a pivot
+- Public tailorings are already shareable; a personal site just gives them a permanent home under the user's own brand
+- The Vercel integration is a well-documented deploy API — not a heavy lift technically, and a meaningful portfolio piece (OAuth, deploy pipelines, subdomain provisioning, webhook-driven site updates)
+- The chat feature on tailorings is a direct extension of the existing enrichment infrastructure — the scored chunks are already a structured evidence base for a retrieval-augmented Q&A over someone's experience
+
+**Business reality check:** This is speculative — personal site builders are a crowded space and this is only differentiated if Tailord's experience data is genuinely richer than what a user would paste into Squarespace. Worth building as a technical exercise and portfolio demonstration before committing to it as a product direction.
+
+**Technical building blocks (in order):**
+1. **Tailord public API** — versioned REST API exposing public tailoring data; rate-limited, API-key-gated per user. The `/t/[slug]` page already renders this data; the API is just a structured version of the same endpoint.
+2. **Site template** — a Next.js starter (or Astro) that fetches from the Tailord API at build time and/or on-demand. Open-sourceable; users could fork and customise.
+3. **Vercel deploy integration** — OAuth with Vercel, trigger a deploy of the template with the user's API key baked in as an env var, provision the subdomain via Cloudflare.
+4. **Chat on tailorings** — retrieval-augmented Q&A using scored chunks + profile as context, streamed via the Tailord API. Scoped to public tailorings only; rate-limited per session.
+
+---
+
+### Feature — Resume Enrichment (Per-Element Context)
+
+**The problem:** A resume is a compressed document. One page forces candidates to reduce real experience down to a single bullet or a skill keyword. When Tailord extracts a profile from a resume, it inherits that compression — a line like "Led migration to microservices architecture" contains almost no signal about the actual scope, the decisions made, the constraints navigated, or the outcome. GitHub can fill some of this gap for engineers with public work, but most candidates — in any discipline — don't have publicly visible artefacts at all.
+
+**The idea:** After a profile is extracted, surface each parsed element to the user and let them annotate it directly. Not a form to rewrite their resume, but targeted prompts: *"Tell us more about this."* Each annotation becomes part of the structured profile, available to the LLM when generating tailorings. The resume stays compressed; Tailord's internal representation of the candidate does not.
+
+**Why this matters:**
+- For users without GitHub or a portfolio, this is the primary mechanism for providing depth beyond the resume
+- Even for users with public work, resume items often cover experience that doesn't appear anywhere online — internal tools, org-scale decisions, cross-functional projects
+- The advocacy letter is only as specific as the evidence it has to draw from; richer annotations directly improve letter quality and chunk scoring accuracy
+- It aligns with the platform's north star: Tailord as a tool that helps candidates surface and articulate their experience, not just process it
+
+**What enrichment could look like per element type:**
+
+| Element | Prompt direction |
+|---------|-----------------|
+| Work experience bullet | Scope, constraints, outcome, what you'd do differently |
+| Skill keyword | Context of use, depth/years, notable application |
+| Project | What problem it solved, your specific contribution, stack decisions |
+| Education | Relevant coursework, research, what you actually learned vs what's listed |
+| Achievement/award | What it was for, who it was against, why it mattered |
+
+**Relationship to post-tailoring gap prompts:** These are complementary but different. Gap prompts are reactive — they fire after a tailoring and ask for missing context specific to a job. Resume enrichment is proactive — it happens once at the profile level and benefits all future tailorings. The data model should store enrichments on the Experience record, keyed to extracted profile elements, so they flow into every generation automatically.
+
+**UX consideration:** The enrichment flow shouldn't feel like homework. The right framing is: *"Your resume tells us what you did. Help us understand what it was actually like."* Each prompt should be specific to the element, optional, and easy to skip. A short free-text input per item is enough — this isn't a structured form, it's an invitation to add colour. Progress should be visible so users know their profile is getting stronger as they add context.
+
+**Data model:** `extracted_profile` is currently a JSON blob on the `Experience` record. Enrichments could be stored as a parallel `enrichment_notes` JSON field, keyed by element identifier (e.g. `work[0].bullets[2]`, `skills.python`), or by merging annotation fields directly into the extracted profile schema. The former is simpler to implement; the latter makes enriched context transparent to the LLM without prompt engineering to stitch two structures together.
