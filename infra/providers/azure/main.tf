@@ -80,10 +80,11 @@ resource "azurerm_postgresql_flexible_server_database" "tailord" {
 # CONTAINER APP ENVIRONMENT
 # -----------------------------
 resource "azurerm_container_app_environment" "tailord" {
-  name                = "${var.project_name}-env"
-  resource_group_name = azurerm_resource_group.tailord.name
-  location            = azurerm_resource_group.tailord.location
-  tags                = local.tags
+  name                       = "${var.project_name}-env"
+  resource_group_name        = azurerm_resource_group.tailord.name
+  location                   = azurerm_resource_group.tailord.location
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.tailord.id
+  tags                       = local.tags
 }
 
 # Grant managed identity permission to pull images from ACR
