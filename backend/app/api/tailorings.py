@@ -3,10 +3,12 @@ import re
 import random
 import string
 from functools import partial
+from typing import Optional
 
 import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
@@ -263,6 +265,8 @@ def get_tailoring(
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
         "model": tailoring.model,
+        "letter_public": tailoring.letter_public,
+        "posting_public": tailoring.posting_public,
         "is_public": tailoring.is_public,
         "public_slug": tailoring.public_slug,
         "created_at": tailoring.created_at.isoformat(),
@@ -303,15 +307,22 @@ def get_tailoring_chunks(
                 "match_score": c.match_score,
                 "match_rationale": c.match_rationale,
                 "experience_source": c.experience_source,
+                "should_render": c.should_render,
             }
             for c in chunks
         ],
     }
 
 
+class ShareRequest(BaseModel):
+    letter: bool = False
+    posting: bool = False
+
+
 @router.post("/tailorings/{tailoring_id}/share")
 def share_tailoring(
     tailoring_id: str,
+    body: ShareRequest,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -324,17 +335,23 @@ def share_tailoring(
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
-    if not tailoring.public_slug:
+    tailoring.letter_public = body.letter
+    tailoring.posting_public = body.posting
+
+    if not tailoring.public_slug and (body.letter or body.posting):
         job = tailoring.job
         company = job.extracted_job.get("company") if job and job.extracted_job else None
         title = job.extracted_job.get("title") if job and job.extracted_job else None
         tailoring.public_slug = _generate_slug(company, title)
 
-    tailoring.is_public = True
     db.commit()
     db.refresh(tailoring)
 
-    return {"public_slug": tailoring.public_slug}
+    return {
+        "public_slug": tailoring.public_slug,
+        "letter_public": tailoring.letter_public,
+        "posting_public": tailoring.posting_public,
+    }
 
 
 @router.delete("/tailorings/{tailoring_id}/share", status_code=204)
@@ -352,7 +369,8 @@ def unshare_tailoring(
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
-    tailoring.is_public = False
+    tailoring.letter_public = False
+    tailoring.posting_public = False
     db.commit()
 
 
@@ -364,20 +382,52 @@ def get_public_tailoring(
 ):
     tailoring = (
         db.query(Tailoring)
-        .filter(Tailoring.public_slug == slug, Tailoring.is_public.is_(True))
+        .filter(
+            Tailoring.public_slug == slug,
+            (Tailoring.letter_public.is_(True) | Tailoring.posting_public.is_(True)),
+        )
         .first()
     )
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
     job = tailoring.job
-    return {
+    response = {
         "title": job.extracted_job.get("title") if job and job.extracted_job else None,
         "company": job.extracted_job.get("company") if job and job.extracted_job else None,
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
+        "letter_public": tailoring.letter_public,
+        "posting_public": tailoring.posting_public,
         "created_at": tailoring.created_at.isoformat(),
     }
+
+    if tailoring.posting_public:
+        chunks = (
+            db.query(JobChunk)
+            .filter(
+                JobChunk.job_id == tailoring.job_id,
+                JobChunk.should_render.is_(True),
+            )
+            .order_by(JobChunk.position)
+            .all()
+        )
+        response["chunks"] = [
+            {
+                "id": str(c.id),
+                "chunk_type": c.chunk_type,
+                "content": c.content,
+                "position": c.position,
+                "section": c.section,
+                "match_score": c.match_score,
+                "match_rationale": c.match_rationale,
+                "experience_source": c.experience_source,
+                "should_render": c.should_render,
+            }
+            for c in chunks
+        ]
+
+    return response
 
 
 @router.get("/tailorings")
@@ -399,6 +449,8 @@ def list_tailorings(
             "title": t.job.extracted_job.get("title") if t.job and t.job.extracted_job else None,
             "company": t.job.extracted_job.get("company") if t.job and t.job.extracted_job else None,
             "job_url": t.job.job_url if t.job else None,
+            "letter_public": t.letter_public,
+            "posting_public": t.posting_public,
             "is_public": t.is_public,
             "public_slug": t.public_slug,
             "created_at": t.created_at.isoformat(),

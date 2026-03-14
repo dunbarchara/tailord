@@ -1,16 +1,14 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Loader2, AlertCircle, Copy, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 
 interface MatchAnalysisProps {
-  tailoringId: string;
-  onDataChange?: (data: ChunksResponse) => void;
+  data: ChunksResponse | null;
+  error: string | null;
 }
-
-const POLL_INTERVAL = 3000;
 
 const SOURCE_LABELS: Record<string, string> = {
   resume: 'Resume',
@@ -34,6 +32,7 @@ function chunkToMarkdown(chunk: JobChunk): string {
     chunk.section ? `section: ${chunk.section}` : null,
     `score: ${score}`,
     source ? `source: ${source}` : null,
+    chunk.should_render === false ? `render: false` : null,
   ].filter(Boolean).join(' | ');
 
   const lines = [`### ${meta}`, chunk.content];
@@ -69,24 +68,24 @@ export function chunksToMarkdown(data: ChunksResponse, title?: string | null, co
 function ScoreBadge({ score }: { score: number | null }) {
   if (score === 2) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success flex-shrink-0 w-20">
-        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-score-strong flex-shrink-0 w-20">
+        <span className="h-1.5 w-1.5 rounded-full bg-score-strong" />
         Strong
       </span>
     );
   }
   if (score === 1) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-warning flex-shrink-0 w-20">
-        <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-score-partial flex-shrink-0 w-20">
+        <span className="h-1.5 w-1.5 rounded-full bg-score-partial" />
         Partial
       </span>
     );
   }
   if (score === 0) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-error flex-shrink-0 w-20">
-        <span className="h-1.5 w-1.5 rounded-full bg-error" />
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-score-gap flex-shrink-0 w-20">
+        <span className="h-1.5 w-1.5 rounded-full bg-score-gap" />
         Gap
       </span>
     );
@@ -150,6 +149,12 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
         <Field label="section" value={chunk.section} />
         <Field label="score" value={<ScoreBadge score={chunk.match_score} />} />
         {source && <Field label="source" value={source} />}
+        {chunk.should_render === false && (
+          <span className="inline-flex items-center gap-1 text-xs text-text-disabled">
+            <span className="text-text-tertiary">render:</span>
+            <span className="font-mono text-warning">false</span>
+          </span>
+        )}
         <span className="ml-auto">
           <CopyButton getText={() => chunkToMarkdown(chunk)} />
         </span>
@@ -177,44 +182,7 @@ function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
   return groups;
 }
 
-export function MatchAnalysis({ tailoringId, onDataChange }: MatchAnalysisProps) {
-  const [data, setData] = useState<ChunksResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  async function fetchChunks() {
-    try {
-      const res = await fetch(`/api/tailorings/${tailoringId}/chunks`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body?.detail ?? 'Failed to load match data.');
-        stopPolling();
-        return;
-      }
-      const json: ChunksResponse = await res.json();
-      setData(json);
-      onDataChange?.(json);
-      if (json.enrichment_status === 'complete' || json.enrichment_status === 'error') {
-        stopPolling();
-      }
-    } catch {
-      setError('Could not reach the server.');
-      stopPolling();
-    }
-  }
-
-  function stopPolling() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }
-
-  useEffect(() => {
-    fetchChunks();
-    pollRef.current = setInterval(fetchChunks, POLL_INTERVAL);
-    return () => stopPolling();
-  }, [tailoringId]);
+export function MatchAnalysis({ data, error }: MatchAnalysisProps) {
 
   if (error) {
     return (

@@ -4,6 +4,8 @@ export interface Tailoring {
   company: string | null
   job_url: string
   generated_output: string
+  letter_public: boolean
+  posting_public: boolean
   is_public: boolean
   public_slug: string | null
   created_at: string
@@ -14,6 +16,8 @@ export interface TailoringListItem {
   title: string | null
   company: string | null
   job_url: string | null
+  letter_public: boolean
+  posting_public: boolean
   is_public: boolean
   public_slug: string | null
   created_at: string
@@ -101,6 +105,7 @@ export interface JobChunk {
   match_score: number | null  // -1=n/a, 0=gap, 1=partial, 2=strong, null=pending
   match_rationale: string | null
   experience_source: 'resume' | 'github' | 'user_input' | null
+  should_render?: boolean  // undefined = treat as true (pre-enrichment or legacy records)
 }
 
 export interface ChunksResponse {

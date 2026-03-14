@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
-import { Copy, CheckCircle2, ExternalLink, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link } from 'lucide-react';
+import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
+import { JobPosting } from '@/components/dashboard/JobPosting';
 import type { Tailoring, ChunksResponse } from '@/types';
+
+const POLL_INTERVAL = 3000;
 
 interface TailoringDetailProps {
   tailoringId: string;
@@ -33,12 +37,11 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [regenerating, setRegenerating] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
-  const [showMakePublicConfirm, setShowMakePublicConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'document' | 'analysis'>('document');
-  const [analysisKey, setAnalysisKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('letter');
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
+  const [chunksError, setChunksError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -59,6 +62,34 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     load();
   }, [tailoringId]);
 
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    async function fetchChunks() {
+      try {
+        const res = await fetch(`/api/tailorings/${tailoringId}/chunks`);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setChunksError(body?.detail ?? 'Failed to load match data.');
+          if (interval) clearInterval(interval);
+          return;
+        }
+        const json: ChunksResponse = await res.json();
+        setChunksData(json);
+        if (json.enrichment_status === 'complete' || json.enrichment_status === 'error') {
+          if (interval) clearInterval(interval);
+        }
+      } catch {
+        setChunksError('Could not reach the server.');
+        if (interval) clearInterval(interval);
+      }
+    }
+
+    fetchChunks();
+    interval = setInterval(fetchChunks, POLL_INTERVAL);
+    return () => { if (interval) clearInterval(interval); };
+  }, [tailoringId]);
+
   async function handleRegenerate() {
     setShowRegenConfirm(false);
     setRegenerating(true);
@@ -71,7 +102,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       }
       const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
       setTailoring(updated);
-      setAnalysisKey(k => k + 1);
+      setChunksData(null);
       router.refresh();
       toast.success('Tailoring regenerated.');
     } catch {
@@ -81,20 +112,30 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     }
   }
 
-  async function handleShare() {
-    setShowMakePublicConfirm(false);
+  async function handleToggleShare(view: 'letter' | 'posting', value: boolean) {
+    if (!tailoring) return;
     setSharing(true);
     try {
-      const res = await fetch(`/api/tailorings/${tailoringId}/share`, { method: 'POST' });
+      const newLetter = view === 'letter' ? value : tailoring.letter_public;
+      const newPosting = view === 'posting' ? value : tailoring.posting_public;
+      const res = await fetch(`/api/tailorings/${tailoringId}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ letter: newLetter, posting: newPosting }),
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toastError(data?.detail ?? 'Could not share tailoring.');
+        toastError(data?.detail ?? 'Could not update sharing.');
         return;
       }
-      const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
-      setTailoring(updated);
-      setShareOpen(true);
-      toast.success('Tailoring is now public.');
+      const shareData = await res.json();
+      setTailoring(prev => prev ? {
+        ...prev,
+        letter_public: shareData.letter_public,
+        posting_public: shareData.posting_public,
+        is_public: shareData.letter_public || shareData.posting_public,
+        public_slug: shareData.public_slug ?? prev.public_slug,
+      } : null);
     } catch {
       toastError('Could not reach the server.');
     } finally {
@@ -112,7 +153,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         toastError(data?.detail ?? 'Could not make tailoring private.');
         return;
       }
-      setTailoring(prev => prev ? { ...prev, is_public: false } : null);
+      setTailoring(prev => prev ? { ...prev, is_public: false, letter_public: false, posting_public: false } : null);
       setShareOpen(false);
       toast.success('Tailoring is now private.');
     } catch {
@@ -170,13 +211,24 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     ? `${window.location.origin}/t/${tailoring.public_slug}`
     : null;
 
+  const letterOn = tailoring.letter_public;
+  const postingOn = tailoring.posting_public;
+  const anyPublic = letterOn || postingOn;
+
+  function ShareButtonLabel() {
+    if (letterOn && postingOn) return <><Globe className="h-3.5 w-3.5" />Public</>;
+    if (letterOn) return <><Globe className="h-3.5 w-3.5" />Public · Letter</>;
+    if (postingOn) return <><Globe className="h-3.5 w-3.5" />Public · Posting</>;
+    return <><Lock className="h-3.5 w-3.5" />Share</>;
+  }
+
   return (
     <div className="h-full flex flex-col">
 
       {/* Toolbar */}
       <header className="relative flex items-center h-11 px-4 border-b border-border-subtle bg-surface-base flex-shrink-0">
-        {/* Left: breadcrumb */}
-        <div className="flex items-center gap-1.5 min-w-0 text-sm" style={{ maxWidth: '40%' }}>
+        {/* Left: breadcrumb + date */}
+        <div className="flex items-center gap-1.5 min-w-0 text-sm" style={{ maxWidth: '50%' }}>
           <span className="font-medium text-text-primary truncate max-w-[180px]">
             {tailoring.title ?? 'Tailoring'}
           </span>
@@ -186,11 +238,13 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <span className="text-text-secondary truncate max-w-[140px]">{tailoring.company}</span>
             </>
           )}
+          <span className="text-text-tertiary flex-shrink-0">·</span>
+          <span className="text-text-tertiary text-xs flex-shrink-0">{createdDate}</span>
         </div>
 
         {/* Centre: tabs — absolutely centred in the toolbar */}
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0">
-          {(['document', 'analysis'] as const).map(tab => (
+          {(['letter', 'posting', 'analysis'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -201,20 +255,13 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                   : 'border-transparent text-text-tertiary hover:text-text-secondary'
               )}
             >
-              {tab === 'document' ? 'Document' : 'Match Analysis'}
+              {tab === 'letter' ? 'Letter' : tab === 'posting' ? 'Posting' : 'Analysis'}
             </button>
           ))}
         </div>
 
         {/* Right: actions */}
         <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-          {tailoring.job_url && (
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" asChild>
-              <a href={tailoring.job_url} target="_blank" rel="noopener noreferrer" title="View job posting">
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="sm"
@@ -236,15 +283,13 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 size="sm"
                 className="h-7 gap-1.5 px-2.5 text-xs font-normal ml-1"
               >
-                {tailoring.is_public
-                  ? <><Globe className="h-3.5 w-3.5" />Public</>
-                  : <><Lock className="h-3.5 w-3.5" />Share</>}
+                <ShareButtonLabel />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-80 p-0">
-              {tailoring.is_public && shareUrl ? (
-                <div>
-                  <div className="px-4 pt-4 pb-3">
+              <div className="px-4 pt-4 pb-3">
+                {anyPublic && shareUrl ? (
+                  <>
                     <p className="text-sm font-medium text-text-primary mb-3">Shareable link</p>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-sunken border border-border-subtle">
                       <Link className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
@@ -266,37 +311,57 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                           : <Copy className="h-3.5 w-3.5" />}
                       </button>
                     </div>
-                  </div>
-                  <div className="px-4 pb-4 pt-1 border-t border-border-subtle">
-                    <p className="text-xs text-text-tertiary mb-3 pt-3">Anyone with this link can view the tailoring without signing in.</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs h-8 gap-2"
-                      onClick={() => { setShareOpen(false); setShowMakePrivateConfirm(true); }}
-                      disabled={sharing}
-                    >
-                      <Lock className="h-3.5 w-3.5" />
-                      Make private
-                    </Button>
-                  </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-text-primary mb-1">Share this tailoring</p>
+                    <p className="text-xs text-text-tertiary mb-3">
+                      Publish read-only views — no sign-in required.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* Toggles */}
+              <div className="px-4 pb-3 space-y-3 border-t border-border-subtle pt-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text-primary">Advocacy Letter</span>
+                  <Switch
+                    checked={letterOn}
+                    onCheckedChange={v => handleToggleShare('letter', v)}
+                    disabled={sharing}
+                  />
                 </div>
-              ) : (
-                <div className="px-4 py-4">
-                  <p className="text-sm font-medium text-text-primary mb-1">Share this tailoring</p>
-                  <p className="text-xs text-text-tertiary mb-4">
-                    Publish a read-only link anyone can open — no sign-in required.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-text-primary">Job Posting</span>
+                  <Switch
+                    checked={postingOn}
+                    onCheckedChange={v => handleToggleShare('posting', v)}
+                    disabled={sharing}
+                  />
+                </div>
+              </div>
+
+              {/* Note */}
+              <div className="px-4 pb-3 pt-1">
+                <p className="flex items-start gap-1.5 text-xs text-text-tertiary leading-relaxed">
+                  <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                  In the public job posting view, gap matches are hidden and partial matches appear as green.
+                </p>
+              </div>
+
+              {/* Make private */}
+              {anyPublic && (
+                <div className="px-4 pb-4 border-t border-border-subtle pt-3">
                   <Button
+                    variant="outline"
                     size="sm"
                     className="w-full text-xs h-8 gap-2"
-                    onClick={() => { setShareOpen(false); setShowMakePublicConfirm(true); }}
+                    onClick={() => { setShareOpen(false); setShowMakePrivateConfirm(true); }}
                     disabled={sharing}
                   >
-                    {sharing
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <Globe className="h-3.5 w-3.5" />}
-                    Make public
+                    <Lock className="h-3.5 w-3.5" />
+                    Make private
                   </Button>
                 </div>
               )}
@@ -308,6 +373,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             size="sm"
             className="h-7 w-7 p-0"
             onClick={handleCopy}
+            disabled={activeTab === 'posting'}
             title={copied ? 'Copied' : 'Copy content'}
           >
             {copied
@@ -319,16 +385,26 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {activeTab === 'document' ? (
-          <div className="max-w-3xl mx-auto px-8 py-10">
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-text-primary leading-tight">
-                {tailoring.title ?? 'Tailoring'}
-              </h1>
-              <p className="text-text-secondary mt-2 text-sm">
-                {[tailoring.company, createdDate].filter(Boolean).join(' · ')}
+        {activeTab === 'letter' && (
+          <div className="max-w-3xl mx-auto px-6 py-10">
+            <header className="mb-8 pb-5 border-b border-border-subtle">
+              <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
+                {tailoring.company ?? 'Tailoring'}
               </p>
-            </div>
+              <h1 className="text-xl font-semibold text-text-primary">
+                {tailoring.title ?? ''}
+              </h1>
+              {tailoring.job_url && (
+                <a
+                  href={tailoring.job_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-2 text-sm text-text-link hover:underline"
+                >
+                  View job posting →
+                </a>
+              )}
+            </header>
             <div className={cn(
               "prose prose-sm max-w-none text-text-primary",
               "prose-headings:text-text-primary prose-headings:font-semibold",
@@ -343,8 +419,18 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
             </div>
           </div>
-        ) : (
-          <MatchAnalysis key={analysisKey} tailoringId={tailoringId} onDataChange={setChunksData} />
+        )}
+        {activeTab === 'posting' && (
+          <JobPosting
+            data={chunksData}
+            error={chunksError}
+            title={tailoring.title}
+            company={tailoring.company}
+            jobUrl={tailoring.job_url}
+          />
+        )}
+        {activeTab === 'analysis' && (
+          <MatchAnalysis data={chunksData} error={chunksError} />
         )}
       </div>
 
@@ -359,21 +445,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRegenConfirm(false)}>Cancel</Button>
             <Button onClick={handleRegenerate}>Regenerate</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showMakePublicConfirm} onOpenChange={setShowMakePublicConfirm}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Make this tailoring public?</DialogTitle>
-            <DialogDescription>
-              Anyone with the link will be able to view this tailoring without signing in. You can make it private again at any time.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMakePublicConfirm(false)}>Cancel</Button>
-            <Button onClick={handleShare}>Make public</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import String, Text, JSON, DateTime, Boolean, Integer, func, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.clients.database import Base
 
@@ -100,8 +101,14 @@ class Tailoring(Base):
     generated_output: Mapped[str] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     enrichment_status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
-    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    letter_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    posting_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     public_slug: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+
+    @hybrid_property
+    def is_public(self) -> bool:
+        return self.letter_public or self.posting_public
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -126,6 +133,7 @@ class JobChunk(Base):
     match_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     match_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     experience_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    should_render: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     job: Mapped["Job"] = relationship("Job", back_populates="chunks")

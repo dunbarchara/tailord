@@ -14,14 +14,18 @@ async function getUserContext() {
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await getUserContext()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  return proxyToBackendWithUser(`tailorings/${id}/share`, user, { method: 'POST' })
+  const body = await req.json().catch(() => ({}))
+  return proxyToBackendWithUser(`tailorings/${id}/share`, user, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 export async function DELETE(

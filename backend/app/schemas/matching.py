@@ -17,6 +17,7 @@ class ChunkMatchResult(BaseModel):
     score: int = 0  # -1=non-evaluable, 0=gap, 1=partial, 2=strong
     rationale: str = ""
     experience_source: str | None = None
+    should_render: bool = True
 
 
 class ChunkMatchBatch(BaseModel):

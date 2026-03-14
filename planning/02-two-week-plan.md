@@ -154,8 +154,8 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 - [x] `MatchAnalysis` component — polls `/api/tailorings/{id}/chunks` every 3s while pending, displays chunks grouped by section
 - [x] Developer-oriented card layout: metadata row (id, type, pos, section, score, source) + content row + rationale row
 - [x] Score badges: Strong (green), Partial (yellow), Gap (red), N/A (grey), Pending (pulse)
-- [x] Tab switcher in `TailoringDetail` toolbar — absolutely centered regardless of left/right content width
-- [x] Tab-aware copy button: Document tab copies markdown, Match Analysis tab copies all chunks as structured markdown for pasting into Claude Code
+- [x] Tab switcher in `TailoringDetail` toolbar — absolutely centered regardless of left/right content width; tabs renamed: **Letter** (generated document), **Posting** (job view), **Analysis** (debug chunks)
+- [x] Tab-aware copy button: Letter tab copies markdown, Analysis tab copies all chunks as structured markdown for pasting into Claude Code
 - [x] Per-chunk copy button in metadata row
 
 #### Parsed Profile debug panel ✅
@@ -177,6 +177,34 @@ The goal of week 1 is to eliminate every "this feature is half-built" area. By F
 - [x] `_render_tailoring()` assembles final markdown from structured content + deterministic data (name, email, education, company, job title)
 - [x] `candidate_email` threaded through from `User` record; education extracted from profile for footer
 - [x] Tailoring generation prompt rewritten to encode the advocacy philosophy and ask for JSON
+
+---
+
+### ✅ Day 5.6 — Enriched Job Posting View + Per-View Public Sharing
+
+**Goal:** Surface a human-readable, enriched view of the scraped job posting in the tailoring detail. Extend the sharing system to allow each view (Letter, Posting) to be shared independently.
+
+#### Enriched Job Posting View ✅
+- [x] **Posting tab** in `TailoringDetail` toolbar — sits alongside Letter and Analysis; renders `JobChunk` data as a clean reading view (sections, bullets, paragraphs), not a debug card layout
+- [x] **Score bar indicators** — 2px absolute-positioned left border per chunk: green (strong), amber (partial), red (gap). N/A chunks have no border and are non-interactive. Pre-enrichment chunks render as plain text.
+- [x] **Click-to-expand rationale** — clicking a scored chunk expands a panel with the LLM's match reasoning and evidence source (Resume / GitHub / Direct Input). One chunk expanded at a time; clicking again collapses. Smooth height animation via CSS grid trick.
+- [x] **Content alignment** — score bars sit at `-left-3` (12px offset) from the content edge, counter-translating on expand so the bar stays anchored while text slides. Letter and Posting views share the same `px-6 py-10` content width (720px at `max-w-3xl`).
+- [x] **Clean degradation** — pending enrichment shows chunks without borders or interaction; errors surface a readable message rather than a blank panel.
+
+**Why separate from Match Analysis:** Match Analysis is a developer/debug view with metadata rows, copy buttons, and raw score badges. The Posting tab is for reading and orientation — "what does this role actually require?" — and should feel like a clean document.
+
+#### Per-View Public Sharing ✅
+- [x] **`letter_public` + `posting_public`** columns on `Tailoring` (alembic migration `b8c9d0e1f2a3`), replacing the single `is_public` boolean. `is_public` retained as a SQLAlchemy `@hybrid_property` (`letter_public or posting_public`) for backwards-compatible querying.
+- [x] **Migration backfills** `letter_public = is_public` for existing records; `posting_public` defaults false.
+- [x] **`POST /tailorings/{id}/share`** now accepts `{ letter: bool, posting: bool }` body — updates both flags independently, generates slug on first activation. Returns `{ public_slug, letter_public, posting_public }`.
+- [x] **`DELETE /tailorings/{id}/share`** clears both flags.
+- [x] **`GET /tailorings/public/{slug}`** filters on `letter_public | posting_public`; includes chunks in response only when `posting_public=True`. Gap chunks (score=0) are included but render without a color bar or click interaction — present but unscored in the public view.
+- [x] **Share popover redesigned** — per-view `Switch` toggles (new `Switch` UI component) replace the single "Make public" button. Toolbar button label reflects active state: `Share` / `Public · Letter` / `Public · Posting` / `Public`. Inline note explains the public posting view behavior (gaps rendered plain, partial matches shown as muted green instead of amber).
+- [x] **`--color-score-partial-public`** CSS token (`#5A9E78` light / `#5A8E6E` dark) — muted green used for partial matches on public-facing views.
+- [x] **Public page (`/t/{slug}`) updated** — tab switcher rendered when both views are public; letter-only and posting-only modes work without tabs. `JobPosting` receives `publicMode={true}` and `hideHeader={true}`.
+- [x] **Content alignment on public page** — `px-6` wrapper pattern (padding on outer, `border-b`/`border-t` on inner) prevents borders from extending through padding. All sections — page header, tab switcher, letter content, posting content, footer — resolve to the same 720px content width.
+
+---
 
 **What was deprioritized (moved to Day 8.5):**
 - Empty profile detection (minimum text length + field validation before marking ready)
@@ -311,6 +339,13 @@ This is the single highest-leverage change. Wall-clock time is unchanged; percei
 - [ ] A mascot concept (small pixel-art or vector character performing each operation) is brand-differentiating and worth exploring as a design iteration once the underlying stream is live — the mascot reacting to real pipeline events is satisfying in a way that a mascot animating over a spinner is not
 - [ ] Keep it subtle and skippable — not every user wants whimsy
 
+#### 5. Progressive disclosure — show structure before content is ready
+- [ ] As soon as the job scrape + extraction completes (before match scoring or tailoring generation), enough data exists to render skeleton views of both tabs:
+  - **Job Posting tab:** render the un-enriched chunks immediately — the user can start reading the job description while the rest of the pipeline runs. Score indicators can fade in as chunk enrichment completes.
+  - **Document tab:** render a template shell — greeting, company name, job title, dividers, footer — with placeholder blocks where advocacy sections will appear. Makes it visually obvious something real is being built, not just a spinner.
+- [ ] Both views should clearly signal in-progress state (subtle pulse on placeholders, a "Generating..." label) so the user understands the content is incomplete — not that the product is broken
+- [ ] This is intentionally designed before streaming is in place: it reduces perceived wait time by giving the user something to read immediately after job parsing completes, even if tailoring generation hasn't started yet. When streaming is later added, the Document tab transitions smoothly from skeleton → live token stream → complete.
+
 **Note on scrape latency:** The Playwright scrape (15–30s) is the one stage that is fundamentally slow and cannot be streamed. Job URL caching (Day 8.5) eliminates it entirely on retries for the same URL. Together, streaming + caching means: first visit has an honest progress indicator and streaming output; repeat visits skip the slow stage and jump straight to generation.
 
 **Why this is slotted before public portfolio:** A product that feels slow and unresponsive is harder to share confidently. Streaming makes tailoring generation a delight to watch, which matters when users are sharing their tailoring page or showing the product to someone.
@@ -415,6 +450,7 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 4 | Sharing | Public tailoring URLs at `/t/{slug}` | ✅ |
 | 5 | Polish | Error states, timeouts, recent tailorings dashboard, sidebar search, duplicate URL guard | ✅ |
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
+| 5.6 | Enriched job posting view + per-view public sharing | Posting tab (score bars, expandable rationale, content alignment); `letter_public`/`posting_public` per-view sharing with redesigned popover, muted public color token, tab switcher on public page | ✅ |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings | |
 | 7 | Notion export | One-click export, Markdown→Notion blocks | |
 | 8 | Notion polish | Parent page selection, stored export URL | |
@@ -464,3 +500,41 @@ If any day runs long, cut in this order (least to most impactful to cut):
 - DOCX extraction via `python-docx` is generally reliable; probably not worth replacing
 
 **When to consider:** If users report extraction failures (missing bullets, garbled work history) that can be traced to complex PDF layouts rather than LLM parsing errors. Not urgent until there is evidence of real failures at scale.
+
+---
+
+### Custom Pronouns in User Settings
+
+**Context:** The LLM currently infers pronouns from the candidate's name (e.g. "Charles" → he/him). This is unreliable and excludes candidates who use she/her, they/them, or other pronouns.
+
+**Proposal:** Add a pronouns field to user settings (free-text or a small set of common options: he/him, she/her, they/them, other). Surface it prominently in the settings panel — not buried — since it directly affects generated output.
+
+**Pipeline integration:**
+- Primary: inject the candidate's pronouns into the tailoring system prompt so the LLM uses them natively throughout generation. This is the cleanest approach and handles grammatical agreement naturally (e.g. "they have" not "they has").
+- Safety net: after LLM generation, run a deterministic pronoun replacement pass to catch any gendered pronouns the LLM may have inferred despite instructions. A regex pass over he/him/his/she/her/hers with the correct forms is straightforward for binary pronoun sets; they/them requires more care around verb agreement.
+
+**Schema changes:**
+- Add `pronouns: str | None` to the `User` model
+- Expose via a settings endpoint
+- Pass through to `generate_tailoring()` and into the tailoring prompt
+
+**Note:** If pronouns are not set, default to they/them in the prompt rather than inferring from name — safer and more inclusive default.
+
+---
+
+### Chunk-Informed Letter Regeneration
+
+**Context:** The current Letter is generated during the fast pipeline, before chunk enrichment completes. The slow pipeline produces per-chunk match scores and rationales — pre-computed evidence chains (which bullets in the profile support which job requirements) that the fast letter has to re-derive from scratch.
+
+**Hypothesis:** Once chunk enrichment is complete, triggering a second letter generation pass that feeds the scored chunks as context could produce a more precise, evidence-driven Letter — particularly for postings with rich prose sections that don't map cleanly into the extracted requirements list.
+
+**What it could improve:**
+- Advocacy statements grounded in explicit evidence chains rather than re-derived profile-to-requirement connections
+- More deliberate weighting: strong-match chunks (score=2) lead; gaps handled strategically based on scored context rather than inferred
+- Better coverage of signals that live in paragraph/culture content, not bullet requirements
+
+**Key uncertainty:** The quality delta is likely real but variable. For structured, bullet-heavy postings where extraction captures everything, the fast letter may already be near-ceiling. The improvement would be most noticeable on postings with dense prose sections. The only way to know if it's worth the extra LLM call is to generate both versions for the same tailoring and compare directly.
+
+**Before building:** Generate enriched vs. fast letters side-by-side for 5–10 real tailorings. If the enriched version is clearly more specific and evidence-driven, the UX pattern ("fast draft → enhanced version available") makes sense. If the delta requires squinting, it's not ready to surface to users.
+
+**UX pattern if pursued:** The client already polls for enrichment status — extending this to trigger a letter update when enrichment completes is straightforward. The enhanced letter would need to be stored separately (new DB column) to avoid clobbering the fast letter. The indicator should be specific ("Using full job analysis to strengthen this") not generic ("Processing").

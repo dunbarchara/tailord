@@ -42,6 +42,24 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
             i += 1
             continue
 
+        # Bold sub-header: a standalone line that is entirely **bold text**
+        # Catches sub-section labels like "**Responsibilities:**" that use bold
+        # instead of markdown headings (common on Greenhouse, Lever, Riot, etc.)
+        bold_header_match = re.match(r'^\*\*([^*]+?)\*\*\s*$', line)
+        if bold_header_match:
+            content = bold_header_match.group(1).strip()
+            if len(content) <= 80:  # short enough to be a label, not a sentence
+                chunks.append(RawChunk(
+                    chunk_type="header",
+                    content=content,
+                    position=position,
+                    section=None,
+                ))
+                position += 1
+                current_section = content
+                i += 1
+                continue
+
         # Bullet: - item, * item, • item, or 1. item
         bullet_match = re.match(r'^[-*•]\s+(.+)', line) or re.match(r'^\d+\.\s+(.+)', line)
         if bullet_match:
