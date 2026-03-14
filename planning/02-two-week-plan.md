@@ -522,6 +522,43 @@ If any day runs long, cut in this order (least to most impactful to cut):
 
 ---
 
+### Pre-Launch Checklist — Before Opening to External Users
+
+Everything below is a non-issue while Tailord is single-user. These items become necessary before the product is opened to real external users. None of them require a lawyer, but all of them require deliberate attention.
+
+#### Legal Documents
+- **Rewrite the Privacy Policy** — the current policy was generated with "one US user, no EU/UK users" assumptions. Before external users, commission a proper policy that accurately reflects all data practices, third-party processors, and applicable jurisdictions (at minimum GDPR if any EU users are possible, CCPA if US users).
+- **Rewrite the Terms of Use** — the current terms were generated with minimal configuration. A real terms document should reflect the actual product, acceptable use, AI-generated content disclaimers, and the liability posture you want.
+- **Host both documents on `tailord.app`** — the current pages at `/privacy` and `/terms` serve from `src/content/`. Update the content and ensure the "Last updated" dates are accurate.
+- **Add Privacy and Terms links** to the product footer — at minimum the public tailoring page (`/t/[slug]`) and the marketing/landing page. The dashboard footer is optional but good practice.
+
+#### Cookie Consent
+- Tailord currently uses only essential session cookies (NextAuth JWT). No analytics, no advertising, no tracking.
+- If that remains true, a cookie consent banner is **not required** under GDPR for essential-only cookies — you just need to disclose them in the Privacy Policy (already done).
+- If you ever add analytics (e.g. PostHog, Plausible, Google Analytics), a consent banner becomes required for EU users. Use a lightweight library like `cookie-consent` or a managed solution like Termly's banner widget.
+- **Decision point:** choose an analytics tool (or consciously choose none) before opening to external users, then add the banner if needed.
+
+#### Notion Integration
+- **Separate dev and prod integrations** — currently a single Notion integration handles both `localhost` and `tailord.app`. Before external users, create a separate "Tailord Dev" integration for local development so that test activity doesn't appear in production logs or affect production OAuth flows.
+- **Submit for Notion public review** — the integration currently runs in development mode (max 10 workspaces). To support external users, submit for Notion's public integration review. This requires: live privacy policy URL, live terms URL, integration logo/icon (256×256px minimum), description of permissions requested, and screenshots or a demo. Review is manual and takes days to weeks — submit early.
+- **Scope review** — before public review, audit the permissions your integration requests. Tailord should only request `insert_content` (to create pages). No `read_content`, no `update_content`, no user information beyond what OAuth provides. Minimal scope = faster approval and better user trust.
+- **Notion integration icon** — you need a square logo at 256×256px minimum for the Notion listing. Worth investing in a proper icon before the public submission.
+
+#### Account Management
+- **Account deletion** — the Privacy Policy states users can request deletion by contacting you. Before external users, build a self-serve account deletion flow in Settings. This is required under GDPR (right to erasure) and CCPA. Deletion should remove: User record, Experience record and resume file from storage, all Jobs, all Tailorings, Notion token.
+- **Email on critical actions** — consider transactional emails for account-level events (welcome, account deletion confirmation). Not required but expected by users.
+
+#### Access Control
+- **Remove the manual approval gate** — the `status: pending | approved` field on `User` currently gates access. This was appropriate for solo use. Before external users, decide: open signup, waitlist, or invite-only. The current approval mechanism requires manual intervention which doesn't scale.
+- **Rate limiting** — no per-user rate limiting exists on tailoring creation (each tailoring triggers multiple LLM calls). Add a reasonable limit (e.g. 10 tailorings/day per user) before external users can run up LLM costs unchecked.
+- **Cost controls** — set spend alerts on your LLM provider before external users. A single motivated user could generate significant cost without limits.
+
+#### Infrastructure
+- **Custom domain email** — `hello@tailord.app` or similar for user-facing communications and legal contact. Currently the privacy policy lists a personal Gmail address.
+- **Monitoring and alerting** — set up basic uptime monitoring and error alerting before relying on the product being available for others.
+
+---
+
 ### Chunk-Informed Letter Regeneration
 
 **Context:** The current Letter is generated during the fast pipeline, before chunk enrichment completes. The slow pipeline produces per-chunk match scores and rationales — pre-computed evidence chains (which bullets in the profile support which job requirements) that the fast letter has to re-derive from scratch.
