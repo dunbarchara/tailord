@@ -269,6 +269,7 @@ def get_tailoring(
         "posting_public": tailoring.posting_public,
         "is_public": tailoring.is_public,
         "public_slug": tailoring.public_slug,
+        "notion_page_url": tailoring.notion_page_url,
         "created_at": tailoring.created_at.isoformat(),
     }
 
