@@ -8,7 +8,7 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user, require_approved_user
 from app.models.database import Tailoring, User
-from app.services.notion_export import create_notion_page, markdown_to_notion_blocks, update_notion_page
+from app.services.notion_export import create_notion_page, update_notion_page
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -109,7 +109,7 @@ def export_tailoring_to_notion(
     title_parts = [p for p in [title, company] if p]
     page_title = " — ".join(title_parts) if title_parts else "Tailoring"
 
-    blocks = markdown_to_notion_blocks(tailoring.generated_output)
+    markdown = tailoring.generated_output
 
     try:
         # Update existing page if we have one, otherwise create
@@ -118,7 +118,7 @@ def export_tailoring_to_notion(
                 access_token=user.notion_access_token,
                 page_id=tailoring.notion_page_id,
                 title=page_title,
-                blocks=blocks,
+                markdown=markdown,
             )
             if updated:
                 logger.info("Updated Notion page %s for tailoring %s", tailoring.notion_page_id, tailoring_id)
@@ -128,7 +128,7 @@ def export_tailoring_to_notion(
         page_id, page_url = create_notion_page(
             access_token=user.notion_access_token,
             title=page_title,
-            blocks=blocks,
+            markdown=markdown,
         )
     except ValueError as e:
         logger.error("Notion export failed for tailoring %s: %s", tailoring_id, e)
