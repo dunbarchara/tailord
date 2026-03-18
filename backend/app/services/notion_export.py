@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 NOTION_VERSION = "2026-03-11"
 PARENT_PAGE_TITLE = "Tailord - Tailorings"
+TAILORD_ICON = {"type": "external", "external": {"url": "https://tailord.app/tailordicon.png"}}
 
 
 def _make_session(access_token: str) -> requests.Session:
@@ -53,6 +54,7 @@ def get_or_create_parent_page(
         "https://api.notion.com/v1/pages",
         json={
             "parent": {"type": "workspace", "workspace": True},
+            "icon": TAILORD_ICON,
             "properties": {"title": [{"text": {"content": PARENT_PAGE_TITLE}}]},
         },
     )
@@ -81,6 +83,7 @@ def create_notion_page(
         "https://api.notion.com/v1/pages",
         json={
             "parent": {"type": "page_id", "page_id": parent_page_id},
+            "icon": TAILORD_ICON,
             "properties": {"title": [{"text": {"content": title}}]},
             "markdown": markdown,
         },
