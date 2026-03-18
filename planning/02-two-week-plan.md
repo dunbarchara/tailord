@@ -647,3 +647,34 @@ Everything below is a non-issue while Tailord is single-user. These items become
 **UX consideration:** The enrichment flow shouldn't feel like homework. The right framing is: *"Your resume tells us what you did. Help us understand what it was actually like."* Each prompt should be specific to the element, optional, and easy to skip. A short free-text input per item is enough — this isn't a structured form, it's an invitation to add colour. Progress should be visible so users know their profile is getting stronger as they add context.
 
 **Data model:** `extracted_profile` is currently a JSON blob on the `Experience` record. Enrichments could be stored as a parallel `enrichment_notes` JSON field, keyed by element identifier (e.g. `work[0].bullets[2]`, `skills.python`), or by merging annotation fields directly into the extracted profile schema. The former is simpler to implement; the latter makes enriched context transparent to the LLM without prompt engineering to stitch two structures together.
+
+---
+
+### Technical Debt — Integrations Table
+
+**Context:** Notion integration metadata (access token, bot ID, workspace ID/name, parent page ID) currently lives as flat columns on the `users` table. This was the right call for a single integration, but becomes a maintenance problem as more integrations are added — each one adds a column cluster and widens a table that should stay narrow.
+
+**When to act:** When a second integration is added. The refactor at that point is bounded and the pattern will be clear.
+
+**Target schema:**
+```sql
+integrations (
+  id           UUID PK,
+  user_id      UUID FK → users,
+  provider     VARCHAR,   -- 'notion', 'linear', etc.
+  access_token VARCHAR,
+  metadata     JSONB,     -- workspace_id, workspace_name, bot_id, parent_page_id, etc.
+  created_at   TIMESTAMP,
+  UNIQUE (user_id, provider)
+)
+```
+
+The `metadata` JSONB column absorbs provider-specific fields without requiring schema changes per integration. The `UNIQUE (user_id, provider)` constraint enforces one connected account per provider per user — relax to allow multiple accounts per provider if that ever becomes a requirement (e.g. connecting two Notion workspaces).
+
+**Migration path:**
+1. Create `integrations` table
+2. Backfill one row per user where `notion_access_token IS NOT NULL` with `provider = 'notion'` and metadata populated from the flat columns
+3. Update all query sites in `app/api/notion.py` and `app/api/users.py` to read/write via the new table
+4. Drop the `notion_*` columns from `users`
+
+Frontend is unaffected — the API contract doesn't change.
