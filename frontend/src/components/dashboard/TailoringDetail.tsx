@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
-import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link, Info } from 'lucide-react';
+import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link, Info, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -42,17 +42,27 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('letter');
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
+  const [notionConnected, setNotionConnected] = useState(false);
+  const [exportingNotion, setExportingNotion] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/tailorings/${tailoringId}`);
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
+        const [tailoringRes, userRes] = await Promise.all([
+          fetch(`/api/tailorings/${tailoringId}`),
+          fetch('/api/users'),
+        ]);
+        if (!tailoringRes.ok) {
+          const data = await tailoringRes.json().catch(() => ({}));
           setError(data?.detail ?? data?.error ?? 'Failed to load tailoring.');
           return;
         }
-        setTailoring(await res.json());
+        const [tailoringData, userData] = await Promise.all([
+          tailoringRes.json(),
+          userRes.ok ? userRes.json() : {},
+        ]);
+        setTailoring(tailoringData);
+        setNotionConnected(!!userData?.notion_workspace_name);
       } catch {
         setError('Could not reach the server.');
       } finally {
@@ -160,6 +170,33 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       toastError('Could not reach the server.');
     } finally {
       setSharing(false);
+    }
+  }
+
+  async function handleExportToNotion() {
+    if (!notionConnected) {
+      toast('Connect Notion first', {
+        description: 'Go to Settings → Connected apps to connect your Notion workspace.',
+        action: { label: 'Settings', onClick: () => window.location.href = '/dashboard/settings' },
+      });
+      return;
+    }
+    setExportingNotion(true);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}/export/notion`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toastError(data?.detail ?? 'Export failed.');
+        return;
+      }
+      toast.success('Exported to Notion', {
+        description: 'Your tailoring was created as a Notion page.',
+        action: { label: 'Open', onClick: () => window.open(data.page_url, '_blank') },
+      });
+    } catch {
+      toastError('Could not reach the server.');
+    } finally {
+      setExportingNotion(false);
     }
   }
 
@@ -367,6 +404,21 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               )}
             </PopoverContent>
           </Popover>
+
+          {activeTab === 'letter' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={handleExportToNotion}
+              disabled={exportingNotion}
+              title="Export to Notion"
+            >
+              {exportingNotion
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <ExternalLink className="h-4 w-4" />}
+            </Button>
+          )}
 
           <Button
             variant="ghost"

@@ -570,6 +570,8 @@ Everything below is a non-issue while Tailord is single-user. These items become
 #### Infrastructure
 - **Custom domain email** — `hello@tailord.app` or similar for user-facing communications and legal contact. Currently the privacy policy lists a personal Gmail address.
 - **Monitoring and alerting** — set up basic uptime monitoring and error alerting before relying on the product being available for others.
+- **Prometheus + Grafana** — structured metrics collection and dashboarding. The backend (FastAPI/uvicorn) can expose a `/metrics` endpoint via `prometheus-fastapi-instrumentator`; the frontend can emit custom metrics via an OpenTelemetry collector. Grafana provides dashboards over both. Azure Managed Grafana is available if staying within the Azure ecosystem.
+- **Azure Chaos Studio** *(stretch goal)* — fault injection and resilience testing against the Container Apps and PostgreSQL infrastructure. Useful for validating graceful degradation (e.g. DB connectivity loss, container restarts) before the platform carries real user traffic. Low priority until the user base justifies the operational overhead.
 
 ---
 

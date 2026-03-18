@@ -1,3 +1,4 @@
+import logging
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -5,9 +6,11 @@ from sqlalchemy.orm import Session
 from app.auth import require_api_key
 from app.config import settings
 from app.core.deps_database import get_db
-from app.core.deps_user import get_current_user
-from app.models.database import User
+from app.core.deps_user import get_current_user, require_approved_user
+from app.models.database import Tailoring, User
+from app.services.notion_export import create_notion_page, markdown_to_notion_blocks
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -81,3 +84,42 @@ def notion_disconnect(
     user.notion_workspace_name = None
     db.commit()
     return {"ok": True}
+
+
+@router.post("/notion/export/{tailoring_id}")
+def export_tailoring_to_notion(
+    tailoring_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    if not user.notion_access_token:
+        raise HTTPException(status_code=403, detail="Notion not connected")
+
+    tailoring = db.query(Tailoring).filter(
+        Tailoring.id == tailoring_id,
+        Tailoring.user_id == user.id,
+    ).first()
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    job = tailoring.job
+    title = job.extracted_job.get("title") if job and job.extracted_job else None
+    company = job.extracted_job.get("company") if job and job.extracted_job else None
+    title_parts = [p for p in [title, company] if p]
+    page_title = " — ".join(title_parts) if title_parts else "Tailoring"
+
+    blocks = markdown_to_notion_blocks(tailoring.generated_output)
+
+    try:
+        page_url = create_notion_page(
+            access_token=user.notion_access_token,
+            title=page_title,
+            blocks=blocks,
+        )
+    except ValueError as e:
+        logger.error("Notion export failed for tailoring %s: %s", tailoring_id, e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+    logger.info("Exported tailoring %s to Notion for user %s", tailoring_id, user.id)
+    return {"page_url": page_url}
