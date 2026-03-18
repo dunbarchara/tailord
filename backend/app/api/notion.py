@@ -1,14 +1,21 @@
 import logging
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import Literal
 
 from app.auth import require_api_key
 from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user, require_approved_user
-from app.models.database import Tailoring, User
-from app.services.notion_export import create_notion_page, get_or_create_parent_page, update_notion_page
+from app.models.database import JobChunk, Tailoring, User
+from app.services.notion_export import (
+    chunks_to_notion_markdown,
+    create_notion_page,
+    get_or_create_parent_page,
+    get_or_create_tailoring_container,
+    update_notion_page,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,7 +24,7 @@ router = APIRouter()
 @router.get("/notion/auth-url")
 def get_notion_auth_url(
     _: str = Depends(require_api_key),
-    user: User = Depends(get_current_user),
+    _user: User = Depends(get_current_user),
 ):
     if not settings.notion_client_id:
         raise HTTPException(status_code=503, detail="Notion integration not configured")
@@ -89,6 +96,7 @@ def notion_disconnect(
 @router.post("/notion/export/{tailoring_id}")
 def export_tailoring_to_notion(
     tailoring_id: str,
+    view: Literal["letter", "posting"] = Query(default="letter"),
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -104,27 +112,45 @@ def export_tailoring_to_notion(
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
     job = tailoring.job
-    title = job.extracted_job.get("title") if job and job.extracted_job else None
+    job_title = job.extracted_job.get("title") if job and job.extracted_job else None
     company = job.extracted_job.get("company") if job and job.extracted_job else None
-    title_parts = [p for p in [title, company] if p]
-    page_title = " — ".join(title_parts) if title_parts else "Tailoring"
+    container_title = " — ".join(p for p in [job_title, company] if p) or "Tailoring"
 
-    markdown = tailoring.generated_output
+    if view == "letter":
+        markdown = tailoring.generated_output
+        existing_page_id = tailoring.notion_page_id
+    else:
+        chunks = (
+            db.query(JobChunk)
+            .filter(
+                JobChunk.job_id == tailoring.job_id,
+                JobChunk.should_render.is_(True),
+                JobChunk.match_score != 0,
+            )
+            .order_by(JobChunk.position)
+            .all()
+        )
+        if not chunks:
+            raise HTTPException(status_code=422, detail="No enriched chunks available for posting export")
+        markdown = chunks_to_notion_markdown(chunks)
+        existing_page_id = tailoring.notion_posting_page_id
+
+    page_title = "Advocacy Letter" if view == "letter" else "Job Posting"
 
     try:
-        # Update existing page if we have one, otherwise create
-        if tailoring.notion_page_id:
+        if existing_page_id:
             updated = update_notion_page(
                 access_token=user.notion_access_token,
-                page_id=tailoring.notion_page_id,
+                page_id=existing_page_id,
                 title=page_title,
                 markdown=markdown,
             )
             if updated:
-                logger.info("Updated Notion page %s for tailoring %s", tailoring.notion_page_id, tailoring_id)
-                return {"page_url": tailoring.notion_page_url}
+                logger.info("Updated Notion %s page %s for tailoring %s", view, existing_page_id, tailoring_id)
+                page_url = tailoring.notion_page_url if view == "letter" else tailoring.notion_posting_page_url
+                return {"page_url": page_url}
 
-        # Ensure the container page exists before creating a sub-page
+        # Ensure workspace-level and per-tailoring container pages exist
         parent_page_id = get_or_create_parent_page(
             access_token=user.notion_access_token,
             existing_parent_page_id=user.notion_parent_page_id,
@@ -132,20 +158,32 @@ def export_tailoring_to_notion(
         if parent_page_id != user.notion_parent_page_id:
             user.notion_parent_page_id = parent_page_id
 
-        # Create new page (first export or previous page was deleted)
-        page_id, page_url = create_notion_page(
+        container_page_id = get_or_create_tailoring_container(
             access_token=user.notion_access_token,
             parent_page_id=parent_page_id,
+            existing_container_id=tailoring.notion_container_page_id,
+            title=container_title,
+        )
+        if container_page_id != tailoring.notion_container_page_id:
+            tailoring.notion_container_page_id = container_page_id
+
+        page_id, page_url = create_notion_page(
+            access_token=user.notion_access_token,
+            parent_page_id=container_page_id,
             title=page_title,
             markdown=markdown,
         )
     except ValueError as e:
-        logger.error("Notion export failed for tailoring %s: %s", tailoring_id, e)
+        logger.error("Notion export failed for tailoring %s (%s): %s", tailoring_id, view, e)
         raise HTTPException(status_code=502, detail=str(e))
 
-    tailoring.notion_page_id = page_id
-    tailoring.notion_page_url = page_url
+    if view == "letter":
+        tailoring.notion_page_id = page_id
+        tailoring.notion_page_url = page_url
+    else:
+        tailoring.notion_posting_page_id = page_id
+        tailoring.notion_posting_page_url = page_url
     db.commit()
 
-    logger.info("Exported tailoring %s to Notion page %s for user %s", tailoring_id, page_id, user.id)
+    logger.info("Exported tailoring %s (%s) to Notion page %s for user %s", tailoring_id, view, page_id, user.id)
     return {"page_url": page_url}

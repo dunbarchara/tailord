@@ -24,6 +24,55 @@ import type { Tailoring, ChunksResponse } from '@/types';
 
 const POLL_INTERVAL = 3000;
 
+function NotionViewRow({
+  label,
+  pageUrl,
+  exporting,
+  disabled,
+  disabledReason,
+  onExport,
+}: {
+  label: string
+  pageUrl: string | null
+  exporting: boolean
+  disabled?: boolean
+  disabledReason?: string
+  onExport: () => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-text-secondary">{label}</span>
+        {pageUrl && (
+          <a
+            href={pageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-text-link hover:underline"
+          >
+            Open
+          </a>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant={pageUrl ? 'outline' : 'default'}
+        className="w-full text-xs h-8 gap-2"
+        onClick={onExport}
+        disabled={exporting || disabled}
+        title={disabled ? disabledReason : undefined}
+      >
+        {exporting
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : pageUrl
+            ? <RotateCcw className="h-3.5 w-3.5" />
+            : <SiNotion className="h-3.5 w-3.5" />}
+        {pageUrl ? 'Refresh' : disabled ? disabledReason! : 'Export'}
+      </Button>
+    </div>
+  );
+}
+
 interface TailoringDetailProps {
   tailoringId: string;
 }
@@ -44,7 +93,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
-  const [exportingNotion, setExportingNotion] = useState(false);
+  const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
+  const [exportingNotionPosting, setExportingNotionPosting] = useState(false);
   const [notionOpen, setNotionOpen] = useState(false);
 
   useEffect(() => {
@@ -175,21 +225,27 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     }
   }
 
-  async function handleExportToNotion() {
-    setExportingNotion(true);
+  async function handleExportToNotion(view: 'letter' | 'posting') {
+    const setExporting = view === 'letter' ? setExportingNotionLetter : setExportingNotionPosting;
+    setExporting(true);
     try {
-      const res = await fetch(`/api/tailorings/${tailoringId}/export/notion`, { method: 'POST' });
+      const res = await fetch(`/api/tailorings/${tailoringId}/export/notion?view=${view}`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         toastError(data?.detail ?? 'Export failed.');
         return;
       }
-      setTailoring(prev => prev ? { ...prev, notion_page_url: data.page_url } : null);
-      toast.success(tailoring?.notion_page_url ? 'Notion page refreshed.' : 'Exported to Notion.');
+      if (view === 'letter') {
+        setTailoring(prev => prev ? { ...prev, notion_page_url: data.page_url } : null);
+        toast.success(tailoring?.notion_page_url ? 'Notion letter page refreshed.' : 'Letter exported to Notion.');
+      } else {
+        setTailoring(prev => prev ? { ...prev, notion_posting_page_url: data.page_url } : null);
+        toast.success(tailoring?.notion_posting_page_url ? 'Notion posting page refreshed.' : 'Posting exported to Notion.');
+      }
     } catch {
       toastError('Could not reach the server.');
     } finally {
-      setExportingNotion(false);
+      setExporting(false);
     }
   }
 
@@ -398,76 +454,44 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             </PopoverContent>
           </Popover>
 
-          {activeTab === 'letter' && (
-            <Popover open={notionOpen} onOpenChange={setNotionOpen}>
+          <Popover open={notionOpen} onOpenChange={setNotionOpen}>
               <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  title="Notion"
-                >
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Notion">
                   <SiNotion className="h-4 w-4" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 p-0">
                 <div className="px-4 pt-4 pb-3">
-                  <p className="text-sm font-medium text-text-primary mb-1">Export to Notion</p>
+                  <p className="text-sm font-medium text-text-primary mb-3">Export to Notion</p>
                   {!notionConnected ? (
-                    <p className="text-xs text-text-tertiary mt-2">
+                    <p className="text-xs text-text-tertiary">
                       Connect your Notion workspace in{' '}
                       <a href="/dashboard/settings" className="text-text-link hover:underline">Settings</a>{' '}
                       to export.
                     </p>
-                  ) : tailoring.notion_page_url ? (
-                    <>
-                      <p className="text-xs text-text-tertiary mb-3">Last exported to Notion.</p>
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-sunken border border-border-subtle mb-3">
-                        <SiNotion className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
-                        <a
-                          href={tailoring.notion_page_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 text-xs text-text-link hover:underline truncate"
-                        >
-                          Open in Notion
-                        </a>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full text-xs h-8 gap-2"
-                        onClick={handleExportToNotion}
-                        disabled={exportingNotion}
-                      >
-                        {exportingNotion
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <RotateCcw className="h-3.5 w-3.5" />}
-                        Refresh page
-                      </Button>
-                    </>
                   ) : (
-                    <>
-                      <p className="text-xs text-text-tertiary mb-3">
-                        Create a Notion page from this tailoring.
-                      </p>
-                      <Button
-                        size="sm"
-                        className="w-full text-xs h-8 gap-2"
-                        onClick={handleExportToNotion}
-                        disabled={exportingNotion}
-                      >
-                        {exportingNotion
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <SiNotion className="h-3.5 w-3.5" />}
-                        Export to Notion
-                      </Button>
-                    </>
+                    <div className="space-y-3">
+                      {/* Letter row */}
+                      <NotionViewRow
+                        label="Letter"
+                        pageUrl={tailoring.notion_page_url}
+                        exporting={exportingNotionLetter}
+                        onExport={() => handleExportToNotion('letter')}
+                      />
+                      {/* Posting row */}
+                      <NotionViewRow
+                        label="Posting"
+                        pageUrl={tailoring.notion_posting_page_url}
+                        exporting={exportingNotionPosting}
+                        disabled={chunksData?.enrichment_status !== 'complete'}
+                        disabledReason="Enrichment not complete"
+                        onExport={() => handleExportToNotion('posting')}
+                      />
+                    </div>
                   )}
                 </div>
               </PopoverContent>
             </Popover>
-          )}
 
           <Button
             variant="ghost"

@@ -1,19 +1,108 @@
 """
 Notion page creation and update using the native markdown API.
 
-All tailoring pages are created as sub-pages of a shared 'Tailord - Tailorings'
-container page. The container is created on first export and its ID is stored on
-the User record so subsequent exports reuse it.
+Page hierarchy:
+  Tailord - Tailorings  (workspace root, one per user)
+    └─ {Job Title — Company}  (per-tailoring container)
+        ├─ Letter
+        └─ Posting
 """
 import logging
+import re
 
 import requests
+
+from app.services.chunk_display import SOURCE_LABELS as _SOURCE_LABELS, is_display_ready
 
 logger = logging.getLogger(__name__)
 
 NOTION_VERSION = "2026-03-11"
 PARENT_PAGE_TITLE = "Tailord - Tailorings"
 TAILORD_ICON = {"type": "external", "external": {"url": "https://tailord.app/tailordicon.png"}}
+
+_ESCAPE_RE = re.compile(r'([\\~`\[\]<>{}|^])')
+_FORMATTING_RE = re.compile(r'\*+')
+_LINK_RE = re.compile(r'!?\[([^\]]*)\]\([^)]*\)')
+
+
+def _escape(text: str) -> str:
+    """Escape Notion enhanced markdown special characters, preserving bold/italic (*).."""
+    return _ESCAPE_RE.sub(r'\\\1', text)
+
+
+def _strip_links(text: str) -> str:
+    """Replace markdown links [text](url) and images ![alt](url) with their inner text."""
+    return _LINK_RE.sub(r'\1', text)
+
+
+def _strip_formatting(text: str) -> str:
+    """Remove markdown bold/italic markers (e.g. **Section**) from plain text."""
+    return _FORMATTING_RE.sub('', text).strip()
+
+
+def chunks_to_notion_markdown(chunks: list) -> str:
+    """
+    Convert enriched job chunks to Notion enhanced markdown (public mode):
+    - chunk_type='header' chunks are skipped (section field is used as the heading)
+    - score=0 (gap) chunks are omitted
+    - score=2 (strong) → green_bg toggle with rationale
+    - score=1 (partial) → yellow_bg toggle with rationale
+    - score=-1 or None (N/A) → plain bullet or paragraph, no toggle
+    """
+    lines = []
+    current_section = None
+
+    for chunk in chunks:
+        if not is_display_ready(chunk):
+            continue
+
+        score = chunk.match_score
+
+        # Omit gaps (public mode)
+        if score == 0:
+            continue
+
+        section = chunk.section
+        if section != current_section:
+            if lines:
+                lines.append("")
+            lines.append(f"## {_strip_formatting(section)}")
+            lines.append("")
+        current_section = section
+
+        content = _escape(_strip_links(chunk.content.strip()))
+
+        # N/A chunks (not scorable) render as plain text — no toggle
+        if score is None or score == -1:
+            if chunk.chunk_type == "bullet":
+                lines.append(f"- {content}")
+            else:
+                lines.append(content)
+            lines.append("")
+            continue
+
+        # Scored chunks render as toggles
+        if score == 2:
+            color_attr = ' color="green_bg"'
+        elif score == 1:
+            color_attr = ' color="yellow_bg"'
+        else:
+            color_attr = ""
+
+        lines.append(f"<details{color_attr}>")
+        lines.append(f"<summary>{content}</summary>")
+
+        if chunk.match_rationale:
+            lines.append(f"\t*{_escape(_strip_links(chunk.match_rationale.strip()))}*")
+
+        if chunk.experience_source:
+            label = _SOURCE_LABELS.get(chunk.experience_source, chunk.experience_source)
+            lines.append(f"\t*Source: {label}*")
+
+        lines.append("</details>")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def _make_session(access_token: str) -> requests.Session:
@@ -26,45 +115,81 @@ def _make_session(access_token: str) -> requests.Session:
     return session
 
 
+def _get_or_create_page(
+    session: requests.Session,
+    existing_id: str | None,
+    parent: dict,
+    title: str,
+    log_label: str,
+    markdown: str | None = None,
+) -> tuple[str, str]:
+    """
+    Verify an existing page is accessible (by patching its title) or create a new one.
+    Returns (page_id, page_url).
+    """
+    if existing_id:
+        res = session.patch(
+            f"https://api.notion.com/v1/pages/{existing_id}",
+            json={"properties": {"title": [{"text": {"content": title}}]}},
+        )
+        if res.status_code == 200:
+            return existing_id, res.json().get("url", "")
+        logger.warning("Notion %s %s inaccessible (%s), creating new", log_label, existing_id, res.status_code)
+
+    body: dict = {
+        "parent": parent,
+        "icon": TAILORD_ICON,
+        "properties": {"title": [{"text": {"content": title}}]},
+    }
+    if markdown is not None:
+        body["markdown"] = markdown
+
+    res = session.post("https://api.notion.com/v1/pages", json=body)
+    if res.status_code != 200:
+        logger.error("Notion %s creation failed: %s %s", log_label, res.status_code, res.text)
+        raise ValueError(f"Notion API error {res.status_code}: {res.json().get('message', res.text)}")
+
+    page = res.json()
+    logger.info("Created Notion %s %s", log_label, page["id"])
+    return page["id"], page["url"]
+
+
 def get_or_create_parent_page(
     access_token: str,
     existing_parent_page_id: str | None,
 ) -> str:
     """
-    Return the ID of the 'Tailord - Tailorings' container page.
-
-    If existing_parent_page_id is provided and still accessible, return it.
-    Otherwise create a new workspace-level container page and return its ID.
+    Return the ID of the workspace-level 'Tailord - Tailorings' container page.
     """
     session = _make_session(access_token)
-
-    if existing_parent_page_id:
-        res = session.patch(
-            f"https://api.notion.com/v1/pages/{existing_parent_page_id}",
-            json={"properties": {"title": [{"text": {"content": PARENT_PAGE_TITLE}}]}},
-        )
-        if res.status_code == 200:
-            return existing_parent_page_id
-        logger.warning(
-            "Notion parent page %s inaccessible (%s), creating new one",
-            existing_parent_page_id, res.status_code,
-        )
-
-    res = session.post(
-        "https://api.notion.com/v1/pages",
-        json={
-            "parent": {"type": "workspace", "workspace": True},
-            "icon": TAILORD_ICON,
-            "properties": {"title": [{"text": {"content": PARENT_PAGE_TITLE}}]},
-        },
+    page_id, _ = _get_or_create_page(
+        session=session,
+        existing_id=existing_parent_page_id,
+        parent={"type": "workspace", "workspace": True},
+        title=PARENT_PAGE_TITLE,
+        log_label="parent page",
     )
-    if res.status_code != 200:
-        logger.error("Notion parent page creation failed: %s %s", res.status_code, res.text)
-        raise ValueError(f"Notion API error {res.status_code}: {res.json().get('message', res.text)}")
-
-    page_id = res.json()["id"]
-    logger.info("Created Notion parent page %s", page_id)
     return page_id
+
+
+def get_or_create_tailoring_container(
+    access_token: str,
+    parent_page_id: str,
+    existing_container_id: str | None,
+    title: str,
+) -> str:
+    """
+    Return the ID of the per-tailoring container page nested under parent_page_id.
+    """
+    session = _make_session(access_token)
+    container_id, _ = _get_or_create_page(
+        session=session,
+        existing_id=existing_container_id,
+        parent={"type": "page_id", "page_id": parent_page_id},
+        title=title,
+        log_label="tailoring container",
+    )
+    return container_id
 
 
 def create_notion_page(
@@ -78,22 +203,14 @@ def create_notion_page(
     Returns (page_id, page_url).
     """
     session = _make_session(access_token)
-
-    res = session.post(
-        "https://api.notion.com/v1/pages",
-        json={
-            "parent": {"type": "page_id", "page_id": parent_page_id},
-            "icon": TAILORD_ICON,
-            "properties": {"title": [{"text": {"content": title}}]},
-            "markdown": markdown,
-        },
+    return _get_or_create_page(
+        session=session,
+        existing_id=None,
+        parent={"type": "page_id", "page_id": parent_page_id},
+        title=title,
+        log_label="content page",
+        markdown=markdown,
     )
-    if res.status_code != 200:
-        logger.error("Notion page creation failed: %s %s", res.status_code, res.text)
-        raise ValueError(f"Notion API error {res.status_code}: {res.json().get('message', res.text)}")
-
-    page = res.json()
-    return page["id"], page["url"]
 
 
 def update_notion_page(
