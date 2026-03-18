@@ -92,12 +92,17 @@ def chunks_to_notion_markdown(chunks: list) -> str:
         lines.append(f"<details{color_attr}>")
         lines.append(f"<summary>{content}</summary>")
 
-        if chunk.match_rationale:
-            lines.append(f"\t*{_escape(_strip_links(chunk.match_rationale.strip()))}*")
-
-        if chunk.experience_source:
-            label = _SOURCE_LABELS.get(chunk.experience_source, chunk.experience_source)
-            lines.append(f"\t*Source: {label}*")
+        if chunk.match_rationale or chunk.experience_source:
+            lines.append('\t<callout color="gray_bg">')
+            if chunk.match_rationale:
+                rationale = _escape(_strip_links(chunk.match_rationale.strip()))
+                lines.append(f'\t\t{rationale}')
+            if chunk.match_rationale and chunk.experience_source:
+                lines.append('\t\t---')
+            if chunk.experience_source:
+                label = _SOURCE_LABELS.get(chunk.experience_source, chunk.experience_source)
+                lines.append(f'\t\t*Source: {label}*')
+            lines.append('\t</callout>')
 
         lines.append("</details>")
         lines.append("")

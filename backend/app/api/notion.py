@@ -150,6 +150,11 @@ def export_tailoring_to_notion(
                 page_url = tailoring.notion_page_url if view == "letter" else tailoring.notion_posting_page_url
                 return {"page_url": page_url}
 
+        # Lock user and tailoring rows before container creation to prevent
+        # concurrent exports racing to create duplicate parent/container pages.
+        user = db.query(User).filter(User.id == user.id).with_for_update().first()
+        tailoring = db.query(Tailoring).filter(Tailoring.id == tailoring_id).with_for_update().first()
+
         # Ensure workspace-level and per-tailoring container pages exist
         parent_page_id = get_or_create_parent_page(
             access_token=user.notion_access_token,

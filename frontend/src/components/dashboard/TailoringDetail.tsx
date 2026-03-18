@@ -111,7 +111,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         }
         const [tailoringData, userData] = await Promise.all([
           tailoringRes.json(),
-          userRes.ok ? userRes.json() : {},
+          userRes.ok ? userRes.json() : null,
         ]);
         setTailoring(tailoringData);
         setNotionConnected(!!userData?.notion_workspace_name);
@@ -476,6 +476,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                         label="Letter"
                         pageUrl={tailoring.notion_page_url}
                         exporting={exportingNotionLetter}
+                        disabled={exportingNotionPosting}
                         onExport={() => handleExportToNotion('letter')}
                       />
                       {/* Posting row */}
@@ -483,8 +484,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                         label="Posting"
                         pageUrl={tailoring.notion_posting_page_url}
                         exporting={exportingNotionPosting}
-                        disabled={chunksData?.enrichment_status !== 'complete'}
-                        disabledReason="Enrichment not complete"
+                        disabled={exportingNotionLetter || chunksData?.enrichment_status !== 'complete'}
+                        disabledReason={chunksData?.enrichment_status !== 'complete' ? 'Enrichment not complete' : undefined}
                         onExport={() => handleExportToNotion('posting')}
                       />
                     </div>
