@@ -109,6 +109,8 @@ class Tailoring(Base):
     letter_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     posting_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     public_slug: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    notion_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_page_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     @hybrid_property
     def is_public(self) -> bool:

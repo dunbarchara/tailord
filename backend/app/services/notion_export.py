@@ -10,12 +10,15 @@ Handles the subset of Markdown that the tailoring template produces:
 """
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import requests
 
 logger = logging.getLogger(__name__)
 
 NOTION_VERSION = "2022-06-28"
 NOTION_BLOCKS_LIMIT = 100  # Notion max children per request
+DELETE_WORKERS = 8          # Parallel DELETE threads
 
 
 # ---------------------------------------------------------------------------
@@ -115,36 +118,121 @@ def markdown_to_notion_blocks(md: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Notion API — page creation
+# Notion API — session-based helpers
 # ---------------------------------------------------------------------------
+
+def _make_session(access_token: str) -> requests.Session:
+    """Create a session with keep-alive and Notion auth headers."""
+    session = requests.Session()
+    session.headers.update({
+        "Authorization": f"Bearer {access_token}",
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+    })
+    return session
+
+
+def _append_blocks(session: requests.Session, page_id: str, blocks: list[dict]) -> None:
+    """Append blocks to a page in batches of 100, reusing the session connection."""
+    for i in range(0, len(blocks), NOTION_BLOCKS_LIMIT):
+        batch = blocks[i:i + NOTION_BLOCKS_LIMIT]
+        res = session.patch(
+            f"https://api.notion.com/v1/blocks/{page_id}/children",
+            json={"children": batch},
+        )
+        if res.status_code != 200:
+            logger.error("Notion block append failed: %s %s", res.status_code, res.text)
+            break
+
+
+def _clear_page_blocks(session: requests.Session, page_id: str) -> None:
+    """
+    Archive all existing child blocks on a page.
+    Fetches block IDs sequentially (must be serial), then deletes in parallel.
+    """
+    block_ids: list[str] = []
+    cursor = None
+
+    while True:
+        params: dict = {"page_size": 100}
+        if cursor:
+            params["start_cursor"] = cursor
+        res = session.get(
+            f"https://api.notion.com/v1/blocks/{page_id}/children",
+            params=params,
+        )
+        if res.status_code != 200:
+            logger.warning("Could not fetch blocks to clear: %s", res.status_code)
+            return
+        data = res.json()
+        block_ids.extend(b["id"] for b in data.get("results", []))
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+
+    if not block_ids:
+        return
+
+    # Delete all blocks in parallel — each uses the shared session (connection reuse)
+    def delete_block(block_id: str) -> None:
+        session.delete(f"https://api.notion.com/v1/blocks/{block_id}")
+
+    with ThreadPoolExecutor(max_workers=DELETE_WORKERS) as pool:
+        futures = {pool.submit(delete_block, bid): bid for bid in block_ids}
+        for future in as_completed(futures):
+            future.result()  # surface any exceptions
+
+    logger.debug("Cleared %d blocks from Notion page %s", len(block_ids), page_id)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def update_notion_page(
+    access_token: str,
+    page_id: str,
+    title: str,
+    blocks: list[dict],
+) -> bool:
+    """
+    Update an existing Notion page — refresh title and replace all blocks.
+    Returns True on success, False if the page is inaccessible (deleted/revoked).
+    """
+    session = _make_session(access_token)
+
+    res = session.patch(
+        f"https://api.notion.com/v1/pages/{page_id}",
+        json={"properties": {"title": [{"text": {"content": title}}]}},
+    )
+    if res.status_code != 200:
+        logger.warning("Notion page %s inaccessible (%s), will create new", page_id, res.status_code)
+        return False
+
+    _clear_page_blocks(session, page_id)
+    _append_blocks(session, page_id, blocks)
+    return True
+
 
 def create_notion_page(
     access_token: str,
     title: str,
     blocks: list[dict],
-) -> str:
+) -> tuple[str, str]:
     """
     Create a top-level Notion page with the given title and blocks.
-    Handles the 100-block-per-request limit by appending in batches.
-    Returns the URL of the created page.
+    Returns (page_id, page_url).
     """
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json",
-    }
+    session = _make_session(access_token)
 
-    # Create the page with up to 100 blocks
-    first_batch = blocks[:NOTION_BLOCKS_LIMIT]
-    payload = {
-        "parent": {"type": "workspace", "workspace": True},
-        "properties": {
-            "title": [{"text": {"content": title}}],
+    res = session.post(
+        "https://api.notion.com/v1/pages",
+        json={
+            "parent": {"type": "workspace", "workspace": True},
+            "properties": {"title": [{"text": {"content": title}}]},
+            "children": blocks[:NOTION_BLOCKS_LIMIT],
         },
-        "children": first_batch,
-    }
-
-    res = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
+    )
     if res.status_code != 200:
         logger.error("Notion page creation failed: %s %s", res.status_code, res.text)
         raise ValueError(f"Notion API error {res.status_code}: {res.json().get('message', res.text)}")
@@ -153,19 +241,7 @@ def create_notion_page(
     page_id = page["id"]
     page_url = page["url"]
 
-    # Append remaining blocks in batches of 100
-    remaining = blocks[NOTION_BLOCKS_LIMIT:]
-    while remaining:
-        batch = remaining[:NOTION_BLOCKS_LIMIT]
-        remaining = remaining[NOTION_BLOCKS_LIMIT:]
-        append_res = requests.patch(
-            f"https://api.notion.com/v1/blocks/{page_id}/children",
-            headers=headers,
-            json={"children": batch},
-        )
-        if append_res.status_code != 200:
-            logger.error("Notion block append failed: %s %s", append_res.status_code, append_res.text)
-            # Page was created — return URL even if append partially failed
-            break
+    if len(blocks) > NOTION_BLOCKS_LIMIT:
+        _append_blocks(session, page_id, blocks[NOTION_BLOCKS_LIMIT:])
 
-    return page_url
+    return page_id, page_url
