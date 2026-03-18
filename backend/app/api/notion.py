@@ -8,7 +8,7 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user, require_approved_user
 from app.models.database import Tailoring, User
-from app.services.notion_export import create_notion_page, update_notion_page
+from app.services.notion_export import create_notion_page, get_or_create_parent_page, update_notion_page
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -124,9 +124,18 @@ def export_tailoring_to_notion(
                 logger.info("Updated Notion page %s for tailoring %s", tailoring.notion_page_id, tailoring_id)
                 return {"page_url": tailoring.notion_page_url}
 
+        # Ensure the container page exists before creating a sub-page
+        parent_page_id = get_or_create_parent_page(
+            access_token=user.notion_access_token,
+            existing_parent_page_id=user.notion_parent_page_id,
+        )
+        if parent_page_id != user.notion_parent_page_id:
+            user.notion_parent_page_id = parent_page_id
+
         # Create new page (first export or previous page was deleted)
         page_id, page_url = create_notion_page(
             access_token=user.notion_access_token,
+            parent_page_id=parent_page_id,
             title=page_title,
             markdown=markdown,
         )

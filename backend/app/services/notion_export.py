@@ -1,9 +1,9 @@
 """
 Notion page creation and update using the native markdown API.
 
-Notion supports passing markdown directly to the pages API — no block
-conversion required. Updates use the replace_content command to replace
-all page content in a single request.
+All tailoring pages are created as sub-pages of a shared 'Tailord - Tailorings'
+container page. The container is created on first export and its ID is stored on
+the User record so subsequent exports reuse it.
 """
 import logging
 
@@ -12,6 +12,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 NOTION_VERSION = "2026-03-11"
+PARENT_PAGE_TITLE = "Tailord - Tailorings"
 
 
 def _make_session(access_token: str) -> requests.Session:
@@ -24,13 +25,54 @@ def _make_session(access_token: str) -> requests.Session:
     return session
 
 
+def get_or_create_parent_page(
+    access_token: str,
+    existing_parent_page_id: str | None,
+) -> str:
+    """
+    Return the ID of the 'Tailord - Tailorings' container page.
+
+    If existing_parent_page_id is provided and still accessible, return it.
+    Otherwise create a new workspace-level container page and return its ID.
+    """
+    session = _make_session(access_token)
+
+    if existing_parent_page_id:
+        res = session.patch(
+            f"https://api.notion.com/v1/pages/{existing_parent_page_id}",
+            json={"properties": {"title": [{"text": {"content": PARENT_PAGE_TITLE}}]}},
+        )
+        if res.status_code == 200:
+            return existing_parent_page_id
+        logger.warning(
+            "Notion parent page %s inaccessible (%s), creating new one",
+            existing_parent_page_id, res.status_code,
+        )
+
+    res = session.post(
+        "https://api.notion.com/v1/pages",
+        json={
+            "parent": {"type": "workspace", "workspace": True},
+            "properties": {"title": [{"text": {"content": PARENT_PAGE_TITLE}}]},
+        },
+    )
+    if res.status_code != 200:
+        logger.error("Notion parent page creation failed: %s %s", res.status_code, res.text)
+        raise ValueError(f"Notion API error {res.status_code}: {res.json().get('message', res.text)}")
+
+    page_id = res.json()["id"]
+    logger.info("Created Notion parent page %s", page_id)
+    return page_id
+
+
 def create_notion_page(
     access_token: str,
+    parent_page_id: str,
     title: str,
     markdown: str,
 ) -> tuple[str, str]:
     """
-    Create a top-level Notion page from a markdown string.
+    Create a Notion sub-page under parent_page_id from a markdown string.
     Returns (page_id, page_url).
     """
     session = _make_session(access_token)
@@ -38,7 +80,7 @@ def create_notion_page(
     res = session.post(
         "https://api.notion.com/v1/pages",
         json={
-            "parent": {"type": "workspace", "workspace": True},
+            "parent": {"type": "page_id", "page_id": parent_page_id},
             "properties": {"title": [{"text": {"content": title}}]},
             "markdown": markdown,
         },
@@ -63,7 +105,6 @@ def update_notion_page(
     """
     session = _make_session(access_token)
 
-    # Update title
     title_res = session.patch(
         f"https://api.notion.com/v1/pages/{page_id}",
         json={"properties": {"title": [{"text": {"content": title}}]}},
@@ -72,7 +113,6 @@ def update_notion_page(
         logger.warning("Notion page %s inaccessible (%s), will create new", page_id, title_res.status_code)
         return False
 
-    # Replace all content
     content_res = session.patch(
         f"https://api.notion.com/v1/pages/{page_id}/markdown",
         json={
