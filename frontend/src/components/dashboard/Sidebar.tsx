@@ -9,6 +9,7 @@ import {
   Briefcase,
   Plus,
   FileText,
+  Loader2,
   Settings,
   Moon,
   Sun,
@@ -198,10 +199,16 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
                         : 'text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
                     )}
                   >
-                    <FileText className="h-4 w-4 mt-0.5 flex-shrink-0 text-text-tertiary" />
+                    {tailoring.generation_status === 'generating'
+                      ? <Loader2 className="h-4 w-4 mt-0.5 flex-shrink-0 text-brand-primary animate-spin" />
+                      : <FileText className="h-4 w-4 mt-0.5 flex-shrink-0 text-text-tertiary" />}
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium leading-tight">{label}</p>
-                      <p className="truncate text-xs text-text-tertiary mt-0.5">{tailoring.company ?? ''}</p>
+                      <p className="truncate text-xs text-text-tertiary mt-0.5">
+                        {tailoring.generation_status === 'generating' && !tailoring.company
+                          ? 'Generating...'
+                          : tailoring.company ?? ''}
+                      </p>
                     </div>
                   </Link>
                   <button

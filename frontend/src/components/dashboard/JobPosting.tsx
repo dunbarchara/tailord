@@ -13,6 +13,8 @@ interface JobPostingProps {
   jobUrl: string | null;
   publicMode?: boolean;
   hideHeader?: boolean;
+  /** Whether the main tailoring generation has finished. When false, the posting analysis hasn't started yet. */
+  generationReady?: boolean;
 }
 
 
@@ -169,7 +171,7 @@ function SectionBlock({
   );
 }
 
-export function JobPosting({ data, error, title, company, jobUrl, publicMode, hideHeader }: JobPostingProps) {
+export function JobPosting({ data, error, title, company, jobUrl, publicMode, hideHeader, generationReady }: JobPostingProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (error) {
@@ -217,7 +219,18 @@ export function JobPosting({ data, error, title, company, jobUrl, publicMode, hi
 
       {/* Sections */}
       {groups.size === 0 ? (
-        <p className="text-sm text-text-tertiary italic">No job posting data available.</p>
+        <div className="text-sm text-text-tertiary">
+          {(generationReady === false) || data.enrichment_status === 'pending' || data.enrichment_status === 'processing' ? (
+            <div className="flex items-start gap-2.5">
+              <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 mt-0.5" />
+              <span>
+                Deeper analysis is running in the background — this view will fill in automatically when complete.
+              </span>
+            </div>
+          ) : (
+            <p className="italic">No job posting data available.</p>
+          )}
+        </div>
       ) : (
         Array.from(groups.entries()).map(([section, chunks]) => (
           <SectionBlock

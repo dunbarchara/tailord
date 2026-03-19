@@ -5,4 +5,5 @@ def get_db():
     try:
         yield db
     finally:
+        db.rollback()  # no-op if already committed; ensures no dirty connection returns to pool
         db.close()

@@ -11,28 +11,26 @@ Two phases, clear split:
 
 ## Phase 1 — User-Facing (Days A1–A3)
 
-### Day A1 — Streaming + Perceived Performance
+### Day A1 — Streaming + Perceived Performance ✅
 
 **Goal:** The tailoring generation flow feels fast. Users start reading their document within seconds, not after a 60–90 second blank wait.
 
 **Why first:** This is the single highest-leverage UX change available. Wall-clock time is hard to eliminate across four sequential LLM + scrape operations, but perceived time can drop dramatically. Every other user-facing feature lands better if the baseline generation experience doesn't feel broken.
 
-#### 1. Stream the tailoring generation output
-- [ ] Switch `generate_tailoring()` to `stream=True` on the OpenAI SDK call
-- [ ] Change `POST /tailorings` and `POST /tailorings/{id}/regenerate` to return `StreamingResponse` using SSE (`text/event-stream`)
-- [ ] Emit named stage events before generation begins:
-  - `event: stage` / `data: scraping` — Playwright fetch starts
-  - `event: stage` / `data: extracting` — job extraction LLM call starts
-  - `event: stage` / `data: matching` — requirement matching starts
-  - `event: stage` / `data: generating` — tailoring generation starts, then token stream follows
-- [ ] Emit `data: <token>` events during generation, `data: [DONE]` on completion
-- [ ] Persist completed output to DB only after `[DONE]`
+**Approach taken:** Phase list with elapsed timers (Claude Code style) + early redirect, rather than token streaming. Token streaming added backend complexity without meaningful UX gain given the ~10s generation window.
 
-#### 2. Frontend — live generation view
-- [ ] Replace single `fetch` call in `NewTailoringForm` with `fetch` + `ReadableStream` consumer
-- [ ] Stage indicator updates as each stage event arrives: "Fetching job posting… → Extracting requirements… → Matching to your profile… → Generating document…"
-- [ ] Tokens append to local state as they arrive; render with `ReactMarkdown` updating live — user is reading within 2–3 seconds of generation starting
-- [ ] `TailoringDetail` document view enters a live-typing state during regeneration rather than going opaque with a spinner
+#### 1. SSE stream — scraping + extracting only (early redirect)
+- [x] `POST /tailorings` and `POST /tailorings/{id}/regenerate` return `StreamingResponse` (SSE)
+- [x] Emit `event: stage` / `data: scraping` and `event: stage` / `data: extracting` as each phase begins
+- [x] On extraction complete: create `Job` + `Tailoring` records with `generation_status="generating"`, emit `event: ready` with tailoring ID
+- [x] Matching + generation run in a `BackgroundTasks` task (`_finalize_tailoring`), updating `generation_stage` and `generation_started_at` in DB
+- [x] Added `generation_status`, `generation_stage`, `generation_error`, `generation_started_at` columns to `Tailoring` + Alembic migration
+
+#### 2. Frontend — phase list + early redirect
+- [x] `NewTailoringForm`: phase list with per-phase elapsed timers (scraping, extracting); redirect to `/dashboard/tailorings/{id}` on `event: ready`
+- [x] `TailoringDetail`: polls `GET /tailorings/{id}` every 2s while `generation_status === 'generating'`; shows matching/writing phase list with server-side elapsed computed from `generation_started_at`
+- [x] 1s tick effect forces elapsed re-renders during background generation
+- [x] `JobPosting` tab: contextual loading message when `generationReady === false` or `enrichment_status` is pending/processing
 
 ---
 
@@ -188,7 +186,7 @@ Two phases, clear split:
 
 | Day | Phase | Focus | Key output |
 |-----|-------|-------|-----------|
-| A1 | User | Streaming + perceived performance | SSE generation stream, stage progress events, live typing view |
+| A1 ✅ | User | Streaming + perceived performance | SSE stage events, early redirect, phase timers, background generation with DB polling |
 | A2 | User | Public profile page | `/u/{slug}`, `username_slug` on users, Settings profile URL |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
