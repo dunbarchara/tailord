@@ -10,6 +10,7 @@ from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user, require_approved_user
 from app.models.database import JobChunk, Tailoring, User
 from app.services.notion_export import (
+    NotionAuthError,
     chunks_to_notion_markdown,
     create_notion_page,
     get_or_create_parent_page,
@@ -182,6 +183,15 @@ def export_tailoring_to_notion(
             title=page_title,
             markdown=markdown,
         )
+    except NotionAuthError:
+        logger.warning("Notion access revoked for user %s — clearing token", user.id)
+        user.notion_access_token = None
+        user.notion_bot_id = None
+        user.notion_workspace_id = None
+        user.notion_workspace_name = None
+        user.notion_parent_page_id = None
+        db.commit()
+        raise HTTPException(status_code=403, detail="notion_disconnected")
     except ValueError as e:
         logger.error("Notion export failed for tailoring %s (%s): %s", tailoring_id, view, e)
         raise HTTPException(status_code=502, detail=str(e))

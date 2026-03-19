@@ -14,6 +14,11 @@ class LLMRefusalError(Exception):
     pass
 
 
+class LLMTruncationError(Exception):
+    """Raised when the LLM response was cut off mid-output (finish_reason == 'length')."""
+    pass
+
+
 def strip_json_fences(text: str) -> str:
     """Remove markdown code fences that small LLMs emit despite instructions."""
     text = text.strip()
@@ -110,6 +115,11 @@ def llm_parse(
     )
     logger.debug("llm_parse response | raw content:\n%s", raw_content)
 
+    if finish_reason == "length":
+        raise LLMTruncationError(
+            f"LLM response truncated (finish_reason=length) for schema={response_model.__name__}, model={model}"
+        )
+
     return result
 
 
@@ -156,5 +166,10 @@ def llm_generate(
         finish_reason, elapsed,
     )
     logger.debug("llm_generate response | content:\n%s", content)
+
+    if finish_reason == "length":
+        raise LLMTruncationError(
+            f"LLM response truncated (finish_reason=length) for label={label}, model={model}"
+        )
 
     return content

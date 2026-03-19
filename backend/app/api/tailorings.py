@@ -28,6 +28,25 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _validate_profile(profile: dict) -> None:
+    """
+    Raise HTTPException 422 if the extracted profile is too thin to generate a useful tailoring.
+    Checks that at least one of: resume work experience, resume summary, or GitHub repos is present.
+    """
+    resume = profile.get("resume") or {}
+    has_work = bool(resume.get("work_experience"))
+    has_summary = bool((resume.get("summary") or "").strip())
+    has_github = bool(profile.get("github_repos"))
+    if not (has_work or has_summary or has_github):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Your profile doesn't have enough information to generate a tailoring. "
+                "Make sure your resume includes a summary or work experience, or add GitHub repos."
+            ),
+        )
+
+
 def _serialize_chunk(c: JobChunk) -> dict:
     return {
         "id": str(c.id),
@@ -106,6 +125,7 @@ async def create_tailoring(
             status_code=422,
             detail="No experience found — upload a resume or add a GitHub profile first.",
         )
+    _validate_profile(experience.extracted_profile)
 
     extracted_job, job_markdown = await _fetch_and_extract_job(body.job_url)
 
@@ -186,6 +206,7 @@ async def regenerate_tailoring(
     ).first()
     if not experience or not experience.extracted_profile:
         raise HTTPException(status_code=422, detail="No experience found.")
+    _validate_profile(experience.extracted_profile)
 
     job = tailoring.job
     job_url = job.job_url

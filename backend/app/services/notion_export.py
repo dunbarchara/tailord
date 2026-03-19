@@ -16,6 +16,12 @@ from app.services.chunk_display import SOURCE_LABELS as _SOURCE_LABELS, is_displ
 
 logger = logging.getLogger(__name__)
 
+
+class NotionAuthError(Exception):
+    """Raised when Notion returns 401 — the user has revoked the integration's access."""
+    pass
+
+
 NOTION_VERSION = "2026-03-11"
 PARENT_PAGE_TITLE = "Tailord - Tailorings"
 TAILORD_ICON = {"type": "external", "external": {"url": "https://tailord.app/tailordicon.png"}}
@@ -137,6 +143,8 @@ def _get_or_create_page(
             f"https://api.notion.com/v1/pages/{existing_id}",
             json={"properties": {"title": [{"text": {"content": title}}]}},
         )
+        if res.status_code == 401:
+            raise NotionAuthError("Notion access revoked")
         if res.status_code == 200:
             return existing_id, res.json().get("url", "")
         logger.warning("Notion %s %s inaccessible (%s), creating new", log_label, existing_id, res.status_code)
@@ -150,6 +158,8 @@ def _get_or_create_page(
         body["markdown"] = markdown
 
     res = session.post("https://api.notion.com/v1/pages", json=body)
+    if res.status_code == 401:
+        raise NotionAuthError("Notion access revoked")
     if res.status_code != 200:
         logger.error("Notion %s creation failed: %s %s", log_label, res.status_code, res.text)
         raise ValueError(f"Notion API error {res.status_code}: {res.json().get('message', res.text)}")
@@ -263,6 +273,8 @@ def update_notion_page(
         f"https://api.notion.com/v1/pages/{page_id}",
         json={"properties": {"title": [{"text": {"content": title}}]}},
     )
+    if title_res.status_code == 401:
+        raise NotionAuthError("Notion access revoked")
     if title_res.status_code != 200:
         logger.warning("Notion page %s inaccessible (%s), will create new", page_id, title_res.status_code)
         return False
