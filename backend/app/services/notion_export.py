@@ -159,6 +159,12 @@ def _get_or_create_page(
     return page["id"], page["url"]
 
 
+_PARENT_PAGE_DESCRIPTION = (
+    "Tailorings exported from [**Tailord**](https://tailord.app/) — "
+    "your advocacy letters and job posting analyses, one page per position."
+)
+
+
 def get_or_create_parent_page(
     access_token: str,
     existing_parent_page_id: str | None,
@@ -173,6 +179,7 @@ def get_or_create_parent_page(
         parent={"type": "workspace", "workspace": True},
         title=PARENT_PAGE_TITLE,
         log_label="parent page",
+        markdown=_PARENT_PAGE_DESCRIPTION,
     )
     return page_id
 
@@ -182,10 +189,31 @@ def get_or_create_tailoring_container(
     parent_page_id: str,
     existing_container_id: str | None,
     title: str,
+    tailoring_id: str | None = None,
+    job_title: str | None = None,
+    company: str | None = None,
+    job_url: str | None = None,
 ) -> str:
     """
     Return the ID of the per-tailoring container page nested under parent_page_id.
     """
+    lines = []
+
+    if job_title or company:
+        position = f"**{job_title}**" if job_title else None
+        org = f"**{company}**" if company else None
+        heading = " at ".join(p for p in [position, org] if p)
+        lines.append(f"[{heading}]({job_url})" if job_url else heading)
+
+    lines.append(
+        "\nThis page contains your Tailord-generated materials for this position — "
+        "your advocacy letter and an experience-matched analysis of the job posting."
+    )
+
+    if tailoring_id:
+        tailord_url = f"https://tailord.app/dashboard/tailorings/{tailoring_id}"
+        lines.append(f"[Open this tailoring in Tailord →]({tailord_url})")
+
     session = _make_session(access_token)
     container_id, _ = _get_or_create_page(
         session=session,
@@ -193,6 +221,7 @@ def get_or_create_tailoring_container(
         parent={"type": "page_id", "page_id": parent_page_id},
         title=title,
         log_label="tailoring container",
+        markdown="\n".join(lines) if lines else None,
     )
     return container_id
 

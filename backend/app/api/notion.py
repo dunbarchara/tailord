@@ -168,6 +168,10 @@ def export_tailoring_to_notion(
             parent_page_id=parent_page_id,
             existing_container_id=tailoring.notion_container_page_id,
             title=container_title,
+            tailoring_id=tailoring_id,
+            job_title=job_title,
+            company=company,
+            job_url=job.job_url if job else None,
         )
         if container_page_id != tailoring.notion_container_page_id:
             tailoring.notion_container_page_id = container_page_id
