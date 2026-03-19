@@ -464,6 +464,57 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 
 ---
 
+### Day 12 — Testing + CI/CD Gate + Staging Environment
+
+**Goal:** Merges to `main` are gated by automated tests; a staging environment exists in Azure with near-zero idle cost.
+
+---
+
+#### 1. Testing — Backend (FastAPI / pytest)
+
+- [ ] Set up pytest with `pytest-asyncio` and a test database (SQLite in-memory or PostgreSQL via `pytest-postgresql`)
+- [ ] Unit tests: pure functions first — `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), slug generation
+- [ ] Integration tests: FastAPI `TestClient` for key endpoints — tailoring CRUD, share/unshare, public slug lookup, Notion export flow (mock Notion API calls with `responses` or `httpx`'s mock transport)
+- [ ] Fixture strategy: factory helpers for `User`, `Tailoring`, `Job`, `JobChunk` — avoid duplicating setup across tests
+- [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — not coverage theatre, focus on the critical paths (auth checks, ownership guards, enrichment status gating)
+
+#### 2. Testing — Frontend (Jest / Playwright)
+
+- [ ] Unit tests: `InlineMarkdown` rendering, `scoreBarColor` logic, `groupBySection` filtering, share popover state transitions
+- [ ] E2E (Playwright): sign-in → create tailoring → view posting tab → share → visit public URL — covers the full happy path against a real backend (or seeded test db)
+- [ ] Consider `next-test-api-route-handler` for testing Next.js API proxy routes in isolation
+
+#### 3. GitHub Actions — CI Gate
+
+- [ ] `.github/workflows/ci.yml`: runs on every PR targeting `main`
+  - Backend: `uv run pytest` with DB fixture
+  - Frontend: `npm run lint && npm run build` (type-check + build validation)
+  - Frontend unit tests: `npm test`
+- [ ] Require status checks to pass before merge (branch protection rule on `main`)
+- [ ] Run CI on `push` to `main` as well, to catch any direct commits
+- [ ] Keep CI fast — target < 3 minutes for the gate to not become friction
+  - Cache `uv` deps and `node_modules` between runs
+  - Run backend and frontend checks in parallel jobs
+
+#### 4. Staging Environment — Azure Container Apps Revisions
+
+- [ ] Investigate Azure Container Apps **revision-based staging**:
+  - Create a `staging` revision (or label) alongside the `prod` revision within the same Container App
+  - Route 100% traffic to `prod` revision; `staging` revision receives 0% external traffic but is accessible via its revision-specific URL for testing
+  - Set `staging` revision's min replicas = 0 and max replicas = 1 — scales to zero when not in use (zero idle cost)
+  - Prod revision: min replicas = 1 (always on)
+- [ ] Deployment workflow update (`.github/workflows/deploy-azure.yml`):
+  - On merge to `main`: deploy to `staging` revision first, run smoke test (HTTP 200 on `/health`), then promote to `prod` via traffic split update
+  - On manual trigger or tag: promote directly to prod
+- [ ] Staging database: evaluate options
+  - Option A: separate `staging` PostgreSQL instance (cleanest isolation, extra cost ~$15/mo)
+  - Option B: shared database with a `staging_` schema prefix (cheaper, some risk of data bleed)
+  - Option C: same DB, staging-only users/data — acceptable for a solo project if test data is clearly labelled
+- [ ] Environment-specific config: `ENVIRONMENT=staging` env var; backend logs and error responses can be more verbose in staging
+- [ ] Investigate whether Cloudflare can route `staging.tailord.app` → staging revision URL (proxied CNAME to revision FQDN)
+
+---
+
 ## Day-by-Day Summary
 
 | Day | Focus | Output | Status |
@@ -477,13 +528,14 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
 | 5.6 | Enriched job posting view + per-view public sharing | Posting tab (score bars, expandable rationale, content alignment); `letter_public`/`posting_public` per-view sharing with redesigned popover, muted public color token, tab switcher on public page | ✅ |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings; legal pages live; Terraform Key Vault secrets for Notion | ✅ |
-| 7 | Notion export | One-click export, Markdown→Notion blocks | |
+| 7 | Notion export | One-click export (Letter + Posting), page hierarchy, enriched chunk toggles, persistent links, race condition protection | ✅ |
 | 8 | Notion polish | Parent page selection, stored export URL | |
 | 8.5 | Pipeline hardening (deferred) | Empty profile detection, LLM output validation, token budgeting, job URL caching, prompt iteration | |
 | 8.6 | Streaming + perceived performance | SSE streaming for tailoring generation, stage progress events, streaming-aware regeneration | |
 | 9 | Public portfolio | `/u/{slug}` page with public tailorings | |
 | 10 | Documentation + cleanup | README, remove legacy code, screenshots | |
 | 11 | Security review | Prompt injection, SQL injection, token abuse, cost controls, SSRF | |
+| 12 | Testing + CI gate + staging | pytest + Jest/Playwright, GitHub Actions PR gate, Azure revision-based staging with scale-to-zero | |
 
 ---
 
