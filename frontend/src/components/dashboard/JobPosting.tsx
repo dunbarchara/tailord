@@ -15,11 +15,6 @@ interface JobPostingProps {
   hideHeader?: boolean;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  resume: 'Resume',
-  github: 'GitHub',
-  user_input: 'Direct Input',
-};
 
 function stripMarkdown(text: string): string {
   return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
@@ -42,18 +37,12 @@ function InlineMarkdown({ text }: { text: string }) {
         }
         const linkMatch = part.match(/^\[([^\]]+)\]\([^)]+\)$/);
         if (linkMatch) {
-          return linkMatch[1].replace(/\*\*/g, '').replace(/\*/g, '');
+          return <InlineMarkdown key={i} text={linkMatch[1]} />;
         }
         return part;
       })}
     </>
   );
-}
-
-// Matches bare markdown links like [text](url) or ![alt](url) with no surrounding content
-const NOISE_PATTERN = /^(\[.+\]\(.+\)|!\[.*\]\(.+\))$/;
-function isPatternNoise(content: string): boolean {
-  return NOISE_PATTERN.test(content.trim());
 }
 
 function scoreBarColor(score: number | null, publicMode?: boolean): string | null {
@@ -66,11 +55,9 @@ function scoreBarColor(score: number | null, publicMode?: boolean): string | nul
 function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
   const groups = new Map<string, JobChunk[]>();
   for (const chunk of chunks) {
-    if (chunk.chunk_type === 'header') continue;
-    if (chunk.section === null) continue;
-    if (isPatternNoise(chunk.content)) continue;
+    if (!chunk.display_ready) continue;
     if (chunk.should_render === false) continue;
-    const key = chunk.section;
+    const key = chunk.section!;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(chunk);
   }
@@ -139,7 +126,7 @@ function ChunkItem({
               <p className="text-xs text-text-tertiary">
                 Source:{' '}
                 <span className="font-medium text-text-secondary">
-                  {SOURCE_LABELS[chunk.experience_source] ?? chunk.experience_source}
+                  {chunk.source_label ?? chunk.experience_source}
                 </span>
               </p>
             )}

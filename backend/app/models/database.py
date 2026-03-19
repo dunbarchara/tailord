@@ -23,6 +23,7 @@ class User(Base):
     notion_bot_id: Mapped[str | None] = mapped_column(String, nullable=True)
     notion_workspace_id: Mapped[str | None] = mapped_column(String, nullable=True)
     notion_workspace_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_parent_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # status: pending | approved
     status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     created_at: Mapped[datetime] = mapped_column(
@@ -109,6 +110,11 @@ class Tailoring(Base):
     letter_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     posting_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     public_slug: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    notion_container_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_page_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_posting_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    notion_posting_page_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     @hybrid_property
     def is_public(self) -> bool:

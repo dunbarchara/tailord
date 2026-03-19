@@ -254,28 +254,40 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 
 ---
 
-### Day 7 — Notion Page Creation
+### Day 7 — Notion Page Creation ✅
 
 **Goal:** A user can export any tailoring directly to a Notion page with one click.
 
 **Tasks:**
-- [ ] Add `POST /tailorings/{id}/export/notion` backend endpoint:
+- [x] Add `POST /notion/export/{id}` backend endpoint (`backend/app/api/notion.py`):
   - Requires user to have a Notion access token
-  - Uses Notion API `POST /v1/pages` to create a new page
-  - Parent: a page/database the user selects (or a default "Tailord Exports" page created automatically)
-  - Content: parse the generated Markdown → Notion block format
-    - `#` headings → `heading_1` blocks
-    - `##` headings → `heading_2` blocks
-    - Paragraphs → `paragraph` blocks
-    - `*italic*` / `**bold**` → inline annotations
-    - Bullet lists → `bulleted_list_item` blocks
-  - Return the created page URL
-- [ ] Frontend: "Export to Notion" button in `TailoringDetail`
-  - If Notion not connected: prompt to connect (link to settings)
-  - If connected: click → loading → opens created Notion page in new tab
-  - Show success toast with link
+  - Uses Notion native markdown API (`POST /v1/pages` with `"markdown"` param) — no block conversion needed
+  - Notion API version `2026-03-11` supports enhanced markdown directly
+  - Auto-creates `Tailord - Tailorings` workspace-level container page on first export
+  - Per-tailoring container page (`{Job Title — Company}`) nesting both Letter and Posting sub-pages
+  - Persistent page URLs returned and stored on `Tailoring` record
+  - Re-export (refresh) updates existing page via `PATCH /v1/pages/{id}/markdown` with `replace_content`
+  - Row-level DB locking (`with_for_update()`) prevents race conditions on concurrent exports
+- [x] Export **both views** — Letter (advocacy document) and Posting (enriched job chunks):
+  - Letter: `tailoring.generated_output` passed as markdown
+  - Posting: `chunks_to_notion_markdown()` converts enriched chunks to Notion enhanced markdown
+    - Scored chunks → color-coded `<details>/<summary>` toggles (green_bg strong, yellow_bg partial)
+    - N/A chunks (score=-1/None) → plain bullet or paragraph, no toggle
+    - Gap chunks (score=0) → omitted (same as public mode)
+    - Rationale + source rendered as `<callout color="gray_bg">` with `---` divider and italic source label
+  - `chunk_display.py` shared module: single source of truth for display filtering (`is_display_ready`, `SOURCE_LABELS`)
+- [x] Frontend: Notion export popover in `TailoringDetail` toolbar:
+  - Shows `SiNotion` icon (react-icons/si)
+  - If Notion not connected: shows "Connect Notion" link to settings
+  - If connected: per-view rows showing Open link (if exported) or Export/Refresh button
+  - Disables opposite-view export button while one is in progress (race condition prevention)
+  - Posting export disabled until enrichment is complete
+- [x] Page hierarchy: `Tailord - Tailorings` → `{Job Title — Company}` → `Advocacy Letter` / `Job Posting`
+  - Container page includes job link, description, and link back to Tailord dashboard
+  - All pages use `tailordicon.png` as Notion page icon
+- [x] DB columns added: `notion_parent_page_id` (users), `notion_posting_page_id`, `notion_posting_page_url`, `notion_container_page_id` (tailorings)
 
-**Markdown → Notion blocks is the hard part.** The Notion API doesn't accept markdown directly. You'll need a conversion function. There are open-source libraries (`md-to-notion`, `martian`) but given the project constraint of minimal dependencies, consider writing a targeted converter for just the headings/paragraphs/bullets/bold/italic that the tailoring template produces — it's a finite set of elements.
+**Implementation note:** The original plan called for a manual markdown→blocks converter. We used the Notion native markdown API (available from API version 2026-03-11) which accepts markdown directly, eliminating that complexity entirely.
 
 ---
 
@@ -289,10 +301,12 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
   - Store a default export location preference in the user record
 - [ ] In Settings: "Notion Export Location" — a dropdown of their accessible pages
   - Saves their preferred parent page for future exports
-- [ ] Add a `notion_page_url TEXT` column to `tailorings` table
-  - Once exported, show the Notion page URL permanently in the tailoring detail
-  - "View in Notion" button alongside "Copy" and "View Posting"
+- [x] Add `notion_page_url TEXT` column to `tailorings` table *(completed in Day 7)*
+  - Persistent page URL shown in Notion popover with Open link
+  - Also added `notion_posting_page_url` for Posting view
 - [ ] Handle token expiry: Notion tokens don't expire, but if the user revokes access, handle the 401 gracefully with a prompt to reconnect
+
+**Note:** The "parent page selection" item may be unnecessary — the auto-created `Tailord - Tailorings` hierarchy (done in Day 7) gives users a clean, consistent export location without needing to configure anything. Revisit whether Settings dropdown adds value.
 
 ---
 
@@ -570,6 +584,8 @@ Everything below is a non-issue while Tailord is single-user. These items become
 #### Infrastructure
 - **Custom domain email** — `hello@tailord.app` or similar for user-facing communications and legal contact. Currently the privacy policy lists a personal Gmail address.
 - **Monitoring and alerting** — set up basic uptime monitoring and error alerting before relying on the product being available for others.
+- **Prometheus + Grafana** — structured metrics collection and dashboarding. The backend (FastAPI/uvicorn) can expose a `/metrics` endpoint via `prometheus-fastapi-instrumentator`; the frontend can emit custom metrics via an OpenTelemetry collector. Grafana provides dashboards over both. Azure Managed Grafana is available if staying within the Azure ecosystem.
+- **Azure Chaos Studio** *(stretch goal)* — fault injection and resilience testing against the Container Apps and PostgreSQL infrastructure. Useful for validating graceful degradation (e.g. DB connectivity loss, container restarts) before the platform carries real user traffic. Low priority until the user base justifies the operational overhead.
 
 ---
 
@@ -645,3 +661,34 @@ Everything below is a non-issue while Tailord is single-user. These items become
 **UX consideration:** The enrichment flow shouldn't feel like homework. The right framing is: *"Your resume tells us what you did. Help us understand what it was actually like."* Each prompt should be specific to the element, optional, and easy to skip. A short free-text input per item is enough — this isn't a structured form, it's an invitation to add colour. Progress should be visible so users know their profile is getting stronger as they add context.
 
 **Data model:** `extracted_profile` is currently a JSON blob on the `Experience` record. Enrichments could be stored as a parallel `enrichment_notes` JSON field, keyed by element identifier (e.g. `work[0].bullets[2]`, `skills.python`), or by merging annotation fields directly into the extracted profile schema. The former is simpler to implement; the latter makes enriched context transparent to the LLM without prompt engineering to stitch two structures together.
+
+---
+
+### Technical Debt — Integrations Table
+
+**Context:** Notion integration metadata (access token, bot ID, workspace ID/name, parent page ID) currently lives as flat columns on the `users` table. This was the right call for a single integration, but becomes a maintenance problem as more integrations are added — each one adds a column cluster and widens a table that should stay narrow.
+
+**When to act:** When a second integration is added. The refactor at that point is bounded and the pattern will be clear.
+
+**Target schema:**
+```sql
+integrations (
+  id           UUID PK,
+  user_id      UUID FK → users,
+  provider     VARCHAR,   -- 'notion', 'linear', etc.
+  access_token VARCHAR,
+  metadata     JSONB,     -- workspace_id, workspace_name, bot_id, parent_page_id, etc.
+  created_at   TIMESTAMP,
+  UNIQUE (user_id, provider)
+)
+```
+
+The `metadata` JSONB column absorbs provider-specific fields without requiring schema changes per integration. The `UNIQUE (user_id, provider)` constraint enforces one connected account per provider per user — relax to allow multiple accounts per provider if that ever becomes a requirement (e.g. connecting two Notion workspaces).
+
+**Migration path:**
+1. Create `integrations` table
+2. Backfill one row per user where `notion_access_token IS NOT NULL` with `provider = 'notion'` and metadata populated from the flat columns
+3. Update all query sites in `app/api/notion.py` and `app/api/users.py` to read/write via the new table
+4. Drop the `notion_*` columns from `users`
+
+Frontend is unaffected — the API contract doesn't change.

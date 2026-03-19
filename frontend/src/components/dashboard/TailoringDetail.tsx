@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link, Info } from 'lucide-react';
+import { SiNotion } from 'react-icons/si';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,55 @@ import { JobPosting } from '@/components/dashboard/JobPosting';
 import type { Tailoring, ChunksResponse } from '@/types';
 
 const POLL_INTERVAL = 3000;
+
+function NotionViewRow({
+  label,
+  pageUrl,
+  exporting,
+  disabled,
+  disabledReason,
+  onExport,
+}: {
+  label: string
+  pageUrl: string | null
+  exporting: boolean
+  disabled?: boolean
+  disabledReason?: string
+  onExport: () => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-text-secondary">{label}</span>
+        {pageUrl && (
+          <a
+            href={pageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-text-link hover:underline"
+          >
+            Open
+          </a>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant={pageUrl ? 'outline' : 'default'}
+        className="w-full text-xs h-8 gap-2"
+        onClick={onExport}
+        disabled={exporting || disabled}
+        title={disabled ? disabledReason : undefined}
+      >
+        {exporting
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : pageUrl
+            ? <RotateCcw className="h-3.5 w-3.5" />
+            : <SiNotion className="h-3.5 w-3.5" />}
+        {pageUrl ? 'Refresh' : disabled ? disabledReason! : 'Export'}
+      </Button>
+    </div>
+  );
+}
 
 interface TailoringDetailProps {
   tailoringId: string;
@@ -42,17 +92,29 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('letter');
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
+  const [notionConnected, setNotionConnected] = useState(false);
+  const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
+  const [exportingNotionPosting, setExportingNotionPosting] = useState(false);
+  const [notionOpen, setNotionOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/tailorings/${tailoringId}`);
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
+        const [tailoringRes, userRes] = await Promise.all([
+          fetch(`/api/tailorings/${tailoringId}`),
+          fetch('/api/users'),
+        ]);
+        if (!tailoringRes.ok) {
+          const data = await tailoringRes.json().catch(() => ({}));
           setError(data?.detail ?? data?.error ?? 'Failed to load tailoring.');
           return;
         }
-        setTailoring(await res.json());
+        const [tailoringData, userData] = await Promise.all([
+          tailoringRes.json(),
+          userRes.ok ? userRes.json() : null,
+        ]);
+        setTailoring(tailoringData);
+        setNotionConnected(!!userData?.notion_workspace_name);
       } catch {
         setError('Could not reach the server.');
       } finally {
@@ -160,6 +222,30 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       toastError('Could not reach the server.');
     } finally {
       setSharing(false);
+    }
+  }
+
+  async function handleExportToNotion(view: 'letter' | 'posting') {
+    const setExporting = view === 'letter' ? setExportingNotionLetter : setExportingNotionPosting;
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}/export/notion?view=${view}`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toastError(data?.detail ?? 'Export failed.');
+        return;
+      }
+      if (view === 'letter') {
+        setTailoring(prev => prev ? { ...prev, notion_page_url: data.page_url } : null);
+        toast.success(tailoring?.notion_page_url ? 'Notion letter page refreshed.' : 'Letter exported to Notion.');
+      } else {
+        setTailoring(prev => prev ? { ...prev, notion_posting_page_url: data.page_url } : null);
+        toast.success(tailoring?.notion_posting_page_url ? 'Notion posting page refreshed.' : 'Posting exported to Notion.');
+      }
+    } catch {
+      toastError('Could not reach the server.');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -367,6 +453,46 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               )}
             </PopoverContent>
           </Popover>
+
+          <Popover open={notionOpen} onOpenChange={setNotionOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Notion">
+                  <SiNotion className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-0">
+                <div className="px-4 pt-4 pb-3">
+                  <p className="text-sm font-medium text-text-primary mb-3">Export to Notion</p>
+                  {!notionConnected ? (
+                    <p className="text-xs text-text-tertiary">
+                      Connect your Notion workspace in{' '}
+                      <a href="/dashboard/settings" className="text-text-link hover:underline">Settings</a>{' '}
+                      to export.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Letter row */}
+                      <NotionViewRow
+                        label="Letter"
+                        pageUrl={tailoring.notion_page_url}
+                        exporting={exportingNotionLetter}
+                        disabled={exportingNotionPosting}
+                        onExport={() => handleExportToNotion('letter')}
+                      />
+                      {/* Posting row */}
+                      <NotionViewRow
+                        label="Posting"
+                        pageUrl={tailoring.notion_posting_page_url}
+                        exporting={exportingNotionPosting}
+                        disabled={exportingNotionLetter || chunksData?.enrichment_status !== 'complete'}
+                        disabledReason={chunksData?.enrichment_status !== 'complete' ? 'Enrichment not complete' : undefined}
+                        onExport={() => handleExportToNotion('posting')}
+                      />
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
 
           <Button
             variant="ghost"

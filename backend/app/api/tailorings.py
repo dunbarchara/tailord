@@ -3,7 +3,6 @@ import re
 import random
 import string
 from functools import partial
-from typing import Optional
 
 import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -23,9 +22,26 @@ from app.services.chunk_matcher import enrich_job_chunks
 from app.core.playwright_helper import get_rendered_content
 from app.models.database import Experience, Job, JobChunk, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate
+from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _serialize_chunk(c: JobChunk) -> dict:
+    return {
+        "id": str(c.id),
+        "chunk_type": c.chunk_type,
+        "content": c.content,
+        "position": c.position,
+        "section": c.section,
+        "match_score": c.match_score,
+        "match_rationale": c.match_rationale,
+        "experience_source": c.experience_source,
+        "source_label": SOURCE_LABELS.get(c.experience_source) if c.experience_source else None,
+        "should_render": c.should_render,
+        "display_ready": is_display_ready(c),
+    }
 
 
 async def _fetch_and_extract_job(url: str) -> tuple[dict, str]:
@@ -269,6 +285,8 @@ def get_tailoring(
         "posting_public": tailoring.posting_public,
         "is_public": tailoring.is_public,
         "public_slug": tailoring.public_slug,
+        "notion_page_url": tailoring.notion_page_url,
+        "notion_posting_page_url": tailoring.notion_posting_page_url,
         "created_at": tailoring.created_at.isoformat(),
     }
 
@@ -297,20 +315,7 @@ def get_tailoring_chunks(
 
     return {
         "enrichment_status": tailoring.enrichment_status,
-        "chunks": [
-            {
-                "id": str(c.id),
-                "chunk_type": c.chunk_type,
-                "content": c.content,
-                "position": c.position,
-                "section": c.section,
-                "match_score": c.match_score,
-                "match_rationale": c.match_rationale,
-                "experience_source": c.experience_source,
-                "should_render": c.should_render,
-            }
-            for c in chunks
-        ],
+        "chunks": [_serialize_chunk(c) for c in chunks],
     }
 
 
@@ -412,20 +417,7 @@ def get_public_tailoring(
             .order_by(JobChunk.position)
             .all()
         )
-        response["chunks"] = [
-            {
-                "id": str(c.id),
-                "chunk_type": c.chunk_type,
-                "content": c.content,
-                "position": c.position,
-                "section": c.section,
-                "match_score": c.match_score,
-                "match_rationale": c.match_rationale,
-                "experience_source": c.experience_source,
-                "should_render": c.should_render,
-            }
-            for c in chunks
-        ]
+        response["chunks"] = [_serialize_chunk(c) for c in chunks]
 
     return response
 

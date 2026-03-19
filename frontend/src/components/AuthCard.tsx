@@ -22,7 +22,7 @@ export function AuthCard({
         className="w-full h-11 gap-2"
         onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
       >
-        <Image src="/images/google.svg" alt="Google logo" width={16} height={16} />
+        <Image src="/google.svg" alt="Google logo" width={16} height={16} />
         {googleText}
       </Button>
 

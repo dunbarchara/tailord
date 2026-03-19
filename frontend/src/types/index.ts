@@ -8,6 +8,8 @@ export interface Tailoring {
   posting_public: boolean
   is_public: boolean
   public_slug: string | null
+  notion_page_url: string | null
+  notion_posting_page_url: string | null
   created_at: string
 }
 
@@ -105,7 +107,9 @@ export interface JobChunk {
   match_score: number | null  // -1=n/a, 0=gap, 1=partial, 2=strong, null=pending
   match_rationale: string | null
   experience_source: 'resume' | 'github' | 'user_input' | null
+  source_label: string | null
   should_render?: boolean  // undefined = treat as true (pre-enrichment or legacy records)
+  display_ready: boolean   // computed by backend: not a header, has a section, not noise
 }
 
 export interface ChunksResponse {
