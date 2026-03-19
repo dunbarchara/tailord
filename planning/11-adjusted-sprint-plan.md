@@ -5,7 +5,7 @@
 Two phases, clear split:
 
 - **Days A1–A3 — User-facing:** ship everything a real user or hiring manager would see or experience
-- **Days A4–A6 — Platform:** harden the foundation once the product surface is stable
+- **Days P1–P3 — Platform:** harden the foundation once the product surface is stable
 
 ---
 
@@ -93,9 +93,9 @@ Two phases, clear split:
 
 ---
 
-## Phase 2 — Platform (Days A4–A6)
+## Phase 2 — Platform (Days P1–P3)
 
-### Day A4 — Security Review
+### Day P1 — Security Review
 
 **Goal:** Identify and fix vulnerabilities before the product is referenced publicly or used with real user data.
 
@@ -135,7 +135,7 @@ Two phases, clear split:
 
 ---
 
-### Day A5 — Testing + CI Gate
+### Day P2 — Testing + CI Gate
 
 **Goal:** Merges to `main` are gated by automated tests. The test suite covers the critical paths, not every line.
 
@@ -160,7 +160,7 @@ Two phases, clear split:
 
 ---
 
-### Day A6 — Staging Environment + Pipeline Hardening
+### Day P3 — Staging Environment + Pipeline Hardening
 
 **Goal:** A staging environment exists with near-zero idle cost. Remaining pipeline robustness gaps are closed.
 
@@ -172,7 +172,7 @@ Two phases, clear split:
 - [ ] Deployment workflow update (`.github/workflows/deploy-azure.yml`):
   - On merge to `main`: deploy image → activate `staging` revision → smoke test (`/health` 200) → promote to `prod`
   - On manual trigger or tag: deploy directly to `prod`
-- [ ] Staging database: use same DB with clearly-labelled staging data (Option C from Day 12 notes) — simplest for a solo project; revisit if data bleed becomes a concern
+- [ ] Staging database: use same DB with clearly-labelled staging data (Option C from P3 notes) — simplest for a solo project; revisit if data bleed becomes a concern
 - [ ] Cloudflare: route `staging.tailord.app` → staging revision FQDN via proxied CNAME
 - [ ] `ENVIRONMENT=staging` env var for more verbose logging in staging
 
@@ -191,6 +191,6 @@ Two phases, clear split:
 | A1 | User | Streaming + perceived performance | SSE generation stream, stage progress events, live typing view |
 | A2 | User | Public profile page | `/u/{slug}`, `username_slug` on users, Settings profile URL |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
-| A4 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
-| A5 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
-| A6 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
+| P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
+| P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
+| P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
