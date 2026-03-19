@@ -232,7 +232,12 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       const res = await fetch(`/api/tailorings/${tailoringId}/export/notion?view=${view}`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toastError(data?.detail ?? 'Export failed.');
+        if (res.status === 403 && data?.detail === 'notion_disconnected') {
+          setNotionConnected(false);
+          toastError('Notion access was revoked. Reconnect in Settings.');
+        } else {
+          toastError(data?.detail ?? 'Export failed.');
+        }
         return;
       }
       if (view === 'letter') {

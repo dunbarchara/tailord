@@ -291,22 +291,23 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 
 ---
 
-### Day 8 — Notion Parent Page Selection + Polish
+### Day 8 — Notion Polish + Pipeline Robustness ✅
 
-**Goal:** The Notion integration feels polished, not janky.
+**Goal:** Round out the Notion integration and close key robustness gaps in the LLM pipeline.
 
 **Tasks:**
-- [ ] After Notion OAuth, fetch the user's accessible pages via `GET /v1/search`
-  - Filter to pages only (not databases)
-  - Store a default export location preference in the user record
-- [ ] In Settings: "Notion Export Location" — a dropdown of their accessible pages
-  - Saves their preferred parent page for future exports
+- [~] After Notion OAuth, fetch the user's accessible pages via `GET /v1/search` — **dropped**: the auto-created `Tailord - Tailorings` hierarchy from Day 7 makes manual page selection unnecessary. Zero configuration is better UX.
+- [~] In Settings: "Notion Export Location" dropdown — **dropped** for same reason as above.
 - [x] Add `notion_page_url TEXT` column to `tailorings` table *(completed in Day 7)*
   - Persistent page URL shown in Notion popover with Open link
   - Also added `notion_posting_page_url` for Posting view
-- [ ] Handle token expiry: Notion tokens don't expire, but if the user revokes access, handle the 401 gracefully with a prompt to reconnect
-
-**Note:** The "parent page selection" item may be unnecessary — the auto-created `Tailord - Tailorings` hierarchy (done in Day 7) gives users a clean, consistent export location without needing to configure anything. Revisit whether Settings dropdown adds value.
+- [x] Handle token revocation: detect 401 from Notion API, clear stored credentials, surface "reconnect" prompt
+  - `NotionAuthError` raised on 401 in `notion_export.py` (`_get_or_create_page`, `update_notion_page`)
+  - Backend catches it, wipes all Notion fields on the user record, returns `403 notion_disconnected`
+  - Frontend: detects `notion_disconnected`, flips to "Connect Notion" state, shows toast with Settings link
+- [x] Empty profile detection: `_validate_profile()` in `tailorings.py` — raises 422 with clear message if profile has no work experience, no summary, and no GitHub repos. Called in both `create_tailoring` and `regenerate_tailoring`.
+- [x] LLM truncation detection: `LLMTruncationError` added to `llm_utils.py` — both `llm_parse` and `llm_generate` raise it if `finish_reason == "length"`, preventing a half-generated letter or broken JSON from being silently persisted.
+- [~] Job URL caching (skip Playwright + extraction for known URLs) — **deferred**: will revisit once Playwright parsing and job extraction quality feel solid enough to trust the cached output.
 
 ---
 
@@ -315,11 +316,11 @@ Week 2's goal is to build the one feature that most clearly demonstrates product
 **Goal:** Close the robustness gaps that were deprioritized in Day 5.5 — output validation, resource protection, and prompt quality.
 
 **Tasks:**
-- [ ] **Empty profile detection:** Minimum text length check on extracted resume text (e.g. < 200 chars → reject with helpful error). Non-empty field validation: at least one work experience entry and a non-blank summary before marking experience `status=ready`. Prevents silently generating tailorings from blank or failed profiles.
-- [ ] **LLM output validation:** Check `finish_reason == "length"` on all LLM responses — raise `LLMTruncationError` instead of silently persisting truncated output. Add a minimum quality check on profile extraction (e.g. non-empty `work_experience` array) before persisting.
+- [x] **Empty profile detection:** `_validate_profile()` in `tailorings.py` — checks for at least one of: work experience, summary, or GitHub repos before allowing tailoring creation or regeneration. *(Pulled into Day 8)*
+- [x] **LLM output validation:** `LLMTruncationError` raised in both `llm_parse` and `llm_generate` when `finish_reason == "length"` — prevents silently persisting truncated output. *(Pulled into Day 8)*
 - [ ] **Profile formatting as compact prose:** Replace the raw JSON profile dump fed to the LLM with a compact prose block (partial progress: COMPUTED SIGNALS block already added as ground truth header). Goal: more natural, shorter context that performs better on smaller models.
 - [ ] **Token budget cap utility:** `truncate_to_tokens(text, max_tokens)` helper using tiktoken — apply to scraped job markdown before it enters any LLM prompt. Prevents runaway costs and context length errors on unusually long job postings.
-- [ ] **Job URL caching/reuse:** Before scraping, check if a `Job` record already exists for the submitted URL (same `user_id`). If found and recent (< 7 days), reuse `extracted_job` — skip the Playwright scrape and re-extraction entirely. Avoids duplicate LLM calls and latency on retries.
+- [ ] **Job URL caching/reuse:** Skip Playwright scrape and job extraction LLM call for recently-seen URLs (< 7 days); rerun all other LLM steps (matching, generation, chunk enrichment) fresh. Deferred until Playwright parsing and extraction quality are solid enough to trust cached output.
 - [ ] **Tailoring and profile extraction prompt iteration:** Review and tighten the `generate_tailoring` system prompt. Consider adding few-shot examples for the profile extraction pass (same pattern as chunk matching).
 
 **Context:** These were all planned for Day 5.5 but deprioritized in favour of the dual pipeline, match analysis, and parsed profile debug panel — all of which shipped. The hardening items here are primarily defensive (cost, correctness, error messaging) rather than user-visible features, which is why they're slotted after the Notion integration days rather than before.
@@ -464,6 +465,57 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 
 ---
 
+### Day 12 — Testing + CI/CD Gate + Staging Environment
+
+**Goal:** Merges to `main` are gated by automated tests; a staging environment exists in Azure with near-zero idle cost.
+
+---
+
+#### 1. Testing — Backend (FastAPI / pytest)
+
+- [ ] Set up pytest with `pytest-asyncio` and a test database (SQLite in-memory or PostgreSQL via `pytest-postgresql`)
+- [ ] Unit tests: pure functions first — `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), slug generation
+- [ ] Integration tests: FastAPI `TestClient` for key endpoints — tailoring CRUD, share/unshare, public slug lookup, Notion export flow (mock Notion API calls with `responses` or `httpx`'s mock transport)
+- [ ] Fixture strategy: factory helpers for `User`, `Tailoring`, `Job`, `JobChunk` — avoid duplicating setup across tests
+- [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — not coverage theatre, focus on the critical paths (auth checks, ownership guards, enrichment status gating)
+
+#### 2. Testing — Frontend (Jest / Playwright)
+
+- [ ] Unit tests: `InlineMarkdown` rendering, `scoreBarColor` logic, `groupBySection` filtering, share popover state transitions
+- [ ] E2E (Playwright): sign-in → create tailoring → view posting tab → share → visit public URL — covers the full happy path against a real backend (or seeded test db)
+- [ ] Consider `next-test-api-route-handler` for testing Next.js API proxy routes in isolation
+
+#### 3. GitHub Actions — CI Gate
+
+- [ ] `.github/workflows/ci.yml`: runs on every PR targeting `main`
+  - Backend: `uv run pytest` with DB fixture
+  - Frontend: `npm run lint && npm run build` (type-check + build validation)
+  - Frontend unit tests: `npm test`
+- [ ] Require status checks to pass before merge (branch protection rule on `main`)
+- [ ] Run CI on `push` to `main` as well, to catch any direct commits
+- [ ] Keep CI fast — target < 3 minutes for the gate to not become friction
+  - Cache `uv` deps and `node_modules` between runs
+  - Run backend and frontend checks in parallel jobs
+
+#### 4. Staging Environment — Azure Container Apps Revisions
+
+- [ ] Investigate Azure Container Apps **revision-based staging**:
+  - Create a `staging` revision (or label) alongside the `prod` revision within the same Container App
+  - Route 100% traffic to `prod` revision; `staging` revision receives 0% external traffic but is accessible via its revision-specific URL for testing
+  - Set `staging` revision's min replicas = 0 and max replicas = 1 — scales to zero when not in use (zero idle cost)
+  - Prod revision: min replicas = 1 (always on)
+- [ ] Deployment workflow update (`.github/workflows/deploy-azure.yml`):
+  - On merge to `main`: deploy to `staging` revision first, run smoke test (HTTP 200 on `/health`), then promote to `prod` via traffic split update
+  - On manual trigger or tag: promote directly to prod
+- [ ] Staging database: evaluate options
+  - Option A: separate `staging` PostgreSQL instance (cleanest isolation, extra cost ~$15/mo)
+  - Option B: shared database with a `staging_` schema prefix (cheaper, some risk of data bleed)
+  - Option C: same DB, staging-only users/data — acceptable for a solo project if test data is clearly labelled
+- [ ] Environment-specific config: `ENVIRONMENT=staging` env var; backend logs and error responses can be more verbose in staging
+- [ ] Investigate whether Cloudflare can route `staging.tailord.app` → staging revision URL (proxied CNAME to revision FQDN)
+
+---
+
 ## Day-by-Day Summary
 
 | Day | Focus | Output | Status |
@@ -477,13 +529,14 @@ The LLM pipeline ingests content from two untrusted sources: job postings (scrap
 | 5.5 | Pipeline robustness + Tailoring format | Scrape gating, PDF extraction, dual pipeline, match analysis tab, parsed profile panel, async isolation, Tailoring philosophy + structured output | ✅ |
 | 5.6 | Enriched job posting view + per-view public sharing | Posting tab (score bars, expandable rationale, content alignment); `letter_public`/`posting_public` per-view sharing with redesigned popover, muted public color token, tab switcher on public page | ✅ |
 | 6 | Notion OAuth | Connect/disconnect Notion from Settings; legal pages live; Terraform Key Vault secrets for Notion | ✅ |
-| 7 | Notion export | One-click export, Markdown→Notion blocks | |
-| 8 | Notion polish | Parent page selection, stored export URL | |
+| 7 | Notion export | One-click export (Letter + Posting), page hierarchy, enriched chunk toggles, persistent links, race condition protection | ✅ |
+| 8 | Notion polish + pipeline robustness | Notion 401/revoke handling, empty profile detection, LLM truncation detection; parent page selection dropped (auto-hierarchy sufficient); URL caching deferred | ✅ |
 | 8.5 | Pipeline hardening (deferred) | Empty profile detection, LLM output validation, token budgeting, job URL caching, prompt iteration | |
 | 8.6 | Streaming + perceived performance | SSE streaming for tailoring generation, stage progress events, streaming-aware regeneration | |
 | 9 | Public portfolio | `/u/{slug}` page with public tailorings | |
 | 10 | Documentation + cleanup | README, remove legacy code, screenshots | |
 | 11 | Security review | Prompt injection, SQL injection, token abuse, cost controls, SSRF | |
+| 12 | Testing + CI gate + staging | pytest + Jest/Playwright, GitHub Actions PR gate, Azure revision-based staging with scale-to-zero | |
 
 ---
 
