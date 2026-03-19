@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link, Info } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import { toast } from 'sonner';
-import { cn, toastError } from '@/lib/utils';
+import { cn, toastError, formatElapsed } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -23,6 +23,7 @@ import { JobPosting } from '@/components/dashboard/JobPosting';
 import type { Tailoring, ChunksResponse } from '@/types';
 
 const POLL_INTERVAL = 3000;
+
 
 function NotionViewRow({
   label,
@@ -85,6 +86,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [copied, setCopied] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [regenSsePhase, setRegenSsePhase] = useState<string | null>(null);
+  // Tick counter to force re-render of elapsed time display every second
+  const [, setElapsedTick] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
@@ -124,6 +128,39 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     load();
   }, [tailoringId]);
 
+  // Poll generation status every 2s when the tailoring is still being generated
+  useEffect(() => {
+    if (!tailoring || tailoring.generation_status !== 'generating') return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/tailorings/${tailoringId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const titleJustResolved = !tailoring?.title && data.title;
+        setTailoring(data);
+        if (titleJustResolved || data.generation_status !== 'generating') {
+          router.refresh(); // keep sidebar label + icon in sync
+        }
+        if (data.generation_status !== 'generating') {
+          clearInterval(interval);
+          if (data.generation_status === 'ready') {
+            setRegenerating(false);
+            setRegenSsePhase(null);
+            setChunksData(null); // reset so chunk polling restarts
+          }
+        }
+      } catch { /* ignore */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [tailoringId, tailoring?.generation_status]);
+
+  // Tick every second to update elapsed time display when generating
+  useEffect(() => {
+    if (!tailoring || tailoring.generation_status !== 'generating') return;
+    const interval = setInterval(() => setElapsedTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [tailoring?.generation_status]);
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
@@ -152,25 +189,76 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     return () => { if (interval) clearInterval(interval); };
   }, [tailoringId]);
 
+  const REGEN_SSE_LABELS: Record<string, string> = {
+    scraping: 'Fetching job posting...',
+  };
+
   async function handleRegenerate() {
     setShowRegenConfirm(false);
     setRegenerating(true);
+    setRegenSsePhase(null);
+
     try {
       const res = await fetch(`/api/tailorings/${tailoringId}`, { method: 'POST' });
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
         toastError(data?.detail ?? 'Regeneration failed.');
+        setRegenerating(false);
         return;
       }
-      const updated = await fetch(`/api/tailorings/${tailoringId}`).then(r => r.json());
-      setTailoring(updated);
-      setChunksData(null);
-      router.refresh();
-      toast.success('Tailoring regenerated.');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const boundary = buffer.lastIndexOf('\n\n');
+        if (boundary === -1) continue;
+        const complete = buffer.slice(0, boundary + 2);
+        buffer = buffer.slice(boundary + 2);
+
+        for (const block of complete.split('\n\n')) {
+          if (!block.trim()) continue;
+          let event: string | null = null;
+          let data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event: ')) event = line.slice(7).trim();
+            else if (line.startsWith('data: ')) data = line.slice(6);
+          }
+          if (!data) continue;
+
+          if (event === 'stage') {
+            setRegenSsePhase(data);
+          } else if (event === 'ready') {
+            // Scraping done; extraction + matching + generation running in background.
+            // Switch to polling (the generation_status poll effect takes over).
+            setRegenSsePhase(null);
+            setTailoring(prev => prev ? {
+              ...prev,
+              generated_output: null,
+              generation_status: 'generating',
+              generation_stage: 'extracting',
+              generation_error: null,
+            } : null);
+            router.refresh(); // update sidebar to show generating indicator
+            return;
+          } else if (event === 'error') {
+            const payload = JSON.parse(data);
+            toastError(payload.detail ?? 'Regeneration failed.');
+            setRegenerating(false);
+            setRegenSsePhase(null);
+            return;
+          }
+        }
+      }
     } catch {
       toastError('Could not reach the server.');
-    } finally {
       setRegenerating(false);
+      setRegenSsePhase(null);
     }
   }
 
@@ -258,7 +346,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     if (!tailoring) return;
     if (activeTab === 'analysis' && chunksData) {
       navigator.clipboard.writeText(chunksToMarkdown(chunksData, tailoring.title, tailoring.company));
-    } else {
+    } else if (tailoring.generated_output) {
       navigator.clipboard.writeText(tailoring.generated_output);
     }
     setCopied(true);
@@ -504,7 +592,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             size="sm"
             className="h-7 w-7 p-0"
             onClick={handleCopy}
-            disabled={activeTab === 'posting'}
+            disabled={activeTab === 'posting' || !tailoring.generated_output}
             title={copied ? 'Copied' : 'Copy content'}
           >
             {copied
@@ -536,19 +624,75 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 </a>
               )}
             </header>
-            <div className={cn(
-              "prose prose-sm max-w-none text-text-primary",
-              "prose-headings:text-text-primary prose-headings:font-semibold",
-              "prose-p:text-text-secondary prose-p:leading-relaxed",
-              "prose-hr:my-6",
-              "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
-              "prose-strong:text-text-primary",
-              "prose-hr:border-border-subtle",
-              "prose-a:text-text-link prose-a:underline prose-a:underline-offset-2",
-              regenerating && "opacity-40 pointer-events-none"
-            )}>
-              <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
-            </div>
+
+            {/* SSE phase banner: scraping/extracting during regen */}
+            {regenSsePhase && (
+              <div className="flex items-center gap-2 mb-6 text-sm text-text-secondary animate-fade-in">
+                <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />
+                {REGEN_SSE_LABELS[regenSsePhase] ?? 'Updating…'}
+              </div>
+            )}
+
+            {/* Generation phase list: matching/generating (initial load or regen background task) */}
+            {tailoring.generation_status === 'generating' && !regenSsePhase && (() => {
+              const stage = tailoring.generation_stage;
+              const startedAt = tailoring.generation_started_at
+                ? new Date(tailoring.generation_started_at).getTime()
+                : null;
+              const totalElapsed = startedAt
+                ? Math.floor((Date.now() - startedAt) / 1000)
+                : 0;
+              const matchingDone = stage === 'generating';
+              const extractingDone = stage === 'matching' || stage === 'generating';
+              const phases = [
+                { key: 'extracting', label: 'Extracting requirements', done: extractingDone, running: stage === 'extracting' },
+                { key: 'matching',   label: 'Matching to your profile', done: matchingDone, running: stage === 'matching' },
+                { key: 'generating', label: 'Writing your tailoring',   done: false,        running: stage === 'generating' },
+              ];
+              return (
+                <div className="space-y-2 mb-8 animate-fade-in">
+                  {phases.filter(({ done, running }) => done || running).map(({ key, label, done, running }) => (
+                    <div key={key} className="flex items-center gap-2.5 text-sm">
+                      {done
+                        ? <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
+                        : <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />}
+                      <span className="text-text-secondary">
+                        {label}{running ? '...' : ''}
+                        {running && startedAt && (
+                          <span className="text-text-tertiary"> · {formatElapsed(totalElapsed)}</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Error state */}
+            {tailoring.generation_status === 'error' && (
+              <div className="mb-8 flex items-start gap-3 text-sm">
+                <AlertCircle className="h-4 w-4 text-error flex-shrink-0 mt-0.5" />
+                <span className="text-text-secondary">
+                  {tailoring.generation_error ?? 'Generation failed. Try regenerating.'}
+                </span>
+              </div>
+            )}
+
+            {tailoring.generated_output && (
+              <div className={cn(
+                "prose prose-sm max-w-none text-text-primary",
+                "prose-headings:text-text-primary prose-headings:font-semibold",
+                "prose-p:text-text-secondary prose-p:leading-relaxed",
+                "prose-hr:my-6",
+                "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
+                "prose-strong:text-text-primary",
+                "prose-hr:border-border-subtle",
+                "prose-a:text-text-link prose-a:underline prose-a:underline-offset-2",
+                tailoring.generation_status === 'generating' && "opacity-40",
+              )}>
+                <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
+              </div>
+            )}
           </div>
         )}
         {activeTab === 'posting' && (
@@ -558,6 +702,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             title={tailoring.title}
             company={tailoring.company}
             jobUrl={tailoring.job_url}
+            generationReady={tailoring.generation_status === 'ready'}
           />
         )}
         {activeTab === 'analysis' && (

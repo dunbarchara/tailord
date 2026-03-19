@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
-import { proxyToBackendWithUser } from '@/lib/proxy'
+import { proxyToBackendWithUser, proxyStreamToBackendWithUser } from '@/lib/proxy'
 
 async function getUserContext() {
   const session = await getServerSession(authOptions)
@@ -31,7 +31,7 @@ export async function POST(
   const user = await getUserContext()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await params
-  return proxyToBackendWithUser(`tailorings/${id}/regenerate`, user, { method: 'POST' })
+  return proxyStreamToBackendWithUser(`tailorings/${id}/regenerate`, user)
 }
 
 export async function DELETE(

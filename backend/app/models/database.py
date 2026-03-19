@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, JSON, DateTime, Boolean, Integer, func, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Text, JSON, DateTime, Boolean, Integer, func, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -78,7 +78,7 @@ class Job(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     job_url: Mapped[str] = mapped_column(String)
-    extracted_job: Mapped[dict] = mapped_column(JSON)
+    extracted_job: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -104,8 +104,13 @@ class Tailoring(Base):
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("jobs.id")
     )
-    generated_output: Mapped[str] = mapped_column(Text)
+    generated_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
+    # generation lifecycle: pending | generating | ready | error
+    generation_status: Mapped[str] = mapped_column(String, default="ready", server_default="ready")
+    generation_stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    generation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     enrichment_status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     letter_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     posting_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

@@ -1,9 +1,15 @@
+export type GenerationStatus = 'pending' | 'generating' | 'ready' | 'error'
+
 export interface Tailoring {
   id: string
   title: string | null
   company: string | null
   job_url: string
-  generated_output: string
+  generated_output: string | null
+  generation_status: GenerationStatus
+  generation_stage: string | null
+  generation_error: string | null
+  generation_started_at: string | null
   letter_public: boolean
   posting_public: boolean
   is_public: boolean
@@ -18,6 +24,7 @@ export interface TailoringListItem {
   title: string | null
   company: string | null
   job_url: string | null
+  generation_status: GenerationStatus
   letter_public: boolean
   posting_public: boolean
   is_public: boolean

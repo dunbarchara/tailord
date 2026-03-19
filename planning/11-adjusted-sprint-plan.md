@@ -5,34 +5,32 @@
 Two phases, clear split:
 
 - **Days A1–A3 — User-facing:** ship everything a real user or hiring manager would see or experience
-- **Days A4–A6 — Platform:** harden the foundation once the product surface is stable
+- **Days P1–P3 — Platform:** harden the foundation once the product surface is stable
 
 ---
 
 ## Phase 1 — User-Facing (Days A1–A3)
 
-### Day A1 — Streaming + Perceived Performance
+### Day A1 — Streaming + Perceived Performance ✅
 
 **Goal:** The tailoring generation flow feels fast. Users start reading their document within seconds, not after a 60–90 second blank wait.
 
 **Why first:** This is the single highest-leverage UX change available. Wall-clock time is hard to eliminate across four sequential LLM + scrape operations, but perceived time can drop dramatically. Every other user-facing feature lands better if the baseline generation experience doesn't feel broken.
 
-#### 1. Stream the tailoring generation output
-- [ ] Switch `generate_tailoring()` to `stream=True` on the OpenAI SDK call
-- [ ] Change `POST /tailorings` and `POST /tailorings/{id}/regenerate` to return `StreamingResponse` using SSE (`text/event-stream`)
-- [ ] Emit named stage events before generation begins:
-  - `event: stage` / `data: scraping` — Playwright fetch starts
-  - `event: stage` / `data: extracting` — job extraction LLM call starts
-  - `event: stage` / `data: matching` — requirement matching starts
-  - `event: stage` / `data: generating` — tailoring generation starts, then token stream follows
-- [ ] Emit `data: <token>` events during generation, `data: [DONE]` on completion
-- [ ] Persist completed output to DB only after `[DONE]`
+**Approach taken:** Phase list with elapsed timers (Claude Code style) + early redirect, rather than token streaming. Token streaming added backend complexity without meaningful UX gain given the ~10s generation window.
 
-#### 2. Frontend — live generation view
-- [ ] Replace single `fetch` call in `NewTailoringForm` with `fetch` + `ReadableStream` consumer
-- [ ] Stage indicator updates as each stage event arrives: "Fetching job posting… → Extracting requirements… → Matching to your profile… → Generating document…"
-- [ ] Tokens append to local state as they arrive; render with `ReactMarkdown` updating live — user is reading within 2–3 seconds of generation starting
-- [ ] `TailoringDetail` document view enters a live-typing state during regeneration rather than going opaque with a spinner
+#### 1. SSE stream — scraping + extracting only (early redirect)
+- [x] `POST /tailorings` and `POST /tailorings/{id}/regenerate` return `StreamingResponse` (SSE)
+- [x] Emit `event: stage` / `data: scraping` and `event: stage` / `data: extracting` as each phase begins
+- [x] On extraction complete: create `Job` + `Tailoring` records with `generation_status="generating"`, emit `event: ready` with tailoring ID
+- [x] Matching + generation run in a `BackgroundTasks` task (`_finalize_tailoring`), updating `generation_stage` and `generation_started_at` in DB
+- [x] Added `generation_status`, `generation_stage`, `generation_error`, `generation_started_at` columns to `Tailoring` + Alembic migration
+
+#### 2. Frontend — phase list + early redirect
+- [x] `NewTailoringForm`: phase list with per-phase elapsed timers (scraping, extracting); redirect to `/dashboard/tailorings/{id}` on `event: ready`
+- [x] `TailoringDetail`: polls `GET /tailorings/{id}` every 2s while `generation_status === 'generating'`; shows matching/writing phase list with server-side elapsed computed from `generation_started_at`
+- [x] 1s tick effect forces elapsed re-renders during background generation
+- [x] `JobPosting` tab: contextual loading message when `generationReady === false` or `enrichment_status` is pending/processing
 
 ---
 
@@ -93,9 +91,9 @@ Two phases, clear split:
 
 ---
 
-## Phase 2 — Platform (Days A4–A6)
+## Phase 2 — Platform (Days P1–P3)
 
-### Day A4 — Security Review
+### Day P1 — Security Review
 
 **Goal:** Identify and fix vulnerabilities before the product is referenced publicly or used with real user data.
 
@@ -135,7 +133,7 @@ Two phases, clear split:
 
 ---
 
-### Day A5 — Testing + CI Gate
+### Day P2 — Testing + CI Gate
 
 **Goal:** Merges to `main` are gated by automated tests. The test suite covers the critical paths, not every line.
 
@@ -160,7 +158,7 @@ Two phases, clear split:
 
 ---
 
-### Day A6 — Staging Environment + Pipeline Hardening
+### Day P3 — Staging Environment + Pipeline Hardening
 
 **Goal:** A staging environment exists with near-zero idle cost. Remaining pipeline robustness gaps are closed.
 
@@ -172,7 +170,7 @@ Two phases, clear split:
 - [ ] Deployment workflow update (`.github/workflows/deploy-azure.yml`):
   - On merge to `main`: deploy image → activate `staging` revision → smoke test (`/health` 200) → promote to `prod`
   - On manual trigger or tag: deploy directly to `prod`
-- [ ] Staging database: use same DB with clearly-labelled staging data (Option C from Day 12 notes) — simplest for a solo project; revisit if data bleed becomes a concern
+- [ ] Staging database: use same DB with clearly-labelled staging data (Option C from P3 notes) — simplest for a solo project; revisit if data bleed becomes a concern
 - [ ] Cloudflare: route `staging.tailord.app` → staging revision FQDN via proxied CNAME
 - [ ] `ENVIRONMENT=staging` env var for more verbose logging in staging
 
@@ -188,9 +186,9 @@ Two phases, clear split:
 
 | Day | Phase | Focus | Key output |
 |-----|-------|-------|-----------|
-| A1 | User | Streaming + perceived performance | SSE generation stream, stage progress events, live typing view |
+| A1 ✅ | User | Streaming + perceived performance | SSE stage events, early redirect, phase timers, background generation with DB polling |
 | A2 | User | Public profile page | `/u/{slug}`, `username_slug` on users, Settings profile URL |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
-| A4 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
-| A5 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
-| A6 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
+| P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
+| P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
+| P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |

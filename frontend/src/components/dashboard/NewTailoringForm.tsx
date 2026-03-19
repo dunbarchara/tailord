@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Link2, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
+import { Link2, Sparkles, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { formatElapsed } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,12 +17,23 @@ import {
 } from '@/components/ui/dialog';
 import type { TailoringListItem } from '@/types';
 
-type ProcessingState = 'idle' | 'processing' | 'error';
+type FormState = 'idle' | 'processing' | 'error';
+
+type Phase = 'scraping';
+
+interface PhaseState {
+  status: 'pending' | 'running' | 'done';
+  elapsed: number; // seconds
+}
+
+const PHASE_LABELS: Record<Phase, string> = {
+  scraping: 'Fetching job posting',
+};
+const PHASE_ORDER: Phase[] = ['scraping'];
 
 function normalizeUrl(raw: string): string {
   try {
     const u = new URL(raw.trim());
-    // Strip trailing slash and fragment, keep path+query for comparison
     return (u.origin + u.pathname).replace(/\/$/, '') + (u.search || '');
   } catch {
     return raw.trim().toLowerCase();
@@ -31,10 +43,17 @@ function normalizeUrl(raw: string): string {
 export function NewTailoringForm() {
   const router = useRouter();
   const [url, setUrl] = useState('');
-  const [state, setState] = useState<ProcessingState>('idle');
+  const [formState, setFormState] = useState<FormState>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [tailorings, setTailorings] = useState<TailoringListItem[]>([]);
   const [duplicate, setDuplicate] = useState<TailoringListItem | null>(null);
+  const [phases, setPhases] = useState<Record<Phase, PhaseState>>({
+    scraping: { status: 'pending', elapsed: 0 },
+  });
+
+  // Per-phase timers
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activePhaseRef = useRef<Phase | null>(null);
 
   useEffect(() => {
     fetch('/api/tailorings')
@@ -43,10 +62,38 @@ export function NewTailoringForm() {
       .catch(() => { });
   }, []);
 
+  // Tick the active phase's elapsed counter every second
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      const phase = activePhaseRef.current;
+      if (!phase) return;
+      setPhases(prev => ({
+        ...prev,
+        [phase]: { ...prev[phase], elapsed: prev[phase].elapsed + 1 },
+      }));
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  function startPhase(phase: Phase) {
+    activePhaseRef.current = phase;
+    setPhases(prev => ({ ...prev, [phase]: { status: 'running', elapsed: 0 } }));
+  }
+
+  function completePhase(phase: Phase) {
+    setPhases(prev => ({
+      ...prev,
+      [phase]: { ...prev[phase], status: 'done' },
+    }));
+  }
+
   const submitTailoring = async () => {
-    setState('processing');
+    setFormState('processing');
     setErrorMessage('');
     setDuplicate(null);
+    setPhases({
+      scraping: { status: 'pending', elapsed: 0 },
+    });
 
     try {
       const res = await fetch('/api/tailorings', {
@@ -55,20 +102,67 @@ export function NewTailoringForm() {
         body: JSON.stringify({ job_url: url }),
       });
 
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
-        const detail = data?.detail ?? data?.error ?? 'Something went wrong.';
-        setErrorMessage(detail);
-        setState('error');
+        setErrorMessage(data?.detail ?? data?.error ?? 'Something went wrong.');
+        setFormState('error');
         return;
       }
 
-      const tailoring = await res.json();
-      router.push(`/dashboard/tailorings/${tailoring.id}`);
-      router.refresh();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const boundary = buffer.lastIndexOf('\n\n');
+        if (boundary === -1) continue;
+        const complete = buffer.slice(0, boundary + 2);
+        buffer = buffer.slice(boundary + 2);
+
+        for (const block of complete.split('\n\n')) {
+          if (!block.trim()) continue;
+          let event: string | null = null;
+          let data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event: ')) event = line.slice(7).trim();
+            else if (line.startsWith('data: ')) data = line.slice(6);
+          }
+          if (!data) continue;
+
+          if (event === 'stage') {
+            const stage = data as Phase;
+            // Mark previous phase done
+            const prev = PHASE_ORDER[PHASE_ORDER.indexOf(stage) - 1];
+            if (prev) completePhase(prev);
+            startPhase(stage);
+          } else if (event === 'ready') {
+            // Mark all phases done
+            activePhaseRef.current = null;
+            setPhases(prev => {
+              const next = { ...prev };
+              for (const p of PHASE_ORDER) next[p] = { ...prev[p], status: 'done' };
+              return next;
+            });
+            const payload = JSON.parse(data);
+            router.push(`/dashboard/tailorings/${payload.id}`);
+            router.refresh();
+            return;
+          } else if (event === 'error') {
+            activePhaseRef.current = null;
+            const payload = JSON.parse(data);
+            setErrorMessage(payload.detail ?? 'Something went wrong.');
+            setFormState('error');
+            return;
+          }
+        }
+      }
     } catch {
       setErrorMessage('Could not reach the server. Please try again.');
-      setState('error');
+      setFormState('error');
     }
   };
 
@@ -80,11 +174,7 @@ export function NewTailoringForm() {
     const existing = tailorings.find(
       (t) => t.job_url && normalizeUrl(t.job_url) === normalized,
     );
-
-    if (existing) {
-      setDuplicate(existing);
-      return;
-    }
+    if (existing) { setDuplicate(existing); return; }
 
     await submitTailoring();
   };
@@ -92,6 +182,8 @@ export function NewTailoringForm() {
   const duplicateLabel = duplicate
     ? [duplicate.title, duplicate.company].filter(Boolean).join(' at ') || 'a previous tailoring'
     : '';
+
+  const isProcessing = formState === 'processing';
 
   return (
     <>
@@ -112,9 +204,7 @@ export function NewTailoringForm() {
             >
               View existing
             </Button>
-            <Button onClick={submitTailoring}>
-              Create anyway
-            </Button>
+            <Button onClick={submitTailoring}>Create anyway</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -143,21 +233,34 @@ export function NewTailoringForm() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://company.com/careers/job-posting"
-                  disabled={state === 'processing'}
+                  disabled={isProcessing}
                   className="pl-9"
                   required
                 />
               </div>
             </div>
 
-            {state === 'processing' && (
-              <div className="flex items-center gap-2 text-sm text-text-secondary animate-fade-in">
-                <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />
-                Analyzing job posting… this takes 15–25 seconds
+            {/* Phase list — visible during processing, pending steps hidden */}
+            {isProcessing && (
+              <div className="space-y-2 animate-fade-in">
+                {PHASE_ORDER.filter(phase => phases[phase].status !== 'pending').map((phase) => {
+                  const { status, elapsed } = phases[phase];
+                  return (
+                    <div key={phase} className="flex items-center gap-2.5 text-sm">
+                      {status === 'done'
+                        ? <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
+                        : <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />}
+                      <span className="text-text-secondary">
+                        {PHASE_LABELS[phase]}{status === 'running' ? '...' : ''}
+                        <span className="text-text-tertiary"> · {formatElapsed(elapsed)}</span>
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {state === 'error' && (
+            {formState === 'error' && (
               <Card className="border-error/30 bg-error-bg animate-fade-in">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-start gap-3">
@@ -173,10 +276,10 @@ export function NewTailoringForm() {
 
             <Button
               type="submit"
-              disabled={!url.trim() || state === 'processing'}
+              disabled={!url.trim() || isProcessing}
               className="gap-2"
             >
-              {state === 'processing' ? (
+              {isProcessing ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Processing…

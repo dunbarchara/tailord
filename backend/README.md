@@ -22,3 +22,6 @@ docker exec -it <postgresContainer> sh
 psql app -U app
 \c app
 \d tailorings
+
+
+docker exec befef6d092ac psql -U app -c "SELECT pid, state, wait_event_type, wait_event, query_start, query FROM pg_stat_activity WHERE wait_event_type = 'Lock' OR state != 'idle' ORDER BY query_start;" | pbcopy
