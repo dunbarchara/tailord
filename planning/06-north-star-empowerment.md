@@ -124,3 +124,55 @@ The frontend renders this as an annotated job description — clean prose from t
 - Not a chatbot. The conversational pattern is a metaphor for the interaction model, not a product requirement for a freeform chat interface.
 - Not generic prompting. "Tell us more about yourself" is the failure mode. Every question must be grounded in a specific job requirement and a specific gap in the user's profile.
 - Not interrupting the primary flow. Gap questions should appear after generation, not as a gate before it. Users get value first, then are invited to improve it.
+
+---
+
+## Far-Future Vision: Public Profile Chat
+
+*This is a North Star feature — intentionally deferred until the static profile surface is mature and the underlying data quality is high enough to make it useful.*
+
+### The idea
+
+A recruiter or interviewer lands on a candidate's public profile page (`/u/{slug}`) and can ask questions directly: "Does she have experience with distributed systems?" or "What's his strongest project?" The platform answers using the candidate's structured experience as its context.
+
+The left pane of the two-pane profile layout is a natural home for this — a persistent chat interface anchored alongside the candidate's static information.
+
+### Why it's compelling
+
+The static profile tells you what the candidate chose to surface. The chat answers what the viewer actually wants to know — and those two things are rarely identical. A recruiter skimming ten profiles doesn't want to read prose; they want answers to their specific screen criteria. A chat surface that answers those in seconds is a genuine differentiator.
+
+### The latency problem
+
+Every LLM call on Tailord currently takes 30–120 seconds on the local model. Even frontier-hosted models have 2–5s time-to-first-token on cold starts. That is an unacceptable wait for a conversational interface where the expectation is near-instant response.
+
+Options and their tradeoffs:
+
+**1. Smaller/faster model (most realistic near-term)**
+Haiku-class models (Claude Haiku 4.5, GPT-4o mini) produce responses in 1–3s. Quality is noticeably lower for nuanced questions but adequate for factual lookups against a structured profile. This is the most practical path — pair it with option 2.
+
+**2. Streaming the response**
+We already have SSE infrastructure. Streaming doesn't reduce time-to-first-token but makes the wait feel shorter — the user sees words appearing immediately rather than staring at a blank box. A near-mandatory UX layer on top of any LLM response in a chat context.
+
+**3. Pre-compute answers to likely questions**
+At profile generation time, run a batch of common recruiter questions (screening criteria, top skills, standout projects) through the LLM and cache answers. Very limited coverage — only helps for anticipated questions — and goes stale as the profile evolves. Partial value as a supplement.
+
+**4. RAG over structured profile data**
+Embed the extracted profile sections, retrieve relevant chunks on query, and use a short prompt for synthesis. Faster and cheaper than full-context prompting, but answers lose the depth that comes from full profile context. Better for factual lookups ("does she have Python?") than synthesis questions ("what's his strongest project and why?").
+
+**5. Context pre-loading / session warmup**
+Keep the profile loaded in a persistent LLM context between questions. Minor latency gain only — cold start dominates, not context loading.
+
+### The realistic path
+
+Option 1 (Haiku-class) + Option 2 (streaming) together gets you to ~1–3s time-to-first-token, streamed. That is an acceptable chat UX. The stack change is modest: swap the model ID for public-profile chat calls, wrap responses in SSE, add a simple chat UI in the left pane.
+
+### Why to defer it
+
+The chat is only as good as the data it answers from. A thin or patchy `extracted_profile` will produce confident-sounding but inaccurate answers — worse than no chat at all. The right sequencing is: nail the static profile surface first (accurate extraction, user-editable parsed profile, rich structured data), then layer the chat on top once the underlying data can support honest, accurate answers. Building the chat prematurely just exposes the gaps in the data.
+
+### Prerequisites before building
+
+- Structured, user-verified `extracted_profile` (Day A4 — parsed profile review + editing)
+- High extraction quality across a range of resume formats
+- A hosted fast model endpoint (not the local LLM) — either Anthropic API or Azure AI Foundry
+- Rate limiting on the public profile endpoint (chat invites abuse at scale)
