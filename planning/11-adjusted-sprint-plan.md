@@ -91,6 +91,31 @@ Two phases, clear split:
 
 ---
 
+### Day A4 — My Experience Improvements
+
+**Goal:** The experience processing flow feels responsive, and users have control over how their profile is interpreted.
+
+**Why fourth:** The experience pipeline is the foundation everything else builds on — bad or incomplete parsing silently degrades every tailoring. Giving users visibility and edit access turns a black box into something they trust. The timer work is also a direct extension of the perceived-performance pattern established in A1.
+
+#### 1. Processing progress indicator
+- [ ] Replace the static "Processing…" state in the Experience page with a phase list + elapsed timers (same pattern as tailoring generation)
+- [ ] Backend: emit SSE progress events during experience processing — phases: `uploading`, `extracting`, `ready`
+- [ ] Frontend: consume SSE, show phase list with per-phase elapsed timers; on `ready` transition to the parsed view
+
+#### 2. Parsed profile review and editing
+- [ ] After processing, show the extracted profile in a structured, editable UI:
+  - Work experience: title, company, duration, bullets (add/edit/remove)
+  - Skills: technical and soft (add/remove tags)
+  - Education: degree, institution, year
+  - Projects: name, description, technologies
+- [ ] Edits are saved directly to `extracted_profile` (the parsed JSON) — **not** by re-running the LLM
+  - Rationale: re-running LLM on edited raw text is expensive, slow, and would overwrite the user's corrections. Editing the parsed layer is surgical and immediate. The raw text is preserved unchanged as a source of record.
+  - `PATCH /experience` endpoint: accepts partial `extracted_profile` update, merges into existing
+- [ ] Unsaved changes indicator; save is explicit (not auto-save) to avoid accidental overwrites
+- [ ] After saving, prompt: "Regenerate affected tailorings?" — link to tailorings that haven't been regenerated since the experience was last edited (requires `experience_updated_at` vs `tailoring.created_at` comparison)
+
+---
+
 ## Phase 2 — Platform (Days P1–P3)
 
 ### Day P1 — Security Review
@@ -189,6 +214,7 @@ Two phases, clear split:
 | A1 ✅ | User | Streaming + perceived performance | SSE stage events, early redirect, phase timers, background generation with DB polling |
 | A2 | User | Public profile page | `/u/{slug}`, `username_slug` on users, Settings profile URL |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
+| A4 | User | My Experience improvements | Processing progress indicator, parsed profile review + editing |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
