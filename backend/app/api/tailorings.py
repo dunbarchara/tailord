@@ -516,6 +516,7 @@ def get_public_tailoring(
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
     job = tailoring.job
+    author = tailoring.user
     response = {
         "title": job.extracted_job.get("title") if job and job.extracted_job else None,
         "company": job.extracted_job.get("company") if job and job.extracted_job else None,
@@ -524,6 +525,11 @@ def get_public_tailoring(
         "letter_public": tailoring.letter_public,
         "posting_public": tailoring.posting_public,
         "created_at": tailoring.created_at.isoformat(),
+        "author_slug": author.username_slug if author else None,
+        "author_name": (
+            " ".join(p for p in [author.preferred_first_name, author.preferred_last_name] if p).strip()
+            or author.name
+        ) if author else None,
     }
 
     if tailoring.posting_public:

@@ -47,6 +47,7 @@ interface UserContext {
   userId: string
   userEmail: string
   userName?: string | null
+  userImage?: string | null
 }
 
 export async function proxyToBackendWithUser(
@@ -68,6 +69,9 @@ export async function proxyToBackendWithUser(
     }
     if (user.userName) {
       headers['X-User-Name'] = user.userName
+    }
+    if (user.userImage) {
+      headers['X-User-Image'] = user.userImage
     }
 
     logger.debug('Backend request', { method, endpoint, userId: user.userId })
@@ -127,6 +131,9 @@ export async function proxyStreamToBackendWithUser(
   }
   if (user.userName) {
     headers['X-User-Name'] = user.userName
+  }
+  if (user.userImage) {
+    headers['X-User-Image'] = user.userImage
   }
 
   logger.debug('Backend stream request', { endpoint, userId: user.userId })

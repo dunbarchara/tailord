@@ -9,6 +9,7 @@ async function getUser() {
     userId: session.user.id,
     userEmail: session.user.email ?? '',
     userName: session.user.name,
+    userImage: session.user.image,
   };
 }
 

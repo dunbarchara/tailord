@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
@@ -8,15 +10,34 @@ from app.models.database import User
 logger = logging.getLogger(__name__)
 
 
+def _slugify(name: str) -> str:
+    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    name = name.lower().strip()
+    name = re.sub(r'[^\w\s-]', '', name)
+    name = re.sub(r'[\s_]+', '-', name).strip('-')
+    return name[:30]
+
+
+def _generate_username_slug(name: str | None, db: Session) -> str:
+    base = _slugify(name or '') or 'user'
+    slug = base
+    counter = 2
+    while db.query(User).filter(User.username_slug == slug).first():
+        slug = f"{base}-{counter}"
+        counter += 1
+    return slug
+
+
 def get_current_user(
     x_user_id: str = Header(...),
     x_user_email: str = Header(default=""),
     x_user_name: str | None = Header(default=None),
+    x_user_image: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> User:
     """
     Reads X-User-Id (google_sub) from request headers and upserts the User record.
-    Also accepts optional X-User-Email and X-User-Name for profile enrichment.
+    Also accepts optional X-User-Email, X-User-Name, X-User-Image for profile enrichment.
     Trusted because all routes already require X-API-Key.
     """
     user = db.query(User).filter(User.google_sub == x_user_id).first()
@@ -25,6 +46,11 @@ def get_current_user(
             user.email = x_user_email
         if x_user_name:
             user.name = x_user_name
+        if x_user_image:
+            user.avatar_url = x_user_image
+        if not user.username_slug:
+            display_name = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])) or user.name
+            user.username_slug = _generate_username_slug(display_name, db)
         db.commit()
         logger.debug("get_current_user: found user_id=%s email=%s status=%s", user.id, user.email, user.status)
     else:
@@ -33,11 +59,15 @@ def get_current_user(
             google_sub=x_user_id,
             email=x_user_email or x_user_id,
             name=x_user_name,
+            avatar_url=x_user_image,
         )
         db.add(user)
+        db.flush()  # get id before generating slug
+        display_name = x_user_name
+        user.username_slug = _generate_username_slug(display_name, db)
         db.commit()
         db.refresh(user)
-        logger.info("get_current_user: created user_id=%s", user.id)
+        logger.info("get_current_user: created user_id=%s slug=%s", user.id, user.username_slug)
     return user
 
 

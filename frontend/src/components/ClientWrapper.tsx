@@ -10,7 +10,7 @@ import { Toaster } from '@/components/ui/sonner';
 
 export default function ClientWrapper({ children }: { children: ReactNode }) {
     const pathname = usePathname()
-    const forcedLight = pathname.startsWith('/t/')
+    const forcedLight = pathname.startsWith('/t/') || pathname.startsWith('/u/')
 
     return (
         <SessionProvider>
