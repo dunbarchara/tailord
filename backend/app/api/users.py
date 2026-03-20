@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_api_key
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user
-from app.models.database import Tailoring, User
+from app.models.database import Experience, Tailoring, User
 
 router = APIRouter()
 
@@ -20,6 +20,7 @@ def _user_response(user: User) -> dict:
         "preferred_last_name": user.preferred_last_name,
         "username_slug": user.username_slug,
         "avatar_url": user.avatar_url,
+        "profile_public": user.profile_public,
         "status": user.status,
         "notion_workspace_name": user.notion_workspace_name,
     }
@@ -48,20 +49,25 @@ def get_user(
     return _user_response(user)
 
 
-class PreferredNameUpdate(BaseModel):
+class UserUpdate(BaseModel):
     preferred_first_name: str | None = None
     preferred_last_name: str | None = None
+    profile_public: bool | None = None
 
 
 @router.patch("/users/me")
 def update_user(
-    body: PreferredNameUpdate,
+    body: UserUpdate,
     _: str = Depends(require_api_key),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user.preferred_first_name = body.preferred_first_name or None
-    user.preferred_last_name = body.preferred_last_name or None
+    if "preferred_first_name" in body.model_fields_set:
+        user.preferred_first_name = body.preferred_first_name or None
+    if "preferred_last_name" in body.model_fields_set:
+        user.preferred_last_name = body.preferred_last_name or None
+    if body.profile_public is not None:
+        user.profile_public = body.profile_public
     db.commit()
     db.refresh(user)
     return _user_response(user)
@@ -74,8 +80,13 @@ def get_public_user(
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.username_slug == username_slug).first()
-    if not user:
+    if not user or not user.profile_public:
         raise HTTPException(status_code=404, detail="Profile not found")
+
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    resume_profile = None
+    if experience and experience.extracted_profile:
+        resume_profile = experience.extracted_profile.get("resume")
 
     public_tailorings = (
         db.query(Tailoring)
@@ -91,6 +102,7 @@ def get_public_user(
         "name": _display_name(user),
         "avatar_url": user.avatar_url,
         "username_slug": user.username_slug,
+        "profile": resume_profile,
         "tailorings": [
             {
                 "title": t.job.extracted_job.get("title") if t.job and t.job.extracted_job else None,

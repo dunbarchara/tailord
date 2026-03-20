@@ -20,6 +20,13 @@ export async function GET() {
   return proxyToBackendWithUser('experience', user, { method: 'GET' })
 }
 
+export async function PATCH(req: Request) {
+  const user = await getUserContext()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const body = await req.text()
+  return proxyToBackendWithUser('experience/profile', user, { method: 'PATCH', body })
+}
+
 export async function DELETE() {
   const user = await getUserContext()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

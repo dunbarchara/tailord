@@ -41,22 +41,23 @@ Two phases, clear split:
 **Why second:** The sharing infrastructure (`/t/{slug}`) is already live. The profile page is a lightweight addition that meaningfully expands the product's reach — one URL that surfaces all of a user's public work in context.
 
 #### 1. Data model
-- [ ] Add `username_slug` column to `users` table (unique, nullable)
+- [x] Add `username_slug` column to `users` table (unique, nullable)
   - Auto-generate on user creation from display name (`"Chara Dunbar"` → `"chara-dunbar"`); append number on collision
   - Migration: backfill existing users
-- [ ] Alembic migration
+- [x] Alembic migration
 
 #### 2. Backend
-- [ ] `GET /users/public/{username_slug}` endpoint — no auth required
-  - Returns: name, avatar URL (from Google), list of public tailorings (title, company, public_slug, created_at)
+- [x] `GET /users/public/{username_slug}` endpoint — gated behind `profile_public=True`
+  - Returns: name, avatar URL, extracted profile (headline, summary, work experience, education, skills, certifications), list of public tailorings
   - Only tailorings where `letter_public OR posting_public` are included
+- [x] `profile_public` bool on User (default False) + migration `d7e8f9a0b1c2`
+- [x] Extended `ExtractedProfile` schema with `phone`, `location`, `headline`, `work_experience.location`, `education.location`
+- [x] Updated LLM extraction prompt to extract all new fields
 
 #### 3. Frontend
-- [ ] `/u/[slug]` route — public, no auth, server-rendered
-  - Displays: name, list of public tailorings as cards linking to `/t/{slug}`
-  - Empty state if user has no public tailorings
-- [ ] Settings: show the user their public profile URL with a copy button
-- [ ] Consider: link from the public tailoring page (`/t/{slug}`) back to the author's profile
+- [x] `/u/[slug]` route — two-pane layout (sticky sidebar + scrollable content), renders summary, work experience, education, skills, certifications
+- [x] Settings: `profile_public` toggle (Public/Private); profile URL with copy button only shown when enabled
+- [x] Link from `/t/{slug}` back to author's profile page
 
 ---
 
@@ -98,21 +99,15 @@ Two phases, clear split:
 **Why fourth:** The experience pipeline is the foundation everything else builds on — bad or incomplete parsing silently degrades every tailoring. Giving users visibility and edit access turns a black box into something they trust. The timer work is also a direct extension of the perceived-performance pattern established in A1.
 
 #### 1. Processing progress indicator
-- [ ] Replace the static "Processing…" state in the Experience page with a phase list + elapsed timers (same pattern as tailoring generation)
-- [ ] Backend: emit SSE progress events during experience processing — phases: `uploading`, `extracting`, `ready`
-- [ ] Frontend: consume SSE, show phase list with per-phase elapsed timers; on `ready` transition to the parsed view
+- [x] Replace the static "Processing…" state in the Experience page with a phase list + elapsed timers (same pattern as tailoring generation)
+- [x] Backend: `POST /experience/process` now returns SSE `StreamingResponse` — phases: `extracting` (text extraction), `analyzing` (LLM profile extraction), `ready`
+- [x] Frontend: reads SSE stream directly from POST response; shows phase list with per-phase elapsed timers; transitions to parsed view on `ready`; falls back to polling on page reload if SSE gone
 
 #### 2. Parsed profile review and editing
-- [ ] After processing, show the extracted profile in a structured, editable UI:
-  - Work experience: title, company, duration, bullets (add/edit/remove)
-  - Skills: technical and soft (add/remove tags)
-  - Education: degree, institution, year
-  - Projects: name, description, technologies
-- [ ] Edits are saved directly to `extracted_profile` (the parsed JSON) — **not** by re-running the LLM
-  - Rationale: re-running LLM on edited raw text is expensive, slow, and would overwrite the user's corrections. Editing the parsed layer is surgical and immediate. The raw text is preserved unchanged as a source of record.
-  - `PATCH /experience` endpoint: accepts partial `extracted_profile` update, merges into existing
-- [ ] Unsaved changes indicator; save is explicit (not auto-save) to avoid accidental overwrites
-- [ ] After saving, prompt: "Regenerate affected tailorings?" — link to tailorings that haven't been regenerated since the experience was last edited (requires `experience_updated_at` vs `tailoring.created_at` comparison)
+- [x] `EditableResumeProfile` component: editable fields for all resume sections (personal info, work experience with bullets, skills, certifications, education)
+- [x] `PATCH /experience/profile` backend endpoint: merges partial update into `extracted_profile.resume`, updates `processed_at`
+- [x] Edit/Cancel/Save pattern — explicit save, no auto-save; "Edit" button in Parsed Profile section header
+- [x] After saving: "Profile updated — you may want to regenerate tailorings" banner with link to tailorings list
 
 ---
 
@@ -212,9 +207,9 @@ Two phases, clear split:
 | Day | Phase | Focus | Key output |
 |-----|-------|-------|-----------|
 | A1 ✅ | User | Streaming + perceived performance | SSE stage events, early redirect, phase timers, background generation with DB polling |
-| A2 | User | Public profile page | `/u/{slug}`, `username_slug` on users, Settings profile URL |
+| A2 ✅ | User | Public profile page | `/u/{slug}` two-pane layout, experience rendering, `profile_public` opt-in, Settings toggle |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
-| A4 | User | My Experience improvements | Processing progress indicator, parsed profile review + editing |
+| A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
