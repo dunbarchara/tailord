@@ -11,6 +11,8 @@ interface PublicTailoring {
   posting_public: boolean
   chunks?: JobChunk[]
   created_at: string
+  author_slug: string | null
+  author_name: string | null
 }
 
 async function fetchPublicTailoring(slug: string): Promise<PublicTailoring | null> {
@@ -91,6 +93,14 @@ export default async function PublicTailoringPage({
         <div className="px-6">
           <footer className="pt-6 pb-6 border-t border-border-subtle text-center print:hidden">
             <p className="text-text-tertiary text-xs">
+              {tailoring.author_slug && tailoring.author_name && (
+                <>
+                  <Link href={`/u/${tailoring.author_slug}`} className="text-text-link hover:underline">
+                    {tailoring.author_name}
+                  </Link>
+                  {' · '}
+                </>
+              )}
               Generated with{' '}
               <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
                 Tailord

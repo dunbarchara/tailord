@@ -77,11 +77,16 @@ export interface SourcedProfile {
 
 export interface ExtractedProfile {
   email?: string | null
+  phone?: string | null
   linkedin?: string | null
+  location?: string | null
+  title?: string | null
+  headline?: string | null
   summary: string
   work_experience: Array<{
     title: string
     company: string
+    location?: string | null
     duration: string
     bullets: string[]
   }>
@@ -92,6 +97,7 @@ export interface ExtractedProfile {
   education: Array<{
     degree: string
     institution: string
+    location?: string | null
     year: string
     distinction?: string | null
   }>

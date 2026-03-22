@@ -24,6 +24,10 @@ class User(Base):
     notion_workspace_id: Mapped[str | None] = mapped_column(String, nullable=True)
     notion_workspace_name: Mapped[str | None] = mapped_column(String, nullable=True)
     notion_parent_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Public profile
+    username_slug: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    profile_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # status: pending | approved
     status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     created_at: Mapped[datetime] = mapped_column(

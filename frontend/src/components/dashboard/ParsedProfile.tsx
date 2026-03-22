@@ -30,13 +30,25 @@ function ResumeTab({ resume }: { resume: ExtractedProfile }) {
   return (
     <div className="text-xs">
       {/* Contact */}
-      {(resume.email || resume.linkedin) && (
+      {(resume.email || resume.phone || resume.linkedin || resume.location) && (
         <Section title="Contact">
           <div className="space-y-0.5">
+            {resume.location && (
+              <p className="text-text-secondary">
+                <span className="text-text-tertiary w-16 inline-block">Location</span>
+                {resume.location}
+              </p>
+            )}
             {resume.email && (
               <p className="text-text-secondary">
                 <span className="text-text-tertiary w-16 inline-block">Email</span>
                 <a href={`mailto:${resume.email}`} className="text-text-link hover:underline">{resume.email}</a>
+              </p>
+            )}
+            {resume.phone && (
+              <p className="text-text-secondary">
+                <span className="text-text-tertiary w-16 inline-block">Phone</span>
+                {resume.phone}
               </p>
             )}
             {resume.linkedin && (
@@ -46,6 +58,18 @@ function ResumeTab({ resume }: { resume: ExtractedProfile }) {
               </p>
             )}
           </div>
+        </Section>
+      )}
+
+      {/* Title + Headline */}
+      {(resume.title || resume.headline) && (
+        <Section title="Identity">
+          {resume.title && (
+            <p className="text-text-secondary font-medium">{resume.title}</p>
+          )}
+          {resume.headline && (
+            <p className="text-text-secondary leading-relaxed mt-1">{resume.headline}</p>
+          )}
         </Section>
       )}
 
@@ -65,6 +89,7 @@ function ResumeTab({ resume }: { resume: ExtractedProfile }) {
                 <p className="font-medium text-text-primary">
                   {job.title}
                   {job.company && <span className="font-normal text-text-secondary"> @ {job.company}</span>}
+                  {job.location && <span className="font-normal text-text-tertiary"> · {job.location}</span>}
                   {job.duration && <span className="font-normal text-text-tertiary"> · {job.duration}</span>}
                 </p>
                 {job.bullets?.length > 0 && (
@@ -109,6 +134,7 @@ function ResumeTab({ resume }: { resume: ExtractedProfile }) {
                 <p className="text-text-secondary">
                   {e.degree}
                   {e.institution && <span className="text-text-tertiary"> — {e.institution}</span>}
+                  {e.location && <span className="text-text-tertiary">, {e.location}</span>}
                   {e.year && <span className="text-text-tertiary"> ({e.year})</span>}
                 </p>
                 {e.distinction && (

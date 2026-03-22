@@ -1,8 +1,11 @@
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+import anyio
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -11,7 +14,12 @@ from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.models.database import Experience, User
-from app.services.experience_processor import process_experience
+from app.services.experience_processor import (
+    _friendly_processing_error,
+    _normalize_resume_text,
+    extract_text,
+)
+from app.services.profile_extractor import extract_profile
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -36,6 +44,36 @@ class UserInputRequest(BaseModel):
     text: str
 
 
+class ProfileUpdate(BaseModel):
+    headline: str | None = None
+    summary: str | None = None
+    location: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    work_experience: list | None = None
+    skills: dict | None = None
+    education: list | None = None
+    projects: list | None = None
+    certifications: list | None = None
+
+
+def _experience_response(e: Experience) -> dict:
+    return {
+        "id": str(e.id),
+        "filename": e.filename,
+        "status": e.status,
+        "extracted_profile": e.extracted_profile,
+        "raw_resume_text": e.raw_resume_text,
+        "error_message": e.error_message,
+        "github_username": e.github_username,
+        "github_repos": e.github_repos,
+        "user_input_text": e.user_input_text,
+        "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None,
+        "processed_at": e.processed_at.isoformat() if e.processed_at else None,
+    }
+
+
 @router.post("/experience/upload-url")
 def get_upload_url(
     body: UploadUrlRequest,
@@ -51,7 +89,6 @@ def get_upload_url(
             detail=f"File type .{ext} not allowed. Supported: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    # Delete existing experience record + blob if one already exists
     existing = db.query(Experience).filter(Experience.user_id == user.id).first()
     if existing:
         logger.debug("Deleting existing experience %s for user %s", existing.id, user.id)
@@ -87,37 +124,67 @@ def get_upload_url(
 
 
 @router.post("/experience/process")
-def trigger_process(
+async def trigger_process(
     body: ProcessRequest,
-    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    logger.info("trigger_process: user=%s storage_key=%s experience_id=%s",
-                user.id, body.storage_key, body.experience_id)
+    logger.info("trigger_process: user=%s storage_key=%s", user.id, body.storage_key)
     experience = db.query(Experience).filter(
         Experience.user_id == user.id,
         Experience.s3_key == body.storage_key,
     ).first()
 
     if not experience:
-        logger.warning("trigger_process: no experience found for user=%s storage_key=%s",
-                       user.id, body.storage_key)
         raise HTTPException(status_code=404, detail="Experience record not found")
 
     experience.status = "processing"
     db.commit()
 
-    background_tasks.add_task(
-        process_experience,
-        experience.id,
-        experience.s3_key,
-        experience.filename,
-    )
-    logger.info("trigger_process: background task queued for experience_id=%s", experience.id)
+    storage_key = body.storage_key
+    filename = experience.filename or "file.txt"
 
-    return {"experience_id": str(experience.id), "status": "processing"}
+    async def _stream():
+        try:
+            yield "event: stage\ndata: extracting\n\n"
+
+            file_bytes = await anyio.to_thread.run_sync(
+                lambda: get_storage_client().download_bytes(storage_key)
+            )
+            text = await anyio.to_thread.run_sync(
+                lambda: extract_text(file_bytes, filename)
+            )
+            normalized = _normalize_resume_text(text)
+
+            yield "event: stage\ndata: analyzing\n\n"
+
+            profile = await anyio.to_thread.run_sync(
+                lambda: extract_profile(normalized)
+            )
+
+            experience.raw_resume_text = normalized
+            experience.extracted_profile = {"resume": profile}
+            experience.status = "ready"
+            experience.processed_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(experience)
+
+            logger.info("trigger_process SSE complete: experience_id=%s", experience.id)
+            yield f"event: ready\ndata: {json.dumps(_experience_response(experience))}\n\n"
+
+        except Exception as exc:
+            logger.exception("trigger_process SSE failed: %s", exc)
+            experience.status = "error"
+            experience.error_message = _friendly_processing_error(exc)
+            db.commit()
+            yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/experience")
@@ -129,20 +196,7 @@ def get_experience(
     e = user.experience
     if not e:
         return None
-
-    return {
-        "id": str(e.id),
-        "filename": e.filename,
-        "status": e.status,
-        "extracted_profile": e.extracted_profile,
-        "raw_resume_text": e.raw_resume_text,
-        "error_message": e.error_message,
-        "github_username": e.github_username,
-        "github_repos": e.github_repos,
-        "user_input_text": e.user_input_text,
-        "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None,
-        "processed_at": e.processed_at.isoformat() if e.processed_at else None,
-    }
+    return _experience_response(e)
 
 
 @router.delete("/experience", status_code=204)
@@ -165,6 +219,35 @@ def delete_experience(
     db.delete(e)
     db.commit()
     logger.info("delete_experience: complete for user=%s", user.id)
+
+
+@router.patch("/experience/profile")
+def update_profile(
+    body: ProfileUpdate,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
+        raise HTTPException(status_code=404, detail="No experience found")
+
+    resume = {}
+    if experience.extracted_profile:
+        resume = dict(experience.extracted_profile.get("resume") or {})
+
+    update_data = body.model_dump(exclude_unset=True)
+    resume = {**resume, **update_data}
+
+    experience.extracted_profile = {
+        **(experience.extracted_profile or {}),
+        "resume": resume,
+    }
+    experience.processed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(experience)
+    logger.info("update_profile: user=%s", user.id)
+    return _experience_response(experience)
 
 
 @router.get("/experience/github/{username}/repos")

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from '@/components/ThemeProvider';
-import { Moon, Sun, LogOut } from 'lucide-react';
+import { Moon, Sun, LogOut, Copy, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -21,6 +21,10 @@ export function SettingsPanel() {
   const [lastName, setLastName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [usernameSlug, setUsernameSlug] = useState<string | null>(null);
+  const [copiedProfile, setCopiedProfile] = useState(false);
+  const [profilePublic, setProfilePublic] = useState(false);
+  const [togglingProfile, setTogglingProfile] = useState(false);
 
   const [notionWorkspace, setNotionWorkspace] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
@@ -32,9 +36,28 @@ export function SettingsPanel() {
         setFirstName(data.preferred_first_name ?? '');
         setLastName(data.preferred_last_name ?? '');
         setNotionWorkspace(data.notion_workspace_name ?? null);
+        setUsernameSlug(data.username_slug ?? null);
+        setProfilePublic(data.profile_public ?? false);
       })
       .catch(() => {});
   }, []);
+
+  async function handleToggleProfilePublic() {
+    setTogglingProfile(true);
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_public: !profilePublic }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProfilePublic(data.profile_public);
+      }
+    } finally {
+      setTogglingProfile(false);
+    }
+  }
 
   async function handleNotionDisconnect() {
     setDisconnecting(true);
@@ -131,6 +154,61 @@ export function SettingsPanel() {
         </section>
 
         <Separator />
+
+        {/* Public profile */}
+        {usernameSlug && (
+          <>
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Public profile</h2>
+                <p className="text-xs text-text-tertiary mt-1">
+                  Share your experience and public tailorings with recruiters or in your bio.
+                </p>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-text-primary">Enable public profile</p>
+                  <p className="text-xs text-text-tertiary mt-0.5">Anyone with the link can view your profile</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleToggleProfilePublic}
+                  disabled={togglingProfile}
+                >
+                  {profilePublic ? 'Public' : 'Private'}
+                </Button>
+              </div>
+              {profilePublic && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-sunken border border-border-subtle">
+                  <a
+                    href={`/u/${usernameSlug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 text-sm text-text-link hover:underline truncate"
+                  >
+                    {typeof window !== 'undefined' ? `${window.location.origin}/u/${usernameSlug}` : `/u/${usernameSlug}`}
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/u/${usernameSlug}`);
+                      setCopiedProfile(true);
+                      setTimeout(() => setCopiedProfile(false), 2000);
+                    }}
+                    className="flex-shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
+                    title="Copy link"
+                  >
+                    {copiedProfile
+                      ? <CheckCircle2 className="h-4 w-4 text-success" />
+                      : <Copy className="h-4 w-4" />}
+                  </button>
+                </div>
+              )}
+            </section>
+
+            <Separator />
+          </>
+        )}
 
         {/* Appearance */}
         <section className="space-y-4">

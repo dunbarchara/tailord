@@ -19,6 +19,7 @@ import {
   ChevronsUpDown,
   Trash2,
   Search,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -52,6 +53,7 @@ interface SidebarContentProps {
 
 const navItems = [
   { href: '/dashboard/experience', icon: Briefcase, label: 'My Experience' },
+  { href: '/dashboard/profile', icon: User, label: 'Profile' },
 ];
 
 function SidebarContent({ tailorings, pathname }: SidebarContentProps) {

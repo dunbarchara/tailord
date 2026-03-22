@@ -41,22 +41,35 @@ Two phases, clear split:
 **Why second:** The sharing infrastructure (`/t/{slug}`) is already live. The profile page is a lightweight addition that meaningfully expands the product's reach — one URL that surfaces all of a user's public work in context.
 
 #### 1. Data model
-- [ ] Add `username_slug` column to `users` table (unique, nullable)
+- [x] Add `username_slug` column to `users` table (unique, nullable)
   - Auto-generate on user creation from display name (`"Chara Dunbar"` → `"chara-dunbar"`); append number on collision
   - Migration: backfill existing users
-- [ ] Alembic migration
+- [x] Alembic migration
 
 #### 2. Backend
-- [ ] `GET /users/public/{username_slug}` endpoint — no auth required
-  - Returns: name, avatar URL (from Google), list of public tailorings (title, company, public_slug, created_at)
-  - Only tailorings where `letter_public OR posting_public` are included
+- [x] `GET /users/public/{username_slug}` endpoint — gated behind `profile_public=True`
+  - Returns: `name`, `avatar_url`, `username_slug`, `github_username`, `profile` (extracted resume)
+  - Tailorings intentionally excluded — see "Future: Tailorings on profile page" note above
+- [x] `profile_public` bool on User (default False) + migration `d7e8f9a0b1c2`
+- [x] Extended `ExtractedProfile` schema with `phone`, `location`, `headline`, `title`, `work_experience.location`, `education.location`
+- [x] Added `title` field: 2–5 word role (e.g. "Software Engineer"), distinct from `headline`
+- [x] Updated LLM extraction prompt to extract all new fields; LLM now generates a summary if none is present in the resume
+- [x] `github_username` included in public profile response from `experience.github_username`
 
 #### 3. Frontend
-- [ ] `/u/[slug]` route — public, no auth, server-rendered
-  - Displays: name, list of public tailorings as cards linking to `/t/{slug}`
-  - Empty state if user has no public tailorings
-- [ ] Settings: show the user their public profile URL with a copy button
-- [ ] Consider: link from the public tailoring page (`/t/{slug}`) back to the author's profile
+- [x] `/u/[slug]` route — two-pane layout (sticky sidebar + scrollable content), renders summary, work experience, education, skills, certifications, projects, contact
+- [x] `/dashboard/profile` — private preview of the public profile with sticky visibility banner (Public/Private status, link to live URL, link to visibility settings)
+- [x] Shared `ProfileSidebar` component: name, title, headline, location, social links (LinkedIn, GitHub), animated scroll-based nav (scroll-position threshold with first/last section clamping), back-to-top button
+- [x] Section headers: icon + label + divider line; skill group sub-labels (Technical, Soft Skills, Certifications)
+- [x] OG and Twitter card meta tags on `/u/[slug]` (`generateMetadata`); description priority: headline → summary excerpt → fallback
+- [x] Settings: `profile_public` toggle (Public/Private); profile URL with copy button only shown when enabled
+- [x] Link from `/t/{slug}` back to author's profile page
+- [x] "Profile" nav item added to dashboard sidebar
+
+#### Future: Tailorings on profile page
+Tailorings were intentionally removed from the public profile. The philosophy: the profile surfaces *who you are and what you're capable of*, not your active job search. Showing all targeted companies/roles to any recruiter who visits is a liability for the candidate — it exposes competitive intelligence, signals desperation, and undercuts negotiating position.
+
+When we revisit this, the right model is a **third toggle** per tailoring: `show_on_profile` (distinct from `letter_public` / `posting_public`). This keeps individual sharing opt-in separate from portfolio showcasing, and lets the candidate curate exactly which tailorings (if any) appear on their profile. Left sidebar placement would be preferred over right panel, so they appear above the fold regardless of scroll position.
 
 ---
 
@@ -88,6 +101,25 @@ Two phases, clear split:
 - [ ] Review error states: are all API errors surfaced to the user in plain language?
 - [ ] Review empty states: dashboard with no tailorings, public profile with no public tailorings
 - [ ] Check loading states are consistent across all data-fetching views
+
+---
+
+### Day A4 — My Experience Improvements
+
+**Goal:** The experience processing flow feels responsive, and users have control over how their profile is interpreted.
+
+**Why fourth:** The experience pipeline is the foundation everything else builds on — bad or incomplete parsing silently degrades every tailoring. Giving users visibility and edit access turns a black box into something they trust. The timer work is also a direct extension of the perceived-performance pattern established in A1.
+
+#### 1. Processing progress indicator
+- [x] Replace the static "Processing…" state in the Experience page with a phase list + elapsed timers (same pattern as tailoring generation)
+- [x] Backend: `POST /experience/process` now returns SSE `StreamingResponse` — phases: `extracting` (text extraction), `analyzing` (LLM profile extraction), `ready`
+- [x] Frontend: reads SSE stream directly from POST response; shows phase list with per-phase elapsed timers; transitions to parsed view on `ready`; falls back to polling on page reload if SSE gone
+
+#### 2. Parsed profile review and editing
+- [x] `EditableResumeProfile` component: editable fields for all resume sections (personal info, work experience with bullets, skills, certifications, education)
+- [x] `PATCH /experience/profile` backend endpoint: merges partial update into `extracted_profile.resume`, updates `processed_at`
+- [x] Edit/Cancel/Save pattern — explicit save, no auto-save; "Edit" button in Parsed Profile section header
+- [x] After saving: "Profile updated — you may want to regenerate tailorings" banner with link to tailorings list
 
 ---
 
@@ -187,8 +219,9 @@ Two phases, clear split:
 | Day | Phase | Focus | Key output |
 |-----|-------|-------|-----------|
 | A1 ✅ | User | Streaming + perceived performance | SSE stage events, early redirect, phase timers, background generation with DB polling |
-| A2 | User | Public profile page | `/u/{slug}`, `username_slug` on users, Settings profile URL |
+| A2 ✅ | User | Public profile page | `/u/{slug}` two-pane layout, experience rendering, `profile_public` opt-in, Settings toggle |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
+| A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |

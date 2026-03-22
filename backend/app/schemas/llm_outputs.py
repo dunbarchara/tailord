@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class WorkExperience(BaseModel):
     title: str = ""
     company: str = ""
+    location: str | None = None
     duration: str = ""
     bullets: list[str] = []
 
@@ -18,6 +19,7 @@ class ProfileSkills(BaseModel):
 class Education(BaseModel):
     degree: str = ""
     institution: str = ""
+    location: str | None = None
     year: str = ""
     distinction: str | None = None
 
@@ -30,7 +32,11 @@ class Project(BaseModel):
 
 class ExtractedProfile(BaseModel):
     email: str | None = None
+    phone: str | None = None
     linkedin: str | None = None
+    location: str | None = None
+    title: str | None = None
+    headline: str | None = None
     summary: str = ""
     work_experience: list[WorkExperience] = []
     skills: ProfileSkills = ProfileSkills()

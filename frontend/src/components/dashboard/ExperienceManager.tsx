@@ -8,13 +8,15 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { toastError } from '@/lib/utils';
+import { toastError, formatElapsed } from '@/lib/utils';
 import { ParsedProfile } from '@/components/dashboard/ParsedProfile';
-import type { ExperienceRecord } from '@/types';
+import { EditableResumeProfile } from '@/components/dashboard/EditableResumeProfile';
+import type { ExperienceRecord, ExtractedProfile } from '@/types';
 
 type UploadPhase =
   | { phase: 'idle' }
@@ -26,6 +28,12 @@ type UploadPhase =
 type GithubState = 'idle' | 'saving' | 'saved' | 'removing' | 'error';
 type SaveState = 'idle' | 'saving' | 'saved';
 
+const PROCESS_STAGE_LABELS: Record<string, string> = {
+  extracting: 'Extracting text',
+  analyzing: 'Analyzing profile',
+};
+const PROCESS_STAGES = ['extracting', 'analyzing'] as const;
+
 export function ExperienceManager() {
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'idle' });
   const [githubUrl, setGithubUrl] = useState('');
@@ -34,8 +42,24 @@ export function ExperienceManager() {
   const [directText, setDirectText] = useState('');
   const [directState, setDirectState] = useState<SaveState>('idle');
 
+  // SSE processing state
+  const [processingStage, setProcessingStage] = useState<string | null>(null);
+  const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
+  const [tick, setTick] = useState(0);
+
+  // Profile editing
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Tick every second while processing (drives elapsed time display)
+  useEffect(() => {
+    if (uploadState.phase !== 'processing') return;
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [uploadState.phase]);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current !== null) {
@@ -44,6 +68,7 @@ export function ExperienceManager() {
     }
   }, []);
 
+  // Fallback polling — used when page loads mid-processing (no live SSE stream)
   const startPolling = useCallback(() => {
     stopPolling();
     pollIntervalRef.current = setInterval(async () => {
@@ -68,7 +93,7 @@ export function ExperienceManager() {
     }, 3000);
   }, [stopPolling]);
 
-  // Restore resume state on mount
+  // Restore state on mount
   useEffect(() => {
     async function loadInitialState() {
       try {
@@ -87,7 +112,7 @@ export function ExperienceManager() {
             filename: record.filename ?? '',
             experienceId: record.id,
           });
-          startPolling();
+          startPolling(); // SSE gone — fall back to polling
         } else if (record.status === 'error') {
           setUploadState({
             phase: 'error',
@@ -95,7 +120,7 @@ export function ExperienceManager() {
           });
         }
       } catch {
-        // ignore — leave in idle state
+        // ignore
       }
     }
 
@@ -106,27 +131,24 @@ export function ExperienceManager() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    e.target.value = ''; // reset input so the same file can be re-selected
+    e.target.value = '';
 
     setUploadState({ phase: 'uploading', filename: file.name });
 
     try {
-      // Step 1: Get Azure Blob Storage SAS upload URL
+      // Step 1: Get upload URL
       const urlRes = await fetch('/api/experience/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name }),
       });
-
       if (!urlRes.ok) {
         const err = await urlRes.json().catch(() => ({}));
         throw new Error(err.detail ?? `Failed to get upload URL (${urlRes.status})`);
       }
-
       const { upload_url, storage_key, experience_id } = await urlRes.json();
 
-      // Step 2: Upload file bytes directly to Azure Blob Storage via SAS URL
-      // x-ms-blob-type is required by Azure; Content-Type is passed through to the stored blob
+      // Step 2: Upload to blob storage
       const uploadRes = await fetch(upload_url, {
         method: 'PUT',
         body: file,
@@ -135,25 +157,67 @@ export function ExperienceManager() {
           'x-ms-blob-type': 'BlockBlob',
         },
       });
-
       if (!uploadRes.ok) {
         throw new Error(`Failed to upload file to storage (${uploadRes.status})`);
       }
 
-      // Step 3: Trigger backend processing
+      // Step 3: Start SSE stream
       setUploadState({ phase: 'processing', filename: file.name, experienceId: experience_id });
+      setProcessingStage(null);
+      setStageStartedAt({});
 
-      await fetch('/api/experience/process', {
+      const processRes = await fetch('/api/experience/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storage_key, experience_id }),
       });
 
-      // Step 4: Poll until ready or error
-      startPolling();
+      if (!processRes.ok || !processRes.body) {
+        const err = await processRes.json().catch(() => ({}));
+        throw new Error(err.detail ?? 'Failed to start processing');
+      }
+
+      // Step 4: Read SSE events
+      const reader = processRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let currentEvent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (currentEvent === 'stage') {
+              setProcessingStage(data);
+              setStageStartedAt((prev) => ({ ...prev, [data]: Date.now() }));
+            } else if (currentEvent === 'ready') {
+              const record = JSON.parse(data) as ExperienceRecord;
+              setUploadState({ phase: 'ready', record });
+              setProcessingStage(null);
+              if (record.github_username) setGithubUrl(record.github_username);
+              if (record.user_input_text) setDirectText(record.user_input_text);
+            } else if (currentEvent === 'error') {
+              const { message } = JSON.parse(data);
+              setUploadState({ phase: 'error', message });
+              setProcessingStage(null);
+            }
+            currentEvent = '';
+          }
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed';
       setUploadState({ phase: 'error', message });
+      setProcessingStage(null);
     }
   };
 
@@ -161,6 +225,10 @@ export function ExperienceManager() {
     stopPolling();
     await fetch('/api/experience', { method: 'DELETE' }).catch(() => {});
     setUploadState({ phase: 'idle' });
+    setProcessingStage(null);
+    setStageStartedAt({});
+    setEditingProfile(false);
+    setProfileSaved(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -193,8 +261,7 @@ export function ExperienceManager() {
     setGithubState('saved');
     toast.success('GitHub profile added');
 
-    // Refetch experience so displayed profile summary updates
-    const updated = await fetch('/api/experience').then(r => r.json());
+    const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
@@ -214,7 +281,7 @@ export function ExperienceManager() {
     setGithubState('idle');
     toast.success('GitHub profile removed');
 
-    const updated = await fetch('/api/experience').then(r => r.json());
+    const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
@@ -240,8 +307,26 @@ export function ExperienceManager() {
     setDirectState('saved');
     toast.success('Additional context saved');
 
-    const updated = await fetch('/api/experience').then(r => r.json());
+    const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
+  };
+
+  const handleSaveProfile = async (profile: ExtractedProfile) => {
+    const res = await fetch('/api/experience', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toastError(err.detail ?? 'Failed to save profile');
+      throw new Error('save failed');
+    }
+    const updated: ExperienceRecord = await res.json();
+    setUploadState({ phase: 'ready', record: updated });
+    setEditingProfile(false);
+    setProfileSaved(true);
+    toast.success('Profile updated');
   };
 
   const renderResumeContent = () => {
@@ -268,24 +353,77 @@ export function ExperienceManager() {
           </div>
         );
 
-      case 'processing':
+      case 'processing': {
+        const stagesWithStatus = PROCESS_STAGES.map((stage) => {
+          const stageIndex = PROCESS_STAGES.indexOf(stage);
+          const activeIndex = processingStage ? PROCESS_STAGES.indexOf(processingStage as typeof PROCESS_STAGES[number]) : -1;
+          const isActive = processingStage === stage;
+          const isDone = activeIndex > stageIndex;
+          return { stage, isActive, isDone };
+        }).filter(({ isActive, isDone }) => isActive || isDone);
+
         return (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
-            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-text-primary truncate">{uploadState.filename}</p>
-              <p className="text-xs text-text-tertiary mt-0.5">Extracting profile…</p>
+          <div className="px-4 py-3.5 rounded-lg border border-border-subtle bg-surface-elevated space-y-3">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
+              <p className="text-sm text-text-primary truncate flex-1">{uploadState.filename}</p>
+              <button
+                onClick={handleRemove}
+                className="text-xs text-text-tertiary hover:text-text-secondary flex-shrink-0"
+              >
+                Cancel
+              </button>
             </div>
-            <button
-              onClick={handleRemove}
-              className="text-xs text-text-tertiary hover:text-text-secondary flex-shrink-0"
-            >
-              Cancel
-            </button>
+            {stagesWithStatus.length > 0 && (
+              <div className="space-y-1 pl-7">
+                {stagesWithStatus.map(({ stage, isActive, isDone }) => {
+                  const stageIndex = PROCESS_STAGES.indexOf(stage as typeof PROCESS_STAGES[number]);
+                  const nextStage = PROCESS_STAGES[stageIndex + 1];
+                  const endTime = isDone && nextStage && stageStartedAt[nextStage]
+                    ? stageStartedAt[nextStage]
+                    : Date.now();
+                  const elapsed = stageStartedAt[stage]
+                    ? Math.floor((endTime - stageStartedAt[stage]) / 1000)
+                    : 0;
+                  return (
+                    <div key={stage} className="flex items-center gap-2">
+                      {isDone ? (
+                        <CheckCircle className="h-3 w-3 text-success flex-shrink-0" />
+                      ) : (
+                        <div className="h-3 w-3 flex items-center justify-center flex-shrink-0">
+                          <div className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse" />
+                        </div>
+                      )}
+                      <span className="text-xs text-text-secondary">
+                        {PROCESS_STAGE_LABELS[stage]}{isActive ? '...' : ''}
+                      </span>
+                      {stageStartedAt[stage] && (
+                        <span className="text-xs text-text-tertiary ml-auto">
+                          {formatElapsed(elapsed)}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
+      }
 
       case 'ready':
+        if (!uploadState.record.filename) {
+          return (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full px-4 py-8 rounded-lg border border-dashed border-border-default hover:border-brand-primary/50 bg-surface-elevated hover:bg-surface-overlay transition-colors text-center"
+            >
+              <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2" />
+              <p className="text-sm text-text-secondary">Click to upload resume</p>
+              <p className="text-xs text-text-tertiary mt-1">PDF, DOCX, or TXT</p>
+            </button>
+          );
+        }
         return (
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
             <CheckCircle className="h-4 w-4 text-success flex-shrink-0" />
@@ -461,11 +599,45 @@ export function ExperienceManager() {
         {/* Parsed profile */}
         {uploadState.phase === 'ready' && uploadState.record.extracted_profile && (
           <section className="space-y-3 pt-4 border-t border-border-subtle">
-            <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
-            <ParsedProfile
-              profile={uploadState.record.extracted_profile}
-              rawResumeText={uploadState.record.raw_resume_text}
-            />
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
+              {!editingProfile && uploadState.record.extracted_profile.resume && (
+                <button
+                  onClick={() => { setEditingProfile(true); setProfileSaved(false); }}
+                  className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-primary transition-colors"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {profileSaved && (
+              <div className="flex items-center justify-between px-3 py-2 rounded-md bg-surface-elevated border border-border-subtle text-xs">
+                <span className="text-text-secondary">
+                  Profile updated — you may want to regenerate tailorings for active applications.
+                </span>
+                <a
+                  href="/dashboard"
+                  className="text-text-link hover:underline flex-shrink-0 ml-3 whitespace-nowrap"
+                >
+                  View tailorings →
+                </a>
+              </div>
+            )}
+
+            {editingProfile && uploadState.record.extracted_profile.resume ? (
+              <EditableResumeProfile
+                profile={uploadState.record.extracted_profile.resume}
+                onSave={handleSaveProfile}
+                onCancel={() => setEditingProfile(false)}
+              />
+            ) : (
+              <ParsedProfile
+                profile={uploadState.record.extracted_profile}
+                rawResumeText={uploadState.record.raw_resume_text}
+              />
+            )}
           </section>
         )}
       </div>
