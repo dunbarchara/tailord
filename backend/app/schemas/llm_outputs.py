@@ -35,6 +35,7 @@ class ExtractedProfile(BaseModel):
     phone: str | None = None
     linkedin: str | None = None
     location: str | None = None
+    title: str | None = None
     headline: str | None = None
     summary: str = ""
     work_experience: list[WorkExperience] = []

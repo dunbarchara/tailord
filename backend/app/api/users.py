@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_api_key
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user
-from app.models.database import Experience, Tailoring, User
+from app.models.database import Experience, User
 
 router = APIRouter()
 
@@ -85,33 +85,16 @@ def get_public_user(
 
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
     resume_profile = None
-    if experience and experience.extracted_profile:
-        resume_profile = experience.extracted_profile.get("resume")
-
-    public_tailorings = (
-        db.query(Tailoring)
-        .filter(
-            Tailoring.user_id == user.id,
-            (Tailoring.letter_public.is_(True) | Tailoring.posting_public.is_(True)),
-        )
-        .order_by(Tailoring.created_at.desc())
-        .all()
-    )
+    github_username = None
+    if experience:
+        if experience.extracted_profile:
+            resume_profile = experience.extracted_profile.get("resume")
+        github_username = experience.github_username
 
     return {
         "name": _display_name(user),
         "avatar_url": user.avatar_url,
         "username_slug": user.username_slug,
+        "github_username": github_username,
         "profile": resume_profile,
-        "tailorings": [
-            {
-                "title": t.job.extracted_job.get("title") if t.job and t.job.extracted_job else None,
-                "company": t.job.extracted_job.get("company") if t.job and t.job.extracted_job else None,
-                "public_slug": t.public_slug,
-                "letter_public": t.letter_public,
-                "posting_public": t.posting_public,
-                "created_at": t.created_at.isoformat(),
-            }
-            for t in public_tailorings
-        ],
     }

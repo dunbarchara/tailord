@@ -1,67 +1,28 @@
-import { cache } from 'react'
-import Link from 'next/link'
-import type { Metadata } from 'next'
-import { AlignLeft, Briefcase, GraduationCap, Layers, FolderOpen, Mail, Phone } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
-import { ProfileSidebar } from '@/components/profile/ProfileSidebar'
-import type { ExtractedProfile } from '@/types'
+'use client';
 
-interface PublicProfile {
-  name: string | null
-  avatar_url: string | null
-  username_slug: string
-  github_username: string | null
-  profile: ExtractedProfile | null
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import {
+  Globe, Lock, Settings, ExternalLink,
+  Mail, Phone,
+  AlignLeft, Briefcase, GraduationCap, Layers, FolderOpen,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { ProfileSidebar } from '@/components/profile/ProfileSidebar';
+import type { ExtractedProfile } from '@/types';
+
+interface UserData {
+  name: string | null;
+  avatar_url: string | null;
+  username_slug: string | null;
+  profile_public: boolean;
+  preferred_first_name: string | null;
+  preferred_last_name: string | null;
 }
 
-// cache() deduplicates the fetch across generateMetadata + the page component
-const fetchPublicProfile = cache(async (slug: string): Promise<PublicProfile | null> => {
-  const baseUrl = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
-  try {
-    const res = await fetch(`${baseUrl}/api/users/public/${slug}`, { cache: 'no-store' })
-    if (!res.ok) return null
-    return res.json()
-  } catch {
-    return null
-  }
-})
-
-// ─── Metadata ─────────────────────────────────────────────────────────────────
-
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}): Promise<Metadata> {
-  const { slug } = await params
-  const data = await fetchPublicProfile(slug)
-
-  if (!data) {
-    return { title: 'Profile Not Found — Tailord' }
-  }
-
-  const name = data.name ?? slug
-  const description = data.profile?.headline
-    ?? data.profile?.summary?.slice(0, 160)
-    ?? `View ${name}'s professional profile on Tailord.`
-
-  return {
-    title: `${name} — Tailord`,
-    description,
-    openGraph: {
-      title: `${name} — Tailord`,
-      description,
-      url: `https://tailord.app/u/${slug}`,
-      type: 'profile',
-      ...(data.avatar_url && { images: [{ url: data.avatar_url }] }),
-    },
-    twitter: {
-      card: 'summary',
-      title: `${name} — Tailord`,
-      description,
-      ...(data.avatar_url && { images: [data.avatar_url] }),
-    },
-  }
+interface ExperienceData {
+  extracted_profile: { resume?: ExtractedProfile } | null;
+  github_username: string | null;
 }
 
 // ─── Section primitives ────────────────────────────────────────────────────────
@@ -73,13 +34,13 @@ function SectionHeader({ icon: Icon, label }: { icon: LucideIcon; label: string 
       <span className="text-[10px] uppercase tracking-widest text-text-tertiary font-medium flex-shrink-0">{label}</span>
       <div className="flex-1 h-px bg-border-subtle" />
     </div>
-  )
+  );
 }
 
 function SkillGroupLabel({ children }: { children: string }) {
   return (
     <p className="text-[10px] uppercase tracking-widest text-text-disabled mb-2">{children}</p>
-  )
+  );
 }
 
 // ─── Section components ────────────────────────────────────────────────────────
@@ -115,7 +76,7 @@ function ExperienceSection({ jobs }: { jobs: ExtractedProfile['work_experience']
         ))}
       </div>
     </section>
-  )
+  );
 }
 
 function EducationSection({ education }: { education: ExtractedProfile['education'] }) {
@@ -142,15 +103,15 @@ function EducationSection({ education }: { education: ExtractedProfile['educatio
         ))}
       </div>
     </section>
-  )
+  );
 }
 
 function SkillsSection({
   skills,
   certifications,
 }: {
-  skills: ExtractedProfile['skills']
-  certifications: string[]
+  skills: ExtractedProfile['skills'];
+  certifications: string[];
 }) {
   return (
     <section id="skills" className="mb-16">
@@ -203,7 +164,7 @@ function SkillsSection({
         )}
       </div>
     </section>
-  )
+  );
 }
 
 function ProjectsSection({ projects }: { projects: ExtractedProfile['projects'] }) {
@@ -233,22 +194,22 @@ function ProjectsSection({ projects }: { projects: ExtractedProfile['projects'] 
         ))}
       </div>
     </section>
-  )
+  );
 }
 
 function ContactSection({
   email,
   phone,
 }: {
-  email?: string | null
-  phone?: string | null
+  email?: string | null;
+  phone?: string | null;
 }) {
   const items = [
     email && { label: email, href: `mailto:${email}`, icon: <Mail className="h-4 w-4 flex-shrink-0" /> },
     phone && { label: phone, href: `tel:${phone}`, icon: <Phone className="h-4 w-4 flex-shrink-0" /> },
-  ].filter(Boolean) as Array<{ label: string; href: string; icon: React.ReactNode }>
+  ].filter(Boolean) as Array<{ label: string; href: string; icon: React.ReactNode }>;
 
-  if (items.length === 0) return null
+  if (items.length === 0) return null;
 
   return (
     <section id="contact" className="mb-16">
@@ -268,41 +229,53 @@ function ContactSection({
         ))}
       </div>
     </section>
-  )
+  );
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-export default async function PublicProfilePage({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}) {
-  const { slug } = await params
-  const data = await fetchPublicProfile(slug)
+export default function ProfilePage() {
+  const [user, setUser] = useState<UserData | null>(null);
+  const [resume, setResume] = useState<ExtractedProfile | null>(null);
+  const [githubUsername, setGithubUsername] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  if (!data) {
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/users').then((r) => r.json()),
+      fetch('/api/experience').then((r) => r.json()),
+    ])
+      .then(([userData, experienceData]: [UserData, ExperienceData]) => {
+        setUser(userData);
+        setResume(experienceData?.extracted_profile?.resume ?? null);
+        setGithubUsername(experienceData?.github_username ?? null);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-base">
-        <div className="text-center space-y-3">
-          <p className="text-xl font-semibold text-text-primary">Not found</p>
-          <p className="text-text-secondary text-sm">This profile doesn&apos;t exist or isn&apos;t public yet.</p>
-        </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
       </div>
-    )
+    );
   }
 
-  const p = data.profile
+  const displayName =
+    [user?.preferred_first_name, user?.preferred_last_name].filter(Boolean).join(' ') ||
+    user?.name ||
+    null;
 
-  const hasSummary = !!p?.summary
-  const hasExperience = (p?.work_experience?.length ?? 0) > 0
-  const hasEducation = (p?.education?.length ?? 0) > 0
+  const hasSummary = !!resume?.summary;
+  const hasExperience = (resume?.work_experience?.length ?? 0) > 0;
+  const hasEducation = (resume?.education?.length ?? 0) > 0;
   const hasSkills =
-    (p?.skills?.technical?.length ?? 0) > 0 ||
-    (p?.skills?.soft?.length ?? 0) > 0 ||
-    (p?.certifications?.length ?? 0) > 0
-  const hasProjects = (p?.projects?.length ?? 0) > 0
-  const hasContact = !!(p?.email || p?.phone)
+    (resume?.skills?.technical?.length ?? 0) > 0 ||
+    (resume?.skills?.soft?.length ?? 0) > 0 ||
+    (resume?.certifications?.length ?? 0) > 0;
+  const hasProjects = (resume?.projects?.length ?? 0) > 0;
+  const hasContact = !!(resume?.email || resume?.phone);
 
   const navSections = [
     hasSummary && { id: 'about', label: 'About' },
@@ -311,56 +284,102 @@ export default async function PublicProfilePage({
     hasSkills && { id: 'skills', label: 'Skills' },
     hasProjects && { id: 'projects', label: 'Projects' },
     hasContact && { id: 'contact', label: 'Contact' },
-  ].filter(Boolean) as Array<{ id: string; label: string }>
+  ].filter(Boolean) as Array<{ id: string; label: string }>;
 
   return (
-    <div className="bg-surface-base">
-      <div className="mx-auto max-w-[1216px] px-6 lg:flex lg:gap-12 lg:px-16">
-        <ProfileSidebar
-          name={data.name}
-          slugFallback={slug}
-          title={p?.title}
-          headline={p?.headline}
-          location={p?.location}
-          linkedin={p?.linkedin}
-          githubUsername={data.github_username}
-          navSections={navSections}
-          showScrollToTop
-        />
-
-        <main className="pb-20 pt-2 lg:w-7/12 lg:py-20">
-          {!p ? (
-            <div className="mt-8">
-              <p className="text-sm text-text-secondary">
-                Experience details haven&apos;t been shared yet.
-              </p>
-            </div>
+    <div>
+      {/* Visibility banner */}
+      <div className="sticky top-0 z-10 border-b border-border-subtle bg-surface-elevated px-6 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs text-text-secondary">
+          {user?.profile_public ? (
+            <>
+              <Globe className="h-3.5 w-3.5 text-success" />
+              <span>Public</span>
+              {user.username_slug && (
+                <a
+                  href={`/u/${user.username_slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-text-link hover:underline ml-1"
+                >
+                  tailord.app/u/{user.username_slug}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </>
           ) : (
             <>
-              {hasSummary && (
-                <section id="about" className="mb-16">
-                  <SectionHeader icon={AlignLeft} label="About" />
-                  <p className="text-sm text-text-secondary leading-relaxed">{p.summary}</p>
-                </section>
-              )}
-              {hasExperience && <ExperienceSection jobs={p.work_experience} />}
-              {hasEducation && <EducationSection education={p.education} />}
-              {hasSkills && <SkillsSection skills={p.skills} certifications={p.certifications} />}
-              {hasProjects && <ProjectsSection projects={p.projects} />}
-              {hasContact && <ContactSection email={p.email} phone={p.phone} />}
+              <Lock className="h-3.5 w-3.5 text-text-tertiary" />
+              <span className="text-text-tertiary">Private — only you can see this</span>
             </>
           )}
-        </main>
+        </div>
+        <Link
+          href="/dashboard/settings"
+          className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Visibility settings
+        </Link>
       </div>
 
-      <footer className="border-t border-border-subtle py-6 text-center">
-        <p className="text-xs text-text-tertiary">
-          Generated with{' '}
-          <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
-            Tailord
-          </Link>
-        </p>
-      </footer>
+      {/* Profile preview */}
+      <div className="flex-1">
+        <div className="mx-auto max-w-[1216px] px-6 lg:flex lg:gap-12 lg:px-16">
+          <ProfileSidebar
+            name={displayName}
+            slugFallback="Your Name"
+            title={resume?.title}
+            headline={resume?.headline}
+            location={resume?.location}
+            linkedin={resume?.linkedin}
+            githubUsername={githubUsername}
+            navSections={navSections}
+          />
+
+          {/* Content */}
+          <main className="pb-20 pt-2 lg:w-7/12 lg:py-20">
+            {!resume ? (
+              <div className="mt-8 space-y-2">
+                <p className="text-sm text-text-secondary">Your profile has no content yet.</p>
+                <p className="text-xs text-text-tertiary">
+                  Upload your resume in{' '}
+                  <Link href="/dashboard/experience" className="text-text-link hover:underline">
+                    My Experience
+                  </Link>{' '}
+                  to populate your profile.
+                </p>
+              </div>
+            ) : (
+              <>
+                {hasSummary && (
+                  <section id="about" className="mb-16">
+                    <SectionHeader icon={AlignLeft} label="About" />
+                    <p className="text-sm text-text-secondary leading-relaxed">{resume.summary}</p>
+                  </section>
+                )}
+                {hasExperience && <ExperienceSection jobs={resume.work_experience} />}
+                {hasEducation && <EducationSection education={resume.education} />}
+                {hasSkills && (
+                  <SkillsSection skills={resume.skills} certifications={resume.certifications} />
+                )}
+                {hasProjects && <ProjectsSection projects={resume.projects} />}
+                {hasContact && <ContactSection email={resume.email} phone={resume.phone} />}
+              </>
+            )}
+          </main>
+        </div>
+
+        {/* Footer */}
+        <footer className="border-t border-border-subtle py-6 text-center">
+          <p className="text-xs text-text-tertiary">
+            Generated with{' '}
+            <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
+              Tailord
+            </Link>
+          </p>
+        </footer>
+      </div>
     </div>
-  )
+  );
 }

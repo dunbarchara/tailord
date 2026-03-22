@@ -59,6 +59,11 @@ Two phases, clear split:
 - [x] Settings: `profile_public` toggle (Public/Private); profile URL with copy button only shown when enabled
 - [x] Link from `/t/{slug}` back to author's profile page
 
+#### Future: Tailorings on profile page
+Tailorings were intentionally removed from the public profile. The philosophy: the profile surfaces *who you are and what you're capable of*, not your active job search. Showing all targeted companies/roles to any recruiter who visits is a liability for the candidate — it exposes competitive intelligence, signals desperation, and undercuts negotiating position.
+
+When we revisit this, the right model is a **third toggle** per tailoring: `show_on_profile` (distinct from `letter_public` / `posting_public`). This keeps individual sharing opt-in separate from portfolio showcasing, and lets the candidate curate exactly which tailorings (if any) appear on their profile. Left sidebar placement would be preferred over right panel, so they appear above the fold regardless of scroll position.
+
 ---
 
 ### Day A3 — Polish, Cleanup + Documentation

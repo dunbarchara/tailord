@@ -377,8 +377,13 @@ export function ExperienceManager() {
             {stagesWithStatus.length > 0 && (
               <div className="space-y-1 pl-7">
                 {stagesWithStatus.map(({ stage, isActive, isDone }) => {
+                  const stageIndex = PROCESS_STAGES.indexOf(stage as typeof PROCESS_STAGES[number]);
+                  const nextStage = PROCESS_STAGES[stageIndex + 1];
+                  const endTime = isDone && nextStage && stageStartedAt[nextStage]
+                    ? stageStartedAt[nextStage]
+                    : Date.now();
                   const elapsed = stageStartedAt[stage]
-                    ? Math.floor((Date.now() - stageStartedAt[stage]) / 1000)
+                    ? Math.floor((endTime - stageStartedAt[stage]) / 1000)
                     : 0;
                   return (
                     <div key={stage} className="flex items-center gap-2">
@@ -407,6 +412,18 @@ export function ExperienceManager() {
       }
 
       case 'ready':
+        if (!uploadState.record.filename) {
+          return (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full px-4 py-8 rounded-lg border border-dashed border-border-default hover:border-brand-primary/50 bg-surface-elevated hover:bg-surface-overlay transition-colors text-center"
+            >
+              <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2" />
+              <p className="text-sm text-text-secondary">Click to upload resume</p>
+              <p className="text-xs text-text-tertiary mt-1">PDF, DOCX, or TXT</p>
+            </button>
+          );
+        }
         return (
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
             <CheckCircle className="h-4 w-4 text-success flex-shrink-0" />
@@ -601,7 +618,7 @@ export function ExperienceManager() {
                   Profile updated — you may want to regenerate tailorings for active applications.
                 </span>
                 <a
-                  href="/dashboard/tailorings"
+                  href="/dashboard"
                   className="text-text-link hover:underline flex-shrink-0 ml-3 whitespace-nowrap"
                 >
                   View tailorings →

@@ -61,10 +61,15 @@ function ResumeTab({ resume }: { resume: ExtractedProfile }) {
         </Section>
       )}
 
-      {/* Headline */}
-      {resume.headline && (
-        <Section title="Headline">
-          <p className="text-text-secondary leading-relaxed">{resume.headline}</p>
+      {/* Title + Headline */}
+      {(resume.title || resume.headline) && (
+        <Section title="Identity">
+          {resume.title && (
+            <p className="text-text-secondary font-medium">{resume.title}</p>
+          )}
+          {resume.headline && (
+            <p className="text-text-secondary leading-relaxed mt-1">{resume.headline}</p>
+          )}
         </Section>
       )}
 

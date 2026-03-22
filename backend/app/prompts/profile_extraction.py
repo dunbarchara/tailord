@@ -23,9 +23,11 @@ Rules:
 - For phone, extract the candidate's phone number if present. Leave null if not found.
 - For linkedin, extract the LinkedIn profile URL or handle if present (e.g. "linkedin.com/in/username"). Leave null if not found.
 - For location, extract the candidate's city and state or country (e.g. "New York, NY"). Leave null if not found.
+- For title, extract or infer the candidate's current professional title (2–5 words, e.g. "Software Engineer", "Senior Product Designer", "Data Scientist"). Use the most recent role title as the basis. Leave null if insufficient information.
 - For headline, write a concise one-line professional summary (10–20 words) capturing title, years of experience, and domain — e.g. "Senior Software Engineer with 8 years in distributed systems and cloud infrastructure." Leave null only if there is insufficient information.
 - For education distinction, extract GPA, honours, or academic distinctions if present (e.g. "3.8 GPA · Magna Cum Laude"). Leave null if not found.
-- If a field has no data, leave it as "", null, or [].
+- For summary: if a professional summary, objective, or profile statement is present in the resume, extract it verbatim (lightly edited for clarity). If none is present, write a concise 2–3 sentence professional summary based on the candidate's work experience, skills, and background. Never leave summary empty — always provide a value.
+- If a field has no data, leave it as "", null, or [] (except summary, which must always be non-empty).
 - Return only the JSON object. No explanation, no code fences.
 
 JSON TEMPLATE:
@@ -34,6 +36,7 @@ JSON TEMPLATE:
   "phone": null,
   "linkedin": null,
   "location": null,
+  "title": null,
   "headline": null,
   "summary": "",
   "work_experience": [

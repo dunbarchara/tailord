@@ -80,6 +80,7 @@ export interface ExtractedProfile {
   phone?: string | null
   linkedin?: string | null
   location?: string | null
+  title?: string | null
   headline?: string | null
   summary: string
   work_experience: Array<{

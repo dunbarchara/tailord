@@ -183,6 +183,13 @@ export function EditableResumeProfile({ profile, onSave, onCancel }: Props) {
       <div>
         <SectionHeading>Personal</SectionHeading>
         <div className="space-y-2">
+          <FieldRow label="Title">
+            <SmallInput
+              value={draft.title ?? ''}
+              onChange={(v) => set('title', v || null)}
+              placeholder="e.g. Software Engineer"
+            />
+          </FieldRow>
           <FieldRow label="Headline">
             <SmallInput
               value={draft.headline ?? ''}
@@ -322,7 +329,7 @@ export function EditableResumeProfile({ profile, onSave, onCancel }: Props) {
         <TagInput
           tags={draft.certifications}
           onChange={(t) => set('certifications', t)}
-          placeholder="Add certification..."
+          placeholder="Add..."
         />
       </div>
 
