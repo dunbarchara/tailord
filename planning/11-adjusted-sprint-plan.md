@@ -48,16 +48,23 @@ Two phases, clear split:
 
 #### 2. Backend
 - [x] `GET /users/public/{username_slug}` endpoint — gated behind `profile_public=True`
-  - Returns: name, avatar URL, extracted profile (headline, summary, work experience, education, skills, certifications), list of public tailorings
-  - Only tailorings where `letter_public OR posting_public` are included
+  - Returns: `name`, `avatar_url`, `username_slug`, `github_username`, `profile` (extracted resume)
+  - Tailorings intentionally excluded — see "Future: Tailorings on profile page" note above
 - [x] `profile_public` bool on User (default False) + migration `d7e8f9a0b1c2`
-- [x] Extended `ExtractedProfile` schema with `phone`, `location`, `headline`, `work_experience.location`, `education.location`
-- [x] Updated LLM extraction prompt to extract all new fields
+- [x] Extended `ExtractedProfile` schema with `phone`, `location`, `headline`, `title`, `work_experience.location`, `education.location`
+- [x] Added `title` field: 2–5 word role (e.g. "Software Engineer"), distinct from `headline`
+- [x] Updated LLM extraction prompt to extract all new fields; LLM now generates a summary if none is present in the resume
+- [x] `github_username` included in public profile response from `experience.github_username`
 
 #### 3. Frontend
-- [x] `/u/[slug]` route — two-pane layout (sticky sidebar + scrollable content), renders summary, work experience, education, skills, certifications
+- [x] `/u/[slug]` route — two-pane layout (sticky sidebar + scrollable content), renders summary, work experience, education, skills, certifications, projects, contact
+- [x] `/dashboard/profile` — private preview of the public profile with sticky visibility banner (Public/Private status, link to live URL, link to visibility settings)
+- [x] Shared `ProfileSidebar` component: name, title, headline, location, social links (LinkedIn, GitHub), animated scroll-based nav (scroll-position threshold with first/last section clamping), back-to-top button
+- [x] Section headers: icon + label + divider line; skill group sub-labels (Technical, Soft Skills, Certifications)
+- [x] OG and Twitter card meta tags on `/u/[slug]` (`generateMetadata`); description priority: headline → summary excerpt → fallback
 - [x] Settings: `profile_public` toggle (Public/Private); profile URL with copy button only shown when enabled
 - [x] Link from `/t/{slug}` back to author's profile page
+- [x] "Profile" nav item added to dashboard sidebar
 
 #### Future: Tailorings on profile page
 Tailorings were intentionally removed from the public profile. The philosophy: the profile surfaces *who you are and what you're capable of*, not your active job search. Showing all targeted companies/roles to any recruiter who visits is a liability for the candidate — it exposes competitive intelligence, signals desperation, and undercuts negotiating position.
