@@ -128,7 +128,7 @@ export function ProfileSidebar({
                     setActiveId(id);
                   }}
                   className={cn(
-                    'flex items-center gap-4 py-1.5 group transition-colors duration-200',
+                    'flex items-center gap-4 py-1.5 group transition-colors duration-200 w-fit',
                     isActive
                       ? 'text-text-primary'
                       : 'text-text-tertiary hover:text-text-secondary',

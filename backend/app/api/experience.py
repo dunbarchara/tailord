@@ -27,6 +27,31 @@ logger = logging.getLogger(__name__)
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
 
 
+def _has_non_resume_sources(e: Experience) -> bool:
+    """Return True if the experience row has data from any source other than the uploaded file."""
+    if e.github_username:
+        return True
+    if e.user_input_text:
+        return True
+    # Any extracted_profile keys other than "resume" indicate another source
+    if e.extracted_profile and any(k != "resume" for k in e.extracted_profile):
+        return True
+    return False
+
+
+def _clear_resume_fields(e: Experience) -> None:
+    """Remove all file-upload data from the experience row, preserving other sources."""
+    e.s3_key = None
+    e.filename = None
+    e.raw_resume_text = None
+    e.error_message = None
+    e.uploaded_at = None
+    e.processed_at = None
+    e.extracted_profile = {
+        k: v for k, v in (e.extracted_profile or {}).items() if k != "resume"
+    } or None
+
+
 class UploadUrlRequest(BaseModel):
     filename: str
 
@@ -45,6 +70,7 @@ class UserInputRequest(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
+    title: str | None = None
     headline: str | None = None
     summary: str | None = None
     location: str | None = None
@@ -90,26 +116,31 @@ def get_upload_url(
         )
 
     existing = db.query(Experience).filter(Experience.user_id == user.id).first()
+
+    storage_key = f"users/{user.google_sub}/{uuid.uuid4()}.{ext}"
+    logger.debug("Assigned storage_key=%s", storage_key)
+
     if existing:
-        logger.debug("Deleting existing experience %s for user %s", existing.id, user.id)
+        # Clean up old file but preserve GitHub data on the existing row
         if existing.s3_key:
             try:
                 get_storage_client().delete_object(existing.s3_key)
             except Exception:
                 logger.warning("Storage cleanup failed for key=%s — continuing", existing.s3_key)
-        db.delete(existing)
-        db.commit()
-
-    storage_key = f"users/{user.google_sub}/{uuid.uuid4()}.{ext}"
-    logger.debug("Assigned storage_key=%s", storage_key)
-
-    experience = Experience(
-        user_id=user.id,
-        s3_key=storage_key,
-        filename=body.filename,
-        status="pending",
-    )
-    db.add(experience)
+        _clear_resume_fields(existing)
+        existing.s3_key = storage_key
+        existing.filename = body.filename
+        existing.status = "pending"
+        existing.uploaded_at = datetime.now(timezone.utc)
+        experience = existing
+    else:
+        experience = Experience(
+            user_id=user.id,
+            s3_key=storage_key,
+            filename=body.filename,
+            status="pending",
+        )
+        db.add(experience)
     db.commit()
     db.refresh(experience)
 
@@ -216,7 +247,13 @@ def delete_experience(
         except Exception:
             logger.warning("delete_experience: storage delete failed for key=%s — continuing", e.s3_key)
 
-    db.delete(e)
+    if _has_non_resume_sources(e):
+        # Other sources exist — clear only the file upload fields
+        _clear_resume_fields(e)
+        e.status = "ready"
+    else:
+        db.delete(e)
+
     db.commit()
     logger.info("delete_experience: complete for user=%s", user.id)
 

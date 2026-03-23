@@ -137,7 +137,10 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
             profile = extract_profile(normalized)
 
             experience.raw_resume_text = normalized
-            experience.extracted_profile = {"resume": profile}
+            experience.extracted_profile = {
+                **(experience.extracted_profile or {}),
+                "resume": profile,
+            }
             experience.status = "ready"
             experience.processed_at = datetime.now(timezone.utc)
             db.commit()
