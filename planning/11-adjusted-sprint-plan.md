@@ -134,6 +134,12 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 
 ---
 
+### Day A5 — Miscellaneous UX
+
+**Goal:** Targeted user experience improvements directed session by session.
+
+---
+
 ## Phase 2 — Platform (Days P1–P3)
 
 ### Day P1 — Security Review
@@ -233,6 +239,7 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 | A2 ✅ | User | Public profile page | `/u/{slug}` two-pane layout, experience rendering, `profile_public` opt-in, Settings toggle |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
+| A5 | User | Miscellaneous UX | Directed improvements session by session |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
