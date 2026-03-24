@@ -14,6 +14,7 @@ export interface Tailoring {
   posting_public: boolean
   is_public: boolean
   public_slug: string | null
+  author_username_slug: string | null
   notion_page_url: string | null
   notion_posting_page_url: string | null
   created_at: string

@@ -3,16 +3,17 @@ import { env } from '@/lib/env'
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ slug: string }> }
+  { params }: { params: Promise<{ userSlug: string; tailoringSlug: string }> }
 ) {
-  const { slug } = await params
+  const { userSlug, tailoringSlug } = await params
 
   try {
-    const res = await fetch(`${env.apiBaseUrl}/tailorings/public/${slug}`, {
-      headers: {
-        'X-API-Key': env.apiKey,
-      },
-    })
+    const res = await fetch(
+      `${env.apiBaseUrl}/tailorings/public/${userSlug}/${tailoringSlug}`,
+      {
+        headers: { 'X-API-Key': env.apiKey },
+      }
+    )
 
     if (!res.ok) {
       const text = await res.text()

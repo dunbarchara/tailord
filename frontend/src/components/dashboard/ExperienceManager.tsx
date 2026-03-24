@@ -253,7 +253,7 @@ export function ExperienceManager() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      setGithubError(err.detail ?? `Error ${res.status}`);
+      setGithubError(err.detail ?? 'Could not connect GitHub. Please try again.');
       setGithubState('error');
       return;
     }

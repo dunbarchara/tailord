@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
 import type { ChunksResponse, JobChunk } from '@/types'
 import { PublicTailoringView } from './PublicTailoringView'
 
@@ -15,12 +16,16 @@ interface PublicTailoring {
   author_name: string | null
 }
 
-async function fetchPublicTailoring(slug: string): Promise<PublicTailoring | null> {
+async function fetchPublicTailoring(
+  userSlug: string,
+  tailoringSlug: string
+): Promise<PublicTailoring | null> {
   const baseUrl = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
   try {
-    const res = await fetch(`${baseUrl}/api/tailorings/public/${slug}`, {
-      cache: 'no-store',
-    })
+    const res = await fetch(
+      `${baseUrl}/api/tailorings/public/${userSlug}/${tailoringSlug}`,
+      { cache: 'no-store' }
+    )
     if (!res.ok) return null
     return res.json()
   } catch {
@@ -31,22 +36,19 @@ async function fetchPublicTailoring(slug: string): Promise<PublicTailoring | nul
 export default async function PublicTailoringPage({
   params,
 }: {
-  params: Promise<{ slug: string }>
+  params: Promise<{ slug: string; tailoringSlug: string }>
 }) {
-  const { slug } = await params
-  const tailoring = await fetchPublicTailoring(slug)
+  const { slug, tailoringSlug } = await params
 
+  // Validate that the tailoring belongs to this user — if not, 404
+  const tailoring = await fetchPublicTailoring(slug, tailoringSlug)
   if (!tailoring) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-base">
-        <div className="text-center space-y-3">
-          <p className="text-xl font-semibold text-text-primary">Not available</p>
-          <p className="text-text-secondary text-sm">
-            This tailoring is not publicly available.
-          </p>
-        </div>
-      </div>
-    )
+    notFound()
+  }
+
+  // Verify the author slug in the response matches the URL slug
+  if (tailoring.author_slug && tailoring.author_slug !== slug) {
+    notFound()
   }
 
   const chunksData: ChunksResponse | null = tailoring.posting_public && tailoring.chunks
@@ -56,7 +58,7 @@ export default async function PublicTailoringPage({
   return (
     <div className="min-h-screen bg-surface-base print:bg-white">
       <div className="max-w-3xl mx-auto">
-        {/* Header — always shown regardless of view */}
+        {/* Header */}
         <div className="px-6">
           <header className="pt-12 pb-5 border-b border-border-subtle print:pt-6">
             <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">

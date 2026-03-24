@@ -1,14 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from '@/components/ThemeProvider';
-import { Moon, Sun, LogOut, Copy, CheckCircle2 } from 'lucide-react';
+import { Moon, Sun, LogOut, Copy, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useSearchParams } from 'next/navigation';
+
+const _USERNAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+const _RESERVED = new Set([
+  'dashboard', 'admin', 'api', 'settings', 'login', 'register',
+  'u', 't', 'auth', 'notion', 'help', 'about', 'pricing', 'terms',
+  'privacy', 'careers', 'blog', 'tailord', 'me', 'public',
+]);
 
 export function SettingsPanel() {
   const { data: session } = useSession();
@@ -26,8 +33,17 @@ export function SettingsPanel() {
   const [profilePublic, setProfilePublic] = useState(false);
   const [togglingProfile, setTogglingProfile] = useState(false);
 
+  const [usernameInput, setUsernameInput] = useState('');
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [usernameChecking, setUsernameChecking] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameSaveStatus, setUsernameSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const usernameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [notionWorkspace, setNotionWorkspace] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectError, setDisconnectError] = useState(false);
 
   useEffect(() => {
     fetch('/api/users')
@@ -37,10 +53,81 @@ export function SettingsPanel() {
         setLastName(data.preferred_last_name ?? '');
         setNotionWorkspace(data.notion_workspace_name ?? null);
         setUsernameSlug(data.username_slug ?? null);
+        setUsernameInput(data.username_slug ?? '');
         setProfilePublic(data.profile_public ?? false);
       })
       .catch(() => {});
   }, []);
+
+  function validateUsernameFormat(v: string): string | null {
+    if (!v) return null;
+    if (v.length < 3 || v.length > 30) return 'Must be 3–30 characters';
+    if (!_USERNAME_RE.test(v)) return 'Only lowercase letters, numbers, and hyphens; cannot start or end with a hyphen';
+    if (_RESERVED.has(v)) return 'That username is reserved';
+    return null;
+  }
+
+  function handleUsernameChange(v: string) {
+    setUsernameInput(v);
+    setUsernameAvailable(null);
+    setUsernameSaveStatus('idle');
+
+    if (usernameDebounceRef.current) clearTimeout(usernameDebounceRef.current);
+
+    const formatErr = validateUsernameFormat(v);
+    if (formatErr) {
+      setUsernameError(formatErr);
+      return;
+    }
+    setUsernameError(null);
+
+    if (!v || (v || null) === (usernameSlug || null)) return;
+
+    usernameDebounceRef.current = setTimeout(async () => {
+      setUsernameChecking(true);
+      try {
+        const res = await fetch(`/api/users/check-username/${encodeURIComponent(v)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setUsernameAvailable(data.available);
+        }
+      } finally {
+        setUsernameChecking(false);
+      }
+    }, 500);
+  }
+
+  async function handleSaveUsername() {
+    const formatErr = validateUsernameFormat(usernameInput);
+    if (formatErr) { setUsernameError(formatErr); return; }
+    if ((usernameInput || null) === (usernameSlug || null)) return;
+    if (usernameAvailable === false) return;
+
+    setUsernameSaving(true);
+    setUsernameSaveStatus('idle');
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username_slug: usernameInput || null }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUsernameSlug(data.username_slug ?? null);
+        setUsernameInput(data.username_slug ?? '');
+        setUsernameAvailable(null);
+        setUsernameSaveStatus('saved');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setUsernameError(data.detail ?? 'Failed to save username');
+        setUsernameSaveStatus('error');
+      }
+    } catch {
+      setUsernameSaveStatus('error');
+    } finally {
+      setUsernameSaving(false);
+    }
+  }
 
   async function handleToggleProfilePublic() {
     setTogglingProfile(true);
@@ -61,9 +148,13 @@ export function SettingsPanel() {
 
   async function handleNotionDisconnect() {
     setDisconnecting(true);
+    setDisconnectError(false);
     try {
       const res = await fetch('/api/notion', { method: 'DELETE' });
       if (res.ok) setNotionWorkspace(null);
+      else setDisconnectError(true);
+    } catch {
+      setDisconnectError(true);
     } finally {
       setDisconnecting(false);
     }
@@ -150,6 +241,62 @@ export function SettingsPanel() {
             </Button>
             {saveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
             {saveStatus === 'error' && <p className="text-sm text-error">Failed to save</p>}
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Username */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Username</h2>
+            <p className="text-xs text-text-tertiary mt-1">
+              Your public URL: tailord.app/u/<span className="font-medium">{usernameInput || 'your-username'}</span>
+            </p>
+          </div>
+          <div className="space-y-2">
+            <div className="relative">
+              <Input
+                placeholder="your-username"
+                value={usernameInput}
+                onChange={(e) => handleUsernameChange(e.target.value)}
+                className="pr-8"
+              />
+              {usernameChecking && (
+                <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-text-tertiary" />
+              )}
+              {!usernameChecking && usernameAvailable === true && (
+                <CheckCircle2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-success" />
+              )}
+            </div>
+            {usernameError && <p className="text-xs text-error">{usernameError}</p>}
+            {!usernameError && usernameAvailable === false && (
+              <p className="text-xs text-error">That username is already taken</p>
+            )}
+            {!usernameError && usernameAvailable === true && (
+              <p className="text-xs text-success">Available</p>
+            )}
+          </div>
+          {usernameSlug && usernameInput !== usernameSlug && usernameInput && (
+            <p className="text-xs text-warning">
+              Changing your username will break existing links to your profile and tailorings.
+            </p>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleSaveUsername}
+              disabled={
+                usernameSaving ||
+                (usernameInput || null) === (usernameSlug || null) ||
+                !!usernameError ||
+                usernameAvailable === false ||
+                (!!usernameInput && (usernameInput || null) !== (usernameSlug || null) && usernameAvailable === null && !usernameChecking)
+              }
+            >
+              {usernameSaving ? 'Saving…' : 'Save username'}
+            </Button>
+            {usernameSaveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
+            {usernameSaveStatus === 'error' && !usernameError && <p className="text-sm text-error">Failed to save</p>}
           </div>
         </section>
 
@@ -247,24 +394,29 @@ export function SettingsPanel() {
                 <p className="text-xs text-error mt-1">Connection failed. Please try again.</p>
               )}
             </div>
-            {notionWorkspace ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleNotionDisconnect}
-                disabled={disconnecting}
-              >
-                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { window.location.href = '/api/auth/notion'; }}
-              >
-                Connect
-              </Button>
-            )}
+            <div className="flex flex-col items-end gap-1">
+              {notionWorkspace ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNotionDisconnect}
+                  disabled={disconnecting}
+                >
+                  {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { window.location.href = '/api/auth/notion'; }}
+                >
+                  Connect
+                </Button>
+              )}
+              {disconnectError && (
+                <p className="text-xs text-error">Disconnect failed. Please try again.</p>
+              )}
+            </div>
           </div>
         </section>
 

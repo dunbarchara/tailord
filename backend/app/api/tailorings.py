@@ -404,6 +404,7 @@ def get_tailoring(
         "posting_public": tailoring.posting_public,
         "is_public": tailoring.is_public,
         "public_slug": tailoring.public_slug,
+        "author_username_slug": tailoring.user.username_slug if tailoring.user else None,
         "notion_page_url": tailoring.notion_page_url,
         "notion_posting_page_url": tailoring.notion_posting_page_url,
         "created_at": tailoring.created_at.isoformat(),
@@ -498,16 +499,22 @@ def unshare_tailoring(
     db.commit()
 
 
-@router.get("/tailorings/public/{slug}")
+@router.get("/tailorings/public/{username_slug}/{tailoring_slug}")
 def get_public_tailoring(
-    slug: str,
+    username_slug: str,
+    tailoring_slug: str,
     _: str = Depends(require_api_key),
     db: Session = Depends(get_db),
 ):
+    author = db.query(User).filter(User.username_slug == username_slug).first()
+    if not author:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
     tailoring = (
         db.query(Tailoring)
         .filter(
-            Tailoring.public_slug == slug,
+            Tailoring.user_id == author.id,
+            Tailoring.public_slug == tailoring_slug,
             (Tailoring.letter_public.is_(True) | Tailoring.posting_public.is_(True)),
         )
         .first()

@@ -57,24 +57,37 @@ uv run uvicorn app.main:app --reload   # FastAPI dev server on :8000
 
 ```
 frontend/src/app/
-├── (marketing)/          # Public landing page
-├── (auth)/login          # Public — Google sign-in
-├── (auth)/register
+├── (marketing)/                   # Public landing page
+├── (auth)/login                   # Google sign-in
+├── (auth)/register                # Server component — redirects authenticated users
 ├── (dashboard)/dashboard/
-│   ├── layout.tsx        # Sidebar + header shell — keep stable
-│   ├── page.tsx          # Dashboard home
-│   ├── experience/
-│   ├── jobs/
-│   ├── tailorings/[tailoringId]/
-│   ├── tailorings/new/
-│   └── settings/
-└── api/                  # API routes proxy to backend
-    ├── auth/[...nextauth]/
-    ├── parse/            # → POST backend /parse
-    ├── analyze/          # → POST backend /analyze
-    ├── profile/          # → POST backend /profile
-    ├── job/              # → POST backend /job
-    └── generate/         # → POST backend /generate
+│   ├── layout.tsx                 # Sidebar shell — keep stable
+│   ├── page.tsx                   # Dashboard home (tailorings list)
+│   ├── experience/                # My Experience (upload, GitHub, processing, edit)
+│   ├── profile/                   # Profile preview + visibility controls
+│   ├── settings/                  # Account settings (username slug, profile visibility)
+│   ├── tailorings/new/            # New tailoring form (SSE stream)
+│   └── tailorings/[tailoringId]/  # Tailoring detail (generation polling, sharing, Notion)
+├── u/[slug]/                      # Public profile page (server component, OG meta)
+├── t/[slug]/                      # Public tailoring page (shared link)
+└── api/                           # Next.js API routes — thin proxies to FastAPI backend
+    ├── auth/[...nextauth]/        # NextAuth Google OAuth
+    ├── auth/notion/               # Notion OAuth initiation
+    ├── auth/notion/callback/      # Notion OAuth callback
+    ├── experience/                # → GET/DELETE /experience, PATCH /experience/profile
+    ├── experience/upload-url/     # → POST /experience/upload-url
+    ├── experience/process/        # → POST /experience/process (SSE)
+    ├── experience/github/         # → POST/DELETE /experience/github
+    ├── experience/user-input/     # → POST /experience/user-input
+    ├── tailorings/                # → GET/POST /tailorings
+    ├── tailorings/[id]/           # → GET/POST(regenerate)/DELETE /tailorings/{id}
+    ├── tailorings/[id]/chunks/    # → GET /tailorings/{id}/chunks
+    ├── tailorings/[id]/share/     # → POST/DELETE /tailorings/{id}/share
+    ├── tailorings/[id]/export/notion/  # → POST /notion/export/{id}
+    ├── tailorings/public/[slug]/  # → GET /tailorings/public/{slug}
+    ├── users/                     # → GET/PATCH /users/me
+    ├── users/public/[slug]/       # → GET /users/public/{slug}
+    └── notion/                    # → DELETE /notion/disconnect
 ```
 
 `middleware.ts` protects `/dashboard/*` via NextAuth `withAuth`. All backend routes require `X-API-Key`.
@@ -85,28 +98,36 @@ frontend/src/app/
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/lib/auth.ts` | NextAuth config (Google provider) |
-| `frontend/src/middleware.ts` | Route protection |
+| `frontend/src/lib/auth.ts` | NextAuth config (Google provider, `session.user.id = token.sub`) |
+| `frontend/src/middleware.ts` | Route protection (`/dashboard/*`) |
+| `frontend/src/lib/proxy.ts` | `proxyToBackend` (public) + `proxyToBackendWithUser` (injects X-User-Id/Email/Name) |
+| `frontend/src/types/index.ts` | Domain interfaces: `ExtractedProfile`, `ExperienceRecord`, `TailoringListItem`, etc. |
 | `frontend/src/app/(dashboard)/dashboard/layout.tsx` | Dashboard shell |
 | `frontend/src/components/ClientWrapper.tsx` | SessionProvider + ThemeProvider |
+| `frontend/src/components/profile/ProfileSidebar.tsx` | Shared sidebar for `/dashboard/profile` and `/u/[slug]` |
 | `backend/app/main.py` | FastAPI app factory |
 | `backend/app/config.py` | Pydantic Settings (env vars) |
-| `backend/app/clients/llm_client.py` | OpenAI SDK wrapper |
-| `backend/app/models/database.py` | SQLAlchemy ORM: `Profile`, `Job` |
-| `backend/app/services/parser.py` | Job parsing orchestrator |
-| `backend/app/core/scraper.py` | Playwright extraction |
+| `backend/app/clients/llm_client.py` | OpenAI SDK wrapper (configurable `LLM_BASE_URL`) |
+| `backend/app/clients/storage_client.py` | Storage abstraction — `AzureStorageClient` / `S3StorageClient` |
+| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `Experience`, `Job`, `Tailoring` |
+| `backend/app/api/experience.py` | Experience CRUD, GitHub enrichment, SSE processing stream |
+| `backend/app/api/tailorings.py` | Tailoring CRUD, SSE generation stream, sharing, Notion export |
+| `backend/app/services/experience_processor.py` | Text extraction (PDF/DOCX/TXT) + background processing |
+| `backend/app/services/profile_extractor.py` | LLM profile extraction, bullet post-processing |
+| `backend/app/prompts/profile_extraction.py` | Profile extraction prompt + temperature |
+| `backend/app/core/scraper.py` | Playwright job page extraction |
 
 ---
 
-## Data Models (Actual)
+## Data Models
 
-**Backend SQLAlchemy:**
-- `Profile` — `id` (UUID), `summary` (Text), `raw_profile` (JSON), `updated_at`
-- `Job` — `id` (UUID), `job_url` (String), `extracted_job` (JSON), `created_at`
+**SQLAlchemy ORM (`backend/app/models/database.py`):**
+- `User` — `id` (UUID), `google_sub` (unique), `email`, `name`, `avatar_url`, `username_slug`, `profile_public`, `created_at`
+- `Experience` — `id`, `user_id` (FK, 1:1), `s3_key`, `filename`, `status` (pending/processing/ready/error), `extracted_profile` (JSON — keyed by source: `"resume"`, `"github_repos"`, etc.), `raw_resume_text`, `github_username`, `github_repos`, `user_input_text`, `error_message`, `uploaded_at`, `processed_at`
+- `Job` — `id`, `user_id` (FK), `job_url`, `extracted_job` (JSON), `created_at`
+- `Tailoring` — `id`, `user_id` (FK), `job_id` (FK), `generated_output`, `generation_status`, `generation_stage`, `generation_error`, `generation_started_at`, `public_slug`, `letter_public`, `posting_public`, `created_at`
 
-**Conceptual domain model (in-progress):**
-- `User` → has one `Experience`, has many `Tailorings`
-- `Tailoring` → `jobTitle`, `company`, `jobDescription`, `generatedOutput`, timestamps
+**Relationships:** `User` → one `Experience`, many `Tailorings`; `Tailoring` → one `Job`
 
 ---
 
