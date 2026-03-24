@@ -6,8 +6,17 @@ import { useTheme } from '@/components/ThemeProvider';
 import { Moon, Sun, LogOut, Copy, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useSearchParams } from 'next/navigation';
 
 const _USERNAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
@@ -32,6 +41,7 @@ export function SettingsPanel() {
   const [copiedProfile, setCopiedProfile] = useState(false);
   const [profilePublic, setProfilePublic] = useState(false);
   const [togglingProfile, setTogglingProfile] = useState(false);
+  const [confirmPublicOpen, setConfirmPublicOpen] = useState(false);
 
   const [usernameInput, setUsernameInput] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
@@ -129,13 +139,13 @@ export function SettingsPanel() {
     }
   }
 
-  async function handleToggleProfilePublic() {
+  async function applyProfilePublic(newValue: boolean) {
     setTogglingProfile(true);
     try {
       const res = await fetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile_public: !profilePublic }),
+        body: JSON.stringify({ profile_public: newValue }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -143,6 +153,14 @@ export function SettingsPanel() {
       }
     } finally {
       setTogglingProfile(false);
+    }
+  }
+
+  function handleToggleProfilePublic(checked: boolean) {
+    if (checked) {
+      setConfirmPublicOpen(true);
+    } else {
+      applyProfilePublic(false);
     }
   }
 
@@ -317,15 +335,31 @@ export function SettingsPanel() {
                   <p className="text-sm font-medium text-text-primary">Enable public profile</p>
                   <p className="text-xs text-text-tertiary mt-0.5">Anyone with the link can view your profile</p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleToggleProfilePublic}
+                <Switch
+                  checked={profilePublic}
+                  onCheckedChange={handleToggleProfilePublic}
                   disabled={togglingProfile}
-                >
-                  {profilePublic ? 'Public' : 'Private'}
-                </Button>
+                />
               </div>
+
+              <Dialog open={confirmPublicOpen} onOpenChange={setConfirmPublicOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Make profile public?</DialogTitle>
+                    <DialogDescription>
+                      Anyone with your profile link will be able to view your experience. You can make it private again at any time.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setConfirmPublicOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={() => { setConfirmPublicOpen(false); applyProfilePublic(true); }}>
+                      Make Public
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
               {profilePublic && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-sunken border border-border-subtle">
                   <a
