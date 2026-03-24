@@ -1,12 +1,16 @@
+import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
+from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user
-from app.models.database import Experience, User
+from app.models.database import Experience, Job, Tailoring, User
+
+logger = logging.getLogger(__name__)
 
 _USERNAME_RE = re.compile(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
 _RESERVED = frozenset([
@@ -139,3 +143,38 @@ def get_public_user(
         "github_username": github_username,
         "profile": resume_profile,
     }
+
+
+@router.delete("/users/me", status_code=204)
+def delete_user(
+    _: str = Depends(require_api_key),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Permanently delete the current user and all associated data.
+    Order: storage file → tailorings → jobs → experience → user.
+    """
+    # 1. Delete uploaded resume file from storage
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if experience and experience.s3_key:
+        try:
+            get_storage_client().delete_object(experience.s3_key)
+        except Exception:
+            logger.warning("Failed to delete storage object %s for user %s — continuing", experience.s3_key, user.id)
+
+    # 2. Delete tailorings (must precede jobs due to FK)
+    db.query(Tailoring).filter(Tailoring.user_id == user.id).delete()
+
+    # 3. Delete jobs (job_chunks cascade via ondelete="CASCADE")
+    db.query(Job).filter(Job.user_id == user.id).delete()
+
+    # 4. Delete experience
+    if experience:
+        db.delete(experience)
+        db.flush()
+
+    # 5. Delete user
+    db.delete(user)
+    db.commit()
+    logger.info("User %s deleted", user.id)

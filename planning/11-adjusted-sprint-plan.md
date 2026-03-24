@@ -139,6 +139,7 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 **Goal:** Targeted user experience improvements directed session by session.
 
 - [x] Settings: Replace profile visibility button with a `Switch` component (state clearly visible at a glance; consistent with tailoring share popover). Confirmation dialog required when enabling public — instant when disabling.
+- [x] Settings: Account deletion — "Danger zone" section with confirmation dialog; checkbox acknowledgment required; deletes storage file + tailorings + jobs + experience + user in FK-safe order; signs out and redirects to `/` on success.
 
 ---
 

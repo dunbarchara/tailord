@@ -42,6 +42,9 @@ export function SettingsPanel() {
   const [profilePublic, setProfilePublic] = useState(false);
   const [togglingProfile, setTogglingProfile] = useState(false);
   const [confirmPublicOpen, setConfirmPublicOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [usernameInput, setUsernameInput] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
@@ -466,6 +469,72 @@ export function SettingsPanel() {
             <LogOut className="h-4 w-4" />
             Sign out
           </Button>
+        </section>
+
+        <Separator />
+
+        {/* Danger zone */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-medium text-error uppercase tracking-wider">Danger zone</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-text-primary">Delete account</p>
+              <p className="text-xs text-text-tertiary mt-0.5">Permanently delete your account and all data</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/5 hover:text-destructive border-destructive/30"
+              onClick={() => { setDeleteAcknowledged(false); setDeleteOpen(true); }}
+            >
+              Delete account
+            </Button>
+          </div>
+
+          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete account?</DialogTitle>
+                <DialogDescription>
+                  This will permanently delete your account, experience, all tailorings, and any uploaded files. This cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-start gap-3 py-2">
+                <input
+                  type="checkbox"
+                  id="delete-ack"
+                  checked={deleteAcknowledged}
+                  onChange={(e) => setDeleteAcknowledged(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 cursor-pointer"
+                />
+                <label htmlFor="delete-ack" className="text-sm text-text-secondary cursor-pointer">
+                  I understand this is permanent and cannot be undone
+                </label>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={!deleteAcknowledged || deleting}
+                  onClick={async () => {
+                    setDeleting(true);
+                    try {
+                      const res = await fetch('/api/users', { method: 'DELETE' });
+                      if (res.ok) {
+                        await signOut({ callbackUrl: '/' });
+                      }
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  {deleting ? 'Deleting…' : 'Delete account'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </section>
       </div>
     </div>
