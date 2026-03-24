@@ -354,8 +354,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   };
 
   const handleCopyLink = () => {
-    if (!tailoring?.public_slug) return;
-    const url = `${window.location.origin}/t/${tailoring.public_slug}`;
+    if (!tailoring?.public_slug || !tailoring?.author_username_slug) return;
+    const url = `${window.location.origin}/u/${tailoring.author_username_slug}/${tailoring.public_slug}`;
     navigator.clipboard.writeText(url);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -386,8 +386,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     day: 'numeric',
   });
 
-  const shareUrl = tailoring.public_slug
-    ? `${window.location.origin}/t/${tailoring.public_slug}`
+  const shareUrl = tailoring.public_slug && tailoring.author_username_slug
+    ? `${window.location.origin}/u/${tailoring.author_username_slug}/${tailoring.public_slug}`
     : null;
 
   const letterOn = tailoring.letter_public;

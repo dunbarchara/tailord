@@ -82,14 +82,10 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 #### 1. Dead code removal
 - [ ] Remove legacy backend endpoints: `/parse`, `/generate` (old match endpoint), `/job` (`job.py` — superseded by `tailorings.py`)
 - [ ] Remove any dead frontend routes
-- [ ] Audit `CLAUDE.md` — update file paths and routing table to reflect current state
+- [x] Audit `CLAUDE.md` — update file paths and routing table to reflect current state
 
 #### 2. README
-- [ ] Write `README.md` at repo root:
-  - What Tailord is (one paragraph, direct)
-  - Architecture overview (brief — frontend/backend/infra, key tech)
-  - How to run locally (dev commands, env var setup)
-  - Screenshots of the main UI states (dashboard, tailoring detail, public page)
+- [x] Write `README.md` at repo root (what Tailord is, architecture, local dev, env vars, key concepts, deployment)
 
 #### 3. Portfolio write-up
 - [ ] `planning/12-portfolio-writeup.md`:
@@ -98,9 +94,24 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
   - What I'd do next
 
 #### 4. Minor UX cleanup (opportunistic — only if clearly needed)
-- [ ] Review error states: are all API errors surfaced to the user in plain language?
-- [ ] Review empty states: dashboard with no tailorings, public profile with no public tailorings
-- [ ] Check loading states are consistent across all data-fetching views
+- [x] Settings: Notion disconnect error surfaced inline
+- [x] Bullets: LLM prompt rule + `_clean_profile()` post-processing strips leading bullet chars at source; frontend band-aid removed
+- [x] Bug: GitHub data preserved when resume added after GitHub (`extracted_profile` spread fix)
+- [x] Bug: Source-aware remove/replace resume logic — `_has_non_resume_sources()` + `_clear_resume_fields()` helpers
+- [x] Bug: `title` field added to `ProfileUpdate` Pydantic model
+
+#### 5. URL structure + username settings
+- [x] Tailoring public URL restructured: `/t/{slug}` → `/u/{userSlug}/{tailoringSlug}`
+  - `Tailoring.public_slug` global unique constraint dropped; composite unique `(user_id, public_slug)` added
+  - Alembic migration `e1f2a3b4c5d6`
+  - Backend endpoint `GET /tailorings/public/{slug}` → `GET /tailorings/public/{username_slug}/{tailoring_slug}` (validates user ownership)
+  - `GET /tailorings/{id}` response now includes `author_username_slug`
+  - Frontend: `/u/[slug]/[tailoringSlug]/` page created; `/t/[slug]/` deleted; API proxy routes updated
+  - `TailoringDetail.tsx` share URL updated to `/u/{author_username_slug}/{public_slug}`
+- [x] User-settable username in Settings
+  - Backend: `username_slug` added to `UserUpdate` with format validation (3–30 chars, `[a-z0-9-]`, no leading/trailing hyphen) + reserved words check + uniqueness enforcement (409 on conflict)
+  - Backend: `GET /users/check-username/{slug}` endpoint for availability check
+  - Frontend: username section in Settings with debounced availability check, format validation, link-breaking warning, save via `PATCH /api/users`
 
 ---
 
@@ -123,6 +134,12 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 
 ---
 
+### Day A5 — Miscellaneous UX
+
+**Goal:** Targeted user experience improvements directed session by session.
+
+---
+
 ## Phase 2 — Platform (Days P1–P3)
 
 ### Day P1 — Security Review
@@ -140,7 +157,7 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 #### Auth & Token Abuse
 - [ ] **API key exposure:** `X-API-Key` header never logged, never returned in error responses, not accessible to client-side JS
 - [ ] **Session abuse:** confirm `session.user.id` (google_sub) is validated on every backend call; a forged `X-User-Id` header from a direct backend call should not work (backend is internal-only, but belt-and-suspenders)
-- [ ] **Public slug enumeration:** verify no endpoint leaks a list of all public slugs
+- [ ] **Public slug enumeration:** verify no endpoint leaks a list of all public slugs (now scoped per user — `/tailorings/public/{username_slug}/{tailoring_slug}`)
 - [ ] **Rate limiting:** no per-user limit on tailoring creation — add a guard (e.g., 10/hour) or at minimum log a warning on high-frequency creation
 - [ ] **OAuth state validation:** confirm CSRF state param is validated on Google OAuth callback and Notion OAuth callback
 
@@ -222,6 +239,7 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 | A2 ✅ | User | Public profile page | `/u/{slug}` two-pane layout, experience rendering, `profile_public` opt-in, Settings toggle |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
+| A5 | User | Miscellaneous UX | Directed improvements session by session |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
