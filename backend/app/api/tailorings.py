@@ -69,6 +69,7 @@ def _serialize_chunk(c: JobChunk) -> dict:
         "section": c.section,
         "match_score": c.match_score,
         "match_rationale": c.match_rationale,
+        "advocacy_blurb": c.advocacy_blurb,
         "experience_source": c.experience_source,
         "source_label": SOURCE_LABELS.get(c.experience_source) if c.experience_source else None,
         "should_render": c.should_render,

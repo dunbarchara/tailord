@@ -157,6 +157,7 @@ class JobChunk(Base):
     section: Mapped[str | None] = mapped_column(String(255), nullable=True)
     match_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     match_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    advocacy_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
     experience_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     should_render: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

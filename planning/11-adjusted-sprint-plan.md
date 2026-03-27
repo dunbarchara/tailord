@@ -141,6 +141,10 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 - [x] Settings: Replace profile visibility button with a `Switch` component (state clearly visible at a glance; consistent with tailoring share popover). Confirmation dialog required when enabling public — instant when disabling.
 - [x] Settings: Account deletion — "Danger zone" section with confirmation dialog; checkbox acknowledgment required; deletes storage file + tailorings + jobs + experience + user in FK-safe order; signs out and redirects to `/` on success.
 - [x] Settings: Custom pronouns — preset chips (she/her, he/him, they/them) + custom free-text option. Pronouns injected into all LLM prompts via `_format_sourced_profile()` as a `[CANDIDATE]` block — single injection point covering tailoring generation, requirement matching, and chunk scoring. Tailoring system prompt updated with explicit pronoun rule; defaults to gender-neutral language if unset.
+- [x] Job Posting view: personal advocacy blurbs per chunk. `ChunkMatchResult` gains `advocacy_blurb` (populated by LLM for score ≥ 1 using candidate name/pronouns from `[CANDIDATE]` block; null for gaps/n/a). Public/recruiter view renders `advocacy_blurb`; internal Analysis tab surfaces both fields labelled. Migration `a3b4c5d6e7f8` adds column to `job_chunks`.
+  - Rationale and advocacy convey the same core argument with different register and audience: rationale is analytical (explains the score, written for internal review); advocacy is advocating (same evidence, written in the candidate's voice for a recruiter).
+  - Advocacy respects the score — a partial match reads like a partial. Honest representation of proximity is a platform value: a candid partial makes the strong matches more credible.
+  - Advocacy must anchor to specific evidence (role, project, technology, outcome) — generic platitudes without specifics are prohibited by the prompt.
 
 ---
 
@@ -232,6 +236,12 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 - [ ] **Job URL caching:** skip Playwright scrape + job extraction LLM for recently-seen URLs (< 7 days); rerun all other LLM steps fresh. Implement once extraction quality feels stable enough to trust cached output.
 - [ ] **Profile formatting as compact prose:** replace the raw JSON profile dump fed to the LLM with a compact prose block — more natural context, better performance on smaller models.
 - [ ] **Prompt iteration:** review and tighten `generate_tailoring` system prompt; consider few-shot examples for profile extraction.
+- [ ] **LLM response validation + retry:** after each `llm_parse` call, assert that the response meets minimum content expectations before committing the result. Retry the full LLM request (up to 2 additional attempts) on validation failure before falling back. Validation rules to implement per call site:
+  - **Chunk matching (`chunk_matcher.py`):** for each `ChunkMatchResult` with `score >= 1`, assert `advocacy_blurb` is non-null and non-empty. A batch where all scored chunks lack advocacy blurbs should be treated as a failed response and retried — this is the known failure mode where the LLM silently omits advocacy statements entirely.
+  - **Tailoring generation (`tailoring_generator.py`):** assert output is non-empty and exceeds a minimum character threshold (e.g., 200 chars).
+  - **Profile extraction (`profile_extractor.py`):** assert `summary` is non-empty and `work_experience` list is non-empty (or absent from resume — distinguish "no work history" from "extraction failure").
+  - **Requirement matching (`requirement_matcher.py`):** assert at least one `RequirementMatch` result is returned.
+  - Implement as a shared `llm_parse_with_retry(client, ..., validate_fn, max_retries=2)` wrapper around `llm_parse`, or as inline retry loops per call site — prefer the wrapper to avoid duplicating retry logic.
 
 ---
 

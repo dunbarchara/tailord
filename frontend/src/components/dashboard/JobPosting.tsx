@@ -111,17 +111,17 @@ function ChunkItem({
         isExpanded ? 'w-1 -translate-x-0.5' : 'w-0.5 group-hover:w-1 group-hover:-translate-x-0.5',
       )} />
       {body}
-      {/* Expandable rationale — grid trick for smooth height animation */}
+      {/* Expandable advocacy blurb (public) or rationale (internal) */}
       <div className={cn(
         'grid transition-all duration-200',
         isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
       )}>
         <div className="overflow-hidden">
           <div className="mt-1.5 mb-0.5 px-2 py-1.5 rounded bg-surface-sunken">
-            {chunk.match_rationale && (
-              <p className="text-xs text-text-tertiary leading-relaxed">{chunk.match_rationale}</p>
+            {chunk.advocacy_blurb && (
+              <p className="text-xs text-text-secondary leading-relaxed">{chunk.advocacy_blurb}</p>
             )}
-            {chunk.match_rationale && chunk.experience_source && (
+            {chunk.advocacy_blurb && chunk.experience_source && (
               <hr className="my-1.5 border-border-strong" />
             )}
             {chunk.experience_source && (
