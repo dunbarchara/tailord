@@ -35,6 +35,8 @@ export function SettingsPanel() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [savedFirstName, setSavedFirstName] = useState('');
+  const [savedLastName, setSavedLastName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [usernameSlug, setUsernameSlug] = useState<string | null>(null);
@@ -48,6 +50,7 @@ export function SettingsPanel() {
 
   const [pronouns, setPronouns] = useState<string | null>(null);
   const [customPronouns, setCustomPronouns] = useState('');
+  const [savedPronouns, setSavedPronouns] = useState<string | null>(null);
   const [pronounsSaving, setPronounsSaving] = useState(false);
   const [pronounsSaveStatus, setPronounsSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
@@ -67,12 +70,17 @@ export function SettingsPanel() {
     fetch('/api/users')
       .then((r) => r.json())
       .then((data) => {
-        setFirstName(data.preferred_first_name ?? '');
-        setLastName(data.preferred_last_name ?? '');
+        const fn = data.preferred_first_name ?? '';
+        const ln = data.preferred_last_name ?? '';
+        setFirstName(fn);
+        setLastName(ln);
+        setSavedFirstName(fn);
+        setSavedLastName(ln);
         const p = data.pronouns ?? null;
         const preset = p && ['she/her', 'he/him', 'they/them'].includes(p) ? p : p ? 'custom' : null;
         setPronouns(preset);
         setCustomPronouns(preset === 'custom' ? (p ?? '') : '');
+        setSavedPronouns(p);
         setNotionWorkspace(data.notion_workspace_name ?? null);
         setUsernameSlug(data.username_slug ?? null);
         setUsernameInput(data.username_slug ?? '');
@@ -94,6 +102,7 @@ export function SettingsPanel() {
         body: JSON.stringify({ pronouns: value }),
       });
       if (res.ok) {
+        setSavedPronouns(value);
         setPronounsSaveStatus('saved');
       } else {
         setPronounsSaveStatus('error');
@@ -227,6 +236,8 @@ export function SettingsPanel() {
         }),
       });
       if (res.ok) {
+        setSavedFirstName(firstName.trim());
+        setSavedLastName(lastName.trim());
         setSaveStatus('saved');
         window.dispatchEvent(new CustomEvent('preferred-name-changed', {
           detail: { firstName: firstName.trim(), lastName: lastName.trim() },
@@ -311,7 +322,10 @@ export function SettingsPanel() {
             />
           )}
           <div className="flex items-center gap-3">
-            <Button onClick={handleSavePronouns} disabled={pronounsSaving}>
+            <Button
+              onClick={handleSavePronouns}
+              disabled={pronounsSaving || (pronouns === 'custom' ? customPronouns.trim() || null : pronouns) === savedPronouns}
+            >
               {pronounsSaving ? 'Saving…' : 'Save pronouns'}
             </Button>
             {pronounsSaveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
@@ -342,7 +356,10 @@ export function SettingsPanel() {
             />
           </div>
           <div className="flex items-center gap-3">
-            <Button onClick={handleSave} disabled={saving}>
+            <Button
+              onClick={handleSave}
+              disabled={saving || (firstName.trim() === savedFirstName && lastName.trim() === savedLastName)}
+            >
               {saving ? 'Saving…' : 'Save name'}
             </Button>
             {saveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
