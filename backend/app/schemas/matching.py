@@ -16,6 +16,7 @@ class RequirementMatchList(BaseModel):
 class ChunkMatchResult(BaseModel):
     score: int = 0  # -1=non-evaluable, 0=gap, 1=partial, 2=strong
     rationale: str = ""
+    advocacy_blurb: str | None = None  # personal advocacy statement; only for score >= 1
     experience_source: str | None = None
     should_render: bool = True
 

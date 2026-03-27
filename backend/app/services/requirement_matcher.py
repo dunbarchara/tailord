@@ -10,7 +10,7 @@ from app.services.tailoring_generator import _format_sourced_profile
 logger = logging.getLogger(__name__)
 
 
-def match_requirements(extracted_job: dict, extracted_profile: dict) -> list[dict]:
+def match_requirements(extracted_job: dict, extracted_profile: dict, pronouns: str | None = None) -> list[dict]:
     """
     Fast pipeline: single LLM call scoring all requirements against the candidate profile.
     Returns matches sorted by score desc, filtered to score >= 1.
@@ -28,7 +28,7 @@ def match_requirements(extracted_job: dict, extracted_profile: dict) -> list[dic
         lines.append(f"[PREFERRED] {req}")
     requirements_block = "\n".join(lines)
 
-    formatted_profile = _format_sourced_profile(extracted_profile)
+    formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
 
     result = llm_parse(
         get_llm_client(),

@@ -6,8 +6,17 @@ import { useTheme } from '@/components/ThemeProvider';
 import { Moon, Sun, LogOut, Copy, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useSearchParams } from 'next/navigation';
 
 const _USERNAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
@@ -26,12 +35,24 @@ export function SettingsPanel() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [savedFirstName, setSavedFirstName] = useState('');
+  const [savedLastName, setSavedLastName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [usernameSlug, setUsernameSlug] = useState<string | null>(null);
   const [copiedProfile, setCopiedProfile] = useState(false);
   const [profilePublic, setProfilePublic] = useState(false);
   const [togglingProfile, setTogglingProfile] = useState(false);
+  const [confirmPublicOpen, setConfirmPublicOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const [pronouns, setPronouns] = useState<string | null>(null);
+  const [customPronouns, setCustomPronouns] = useState('');
+  const [savedPronouns, setSavedPronouns] = useState<string | null>(null);
+  const [pronounsSaving, setPronounsSaving] = useState(false);
+  const [pronounsSaveStatus, setPronounsSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
   const [usernameInput, setUsernameInput] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
@@ -49,8 +70,17 @@ export function SettingsPanel() {
     fetch('/api/users')
       .then((r) => r.json())
       .then((data) => {
-        setFirstName(data.preferred_first_name ?? '');
-        setLastName(data.preferred_last_name ?? '');
+        const fn = data.preferred_first_name ?? '';
+        const ln = data.preferred_last_name ?? '';
+        setFirstName(fn);
+        setLastName(ln);
+        setSavedFirstName(fn);
+        setSavedLastName(ln);
+        const p = data.pronouns ?? null;
+        const preset = p && ['she/her', 'he/him', 'they/them'].includes(p) ? p : p ? 'custom' : null;
+        setPronouns(preset);
+        setCustomPronouns(preset === 'custom' ? (p ?? '') : '');
+        setSavedPronouns(p);
         setNotionWorkspace(data.notion_workspace_name ?? null);
         setUsernameSlug(data.username_slug ?? null);
         setUsernameInput(data.username_slug ?? '');
@@ -58,6 +88,31 @@ export function SettingsPanel() {
       })
       .catch(() => {});
   }, []);
+
+  const PRONOUN_PRESETS = ['she/her', 'he/him', 'they/them'] as const;
+
+  async function handleSavePronouns() {
+    const value = pronouns === 'custom' ? customPronouns.trim() || null : pronouns;
+    setPronounsSaving(true);
+    setPronounsSaveStatus('idle');
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pronouns: value }),
+      });
+      if (res.ok) {
+        setSavedPronouns(value);
+        setPronounsSaveStatus('saved');
+      } else {
+        setPronounsSaveStatus('error');
+      }
+    } catch {
+      setPronounsSaveStatus('error');
+    } finally {
+      setPronounsSaving(false);
+    }
+  }
 
   function validateUsernameFormat(v: string): string | null {
     if (!v) return null;
@@ -129,13 +184,13 @@ export function SettingsPanel() {
     }
   }
 
-  async function handleToggleProfilePublic() {
+  async function applyProfilePublic(newValue: boolean) {
     setTogglingProfile(true);
     try {
       const res = await fetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile_public: !profilePublic }),
+        body: JSON.stringify({ profile_public: newValue }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -143,6 +198,14 @@ export function SettingsPanel() {
       }
     } finally {
       setTogglingProfile(false);
+    }
+  }
+
+  function handleToggleProfilePublic(checked: boolean) {
+    if (checked) {
+      setConfirmPublicOpen(true);
+    } else {
+      applyProfilePublic(false);
     }
   }
 
@@ -173,6 +236,8 @@ export function SettingsPanel() {
         }),
       });
       if (res.ok) {
+        setSavedFirstName(firstName.trim());
+        setSavedLastName(lastName.trim());
         setSaveStatus('saved');
         window.dispatchEvent(new CustomEvent('preferred-name-changed', {
           detail: { firstName: firstName.trim(), lastName: lastName.trim() },
@@ -215,6 +280,61 @@ export function SettingsPanel() {
 
         <Separator />
 
+        {/* Pronouns */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Pronouns</h2>
+            <p className="text-xs text-text-tertiary mt-1">
+              Used in all AI-generated content that references you in third person.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {PRONOUN_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                onClick={() => { setPronouns(pronouns === preset ? null : preset); setPronounsSaveStatus('idle'); }}
+                className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                  pronouns === preset
+                    ? 'bg-brand-primary text-white border-brand-primary'
+                    : 'bg-surface-base text-text-secondary border-border-default hover:border-border-strong'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+            <button
+              onClick={() => { setPronouns(pronouns === 'custom' ? null : 'custom'); setPronounsSaveStatus('idle'); }}
+              className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                pronouns === 'custom'
+                  ? 'bg-brand-primary text-white border-brand-primary'
+                  : 'bg-surface-base text-text-secondary border-border-default hover:border-border-strong'
+              }`}
+            >
+              Custom
+            </button>
+          </div>
+          {pronouns === 'custom' && (
+            <Input
+              placeholder="e.g. ze/zir"
+              value={customPronouns}
+              onChange={(e) => { setCustomPronouns(e.target.value); setPronounsSaveStatus('idle'); }}
+              className="max-w-xs"
+            />
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleSavePronouns}
+              disabled={pronounsSaving || (pronouns === 'custom' ? customPronouns.trim() || null : pronouns) === savedPronouns}
+            >
+              {pronounsSaving ? 'Saving…' : 'Save pronouns'}
+            </Button>
+            {pronounsSaveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
+            {pronounsSaveStatus === 'error' && <p className="text-sm text-error">Failed to save</p>}
+          </div>
+        </section>
+
+        <Separator />
+
         {/* Display name */}
         <section className="space-y-4">
           <div>
@@ -236,7 +356,10 @@ export function SettingsPanel() {
             />
           </div>
           <div className="flex items-center gap-3">
-            <Button onClick={handleSave} disabled={saving}>
+            <Button
+              onClick={handleSave}
+              disabled={saving || (firstName.trim() === savedFirstName && lastName.trim() === savedLastName)}
+            >
               {saving ? 'Saving…' : 'Save name'}
             </Button>
             {saveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
@@ -317,15 +440,31 @@ export function SettingsPanel() {
                   <p className="text-sm font-medium text-text-primary">Enable public profile</p>
                   <p className="text-xs text-text-tertiary mt-0.5">Anyone with the link can view your profile</p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleToggleProfilePublic}
+                <Switch
+                  checked={profilePublic}
+                  onCheckedChange={handleToggleProfilePublic}
                   disabled={togglingProfile}
-                >
-                  {profilePublic ? 'Public' : 'Private'}
-                </Button>
+                />
               </div>
+
+              <Dialog open={confirmPublicOpen} onOpenChange={setConfirmPublicOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Make profile public?</DialogTitle>
+                    <DialogDescription>
+                      Anyone with your profile link will be able to view your experience. You can make it private again at any time.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setConfirmPublicOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={() => { setConfirmPublicOpen(false); applyProfilePublic(true); }}>
+                      Make Public
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
               {profilePublic && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-sunken border border-border-subtle">
                   <a
@@ -432,6 +571,72 @@ export function SettingsPanel() {
             <LogOut className="h-4 w-4" />
             Sign out
           </Button>
+        </section>
+
+        <Separator />
+
+        {/* Danger zone */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-medium text-error uppercase tracking-wider">Danger zone</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-text-primary">Delete account</p>
+              <p className="text-xs text-text-tertiary mt-0.5">Permanently delete your account and all data</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/5 hover:text-destructive border-destructive/30"
+              onClick={() => { setDeleteAcknowledged(false); setDeleteOpen(true); }}
+            >
+              Delete account
+            </Button>
+          </div>
+
+          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete account?</DialogTitle>
+                <DialogDescription>
+                  This will permanently delete your account, experience, all tailorings, and any uploaded files. This cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-start gap-3 py-2">
+                <input
+                  type="checkbox"
+                  id="delete-ack"
+                  checked={deleteAcknowledged}
+                  onChange={(e) => setDeleteAcknowledged(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 cursor-pointer"
+                />
+                <label htmlFor="delete-ack" className="text-sm text-text-secondary cursor-pointer">
+                  I understand this is permanent and cannot be undone
+                </label>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={!deleteAcknowledged || deleting}
+                  onClick={async () => {
+                    setDeleting(true);
+                    try {
+                      const res = await fetch('/api/users', { method: 'DELETE' });
+                      if (res.ok) {
+                        await signOut({ callbackUrl: '/' });
+                      }
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  {deleting ? 'Deleting…' : 'Delete account'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </section>
       </div>
     </div>

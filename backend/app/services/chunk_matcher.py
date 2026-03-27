@@ -12,10 +12,10 @@ from app.services.tailoring_generator import _format_sourced_profile
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 5  # Smaller batches improve JSON completion reliability on local/smaller models
+BATCH_SIZE = 3  # Smaller batches reduce output token count — advocacy_blurb roughly doubles output length
 
 
-def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: dict) -> None:
+def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: dict, pronouns: str | None = None) -> None:
     """
     Background task: extract chunks from job markdown, match against candidate profile,
     and persist JobChunk rows to DB. Sets enrichment_status on related tailorings.
@@ -40,7 +40,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
             db.commit()
             return
 
-        formatted_profile = _format_sourced_profile(extracted_profile)
+        formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
 
         # Group non-header chunks by section, preserving original order
         from collections import OrderedDict
@@ -129,6 +129,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
                 section=chunk.section,
                 match_score=match.score,
                 match_rationale=match.rationale,
+                advocacy_blurb=match.advocacy_blurb,
                 experience_source=match.experience_source,
                 should_render=match.should_render,
                 enriched_at=now,

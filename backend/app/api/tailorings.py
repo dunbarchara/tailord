@@ -69,6 +69,7 @@ def _serialize_chunk(c: JobChunk) -> dict:
         "section": c.section,
         "match_score": c.match_score,
         "match_rationale": c.match_rationale,
+        "advocacy_blurb": c.advocacy_blurb,
         "experience_source": c.experience_source,
         "source_label": SOURCE_LABELS.get(c.experience_source) if c.experience_source else None,
         "should_render": c.should_render,
@@ -109,6 +110,7 @@ def _finalize_tailoring(
     extracted_profile: dict,
     candidate_name: str,
     job_url: str,
+    pronouns: str | None = None,
 ) -> None:
     """
     Background task: extract the job, run requirement matching + tailoring generation,
@@ -150,7 +152,7 @@ def _finalize_tailoring(
         db.commit()
 
         try:
-            ranked_matches = match_requirements(extracted_job, extracted_profile)
+            ranked_matches = match_requirements(extracted_job, extracted_profile, pronouns=pronouns)
         except Exception:
             logger.exception("Requirement matching failed — proceeding without ranked matches")
             ranked_matches = []
@@ -165,6 +167,7 @@ def _finalize_tailoring(
                 candidate_name,
                 ranked_matches=ranked_matches,
                 job_url=job_url,
+                pronouns=pronouns,
             )
         except Exception:
             logger.exception("Tailoring generation failed for tailoring %s", tailoring_id)
@@ -198,7 +201,7 @@ def _finalize_tailoring(
 
     # Chunk enrichment runs after generation succeeds
     try:
-        enrich_job_chunks(job_id, job_markdown, extracted_profile)
+        enrich_job_chunks(job_id, job_markdown, extracted_profile, pronouns=pronouns)
     except Exception:
         logger.exception("Chunk enrichment failed for job %s", job_id)
 
@@ -238,6 +241,7 @@ async def _stream_tailoring(
         extracted_profile = experience.extracted_profile
         preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
         candidate_name = preferred or user.name or user.email
+        candidate_pronouns = user.pronouns or None
         if existing_tailoring:
             existing_tailoring_id = str(existing_tailoring.id)
             existing_job_id = str(existing_tailoring.job_id)
@@ -289,6 +293,7 @@ async def _stream_tailoring(
             extracted_profile,
             candidate_name,
             job_url,
+            candidate_pronouns,
         )
 
         yield _sse("ready", json.dumps({"id": str(tailoring.id)}))

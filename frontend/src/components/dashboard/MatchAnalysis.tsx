@@ -36,7 +36,8 @@ function chunkToMarkdown(chunk: JobChunk): string {
   ].filter(Boolean).join(' | ');
 
   const lines = [`### ${meta}`, chunk.content];
-  if (chunk.match_rationale) lines.push(`> ${chunk.match_rationale}`);
+  if (chunk.advocacy_blurb) lines.push(`> advocacy: ${chunk.advocacy_blurb}`);
+  if (chunk.match_rationale) lines.push(`> rationale: ${chunk.match_rationale}`);
   return lines.join('\n');
 }
 
@@ -160,12 +161,23 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
         </span>
       </div>
       {/* Row 2: content */}
-      <div className="px-3 py-2 border-b border-border-subtle text-text-secondary leading-relaxed whitespace-pre-wrap">
-        {chunk.content}
+      <div className="px-3 py-2 border-b border-border-subtle">
+        <span className="text-xs font-medium text-text-disabled uppercase tracking-wider mr-2">Posting</span>
+        <span className="text-text-secondary leading-relaxed whitespace-pre-wrap">{chunk.content}</span>
       </div>
-      {/* Row 3: rationale */}
-      <div className="px-3 py-1.5 text-text-tertiary italic min-h-[1.75rem]">
-        {chunk.match_rationale ?? <span className="not-italic text-text-disabled">no rationale</span>}
+      {/* Row 3: advocacy blurb */}
+      {chunk.advocacy_blurb && (
+        <div className="px-3 py-1.5 border-b border-border-subtle">
+          <span className="text-xs font-medium text-text-disabled uppercase tracking-wider mr-2">Advocacy</span>
+          <span className="text-text-secondary leading-relaxed">{chunk.advocacy_blurb}</span>
+        </div>
+      )}
+      {/* Row 4: rationale */}
+      <div className="px-3 py-1.5 min-h-[1.75rem]">
+        <span className="text-xs font-medium text-text-disabled uppercase tracking-wider mr-2">Rationale</span>
+        <span className="text-text-tertiary italic">
+          {chunk.match_rationale ?? <span className="not-italic text-text-disabled">—</span>}
+        </span>
       </div>
     </div>
   );

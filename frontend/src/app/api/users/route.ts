@@ -25,3 +25,9 @@ export async function PATCH(req: Request) {
   const body = await req.text();
   return proxyToBackendWithUser('users/me', user, { method: 'PATCH', body });
 }
+
+export async function DELETE() {
+  const user = await getUser();
+  if (!user) return new Response('Unauthorized', { status: 401 });
+  return proxyToBackendWithUser('users/me', user, { method: 'DELETE' });
+}
