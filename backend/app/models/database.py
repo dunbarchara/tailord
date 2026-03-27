@@ -24,6 +24,7 @@ class User(Base):
     notion_workspace_id: Mapped[str | None] = mapped_column(String, nullable=True)
     notion_workspace_name: Mapped[str | None] = mapped_column(String, nullable=True)
     notion_parent_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    pronouns: Mapped[str | None] = mapped_column(String, nullable=True)
     # Public profile
     username_slug: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)

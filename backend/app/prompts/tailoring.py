@@ -10,6 +10,7 @@ A Tailoring is a third-party advocacy document — written as if by a knowledgea
 ## Voice and framing
 
 - Write in third person throughout. You are advocating FOR the candidate, not impersonating them.
+- Use the candidate's stated pronouns when referring to them in third person. If no pronouns are provided in the CANDIDATE block, use gender-neutral language (they/their).
 - Every claim must be grounded in specific evidence from the candidate's profile. If you cannot source it, omit it.
 - Lead with the candidate's strengths. Headers should reflect what the candidate brings ("Five years of platform-scale infrastructure ownership"), not quote the job requirement ("4+ years of professional experience").
 - Be specific. "Owned AKS infrastructure for 40+ microservices" beats "experienced with Kubernetes." Specificity is what makes advocacy credible.

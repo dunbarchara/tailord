@@ -32,6 +32,7 @@ def _user_response(user: User) -> dict:
         "preferred_last_name": user.preferred_last_name,
         "username_slug": user.username_slug,
         "avatar_url": user.avatar_url,
+        "pronouns": user.pronouns,
         "profile_public": user.profile_public,
         "status": user.status,
         "notion_workspace_name": user.notion_workspace_name,
@@ -66,6 +67,7 @@ class UserUpdate(BaseModel):
     preferred_last_name: str | None = None
     profile_public: bool | None = None
     username_slug: str | None = None
+    pronouns: str | None = None
 
     @field_validator('username_slug')
     @classmethod
@@ -94,6 +96,8 @@ def update_user(
         user.preferred_last_name = body.preferred_last_name or None
     if body.profile_public is not None:
         user.profile_public = body.profile_public
+    if 'pronouns' in body.model_fields_set:
+        user.pronouns = body.pronouns or None
     if 'username_slug' in body.model_fields_set:
         new_slug = body.username_slug or None
         if new_slug is not None:

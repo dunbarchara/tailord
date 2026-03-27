@@ -86,11 +86,16 @@ def _compute_profile_signals(sourced_profile: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_sourced_profile(sourced_profile: dict) -> str:
+def _format_sourced_profile(
+    sourced_profile: dict,
+    candidate_name: str | None = None,
+    pronouns: str | None = None,
+) -> str:
     """Format a source-keyed profile dict into labeled blocks for LLM context.
 
-    Prepends a COMPUTED SIGNALS block with pre-calculated facts (total YOE,
-    role list) that are frequently miscalculated when left to the LLM.
+    Prepends a CANDIDATE block (name + pronouns) and a COMPUTED SIGNALS block
+    so all LLM calls have consistent candidate context without requiring each
+    service to manage it independently.
     """
     source_labels = {
         "resume": "Resume",
@@ -98,8 +103,20 @@ def _format_sourced_profile(sourced_profile: dict) -> str:
         "user_input": "Direct Input",
     }
 
+    sections = []
+
+    if candidate_name or pronouns:
+        candidate_lines = []
+        if candidate_name:
+            candidate_lines.append(f"Name: {candidate_name}")
+        if pronouns:
+            candidate_lines.append(
+                f"Pronouns: {pronouns} — use these when referring to the candidate in third person."
+            )
+        sections.append(f"[CANDIDATE]\n" + "\n".join(candidate_lines))
+
     signals = _compute_profile_signals(sourced_profile)
-    sections = [f"[COMPUTED SIGNALS — treat as ground truth]\n{signals}"]
+    sections.append(f"[COMPUTED SIGNALS — treat as ground truth]\n{signals}")
 
     for key, label in source_labels.items():
         if data := sourced_profile.get(key):
@@ -234,6 +251,7 @@ def generate_tailoring(
     candidate_name: str,
     ranked_matches: list[dict] | None = None,
     job_url: str | None = None,
+    pronouns: str | None = None,
 ) -> str:
     company = extracted_job.get("company") or "the company"
     job_title = extracted_job.get("title") or "this role"
@@ -253,7 +271,7 @@ def generate_tailoring(
                 job_title=job_title,
                 company=company,
                 ranked_matches_block=ranked_matches_block,
-                extracted_profile=_format_sourced_profile(extracted_profile),
+                extracted_profile=_format_sourced_profile(extracted_profile, candidate_name=candidate_name, pronouns=pronouns),
             )},
         ],
         response_model=TailoringContent,

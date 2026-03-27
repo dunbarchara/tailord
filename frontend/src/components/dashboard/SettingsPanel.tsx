@@ -46,6 +46,11 @@ export function SettingsPanel() {
   const [deleteAcknowledged, setDeleteAcknowledged] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [pronouns, setPronouns] = useState<string | null>(null);
+  const [customPronouns, setCustomPronouns] = useState('');
+  const [pronounsSaving, setPronounsSaving] = useState(false);
+  const [pronounsSaveStatus, setPronounsSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+
   const [usernameInput, setUsernameInput] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameChecking, setUsernameChecking] = useState(false);
@@ -64,6 +69,10 @@ export function SettingsPanel() {
       .then((data) => {
         setFirstName(data.preferred_first_name ?? '');
         setLastName(data.preferred_last_name ?? '');
+        const p = data.pronouns ?? null;
+        const preset = p && ['she/her', 'he/him', 'they/them'].includes(p) ? p : p ? 'custom' : null;
+        setPronouns(preset);
+        setCustomPronouns(preset === 'custom' ? (p ?? '') : '');
         setNotionWorkspace(data.notion_workspace_name ?? null);
         setUsernameSlug(data.username_slug ?? null);
         setUsernameInput(data.username_slug ?? '');
@@ -71,6 +80,30 @@ export function SettingsPanel() {
       })
       .catch(() => {});
   }, []);
+
+  const PRONOUN_PRESETS = ['she/her', 'he/him', 'they/them'] as const;
+
+  async function handleSavePronouns() {
+    const value = pronouns === 'custom' ? customPronouns.trim() || null : pronouns;
+    setPronounsSaving(true);
+    setPronounsSaveStatus('idle');
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pronouns: value }),
+      });
+      if (res.ok) {
+        setPronounsSaveStatus('saved');
+      } else {
+        setPronounsSaveStatus('error');
+      }
+    } catch {
+      setPronounsSaveStatus('error');
+    } finally {
+      setPronounsSaving(false);
+    }
+  }
 
   function validateUsernameFormat(v: string): string | null {
     if (!v) return null;
@@ -231,6 +264,58 @@ export function SettingsPanel() {
               </p>
               <p className="text-sm text-text-secondary">{session?.user?.email ?? '—'}</p>
             </div>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Pronouns */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Pronouns</h2>
+            <p className="text-xs text-text-tertiary mt-1">
+              Used in all AI-generated content that references you in third person.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {PRONOUN_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                onClick={() => { setPronouns(pronouns === preset ? null : preset); setPronounsSaveStatus('idle'); }}
+                className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                  pronouns === preset
+                    ? 'bg-brand-primary text-white border-brand-primary'
+                    : 'bg-surface-base text-text-secondary border-border-default hover:border-border-strong'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+            <button
+              onClick={() => { setPronouns(pronouns === 'custom' ? null : 'custom'); setPronounsSaveStatus('idle'); }}
+              className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                pronouns === 'custom'
+                  ? 'bg-brand-primary text-white border-brand-primary'
+                  : 'bg-surface-base text-text-secondary border-border-default hover:border-border-strong'
+              }`}
+            >
+              Custom
+            </button>
+          </div>
+          {pronouns === 'custom' && (
+            <Input
+              placeholder="e.g. ze/zir"
+              value={customPronouns}
+              onChange={(e) => { setCustomPronouns(e.target.value); setPronounsSaveStatus('idle'); }}
+              className="max-w-xs"
+            />
+          )}
+          <div className="flex items-center gap-3">
+            <Button onClick={handleSavePronouns} disabled={pronounsSaving}>
+              {pronounsSaving ? 'Saving…' : 'Save pronouns'}
+            </Button>
+            {pronounsSaveStatus === 'saved' && <p className="text-sm text-success">Saved</p>}
+            {pronounsSaveStatus === 'error' && <p className="text-sm text-error">Failed to save</p>}
           </div>
         </section>
 
