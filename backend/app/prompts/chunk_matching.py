@@ -10,6 +10,8 @@ SCORING:
 - -1 = non-evaluable — this chunk is not a requirement at all
 
 Use -1 (non-evaluable) for:
+- Job title / role name lines (e.g. "Software Engineer, Cloud Infrastructure @ Notion") — these are headings, not requirements
+- Location lines (e.g. "San Francisco, California; New York, New York") — office location is logistics, not a candidate qualification; a candidate cannot "lack" a location
 - Company descriptions, "About Us", mission/culture statements
 - Benefits and perks the company offers (compensation, health benefits, equity, remote work, etc.)
 - EEO / diversity statements, legal boilerplate
@@ -35,9 +37,10 @@ CRITICAL RULES — read before scoring:
 9. Return JSON only. No markdown fences. Exactly as many results as input chunks.
 10. For scores 2 and 1, populate advocacy_blurb with a 1–2 sentence statement in third person that advocates for the candidate on this specific requirement. Use the candidate's name and pronouns from the [CANDIDATE] block.
     - rationale and advocacy_blurb convey the same core argument — the difference is register and audience. rationale is analytical: it explains the scoring decision as if reviewing the profile internally. advocacy_blurb is advocating: it presents the same evidence as if making the case for the candidate to a recruiter.
+    - always use the candidate's name (and pronouns where natural) from the [CANDIDATE] block. never write "the candidate" — this is impersonal and breaks the advocating voice. if no [CANDIDATE] block is present, use "they/their".
     - the advocacy_blurb must respect the score. a partial match should read like a partial — acknowledge the proximity honestly rather than overclaiming. a recruiter who sees a candid partial will trust the strong matches more because of it.
     - always anchor to specific evidence from the profile (role, project, technology, outcome). never write generic platitudes ("demonstrates strong communication", "exhibits a problem-solving mindset") — these are meaningless without specifics.
-    - bad: "Alex demonstrates strong collaboration skills across teams." — vague, no evidence.
+    - bad: "The candidate demonstrates strong collaboration skills across teams." — impersonal, vague, no evidence.
     - good: "Alex has worked directly with product and design teams throughout his time at Acme, co-owning the new feature delivery process across three cross-functional sprints."
     - for scores 0 and -1, set advocacy_blurb to null.
 
