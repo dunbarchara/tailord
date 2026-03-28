@@ -1,14 +1,20 @@
 import { Header } from '@/components/Header';
-import { Hero } from '@/components/Hero';
-import { FeaturesTailord } from '@/components/FeaturesTailord';
+import { HeroSection } from '@/components/home/HeroSection';
+import { ProductPreview } from '@/components/home/ProductPreview';
+import { HowItWorks } from '@/components/home/HowItWorks';
+import { DifferentiatorSection } from '@/components/home/DifferentiatorSection';
+import { ClosingCTA } from '@/components/home/ClosingCTA';
 import { Footer } from '@/components/Footer';
 
 export default function Home() {
   return (
     <main className="min-h-screen">
       <Header />
-      <Hero />
-      <FeaturesTailord />
+      <HeroSection />
+      <ProductPreview />
+      <HowItWorks />
+      <DifferentiatorSection />
+      <ClosingCTA />
       <Footer />
     </main>
   );
