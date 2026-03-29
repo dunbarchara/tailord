@@ -76,6 +76,12 @@
   --color-score-partial-public: var(--color-score-partial-public);
   --color-score-gap: var(--color-score-gap);
 
+  /* Homepage accent */
+  --color-hp-accent: var(--color-hp-accent);
+  --color-hp-accent-hover: var(--color-hp-accent-hover);
+  --color-hp-accent-text: var(--color-hp-accent-text);
+  --color-hp-accent-subtle: var(--color-hp-accent-subtle);
+
   /* Shadows */
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
@@ -164,6 +170,12 @@
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Homepage accent — Mintlify-matched emerald green; update once DevTools values confirmed */
+  --color-hp-accent: #16A34A;
+  --color-hp-accent-hover: #15803D;
+  --color-hp-accent-text: #FFFFFF;
+  --color-hp-accent-subtle: #EDFAF3;
 }
 
 /* =============================================
@@ -282,6 +294,18 @@
   --max-width-5xl: var(--container-5xl);
   --max-width-6xl: var(--container-6xl);
   --max-width-7xl: var(--container-7xl);
+}
+
+/* =============================================
+   Homepage accent button — uses dynamic CSS vars so hover works without JS event handlers
+   ============================================= */
+.btn-hp-accent {
+  background-color: var(--color-hp-accent);
+  color: var(--color-hp-accent-text);
+  transition: background-color 200ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-hp-accent:hover {
+  background-color: var(--color-hp-accent-hover);
 }
 
 /* =============================================

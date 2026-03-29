@@ -23,17 +23,23 @@ export function HowItWorks() {
   return (
     <section className="px-6 py-16 lg:px-8 lg:py-24 bg-surface-elevated border-y border-border-subtle">
       <div className="mx-auto max-w-4xl">
-        <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary text-center mb-3">
+        <p
+          className="text-xs font-semibold uppercase tracking-widest text-center mb-3 transition-colors duration-300"
+          style={{ color: 'var(--color-hp-accent)' }}
+        >
           How it works
         </p>
-        <h2 className="text-2xl font-semibold text-text-primary text-center mb-14">
+        <h2 className="text-2xl font-semibold text-text-primary text-center tracking-tight mb-14">
           From background to argument in minutes
         </h2>
 
         <div className="grid gap-10 sm:grid-cols-3">
           {STEPS.map((step) => (
-            <div key={step.number} className="relative">
-              <p className="text-3xl font-semibold text-border-strong mb-3 leading-none select-none">
+            <div key={step.number}>
+              <p
+                className="text-4xl font-semibold mb-3 leading-none select-none tabular-nums transition-colors duration-300"
+                style={{ color: 'var(--color-hp-accent)', opacity: 0.25 }}
+              >
                 {step.number}
               </p>
               <h3 className="text-base font-semibold text-text-primary mb-2">{step.title}</h3>
