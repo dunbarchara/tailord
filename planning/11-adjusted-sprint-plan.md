@@ -141,10 +141,57 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 - [x] Settings: Replace profile visibility button with a `Switch` component (state clearly visible at a glance; consistent with tailoring share popover). Confirmation dialog required when enabling public — instant when disabling.
 - [x] Settings: Account deletion — "Danger zone" section with confirmation dialog; checkbox acknowledgment required; deletes storage file + tailorings + jobs + experience + user in FK-safe order; signs out and redirects to `/` on success.
 - [x] Settings: Custom pronouns — preset chips (she/her, he/him, they/them) + custom free-text option. Pronouns injected into all LLM prompts via `_format_sourced_profile()` as a `[CANDIDATE]` block — single injection point covering tailoring generation, requirement matching, and chunk scoring. Tailoring system prompt updated with explicit pronoun rule; defaults to gender-neutral language if unset.
+- [x] Homepage redesign v1 — replaced flat Hero + FeaturesTailord with five discrete section components (HeroSection, ProductPreview, HowItWorks, DifferentiatorSection, ClosingCTA). New headline ("You have the experience. We'll show you how to prove it."), single CTA, stylized product mockup showing Strong/Partial/Gap scoring, differentiator block. See `planning/13-homepage-redesign.md` for iteration plan.
 - [x] Job Posting view: personal advocacy blurbs per chunk. `ChunkMatchResult` gains `advocacy_blurb` (populated by LLM for score ≥ 1 using candidate name/pronouns from `[CANDIDATE]` block; null for gaps/n/a). Public/recruiter view renders `advocacy_blurb`; internal Analysis tab surfaces both fields labelled. Migration `a3b4c5d6e7f8` adds column to `job_chunks`.
   - Rationale and advocacy convey the same core argument with different register and audience: rationale is analytical (explains the score, written for internal review); advocacy is advocating (same evidence, written in the candidate's voice for a recruiter).
   - Advocacy respects the score — a partial match reads like a partial. Honest representation of proximity is a platform value: a candid partial makes the strong matches more credible.
   - Advocacy must anchor to specific evidence (role, project, technology, outcome) — generic platitudes without specifics are prohibited by the prompt.
+
+---
+
+### Day A6 — Frontend Rework
+
+**Goal:** Bring the visual design language up to a production-quality standard, closely matching Mintlify's cream + charcoal + sparse green aesthetic.
+
+**Why its own day:** The homepage and dashboard UI were functional but visually underdeveloped — no accent color, flat surfaces, generic typography scale. A polished frontend is essential for the platform to feel credible to real users and recruiters receiving shared tailorings.
+
+#### 1. Homepage redesign v1 ✅
+- [x] Replaced flat `Hero` + `FeaturesTailord` components with five discrete section components under `src/components/home/`: `HeroSection`, `ProductPreview`, `HowItWorks`, `DifferentiatorSection`, `ClosingCTA`
+- [x] New headline: *"You have the experience. We'll show you how to prove it."*
+- [x] Single CTA ("Start your first tailoring") — removed competing secondary CTA
+- [x] Subtext rewritten to name the actual output (requirement-by-requirement scoring)
+- [x] Step 3 of How It Works rewritten: "See exactly where you fit" replaces vague "Get a clear match narrative"
+- [x] Differentiator block: "Built to advocate. Not to inflate." — anti-keyword-stuffing positioning
+- [x] Deleted dead code: `Hero.tsx`, `Features.tsx`, `FeaturesTailord.tsx`
+- [x] Planning doc `13-homepage-redesign.md` created as living iteration log
+
+#### 2. Accent color system ✅
+- [x] Introduced `--color-hp-accent` token family (accent, hover, text, subtle) isolated to the homepage — dashboard unaffected
+- [x] `.btn-hp-accent` CSS class for hover-via-CSS (no JS event handlers; keeps section components as server components)
+- [x] `ColorSwitcher` component built for preview (Charcoal, Dusty Rose, Muted Green, Slate Blue) — then removed once direction confirmed
+- [x] Committed to Mintlify-matched emerald green (`#16A34A` / `#15803D` hover / `#EDFAF3` subtle) pending DevTools confirmation of exact values
+
+#### 3. Accent touchpoints across homepage ✅
+- [x] Hero: second headline line renders in accent; radial gradient glow behind hero uses accent-subtle
+- [x] ProductPreview: card header background uses accent-subtle; section label in accent
+- [x] HowItWorks: step numbers (01, 02, 03) in accent at low opacity — decorative
+- [x] DifferentiatorSection: border-left on each point in accent
+- [x] ClosingCTA: full section background in accent-subtle; button in accent
+
+#### 4. Design language analysis ✅
+- [x] Mintlify homepage fetched and analyzed; gap analysis documented
+- [x] Planning docs created: `14-claude-ai-workflows.md`, `15-mintlify-design-match.md`
+- [x] Key findings: no brand accent color was the highest-leverage gap; warm neutral palette already close; sparse accent application is the critical implementation constraint
+
+#### Remaining — Frontend Rework
+- [ ] Gather Mintlify DevTools CSS variables (`:root` block) to confirm exact green, surface, border, and font values
+- [ ] Update `--color-hp-accent` tokens to confirmed Mintlify values
+- [ ] Extend accent to dashboard: active sidebar nav item, primary buttons, inline links (`--color-text-link`)
+- [ ] Typography audit: heading scale, tracking, weight hierarchy vs Mintlify
+- [ ] Surface hierarchy review: compare our 5-level system to theirs, consolidate if needed
+- [ ] Font stack: add Inter via `next/font/google` if confirmed as their typeface
+- [ ] Dashboard card/panel rounding and border treatment audit
+- [ ] Homepage `ProductPreview` — replace stylized mockup with real screenshot once UI is polished enough
 
 ---
 
@@ -254,6 +301,7 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
 | A5 | User | Miscellaneous UX | Directed improvements session by session |
+| A6 | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
