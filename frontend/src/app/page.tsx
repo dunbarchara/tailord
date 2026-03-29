@@ -1,3 +1,5 @@
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { Header } from '@/components/Header';
 import { HeroSection } from '@/components/home/HeroSection';
 import { ProductPreview } from '@/components/home/ProductPreview';
@@ -6,15 +8,18 @@ import { DifferentiatorSection } from '@/components/home/DifferentiatorSection';
 import { ClosingCTA } from '@/components/home/ClosingCTA';
 import { Footer } from '@/components/Footer';
 
-export default function Home() {
+export default async function Home() {
+  const session = await getServerSession(authOptions);
+  const isSignedIn = !!session?.user;
+
   return (
     <main className="min-h-screen">
       <Header />
-      <HeroSection />
+      <HeroSection isSignedIn={isSignedIn} />
       <ProductPreview />
       <HowItWorks />
       <DifferentiatorSection />
-      <ClosingCTA />
+      <ClosingCTA isSignedIn={isSignedIn} />
       <Footer />
     </main>
   );

@@ -24,12 +24,12 @@ export function HowItWorks() {
     <section className="px-6 py-16 lg:px-8 lg:py-24 bg-surface-elevated border-y border-border-subtle">
       <div className="mx-auto max-w-4xl">
         <p
-          className="text-xs font-semibold uppercase tracking-widest text-center mb-3 transition-colors duration-300"
-          style={{ color: 'var(--color-hp-accent)' }}
+          className="font-mono text-xs font-medium uppercase tracking-[0.6px] text-center mb-3"
+          style={{ color: 'var(--color-brand-accent)' }}
         >
           How it works
         </p>
-        <h2 className="text-2xl font-semibold text-text-primary text-center tracking-tight mb-14">
+        <h2 className="text-2xl font-semibold text-text-primary text-center tracking-tight mb-14" style={{ letterSpacing: '-0.015em' }}>
           From background to argument in minutes
         </h2>
 
@@ -37,12 +37,12 @@ export function HowItWorks() {
           {STEPS.map((step) => (
             <div key={step.number}>
               <p
-                className="text-4xl font-semibold mb-3 leading-none select-none tabular-nums transition-colors duration-300"
-                style={{ color: 'var(--color-hp-accent)', opacity: 0.25 }}
+                className="text-4xl font-semibold mb-4 leading-none select-none tabular-nums"
+                style={{ color: 'var(--color-brand-accent)', opacity: 0.2 }}
               >
                 {step.number}
               </p>
-              <h3 className="text-base font-semibold text-text-primary mb-2">{step.title}</h3>
+              <h3 className="text-sm font-semibold text-text-primary mb-2 tracking-tight">{step.title}</h3>
               <p className="text-sm text-text-secondary leading-relaxed">{step.description}</p>
             </div>
           ))}

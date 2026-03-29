@@ -51,13 +51,13 @@ export function ProductPreview() {
       <div className="mx-auto max-w-2xl">
 
         <p
-          className="text-xs font-semibold uppercase tracking-widest text-center mb-3 transition-colors duration-300"
-          style={{ color: 'var(--color-hp-accent)' }}
+          className="font-mono text-xs font-medium uppercase tracking-[0.6px] text-center mb-3"
+          style={{ color: 'var(--color-brand-accent)' }}
         >
           What you get
         </p>
 
-        <h2 className="text-2xl font-semibold text-text-primary text-center mb-2 tracking-tight">
+        <h2 className="text-2xl font-semibold text-text-primary text-center mb-2 tracking-tight" style={{ letterSpacing: '-0.015em' }}>
           Every requirement, scored against your background
         </h2>
         <p className="text-text-secondary text-center mb-10 max-w-lg mx-auto leading-relaxed text-sm">
@@ -65,12 +65,12 @@ export function ProductPreview() {
         </p>
 
         {/* Mockup card */}
-        <div className="rounded-2xl border border-border-subtle bg-surface-elevated shadow-lg overflow-hidden">
+        <div className="rounded-3xl border border-border-subtle bg-surface-elevated shadow-md overflow-hidden">
 
           {/* Card header */}
           <div
             className="px-5 py-4 border-b border-border-subtle flex items-center justify-between"
-            style={{ backgroundColor: 'var(--color-hp-accent-subtle)' }}
+            style={{ backgroundColor: 'var(--color-brand-accent-subtle)' }}
           >
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-0.5">Acme Corp</p>
@@ -98,7 +98,7 @@ export function ProductPreview() {
               const config = SCORE_CONFIG[req.score];
               return (
                 <div key={i} className="px-5 py-4 flex gap-4 items-start">
-                  <div className={`mt-1.5 w-1 self-stretch rounded-sm flex-shrink-0 min-h-[2rem] ${config.bar}`} />
+                  <div className={`mt-1.5 w-1 self-stretch rounded-full flex-shrink-0 min-h-[2rem] ${config.bar}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className={`text-xs font-medium flex items-center gap-1.5 ${config.text}`}>

@@ -118,7 +118,7 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
       {/* Brand */}
       <div className="px-4 py-5">
         <Link href="/" className="flex items-center gap-2 group">
-          <img src="/logo.svg" alt="Tailord logo" className="h-8 w-8 dark:invert" />
+          <img src="/logo.svg" alt="Tailord logo" className="h-8 w-8" />
           <span className="text-xl font-display text-text-primary">Tailord</span>
         </Link>
       </div>

@@ -22,12 +22,15 @@ export function DifferentiatorSection() {
           {/* Left: heading block */}
           <div className="lg:sticky lg:top-28">
             <p
-              className="text-xs font-semibold uppercase tracking-widest mb-3 transition-colors duration-300"
-              style={{ color: 'var(--color-hp-accent)' }}
+              className="font-mono text-xs font-medium uppercase tracking-[0.6px] mb-3"
+              style={{ color: 'var(--color-brand-accent)' }}
             >
               The difference
             </p>
-            <h2 className="text-2xl font-semibold text-text-primary tracking-tight leading-snug mb-5">
+            <h2
+              className="text-2xl font-semibold text-text-primary tracking-tight leading-snug mb-5"
+              style={{ letterSpacing: '-0.015em' }}
+            >
               Built to advocate.
               <br />
               Not to inflate.
@@ -44,10 +47,10 @@ export function DifferentiatorSection() {
             {POINTS.map((point) => (
               <div
                 key={point.heading}
-                className="pl-5 transition-colors duration-300"
-                style={{ borderLeft: '2px solid var(--color-hp-accent)' }}
+                className="pl-5"
+                style={{ borderLeft: '2px solid var(--color-brand-accent)' }}
               >
-                <h3 className="text-sm font-semibold text-text-primary mb-1.5">{point.heading}</h3>
+                <h3 className="text-sm font-semibold text-text-primary mb-1.5 tracking-tight">{point.heading}</h3>
                 <p className="text-sm text-text-secondary leading-relaxed">{point.body}</p>
               </div>
             ))}
