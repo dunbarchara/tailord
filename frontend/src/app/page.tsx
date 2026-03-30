@@ -15,6 +15,7 @@ export default async function Home() {
   return (
     <main className="min-h-screen">
       <Header />
+      <div className="h-14" />
       <HeroSection isSignedIn={isSignedIn} />
       <ProductPreview />
       <HowItWorks />

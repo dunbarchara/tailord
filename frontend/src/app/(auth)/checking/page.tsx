@@ -28,6 +28,7 @@ export default function CheckingPage() {
   return (
     <div className="min-h-screen flex flex-col bg-surface-base">
       <Header />
+      <div className="h-14" />
       <div className="flex-1 flex items-center justify-center px-6 py-16">
         <div className="text-center space-y-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />

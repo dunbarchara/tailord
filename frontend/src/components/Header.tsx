@@ -14,7 +14,7 @@ export function Header() {
   if (status === 'loading') return null;
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-surface-elevated dark:bg-surface-base">
+    <header className="fixed top-0 left-0 right-0 z-50 w-full bg-surface-elevated dark:bg-surface-base">
       <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 h-14">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-1 shrink-0">

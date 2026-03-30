@@ -369,12 +369,15 @@ export function SettingsPanel() {
   void FiGithub;
 
   return (
-    <div className="h-full overflow-y-auto bg-surface-elevated">
+    <div className="h-full flex flex-col bg-surface-elevated">
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 flex items-center h-12 px-6 bg-surface-elevated">
+      <div className="shrink-0 flex items-center h-12 px-6 bg-surface-elevated">
         <h1 className="text-sm font-semibold text-text-primary tracking-[-0.1px]">Settings</h1>
       </div>
+
+      {/* ── Scrollable area ─────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto min-h-0">
 
       {/* ── Content ─────────────────────────────────────────────────────── */}
       <div className="max-w-6xl mx-auto px-6 lg:px-16 pt-12 pb-24">
@@ -780,6 +783,7 @@ export function SettingsPanel() {
         </DialogContent>
       </Dialog>
 
+      </div>{/* end scrollable area */}
     </div>
   );
 }
