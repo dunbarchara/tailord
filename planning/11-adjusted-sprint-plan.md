@@ -183,14 +183,33 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 - [x] Planning docs created: `14-claude-ai-workflows.md`, `15-mintlify-design-match.md`
 - [x] Key findings: no brand accent color was the highest-leverage gap; warm neutral palette already close; sparse accent application is the critical implementation constraint
 
+#### 5. Design token + font confirmation ✅
+- [x] Gathered Mintlify DevTools CSS variables (`:root` block) — confirmed exact surface, border, and text values
+- [x] `--color-surface-base` updated to `#FAFAF9` (exact Mintlify match: `component-sidebar-bg: 250 250 249`)
+- [x] `--color-text-tertiary` updated to `#78716C` (exact Mintlify match: `foreground-gray-muted: 120 113 108`)
+- [x] Inter confirmed as Mintlify's typeface — added via `next/font/google` with `--font-inter` CSS variable
+- [x] Dashboard layout uses system-ui font stack (Mintlify pattern); brand header text specifically uses Inter
+
+#### 6. Dashboard sidebar rework ✅
+Full Mintlify sidebar design clone replacing the old `Sidebar.tsx`. See `15-mintlify-design-match.md` for reference analysis.
+
+- [x] Layout: `#FAFAF9` bg, `border-r border-border-subtle`, `h-8` nav items, `rounded-[10px]`, `gap-2` icon/text, `px-2` padding — exact Mintlify geometry
+- [x] Custom SVG icons extracted from Mintlify HTML (18×18 viewBox, `stroke="currentColor"`, strokeWidth 1.5): Home, Editor, Workflows, Search, Collapse; Lucide Globe (My Profile) and Plus (New Tailoring) with matching strokeWidth
+- [x] Active state: `text-brand-accent` green text + `hover:bg-green-600/5` (`rgba(22,163,74,0.05)` — exact Mintlify hover value) + persistent `bg-black/[0.06]` background to distinguish selected item at rest
+- [x] Collapsible sidebar: `transition-[width] duration-200` CSS transition, `60px` collapsed / `240px` expanded; inner div fixed-width prevents content reflow during animation
+- [x] Collapsed state: icons-only with `title` tooltips; section header replaced by subtle `h-7` divider; search bar becomes icon-only button that expands sidebar on click and auto-focuses input (200ms delay matches transition)
+- [x] Tailorings section: scrollable list with fade-out gradient overlay (`from-surface-base`); `IconWorkflows` icon per item; title + company subtext; "Generating..." fallback when in-progress; hover-reveal trash icon with confirm dialog; search/filter by title or company; `···` expand button in collapsed view
+- [x] Active item derived from `usePathname()` — correct on load, refresh, and navigation; no manual state tracking
+- [x] Account popover: `DropdownMenu` (Radix portal — not clipped by `overflow-hidden`), `side="top"`; preferred display name fetched from `/api/users` with `preferred-name-changed` event listener; Settings link, dark/light mode toggle via `useTheme()`, red Sign Out
+- [x] All hardcoded Mintlify hex values migrated to design tokens (`text-text-primary/secondary/tertiary/disabled`, `bg-surface-base/elevated`, `border-border-subtle`) — sidebar fully respects dark mode
+- [x] Fixed `<Link><button>` invalid HTML nesting — nav items are plain styled `<Link>` elements
+- [x] Old `Sidebar.tsx` deleted; `SidebarMintlify.tsx` renamed to `Sidebar.tsx` with export renamed to `Sidebar`
+
 #### Remaining — Frontend Rework
-- [ ] Gather Mintlify DevTools CSS variables (`:root` block) to confirm exact green, surface, border, and font values
-- [ ] Update `--color-hp-accent` tokens to confirmed Mintlify values
-- [ ] Extend accent to dashboard: active sidebar nav item, primary buttons, inline links (`--color-text-link`)
 - [ ] Typography audit: heading scale, tracking, weight hierarchy vs Mintlify
 - [ ] Surface hierarchy review: compare our 5-level system to theirs, consolidate if needed
-- [ ] Font stack: add Inter via `next/font/google` if confirmed as their typeface
 - [ ] Dashboard card/panel rounding and border treatment audit
+- [ ] Extend accent touchpoints to other dashboard elements (primary buttons, inline links via `--color-text-link`)
 - [ ] Homepage `ProductPreview` — replace stylized mockup with real screenshot once UI is polished enough
 
 ---
@@ -300,8 +319,8 @@ When we revisit this, the right model is a **third toggle** per tailoring: `show
 | A2 ✅ | User | Public profile page | `/u/{slug}` two-pane layout, experience rendering, `profile_public` opt-in, Settings toggle |
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
-| A5 | User | Miscellaneous UX | Directed improvements session by session |
-| A6 | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match |
+| A5 ✅ | User | Miscellaneous UX | Profile visibility switch, account deletion, custom pronouns, homepage redesign v1, job chunk advocacy blurbs |
+| A6 (in progress) | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match, dashboard sidebar rework |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
