@@ -1,33 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { Loader2, Globe, Plus, User, Sun, Moon, LogOut, Settings, ChevronsUpDown, Trash2 } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from '@/components/ThemeProvider';
-import {
-  House,
-  PenLine,
-  User,
-  Plus,
-  Workflow,
-  Loader2,
-  Settings,
-  Moon,
-  Sun,
-  Menu,
-  X,
-  LogOut,
-  Trash2,
-  Search,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -40,50 +22,351 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { TailoringListItem } from '@/types';
 
-interface SidebarProps {
-  tailorings?: TailoringListItem[];
+/* ─── Icons ──────────────────────────────────────────────────────────────── */
+
+function IconHome({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M3.145 6.2L8.395 2.21C8.753 1.938 9.248 1.938 9.605 2.21L14.855 6.2C15.104 6.389 15.25 6.684 15.25 6.996V14.25C15.25 15.355 14.355 16.25 13.25 16.25H4.75C3.645 16.25 2.75 15.355 2.75 14.25V6.996C2.75 6.683 2.896 6.389 3.145 6.2Z" />
+      <path d="M11.652 12.152C10.188 13.616 7.813 13.616 6.349 12.152" />
+    </svg>
+  );
 }
 
-interface SidebarContentProps {
-  tailorings: TailoringListItem[];
-  pathname: string | null;
+function IconEditor({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M5.75 6.75H7.75" />
+      <path d="M5.75 9.75H10.25" />
+      <path d="M15.16 6.24999H11.75C11.198 6.24999 10.75 5.80199 10.75 5.24999V1.85199" />
+      <path d="M15.25 8.584V6.664C15.25 6.399 15.145 6.144 14.957 5.957L11.043 2.043C10.855 1.855 10.601 1.75 10.336 1.75H4.75C3.645 1.75 2.75 2.646 2.75 3.75V14.25C2.75 15.354 3.645 16.25 4.75 16.25H8.385" />
+      <path d="M10.75 17.25C10.75 17.25 11.432 11.259 17.25 10.75C15.82 12.44 17.25 15.75 13.5 15.75" />
+    </svg>
+  );
 }
 
-const navItems = [
-  { href: '/dashboard', icon: House, label: 'Home', exact: true },
-  { href: '/dashboard/experience', icon: PenLine, label: 'My Experience' },
-  { href: '/dashboard/profile', icon: User, label: 'My Profile' },
-  { href: '/dashboard/tailorings/new', icon: Plus, label: 'New Tailoring' },
-];
+function IconWorkflows({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M14.25 10.75H12.25C11.6977 10.75 11.25 11.1977 11.25 11.75V13.75C11.25 14.3023 11.6977 14.75 12.25 14.75H14.25C14.8023 14.75 15.25 14.3023 15.25 13.75V11.75C15.25 11.1977 14.8023 10.75 14.25 10.75Z" />
+      <path d="M5.25 3.25H12.875C14.187 3.25 15.25 4.313 15.25 5.625C15.25 6.937 14.187 8 12.875 8H5.125C3.813 8 2.75 9.063 2.75 10.375C2.75 11.687 3.813 12.75 5.125 12.75H8.75" />
+    </svg>
+  );
+}
 
-function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
-  const { darkMode, setDarkMode } = useTheme();
+function IconSearch({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <circle cx="7.75" cy="7.75" r="5" />
+      <path d="M13.25 13.25L11.25 11.25" />
+    </svg>
+  );
+}
+
+function IconCollapse({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M11 2.75H14.25C15.355 2.75 16.25 3.645 16.25 4.75V13.25C16.25 14.355 15.355 15.25 14.25 15.25H11" />
+      <path d="M8.25 15.25H3.75C2.645 15.25 1.75 14.355 1.75 13.25V4.75C1.75 3.645 2.645 2.75 3.75 2.75H8.25V15.25Z" />
+    </svg>
+  );
+}
+
+/* ─── Nav item styles ────────────────────────────────────────────────────── */
+
+const navItemBase =
+  'flex items-center gap-2 h-8 w-full px-2 rounded-[10px] text-sm font-normal tracking-[-0.1px] leading-5 transition-colors outline-none border border-transparent';
+
+const navItemInactive =
+  'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary';
+
+const navItemActive =
+  'text-brand-accent hover:bg-green-600/5';
+
+/* ─── NavItem ────────────────────────────────────────────────────────────── */
+
+function NavItem({
+  icon: Icon,
+  label,
+  href,
+  active = false,
+  collapsed = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  href: string;
+  active?: boolean;
+  collapsed?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      title={collapsed ? label : undefined}
+      className={cn(navItemBase, active ? navItemActive : navItemInactive)}
+    >
+      <Icon className="size-[18px] shrink-0" />
+      {!collapsed && <span>{label}</span>}
+    </Link>
+  );
+}
+
+/* ─── SearchBar ──────────────────────────────────────────────────────────── */
+
+function SearchBar({
+  collapsed,
+  onExpand,
+  query,
+  onQueryChange,
+}: {
+  collapsed: boolean;
+  onExpand: () => void;
+  query: string;
+  onQueryChange: (q: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const prevCollapsed = useRef(collapsed);
+
+  useEffect(() => {
+    if (prevCollapsed.current && !collapsed) {
+      const t = setTimeout(() => inputRef.current?.focus(), 200);
+      return () => clearTimeout(t);
+    }
+    prevCollapsed.current = collapsed;
+  }, [collapsed]);
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={onExpand}
+        className="flex items-center h-8 w-full px-2 rounded-[10px] border border-transparent bg-black/5 dark:bg-white/5 hover:bg-black/[0.07] dark:hover:bg-white/[0.07] transition-colors text-text-tertiary"
+      >
+        <IconSearch className="size-[18px] shrink-0" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center h-8 px-2 gap-2 rounded-[10px] border border-transparent bg-black/5 dark:bg-white/5 focus-within:bg-black/[0.07] dark:focus-within:bg-white/[0.07] transition-colors">
+      <IconSearch className="size-[18px] shrink-0 text-text-tertiary" />
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && onQueryChange('')}
+        placeholder="Search..."
+        className="flex-1 bg-transparent outline-none text-sm font-normal tracking-[-0.1px] text-text-secondary placeholder:text-text-disabled min-w-0"
+      />
+    </div>
+  );
+}
+
+/* ─── Tailoring list item ────────────────────────────────────────────────── */
+
+function tailoringLabel(t: TailoringListItem): string {
+  if (t.title) return t.title;
+  if (t.job_url) {
+    try { return new URL(t.job_url).hostname.replace(/^www\./, ''); } catch {}
+  }
+  return 'Untitled';
+}
+
+function TailoringItem({
+  tailoring,
+  active,
+  collapsed,
+  onDelete,
+}: {
+  tailoring: TailoringListItem;
+  active: boolean;
+  collapsed: boolean;
+  onDelete: (id: string) => void;
+}) {
+  const label = tailoringLabel(tailoring);
+  const generating = tailoring.generation_status === 'generating';
+  const Icon = generating
+    ? ({ className }: { className?: string }) => <Loader2 className={cn(className, 'animate-spin')} />
+    : IconWorkflows;
+
+  if (collapsed) {
+    return (
+      <Link
+        href={`/dashboard/tailorings/${tailoring.id}`}
+        title={[label, tailoring.company].filter(Boolean).join(' — ')}
+        className={cn(navItemBase, active ? navItemActive : navItemInactive)}
+      >
+        <Icon className="size-[18px] shrink-0" />
+      </Link>
+    );
+  }
+
+  return (
+    <div className="group relative">
+      <Link
+        href={`/dashboard/tailorings/${tailoring.id}`}
+        title={[label, tailoring.company].filter(Boolean).join(' — ')}
+        className={cn(
+          'flex items-center gap-2 w-full px-2 py-1.5 pr-8 rounded-[10px] border border-transparent transition-colors outline-none',
+          active ? navItemActive : navItemInactive,
+        )}
+      >
+        <Icon className="size-[18px] shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-normal tracking-[-0.1px] leading-5">{label}</p>
+          {(tailoring.company || generating) && (
+            <p className="truncate text-xs text-text-disabled leading-4 mt-0.5">
+              {generating && !tailoring.company ? 'Generating...' : tailoring.company}
+            </p>
+          )}
+        </div>
+      </Link>
+      <button
+        type="button"
+        onClick={(e) => { e.preventDefault(); onDelete(tailoring.id); }}
+        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-[6px] opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-error"
+        aria-label="Delete tailoring"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+/* ─── Account popover ────────────────────────────────────────────────────── */
+
+function AccountPopover({ collapsed }: { collapsed: boolean }) {
   const { data: session } = useSession();
-  const router = useRouter();
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const { darkMode, setDarkMode } = useTheme();
   const [preferredName, setPreferredName] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
 
   useEffect(() => {
     fetch('/api/users')
       .then((r) => r.json())
       .then((data) => {
-        const name = [data.preferred_first_name, data.preferred_last_name].filter(Boolean).join(' ');
-        setPreferredName(name || null);
+        const n = [data.preferred_first_name, data.preferred_last_name].filter(Boolean).join(' ');
+        setPreferredName(n || null);
       })
       .catch(() => {});
 
     function onNameChanged(e: Event) {
       const { firstName, lastName } = (e as CustomEvent).detail;
-      const name = [firstName, lastName].filter(Boolean).join(' ');
-      setPreferredName(name || null);
+      const n = [firstName, lastName].filter(Boolean).join(' ');
+      setPreferredName(n || null);
     }
     window.addEventListener('preferred-name-changed', onNameChanged);
     return () => window.removeEventListener('preferred-name-changed', onNameChanged);
   }, []);
+
+  const displayName = preferredName ?? session?.user?.name ?? '';
+  const email = session?.user?.email ?? '';
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(navItemBase, navItemInactive, 'justify-between')}
+          title={collapsed ? 'Account' : undefined}
+        >
+          <div className="flex items-center gap-2">
+            <User className="size-[18px] shrink-0" strokeWidth={1.8} />
+            {!collapsed && <span>Account</span>}
+          </div>
+          {!collapsed && (
+            <ChevronsUpDown className="size-[14px] shrink-0 text-text-disabled" strokeWidth={1.8} />
+          )}
+        </button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-[220px] rounded-2xl p-1.5 bg-surface-elevated border-border-subtle shadow-lg"
+      >
+        {/* Name + email */}
+        <div className="flex flex-col gap-0.5 px-2 py-2">
+          <span className="text-sm font-medium text-text-primary leading-5 truncate">{displayName}</span>
+          <span className="text-xs text-text-tertiary leading-4 truncate">{email}</span>
+        </div>
+
+        <DropdownMenuSeparator className="bg-border-subtle mx-1 my-1" />
+
+        <DropdownMenuItem asChild className="rounded-xl gap-1.5 p-2 text-sm text-text-secondary cursor-pointer focus:bg-black/5 dark:focus:bg-white/5 focus:text-text-primary">
+          <Link href="/dashboard/settings">
+            <Settings className="size-4 text-text-tertiary shrink-0" strokeWidth={1.8} />
+            <span>Settings</span>
+          </Link>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          onClick={() => setDarkMode(!darkMode)}
+          className="rounded-xl gap-1.5 p-2 text-sm text-text-secondary cursor-pointer focus:bg-black/5 dark:focus:bg-white/5 focus:text-text-primary"
+        >
+          {darkMode
+            ? <Sun className="size-4 text-text-tertiary shrink-0" strokeWidth={1.8} />
+            : <Moon className="size-4 text-text-tertiary shrink-0" strokeWidth={1.8} />}
+          <span>{darkMode ? 'Light mode' : 'Dark mode'}</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator className="bg-border-subtle mx-1 my-1" />
+
+        <DropdownMenuItem
+          onClick={() => signOut({ callbackUrl: '/' })}
+          className="rounded-xl gap-1.5 p-2 text-sm text-red-600 cursor-pointer focus:bg-red-50 dark:focus:bg-red-950/20 focus:text-red-600"
+        >
+          <LogOut className="size-4 shrink-0" strokeWidth={1.8} />
+          <span>Sign out</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/* ─── Divider ────────────────────────────────────────────────────────────── */
+
+function Divider() {
+  return (
+    <div className="px-5 shrink-0">
+      <div className="h-px bg-border-subtle" />
+    </div>
+  );
+}
+
+/* ─── Active item ────────────────────────────────────────────────────────── */
+
+function getActiveItem(pathname: string | null): string {
+  if (!pathname || pathname === '/dashboard') return 'Home';
+  if (pathname.startsWith('/dashboard/experience')) return 'My Experience';
+  if (pathname.startsWith('/dashboard/profile')) return 'My Profile';
+  if (pathname.startsWith('/dashboard/settings')) return 'Settings';
+  if (pathname === '/dashboard/tailorings/new') return 'New Tailoring';
+  const match = pathname.match(/^\/dashboard\/tailorings\/([^/]+)$/);
+  if (match) return match[1];
+  return 'Home';
+}
+
+/* ─── Sidebar ────────────────────────────────────────────────────────────── */
+
+export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const activeItem = getActiveItem(pathname);
+  const [collapsed, setCollapsed] = useState(false);
+  const [query, setQuery] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const filteredTailorings = query.trim()
+    ? tailorings.filter((t) => {
+        const q = query.toLowerCase();
+        return t.title?.toLowerCase().includes(q) || t.company?.toLowerCase().includes(q);
+      })
+    : tailorings;
 
   async function handleDelete(id: string) {
     setDeleting(true);
@@ -99,129 +382,133 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
     }
   }
 
-  const filteredTailorings = query.trim()
-    ? tailorings.filter((t) => {
-        const q = query.toLowerCase();
-        return (
-          t.title?.toLowerCase().includes(q) ||
-          t.company?.toLowerCase().includes(q)
-        );
-      })
-    : tailorings;
-
-  const isActive = (href: string, exact = false) =>
-    exact ? pathname === href : pathname === href || Boolean(pathname?.startsWith(href + '/'));
-
-  const userInitials = session?.user?.name
-    ? session.user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-    : '??';
-
-  const displayName = preferredName ?? session?.user?.name ?? 'Account';
+  const w = collapsed ? '60px' : '240px';
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Brand */}
-      <div className="h-12 flex items-center flex-shrink-0 px-3">
-        <Link href="/" className="flex items-center gap-2 px-2 py-1.5 rounded-[10px] hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-          <img src="/logo.svg" alt="Tailord logo" className="h-[22px] w-[22px] flex-shrink-0" />
-          <span className="text-sm font-normal text-text-primary">Tailord</span>
-        </Link>
-      </div>
+    <>
+      <aside
+        className="hidden lg:flex flex-col bg-surface-base border-r border-border-subtle transition-[width] duration-200 overflow-hidden shrink-0"
+        style={{ width: w }}
+      >
+        <div className="flex grow flex-col overflow-hidden" style={{ width: w, minWidth: w }}>
 
-      {/* Nav items */}
-      <nav className="px-3 pb-3 space-y-0.5">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(item.href, item.exact);
-          return (
+          {/* Workspace header */}
+          <div className="flex items-end pb-1.5 h-12 px-3 shrink-0">
             <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-2 h-8 px-2 rounded-[10px] text-[13px] font-medium transition-colors',
-                active
-                  ? 'bg-brand-accent-subtle text-brand-accent'
-                  : 'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary'
-              )}
+              href="/"
+              className="flex items-center py-1.5 gap-1 px-[7px] rounded-[10px] hover:bg-black/5 dark:hover:bg-white/5 outline-none transition-colors"
             >
-              <Icon className="h-5 w-5 flex-shrink-0" />
-              {item.label}
+              <img alt="Tailord logo" className="h-[22px] w-[22px] shrink-0" src="/logo.svg" />
+              {!collapsed && (
+                <span
+                  className="text-text-primary text-[16px] leading-none font-semibold tracking-tight whitespace-nowrap"
+                  style={{ fontFamily: 'var(--font-inter), ui-sans-serif, system-ui' }}
+                >
+                  Tailord
+                </span>
+              )}
             </Link>
-          );
-        })}
-      </nav>
+          </div>
 
-      {/* Tailorings list */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-3">
-        <span className="px-2 py-1.5 text-xs font-medium text-text-tertiary">
-          Tailorings
-        </span>
-        {tailorings.length > 0 && (
-          <div className="relative mb-2">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-tertiary pointer-events-none" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
-              placeholder="Search…"
-              className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-black/5 dark:bg-white/5 border-0 rounded-[8px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-border-focus"
-            />
-          </div>
-        )}
-        {filteredTailorings.length === 0 && query ? (
-          <p className="px-2 py-1.5 text-xs text-text-tertiary">No results</p>
-        ) : filteredTailorings.length === 0 ? (
-          <Link
-            href="/dashboard/tailorings/new"
-            className="flex items-center gap-2 h-8 px-2 rounded-[10px] text-[13px] text-text-tertiary hover:text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New tailoring
-          </Link>
-        ) : (
-          <div className="space-y-0.5">
-            {filteredTailorings.map((tailoring) => {
-              const active = pathname === `/dashboard/tailorings/${tailoring.id}`;
-              const label = tailoring.title
-                ?? (tailoring.job_url ? (() => { try { return new URL(tailoring.job_url!).hostname.replace(/^www\./, ''); } catch { return null; } })() : null)
-                ?? 'Untitled';
-              return (
-                <div key={tailoring.id} className="group relative">
-                  <Link
-                    href={`/dashboard/tailorings/${tailoring.id}`}
-                    className={cn(
-                      'flex items-start gap-2 px-2 py-2 pr-8 rounded-[10px] text-[13px] transition-colors',
-                      active
-                        ? 'bg-brand-accent-subtle text-text-primary'
-                        : 'text-text-secondary hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-primary'
-                    )}
-                  >
-                    {tailoring.generation_status === 'generating'
-                      ? <Loader2 className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-brand-accent animate-spin" />
-                      : <Workflow className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-text-tertiary" />}
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium leading-tight">{label}</p>
-                      <p className="truncate text-[11px] text-text-tertiary mt-0.5">
-                        {tailoring.generation_status === 'generating' && !tailoring.company
-                          ? 'Generating...'
-                          : tailoring.company ?? ''}
-                      </p>
-                    </div>
-                  </Link>
-                  <button
-                    onClick={(e) => { e.preventDefault(); setConfirmDeleteId(tailoring.id); }}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-[6px] opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-error hover:bg-black/5"
-                    aria-label="Delete tailoring"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
+          <Divider />
+
+          {/* Sticky top: primary nav + tailorings header/controls */}
+          <div className="flex flex-col gap-3.5 px-3 pt-3 shrink-0">
+
+            {/* Primary nav */}
+            <nav className="flex flex-col gap-0.5">
+              <NavItem icon={IconHome}   label="Home"          href="/dashboard"           active={activeItem === 'Home'}          collapsed={collapsed} />
+              <NavItem icon={IconEditor} label="My Experience" href="/dashboard/experience" active={activeItem === 'My Experience'} collapsed={collapsed} />
+              <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href="/dashboard/profile" active={activeItem === 'My Profile'} collapsed={collapsed} />
+            </nav>
+
+            {/* Tailorings section header + controls */}
+            <div className="flex flex-col gap-0.5">
+              {collapsed ? (
+                <div className="h-7 px-2 flex items-center">
+                  <div className="h-px w-full bg-border-subtle" />
                 </div>
-              );
-            })}
+              ) : (
+                <span className="px-2 py-1.5 font-medium text-xs text-text-tertiary">
+                  Tailorings
+                </span>
+              )}
+              <NavItem icon={(p) => <Plus {...p} size={18} strokeWidth={1.8} />} label="New Tailoring" href="/dashboard/tailorings/new" active={activeItem === 'New Tailoring'} collapsed={collapsed} />
+              <SearchBar collapsed={collapsed} onExpand={() => setCollapsed(false)} query={query} onQueryChange={setQuery} />
+            </div>
+
           </div>
-        )}
-      </div>
+
+          {/* Scrollable tailorings list */}
+          <div className="relative flex-1 min-h-0">
+            <div className="h-full overflow-y-auto px-3 py-1">
+              <div className="flex flex-col gap-0.5 pb-5">
+                {collapsed ? (() => {
+                  const activeTailoring = tailorings.find(t => activeItem === t.id) ?? tailorings[0];
+                  const hasMore = tailorings.length > 1;
+                  return (
+                    <>
+                      {activeTailoring && (
+                        <TailoringItem
+                          key={activeTailoring.id}
+                          tailoring={activeTailoring}
+                          active={activeItem === activeTailoring.id}
+                          collapsed={true}
+                          onDelete={setConfirmDeleteId}
+                        />
+                      )}
+                      {hasMore && (
+                        <button
+                          type="button"
+                          onClick={() => setCollapsed(false)}
+                          title="Show all tailorings"
+                          className="flex items-center justify-center h-8 w-full rounded-[10px] border border-transparent text-text-disabled hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-secondary transition-colors"
+                        >
+                          <span className="text-sm leading-none tracking-widest">···</span>
+                        </button>
+                      )}
+                    </>
+                  );
+                })() : filteredTailorings.length === 0 && query ? (
+                  <p className="px-2 py-1.5 text-xs text-text-disabled">No results</p>
+                ) : filteredTailorings.map((t) => (
+                  <TailoringItem
+                    key={t.id}
+                    tailoring={t}
+                    active={activeItem === t.id}
+                    collapsed={false}
+                    onDelete={setConfirmDeleteId}
+                  />
+                ))}
+              </div>
+            </div>
+            {!collapsed && (
+              <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-surface-base to-transparent" />
+            )}
+          </div>
+
+          {/* Sticky bottom — account + collapse */}
+          <div className="shrink-0 px-3 pb-3">
+            <div className="mb-2.5 px-2">
+              <div className="h-px bg-border-subtle" />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <AccountPopover collapsed={collapsed} />
+            </div>
+            <div className="mt-0.5" />
+            <button
+              type="button"
+              onClick={() => setCollapsed(!collapsed)}
+              className={cn(navItemBase, navItemInactive)}
+              title={collapsed ? 'Expand' : 'Collapse'}
+            >
+              <IconCollapse className="size-[18px] shrink-0" />
+              {!collapsed && <span>Collapse</span>}
+            </button>
+          </div>
+
+        </div>
+      </aside>
 
       <Dialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
         <DialogContent>
@@ -237,96 +524,6 @@ function SidebarContent({ tailorings, pathname }: SidebarContentProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* User footer */}
-      <div className="px-3 pt-2 pb-3 border-t border-black/5 dark:border-white/5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="w-full flex items-center gap-2.5 px-2 py-2 rounded-[10px] hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left">
-              <Avatar className="h-6 w-6 flex-shrink-0">
-                <AvatarImage src={session?.user?.image ?? undefined} alt={session?.user?.name ?? ''} />
-                <AvatarFallback className="text-[10px] bg-brand-accent-subtle text-brand-accent font-medium">
-                  {userInitials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium text-text-primary truncate leading-tight">
-                  {displayName}
-                </p>
-              </div>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-52">
-            <DropdownMenuLabel className="font-normal py-2">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-[13px] font-medium leading-none">{displayName}</p>
-                <p className="text-[11px] leading-none text-text-tertiary mt-1">{session?.user?.email ?? ''}</p>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild className="cursor-pointer text-[13px]">
-              <Link href="/dashboard/settings">
-                <Settings className="mr-2 h-3.5 w-3.5" />
-                Settings
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setDarkMode(!darkMode)} className="cursor-pointer text-[13px]">
-              {darkMode ? <Sun className="mr-2 h-3.5 w-3.5" /> : <Moon className="mr-2 h-3.5 w-3.5" />}
-              {darkMode ? 'Light mode' : 'Dark mode'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="cursor-pointer text-[13px] text-destructive focus:text-destructive"
-              onClick={() => signOut({ callbackUrl: '/' })}
-            >
-              <LogOut className="mr-2 h-3.5 w-3.5" />
-              Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  );
-}
-
-export function Sidebar({ tailorings = [] }: SidebarProps) {
-  const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  const contentProps = { tailorings, pathname };
-
-  return (
-    <>
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col w-60 bg-surface-base border-r border-black/5 dark:border-white/5">
-        <SidebarContent {...contentProps} />
-      </aside>
-
-      {/* Mobile toggle */}
-      <button
-        onClick={() => setMobileOpen(!mobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-[10px] bg-surface-elevated border border-border-subtle shadow-sm"
-        aria-label="Toggle menu"
-      >
-        {mobileOpen ? (
-          <X className="h-4 w-4 text-text-primary" />
-        ) : (
-          <Menu className="h-4 w-4 text-text-primary" />
-        )}
-      </button>
-
-      {/* Mobile sidebar */}
-      {mobileOpen && (
-        <>
-          <div
-            className="lg:hidden fixed inset-0 bg-black/40 z-40 animate-fade-in"
-            onClick={() => setMobileOpen(false)}
-          />
-          <aside className="lg:hidden fixed inset-y-0 left-0 z-50 w-60 bg-surface-base border-r border-black/5 flex flex-col">
-            <SidebarContent {...contentProps} />
-          </aside>
-        </>
-      )}
     </>
   );
 }
