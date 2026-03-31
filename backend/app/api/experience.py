@@ -307,7 +307,10 @@ def set_github(
     from app.core.mvp_github import fetch_repos
 
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    repos = fetch_repos(body.github_username)
+    try:
+        repos = fetch_repos(body.github_username)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     if experience:
         experience.github_username = body.github_username

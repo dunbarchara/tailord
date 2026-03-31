@@ -4,6 +4,8 @@ import requests
 def fetch_repos(username: str) -> list[dict]:
     url = f"https://api.github.com/users/{username}/repos"
     resp = requests.get(url, params={"per_page": 100, "sort": "pushed"})
+    if resp.status_code == 404:
+        raise ValueError(f"GitHub user '{username}' not found")
     if resp.status_code != 200:
         return []
 
