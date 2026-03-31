@@ -80,10 +80,37 @@ The UI recedes. Every design decision serves the text. Nothing competes with the
 
 ---
 
-## Current Gap Analysis (Before Reference Material)
+## Implementation Status
 
-| Area | Mintlify | Us (current) | Gap |
-|------|----------|--------------|-----|
+### What's Been Implemented
+
+| Area | Mintlify | Us (implemented) | Notes |
+|------|----------|-----------------|-------|
+| Accent color | Sparse emerald green | `#16A34A` / `#15803D` hover / `#EDFAF3` subtle | Confirmed from DevTools. Homepage only for now; `brand-accent` token used sparingly in dashboard (active nav, status badges) |
+| Sidebar active state | Green text + subtle bg | `text-brand-accent` + `hover:bg-green-600/5` | Exact Mintlify hover value confirmed |
+| Surface tokens | `#FAFAF9` base | `--color-surface-base: #FAFAF9` | Exact match confirmed |
+| Text tokens | `#78716C` muted | `--color-text-tertiary: #78716C` | Exact match confirmed |
+| Font | Inter | Added via `next/font/google` (`--font-inter`) | Dashboard uses system-ui (Mintlify pattern); brand text uses Inter |
+| Typography weight | Topbar: 500 (medium); section headers: 400 (inherit) | `font-medium` topbars; bare headings (no weight class) | Tailwind preflight resets heading font-weight to `inherit` |
+| Sidebar geometry | `h-8`, `rounded-[10px]`, `px-2`, `gap-2` | Exact match | Custom SVG icons (18×18 strokeWidth 1.5) |
+| Sidebar collapse | Icon-only at narrow width | JS `matchMedia('(max-width: 1023px)')` drives `isCollapsed` | Triggers full collapsed rendering, not just visual clipping |
+| Page shell | `h-12` topbar, `border-b`, nested scroll | Applied to all dashboard pages | Nested scroll prevents iOS rubber-band pulling topbar |
+| Settings-style section layout | `lg:grid-cols-8` col-3/col-5 split | Applied to Settings, New Tailoring, My Experience | Exact Mintlify Settings/General geometry |
+| Card rounding | `rounded-xl` / `rounded-2xl` | `rounded-2xl` for cards/tables, `rounded-xl` for inputs | Consistent throughout |
+| Shadows | Minimal, border-first | Minimal — `shadow-lg` only on popovers | ✓ |
+| Links | Green | `--color-text-link` not yet updated | Remaining item |
+| Primary buttons | Accent green | `bg-zinc-950 dark:bg-white` (charcoal/white) | Intentional divergence — dashboard primary stays charcoal |
+
+### Remaining
+- [ ] `--color-text-link` → accent green (inline text links throughout dashboard)
+- [ ] Homepage `ProductPreview` — replace stylized mockup with real screenshot
+
+---
+
+## Original Gap Analysis (Pre-Implementation, preserved for reference)
+
+| Area | Mintlify | Us (at time of analysis) | Gap |
+|------|----------|--------------------------|-----|
 | Accent color | Sparse emerald green | No accent (charcoal buttons) | High |
 | Accent frequency | ~5% of UI elements | N/A | High |
 | Sidebar active state | Green highlight | Unknown (not styled yet) | Medium |
@@ -93,58 +120,6 @@ The UI recedes. Every design decision serves the text. Nothing competes with the
 | Typography | Clean sans, functional | System sans, functional | Low–Medium |
 | Card rounding | rounded-lg approx | rounded-xl (slightly rounder) | Low |
 | Shadows | Very minimal, border-first | Very minimal | Low |
-
----
-
-## Implementation Plan
-
-### Phase 1 — Token Update (after reference gathered)
-Once we have DevTools CSS variables:
-
-1. **Add green accent tokens** to `:root` and `.dark` in `globals.css`
-   - `--color-brand-accent: [their green]`
-   - `--color-brand-accent-hover: [slightly darker]`
-   - `--color-brand-accent-subtle: [very light tint, ~10% opacity]`
-   - Expose in `@theme inline` for Tailwind utilities
-
-2. **Update link color** — `--color-text-link` currently charcoal; update to accent green
-
-3. **Verify surface tokens** — compare our 5-level surface hierarchy to theirs; consolidate if needed
-
-4. **Font stack** — if they use Inter, add it via `next/font/google` (zero-bundle-cost approach in Next.js)
-
-### Phase 2 — Component Updates
-
-Apply accent to the right places only:
-
-**Navigation sidebar:**
-- Active item: accent background tint (`brand-accent-subtle`) + accent text
-- Active item left border: accent color (`border-l-2 border-brand-accent`)
-- Hover: subtle surface change, no accent
-
-**Links:**
-- All `text-text-link` elements pick up the new accent automatically
-- Underline on hover
-
-**Primary buttons:**
-- `bg-brand-accent hover:bg-brand-accent-hover text-white`
-- Secondary buttons stay charcoal/neutral
-
-**Status indicators:**
-- Success state → accent green (aligns well with our existing `score-strong` green, may consolidate)
-
-**Everything else stays neutral.** This is the discipline. The restraint is the design.
-
-### Phase 3 — Typography Refinement
-- Tighten heading tracking (`tracking-tight` → possibly tighter on large headings)
-- Verify body text size and line-height match
-- Ensure heading weight hierarchy is clear (semibold for h2, medium for h3, etc.)
-
-### Phase 4 — Homepage Color Switcher Update
-Once we commit to the green, update the `ColorSwitcher` to:
-- Make "Muted Green" the default selected accent
-- Dial in the exact green to match Mintlify
-- Potentially remove the switcher from production and hardcode the chosen color
 
 ---
 
@@ -189,9 +164,10 @@ When we add the brand accent green, keep `score-strong` as its own token — the
 
 | Date | Material | Notes |
 |------|----------|-------|
-| — | Homepage fetch | Dark-mode-primary, teal/emerald accent, rounded-3xl cards, gradient backdrops |
-| — | Dashboard screenshots | *Not yet captured* |
-| — | DevTools CSS vars | *Not yet captured* |
-| — | Font identification | *Not yet captured* |
-
-*Update this table as reference material is gathered and shared.*
+| Day A6 | Homepage fetch | Dark-mode-primary, teal/emerald accent, rounded-3xl cards, gradient backdrops |
+| Day A6 | DevTools CSS vars (`:root` block) | Confirmed exact values for surface, border, text tokens; `surface-base: 250 250 249`, `foreground-gray-muted: 120 113 108` |
+| Day A6 | Font identification | Inter confirmed — added via `next/font/google` |
+| Day A6 | `dashboard_editor` HTML + CSS | Tailoring Detail topbar geometry, tab layout, button groupings |
+| Day A6 | `dashboard_settings_general` HTML + CSS | Section layout (`lg:grid-cols-8` col-3/col-5), section header typography (400 weight), topbar (500 weight), input/button styles |
+| Day A6 | `dashboard_home` HTML | Greeting pattern, Activity table layout, empty state |
+| Day A6 | `dashboard_settings` HTML | Settings shell pattern; Notion integration `SourceRow` layout reference |

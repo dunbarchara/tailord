@@ -198,6 +198,7 @@ Full Mintlify sidebar design clone replacing the old `Sidebar.tsx`. See `15-mint
 - [x] Active state: `text-brand-accent` green text + `hover:bg-green-600/5` (`rgba(22,163,74,0.05)` — exact Mintlify hover value) + persistent `bg-black/[0.06]` background to distinguish selected item at rest
 - [x] Collapsible sidebar: `transition-[width] duration-200` CSS transition, `60px` collapsed / `240px` expanded; inner div fixed-width prevents content reflow during animation
 - [x] Collapsed state: icons-only with `title` tooltips; section header replaced by subtle `h-7` divider; search bar becomes icon-only button that expands sidebar on click and auto-focuses input (200ms delay matches transition)
+- [x] Responsive auto-collapse: `window.matchMedia('(max-width: 1023px)')` listener drives `smallScreen` state; `isCollapsed = collapsed || smallScreen`; expand actions (search, `···`, collapse toggle) call `handleExpand()` which clears both states; correctly triggers full collapsed rendering (not just visual clipping)
 - [x] Tailorings section: scrollable list with fade-out gradient overlay (`from-surface-base`); `IconWorkflows` icon per item; title + company subtext; "Generating..." fallback when in-progress; hover-reveal trash icon with confirm dialog; search/filter by title or company; `···` expand button in collapsed view
 - [x] Active item derived from `usePathname()` — correct on load, refresh, and navigation; no manual state tracking
 - [x] Account popover: `DropdownMenu` (Radix portal — not clipped by `overflow-hidden`), `side="top"`; preferred display name fetched from `/api/users` with `preferred-name-changed` event listener; Settings link, dark/light mode toggle via `useTheme()`, red Sign Out
@@ -205,12 +206,63 @@ Full Mintlify sidebar design clone replacing the old `Sidebar.tsx`. See `15-mint
 - [x] Fixed `<Link><button>` invalid HTML nesting — nav items are plain styled `<Link>` elements
 - [x] Old `Sidebar.tsx` deleted; `SidebarMintlify.tsx` renamed to `Sidebar.tsx` with export renamed to `Sidebar`
 
+#### 7. Dashboard page overhauls ✅
+
+All authenticated dashboard pages redesigned to share a unified Mintlify-matched design language.
+
+**Shared shell pattern** applied to all pages:
+- `h-full flex flex-col bg-surface-elevated` outer shell
+- `h-12 px-6` topbar with `border-b border-border-subtle`, `font-medium` (500) title — matching `typography-caption-l-medium`
+- `flex-1 overflow-y-auto min-h-0` scrollable content area (nested scroll pattern prevents iOS rubber-band pulling the topbar)
+- Content max-width `max-w-6xl mx-auto px-6 lg:px-16 pt-12 pb-24`
+- Section layout: `divide-y divide-zinc-950/5 dark:divide-white/5 [&>*:first-child]:pt-0`; each section uses `py-8 grid grid-cols-1 lg:grid-cols-8 gap-x-12` (col-span-3 label/description left, col-span-5 controls right) — exact Mintlify Settings/General pattern
+
+**Shared button + input styles** (defined as constants, consistent across all pages):
+- `saveBtnCls`: `bg-zinc-950 dark:bg-white text-white dark:text-zinc-950` (primary)
+- `outlineBtnCls`: `border border-border-default bg-surface-elevated text-text-secondary hover:...`
+- `inputCls`: `rounded-xl border border-border-default bg-surface-elevated px-3 py-2 text-sm hover:border-border-strong focus:border-border-focus focus:ring-2 focus:ring-brand-accent/10`
+- `textBtnCls`: `h-8 px-2.5 rounded-[10px] bg-surface-elevated border border-border-default text-text-secondary hover:bg-surface-overlay`
+- **Typography fix:** section headers use no explicit font-weight (`font-weight: inherit` from Tailwind preflight = 400); topbars use `font-medium` (500) — matches Mintlify's bare `<h1 class="text-foreground-gray">` rendering
+
+**New Tailoring page** (`NewTailoringForm.tsx`):
+- [x] Redesigned with shared shell pattern — `h-12` topbar "New Tailoring", nested scroll
+- [x] Single `SettingRow` section: left side "Create Tailoring" (regular weight), right side URL input + phase list + submit
+- [x] Mintlify `inputCls` with `pl-9` icon prefix (Link2 icon); primary submit button
+- [x] Removed shadcn `Input`, `Button`, `Card` — all replaced with design-token-based primitives
+
+**Settings page** (`SettingsPanel.tsx`):
+- [x] Topbar `font-semibold` → `font-medium` to match other pages
+
+**My Profile page** (`/dashboard/profile/page.tsx`):
+- [x] Topbar redesigned: `grid grid-cols-[1fr_auto_1fr]` layout, `h-12 px-6 font-medium`, `border-b`
+- [x] Share-style popover on right (matches TailoringDetail): Globe/Lock + "Profile" + ChevronDown trigger
+- [x] Popover sections: header → URL row (full `origin/u/slug`, copy + external link buttons) → visibility Switch → Settings link
+- [x] `window.location.origin` used instead of hardcoded `tailord.app` — correct in local dev (`http://localhost:3000`) and production
+- [x] PATCH `/api/users` on Switch toggle with `togglingVisibility` loading state
+
+**My Experience page** (`ExperienceManager.tsx`):
+- [x] Full redesign with shared shell pattern: `h-12` topbar "My Experience", three `SettingRow` sections within `divide-y`
+- [x] Resume section: idle = dashed drop zone `rounded-2xl border-2 border-dashed`; connected = `CardBox` + `SourceRow` (icon box + name + badge + remove button)
+- [x] GitHub section: connected = `CardBox` + `SourceRow` with "Connected" badge + "Change" / "×" buttons; not connected = `CardBox` + form with icon-prefixed input. `githubEditing` boolean state added to fix Change button (was checking `record.github_username` instead of edit state)
+- [x] Additional Context section: `textareaCls` textarea + Save button + "Saved" status indicator
+- [x] Parsed Profile: full-width section below `border-t border-border-subtle`; Edit / EditableResumeProfile pattern preserved
+- [x] `CardBox` local component: `rounded-2xl bg-surface-base p-4`; `SourceRow` / `IconBox` patterns for integration rows
+- [x] Bug fix: invalid GitHub username (404) previously saved as connected. Backend `fetch_repos` now raises `ValueError` on 404; `set_github` endpoint catches as `HTTPException(422)`. Frontend already handled `!res.ok` correctly.
+
+**Dashboard Home** (`DashboardHome.tsx` — new unified component):
+- [x] Replaces separate `RecentTailorings` + `EmptyState` components; shell matches other pages (`bg-surface-elevated`, nested scroll) but has no topbar — time-aware greeting IS the visual header (matches Mintlify Home pattern)
+- [x] Greeting: `"Good morning/afternoon/evening, [firstName]"` — time-aware, `suppressHydrationWarning`, display name resolved server-side
+- [x] Display name fetch: `fetchDisplayName()` called in `page.tsx` server component alongside `fetchTailorings()` using `Promise.all` — preferred name (from `/users/me`) resolved at SSR time with fallback to session Google name. No client-side fetch = no name flicker on load. `preferred-name-changed` event listener in `DashboardHome` handles live updates from Settings.
+- [x] Empty state: `IconWorkflows` icon (neutral grey, matching sidebar), Add Experience + New Tailoring CTAs
+- [x] Tailorings table: `rounded-2xl overflow-hidden border border-border-subtle`, `bg-surface-base` thead, `bg-surface-elevated` rows with `hover:bg-surface-base`. Columns: Role+Company (IconWorkflows icon in `bg-surface-overlay` neutral box — no green accent, consistent with unselected sidebar items), Status badge, Visibility badge (hidden on mobile), Created (relative date + hover chevron)
+- [x] `StatusBadge`: ready=green, generating=amber+spinner, error=red, pending=grey (matches `GenerationStatus` type)
+- [x] `VisibilityBadge`: `is_public` → Globe green "Public"; else Lock muted "Private"
+- [x] Row click: `router.push(/dashboard/tailorings/${t.id})`
+- [x] New Tailoring primary button placed next to "Your Tailorings / N tailorings generated" section header (not the greeting row)
+
 #### Remaining — Frontend Rework
-- [ ] Typography audit: heading scale, tracking, weight hierarchy vs Mintlify
-- [ ] Surface hierarchy review: compare our 5-level system to theirs, consolidate if needed
-- [ ] Dashboard card/panel rounding and border treatment audit
-- [ ] Extend accent touchpoints to other dashboard elements (primary buttons, inline links via `--color-text-link`)
 - [ ] Homepage `ProductPreview` — replace stylized mockup with real screenshot once UI is polished enough
+- [ ] Extend accent touchpoints to dashboard primary buttons and inline links (`--color-text-link`)
 
 ---
 
@@ -320,7 +372,7 @@ Full Mintlify sidebar design clone replacing the old `Sidebar.tsx`. See `15-mint
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
 | A5 ✅ | User | Miscellaneous UX | Profile visibility switch, account deletion, custom pronouns, homepage redesign v1, job chunk advocacy blurbs |
-| A6 (in progress) | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match, dashboard sidebar rework |
+| A6 ✅ | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match, full dashboard UI overhaul (sidebar, New Tailoring, Settings, My Profile, My Experience, Home) |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
