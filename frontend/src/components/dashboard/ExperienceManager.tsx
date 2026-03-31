@@ -2,21 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Upload,
-  Github,
-  FileText,
-  Loader2,
-  CheckCircle,
-  AlertCircle,
-  Pencil,
+  Upload, Github, FileText, Loader2, CheckCircle, AlertCircle, Pencil, X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { toastError, formatElapsed } from '@/lib/utils';
+import { cn, toastError, formatElapsed } from '@/lib/utils';
 import { ParsedProfile } from '@/components/dashboard/ParsedProfile';
 import { EditableResumeProfile } from '@/components/dashboard/EditableResumeProfile';
 import type { ExperienceRecord, ExtractedProfile } from '@/types';
+
+/* ─── Types ─────────────────────────────────────────────────────────────── */
 
 type UploadPhase =
   | { phase: 'idle' }
@@ -34,27 +28,153 @@ const PROCESS_STAGE_LABELS: Record<string, string> = {
 };
 const PROCESS_STAGES = ['extracting', 'analyzing'] as const;
 
+/* ─── Shared styles (mirrors SettingsPanel) ─────────────────────────────── */
+
+const inputCls =
+  'w-full h-10 rounded-xl border border-border-default bg-surface-elevated px-3 text-sm text-text-primary ' +
+  'placeholder:text-text-disabled outline-none transition-colors duration-100 ' +
+  'hover:border-border-strong hover:bg-surface-base ' +
+  'focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] ' +
+  'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] disabled:opacity-50 disabled:cursor-not-allowed';
+
+const textareaCls =
+  'w-full rounded-xl border border-border-default bg-surface-elevated px-3 py-2.5 text-sm text-text-primary ' +
+  'placeholder:text-text-disabled outline-none transition-colors duration-100 resize-none ' +
+  'hover:border-border-strong hover:bg-surface-base ' +
+  'focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] ' +
+  'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)]';
+
+const saveBtnCls =
+  'inline-flex items-center gap-1.5 justify-center h-9 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] ' +
+  'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 ' +
+  'hover:opacity-90 transition-opacity ' +
+  'disabled:bg-surface-base dark:disabled:bg-surface-overlay disabled:text-text-disabled ' +
+  'disabled:cursor-not-allowed disabled:hover:opacity-100';
+
+const outlineBtnCls =
+  'inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] ' +
+  'border border-border-default bg-surface-elevated text-text-secondary ' +
+  'hover:bg-surface-base hover:border-border-strong hover:text-text-primary ' +
+  'transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+
+/* ─── Section row layout (matches SettingsPanel) ─────────────────────────── */
+
+function SettingRow({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="py-8 grid grid-cols-1 lg:grid-cols-8 gap-x-12 gap-y-4">
+      <div className="lg:col-span-3 flex flex-col gap-1">
+        <h2 className="text-sm font-medium text-text-primary">{title}</h2>
+        {description && <p className="text-sm text-text-secondary">{description}</p>}
+      </div>
+      <div className="lg:col-span-5">{children}</div>
+    </div>
+  );
+}
+
+/* ─── Card box ──────────────────────────────────────────────────────────── */
+
+function CardBox({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn('flex flex-col gap-3 rounded-2xl bg-surface-base p-4 text-sm', className)}>
+      {children}
+    </div>
+  );
+}
+
+/* ─── Icon box ──────────────────────────────────────────────────────────── */
+
+function IconBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="shrink-0 rounded-xl p-2 bg-surface-elevated border border-border-subtle shadow-[0px_1px_2px_0px_rgba(20,21,26,0.05)]">
+      {children}
+    </div>
+  );
+}
+
+/* ─── Connected badge ───────────────────────────────────────────────────── */
+
+function StatusBadge({ label, variant }: { label: string; variant: 'green' | 'amber' }) {
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-[3px] py-0.5 px-1.5 text-xs font-medium rounded-md',
+      variant === 'green'
+        ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400'
+        : 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
+    )}>
+      {variant === 'green' ? (
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 18 18" fill="currentColor" stroke="none" aria-hidden="true">
+          <path d="M9 1C4.589 1 1 4.589 1 9C1 13.411 4.589 17 9 17C13.411 17 17 13.411 17 9C17 4.589 13.411 1 9 1ZM12.843 6.708L8.593 12.208C8.457 12.384 8.25 12.491 8.028 12.499C8.018 12.499 8.009 12.499 8 12.499C7.788 12.499 7.585 12.409 7.442 12.251L5.192 9.751C4.915 9.443 4.94 8.969 5.248 8.691C5.557 8.415 6.029 8.439 6.308 8.747L7.956 10.579L11.657 5.79C11.91 5.462 12.382 5.402 12.709 5.655C13.037 5.908 13.097 6.379 12.844 6.707L12.843 6.708Z" />
+        </svg>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 18 18" fill="currentColor" stroke="none" aria-hidden="true">
+          <circle cx="9" cy="9" r="3.5" />
+        </svg>
+      )}
+      {label}
+    </span>
+  );
+}
+
+/* ─── Source row (ready state) ──────────────────────────────────────────── */
+
+function SourceRow({
+  icon,
+  name,
+  badge,
+  description,
+  action,
+}: {
+  icon: React.ReactNode;
+  name: string;
+  badge?: React.ReactNode;
+  description?: React.ReactNode;
+  action: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <IconBox>{icon}</IconBox>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-text-primary flex items-center gap-2 flex-wrap">
+          {name}{badge}
+        </p>
+        {description && (
+          <div className="text-sm text-text-secondary mt-0.5">{description}</div>
+        )}
+      </div>
+      <div className="shrink-0 flex items-center gap-2">{action}</div>
+    </div>
+  );
+}
+
+/* ─── Component ─────────────────────────────────────────────────────────── */
+
 export function ExperienceManager() {
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'idle' });
   const [githubUrl, setGithubUrl] = useState('');
   const [githubState, setGithubState] = useState<GithubState>('idle');
   const [githubError, setGithubError] = useState<string | null>(null);
+  const [githubEditing, setGithubEditing] = useState(false);
   const [directText, setDirectText] = useState('');
   const [directState, setDirectState] = useState<SaveState>('idle');
 
-  // SSE processing state
   const [processingStage, setProcessingStage] = useState<string | null>(null);
   const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
   const [tick, setTick] = useState(0);
 
-  // Profile editing
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Tick every second while processing (drives elapsed time display)
   useEffect(() => {
     if (uploadState.phase !== 'processing') return;
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
@@ -68,7 +188,6 @@ export function ExperienceManager() {
     }
   }, []);
 
-  // Fallback polling — used when page loads mid-processing (no live SSE stream)
   const startPolling = useCallback(() => {
     stopPolling();
     pollIntervalRef.current = setInterval(async () => {
@@ -82,18 +201,12 @@ export function ExperienceManager() {
           setUploadState({ phase: 'ready', record });
         } else if (record.status === 'error') {
           stopPolling();
-          setUploadState({
-            phase: 'error',
-            message: record.error_message ?? 'Processing failed',
-          });
+          setUploadState({ phase: 'error', message: record.error_message ?? 'Processing failed' });
         }
-      } catch {
-        // ignore transient poll errors
-      }
+      } catch { /* ignore */ }
     }, 3000);
   }, [stopPolling]);
 
-  // Restore state on mount
   useEffect(() => {
     async function loadInitialState() {
       try {
@@ -107,21 +220,12 @@ export function ExperienceManager() {
           if (record.github_username) setGithubUrl(record.github_username);
           if (record.user_input_text) setDirectText(record.user_input_text);
         } else if (record.status === 'processing' || record.status === 'pending') {
-          setUploadState({
-            phase: 'processing',
-            filename: record.filename ?? '',
-            experienceId: record.id,
-          });
-          startPolling(); // SSE gone — fall back to polling
+          setUploadState({ phase: 'processing', filename: record.filename ?? '', experienceId: record.id });
+          startPolling();
         } else if (record.status === 'error') {
-          setUploadState({
-            phase: 'error',
-            message: record.error_message ?? 'Processing failed',
-          });
+          setUploadState({ phase: 'error', message: record.error_message ?? 'Processing failed' });
         }
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
     }
 
     loadInitialState();
@@ -136,7 +240,6 @@ export function ExperienceManager() {
     setUploadState({ phase: 'uploading', filename: file.name });
 
     try {
-      // Step 1: Get upload URL
       const urlRes = await fetch('/api/experience/upload-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,20 +251,13 @@ export function ExperienceManager() {
       }
       const { upload_url, storage_key, experience_id } = await urlRes.json();
 
-      // Step 2: Upload to blob storage
       const uploadRes = await fetch(upload_url, {
         method: 'PUT',
         body: file,
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          'x-ms-blob-type': 'BlockBlob',
-        },
+        headers: { 'Content-Type': file.type || 'application/octet-stream', 'x-ms-blob-type': 'BlockBlob' },
       });
-      if (!uploadRes.ok) {
-        throw new Error(`Failed to upload file to storage (${uploadRes.status})`);
-      }
+      if (!uploadRes.ok) throw new Error(`Failed to upload file to storage (${uploadRes.status})`);
 
-      // Step 3: Start SSE stream
       setUploadState({ phase: 'processing', filename: file.name, experienceId: experience_id });
       setProcessingStage(null);
       setStageStartedAt({});
@@ -171,13 +267,11 @@ export function ExperienceManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storage_key, experience_id }),
       });
-
       if (!processRes.ok || !processRes.body) {
         const err = await processRes.json().catch(() => ({}));
         throw new Error(err.detail ?? 'Failed to start processing');
       }
 
-      // Step 4: Read SSE events
       const reader = processRes.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
@@ -187,7 +281,6 @@ export function ExperienceManager() {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
-
         const lines = buf.split('\n');
         buf = lines.pop() ?? '';
 
@@ -241,46 +334,39 @@ export function ExperienceManager() {
     e.preventDefault();
     const username = parseGithubUsername(githubUrl);
     if (!username) return;
-
     setGithubState('saving');
     setGithubError(null);
-
     const res = await fetch('/api/experience/github', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ github_username: username }),
     });
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       setGithubError(err.detail ?? 'Could not connect GitHub. Please try again.');
       setGithubState('error');
       return;
     }
-
     setGithubState('saved');
+    setGithubEditing(false);
     toast.success('GitHub profile added');
-
     const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
   const handleGithubRemove = async () => {
     setGithubState('removing');
-
     const res = await fetch('/api/experience/github', { method: 'DELETE' });
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toastError(err.detail ?? `Failed to remove (${res.status})`);
       setGithubState('idle');
       return;
     }
-
     setGithubUrl('');
     setGithubState('idle');
+    setGithubEditing(false);
     toast.success('GitHub profile removed');
-
     const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
@@ -288,25 +374,20 @@ export function ExperienceManager() {
   const handleDirectSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!directText.trim()) return;
-
     setDirectState('saving');
-
     const res = await fetch('/api/experience/user-input', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: directText }),
     });
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toastError(err.detail ?? `Failed to save (${res.status})`);
       setDirectState('idle');
       return;
     }
-
     setDirectState('saved');
     toast.success('Additional context saved');
-
     const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
@@ -329,85 +410,95 @@ export function ExperienceManager() {
     toast.success('Profile updated');
   };
 
+  /* ─── Resume right-col content ─────────────────────────────────────────── */
+
   const renderResumeContent = () => {
     switch (uploadState.phase) {
       case 'idle':
         return (
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-full px-4 py-8 rounded-lg border border-dashed border-border-default hover:border-brand-primary/50 bg-surface-elevated hover:bg-surface-overlay transition-colors text-center"
+            className="w-full py-10 rounded-2xl border-2 border-dashed border-border-default bg-surface-base hover:border-border-strong hover:bg-surface-overlay transition-colors text-center"
           >
-            <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2" />
-            <p className="text-sm text-text-secondary">Click to upload resume</p>
-            <p className="text-xs text-text-tertiary mt-1">PDF, DOCX, or TXT</p>
+            <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2.5" />
+            <p className="text-sm text-text-secondary">Click to upload</p>
+            <p className="text-xs text-text-disabled mt-1">PDF, DOCX, or TXT</p>
           </button>
         );
 
       case 'uploading':
         return (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
-            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
-            <span className="text-sm text-text-secondary truncate">
-              Uploading {uploadState.filename}…
-            </span>
-          </div>
+          <CardBox>
+            <SourceRow
+              icon={<FileText className="h-4 w-4 text-text-tertiary" />}
+              name={uploadState.filename}
+              description={
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-text-disabled" />
+                  Uploading…
+                </span>
+              }
+              action={null}
+            />
+          </CardBox>
         );
 
       case 'processing': {
         const stagesWithStatus = PROCESS_STAGES.map((stage) => {
           const stageIndex = PROCESS_STAGES.indexOf(stage);
-          const activeIndex = processingStage ? PROCESS_STAGES.indexOf(processingStage as typeof PROCESS_STAGES[number]) : -1;
+          const activeIndex = processingStage
+            ? PROCESS_STAGES.indexOf(processingStage as typeof PROCESS_STAGES[number])
+            : -1;
           const isActive = processingStage === stage;
           const isDone = activeIndex > stageIndex;
           return { stage, isActive, isDone };
         }).filter(({ isActive, isDone }) => isActive || isDone);
 
         return (
-          <div className="px-4 py-3.5 rounded-lg border border-border-subtle bg-surface-elevated space-y-3">
-            <div className="flex items-center gap-3">
-              <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
-              <p className="text-sm text-text-primary truncate flex-1">{uploadState.filename}</p>
-              <button
-                onClick={handleRemove}
-                className="text-xs text-text-tertiary hover:text-text-secondary flex-shrink-0"
-              >
-                Cancel
-              </button>
-            </div>
+          <CardBox>
+            <SourceRow
+              icon={<Loader2 className="h-4 w-4 text-text-tertiary animate-spin" />}
+              name={uploadState.filename}
+              description="Processing…"
+              action={
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  className="text-xs text-text-tertiary hover:text-error transition-colors"
+                >
+                  Cancel
+                </button>
+              }
+            />
             {stagesWithStatus.length > 0 && (
-              <div className="space-y-1 pl-7">
+              <div className="space-y-1.5 pl-[52px]">
                 {stagesWithStatus.map(({ stage, isActive, isDone }) => {
                   const stageIndex = PROCESS_STAGES.indexOf(stage as typeof PROCESS_STAGES[number]);
                   const nextStage = PROCESS_STAGES[stageIndex + 1];
                   const endTime = isDone && nextStage && stageStartedAt[nextStage]
-                    ? stageStartedAt[nextStage]
-                    : Date.now();
+                    ? stageStartedAt[nextStage] : Date.now();
                   const elapsed = stageStartedAt[stage]
-                    ? Math.floor((endTime - stageStartedAt[stage]) / 1000)
-                    : 0;
+                    ? Math.floor((endTime - stageStartedAt[stage]) / 1000) : 0;
                   return (
                     <div key={stage} className="flex items-center gap-2">
-                      {isDone ? (
-                        <CheckCircle className="h-3 w-3 text-success flex-shrink-0" />
-                      ) : (
-                        <div className="h-3 w-3 flex items-center justify-center flex-shrink-0">
-                          <div className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse" />
-                        </div>
-                      )}
-                      <span className="text-xs text-text-secondary">
-                        {PROCESS_STAGE_LABELS[stage]}{isActive ? '...' : ''}
+                      {isDone
+                        ? <CheckCircle className="h-3 w-3 text-success shrink-0" />
+                        : <div className="h-3 w-3 flex items-center justify-center shrink-0">
+                            <div className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse" />
+                          </div>}
+                      <span className="text-xs text-text-secondary flex-1">
+                        {PROCESS_STAGE_LABELS[stage]}{isActive ? '…' : ''}
                       </span>
                       {stageStartedAt[stage] && (
-                        <span className="text-xs text-text-tertiary ml-auto">
-                          {formatElapsed(elapsed)}
-                        </span>
+                        <span className="text-xs text-text-disabled">{formatElapsed(elapsed)}</span>
                       )}
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
+          </CardBox>
         );
       }
 
@@ -415,232 +506,290 @@ export function ExperienceManager() {
         if (!uploadState.record.filename) {
           return (
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="w-full px-4 py-8 rounded-lg border border-dashed border-border-default hover:border-brand-primary/50 bg-surface-elevated hover:bg-surface-overlay transition-colors text-center"
+              className="w-full py-10 rounded-2xl border-2 border-dashed border-border-default bg-surface-base hover:border-border-strong hover:bg-surface-overlay transition-colors text-center"
             >
-              <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2" />
-              <p className="text-sm text-text-secondary">Click to upload resume</p>
-              <p className="text-xs text-text-tertiary mt-1">PDF, DOCX, or TXT</p>
+              <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2.5" />
+              <p className="text-sm text-text-secondary">Click to upload</p>
+              <p className="text-xs text-text-disabled mt-1">PDF, DOCX, or TXT</p>
             </button>
           );
         }
         return (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
-            <CheckCircle className="h-4 w-4 text-success flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-text-primary truncate">
-                {uploadState.record.filename}
-              </p>
-              <p className="text-xs text-text-tertiary mt-0.5">Profile extracted</p>
-            </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs text-text-tertiary hover:text-text-secondary"
-              >
-                Replace
-              </button>
-              <button
-                onClick={handleRemove}
-                className="text-xs text-text-tertiary hover:text-error"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
+          <CardBox>
+            <SourceRow
+              icon={<FileText className="h-4 w-4 text-text-tertiary" />}
+              name={uploadState.record.filename}
+              badge={<StatusBadge label="Extracted" variant="green" />}
+              description="Profile extracted from resume"
+              action={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className={outlineBtnCls}
+                  >
+                    Replace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemove}
+                    className="h-8 w-8 inline-flex items-center justify-center rounded-[10px] text-text-tertiary hover:text-error hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                    title="Remove"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </>
+              }
+            />
+          </CardBox>
         );
 
       case 'error':
         return (
-          <div className="space-y-2">
-            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
-              <AlertCircle className="h-4 w-4 text-error flex-shrink-0" />
-              <p className="text-sm text-error flex-1 truncate">{uploadState.message}</p>
+          <CardBox className="border border-error/30 bg-red-50/40 dark:bg-red-950/10 gap-0">
+            <SourceRow
+              icon={<AlertCircle className="h-4 w-4 text-error" />}
+              name="Processing failed"
+              description={uploadState.message}
+              action={
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  className={outlineBtnCls}
+                >
+                  Clear
+                </button>
+              }
+            />
+            <div className="pl-[52px] pt-1">
               <button
-                onClick={handleRemove}
-                className="text-xs text-text-tertiary hover:text-text-secondary flex-shrink-0"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs text-text-link hover:underline"
               >
-                Clear
+                Try again with a different file
               </button>
             </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="text-xs text-text-link hover:underline"
-            >
-              Try again
-            </button>
-          </div>
+          </CardBox>
         );
     }
   };
 
-  return (
-    <div className="h-full overflow-y-auto custom-scrollbar">
-      <div className="max-w-2xl mx-auto p-6 lg:p-8 space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-text-primary">My Experience</h1>
-          <p className="mt-1 text-text-secondary">
-            Add your background using one or more sources — we&apos;ll combine them.
-          </p>
-        </div>
+  /* ─── GitHub right-col content ─────────────────────────────────────────── */
 
-        {/* Resume */}
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-text-tertiary" />
-            <h2 className="text-sm font-medium text-text-primary">Resume</h2>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.doc,.docx,.txt"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-          {renderResumeContent()}
-        </section>
+  const githubConnected =
+    uploadState.phase === 'ready' && !!uploadState.record.github_username;
 
-        {/* GitHub */}
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Github className="h-4 w-4 text-text-tertiary" />
-            <h2 className="text-sm font-medium text-text-primary">GitHub Profile</h2>
-          </div>
-          {uploadState.phase === 'ready' && uploadState.record.github_username ? (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border-subtle bg-surface-elevated">
-              <CheckCircle className="h-4 w-4 text-success flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-text-primary truncate">
-                  {uploadState.record.github_username}
-                </p>
-                <p className="text-xs text-text-tertiary mt-0.5">
-                  {uploadState.record.github_repos?.length ?? 0} repos imported
-                </p>
-              </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
+  const renderGithubContent = () => {
+    if (githubConnected && !githubEditing && uploadState.phase === 'ready') {
+      return (
+        <CardBox>
+          <SourceRow
+            icon={<Github className="h-4 w-4 text-text-secondary" />}
+            name={uploadState.record.github_username!}
+            badge={<StatusBadge label="Connected" variant="green" />}
+            description={`${uploadState.record.github_repos?.length ?? 0} repos imported`}
+            action={
+              <>
                 <button
-                  onClick={() => setGithubState('idle')}
-                  className="text-xs text-text-tertiary hover:text-text-secondary"
+                  type="button"
+                  onClick={() => { setGithubEditing(true); setGithubState('idle'); setGithubError(null); }}
+                  className={outlineBtnCls}
                 >
                   Change
                 </button>
                 <button
+                  type="button"
                   onClick={handleGithubRemove}
                   disabled={githubState === 'removing'}
-                  className="text-xs text-text-tertiary hover:text-error disabled:opacity-50"
+                  className="h-8 w-8 inline-flex items-center justify-center rounded-[10px] text-text-tertiary hover:text-error hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors disabled:opacity-50"
+                  title="Remove"
                 >
-                  {githubState === 'removing' ? 'Removing…' : 'Remove'}
+                  {githubState === 'removing'
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <X className="h-4 w-4" />}
                 </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <form onSubmit={handleGithubSave} className="flex gap-2">
-                <Input
-                  type="text"
-                  value={githubUrl}
-                  onChange={(e) => {
-                    setGithubUrl(e.target.value);
-                    setGithubState('idle');
-                    setGithubError(null);
-                  }}
-                  placeholder="https://github.com/username or username"
-                />
-                <Button
-                  type="submit"
-                  variant="outline"
-                  size="sm"
-                  disabled={!githubUrl.trim() || githubState === 'saving'}
-                  className="flex-shrink-0"
-                >
-                  {githubState === 'saving' ? 'Saving…' : 'Save'}
-                </Button>
-              </form>
-              {githubState === 'error' && githubError && (
-                <p className="text-xs text-error">{githubError}</p>
-              )}
-            </>
-          )}
-        </section>
+              </>
+            }
+          />
+        </CardBox>
+      );
+    }
 
-        {/* Direct input */}
-        <section className="space-y-3">
+    return (
+      <CardBox>
+        <form onSubmit={handleGithubSave} className="space-y-3">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Github className="h-4 w-4 text-text-tertiary" />
+            </div>
+            <input
+              type="text"
+              value={githubUrl}
+              onChange={(e) => { setGithubUrl(e.target.value); setGithubState('idle'); setGithubError(null); }}
+              placeholder="github.com/username or username"
+              className={cn(inputCls, 'pl-9')}
+            />
+          </div>
+          {githubState === 'error' && githubError && (
+            <p className="text-xs text-error">{githubError}</p>
+          )}
           <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-text-tertiary" />
-            <h2 className="text-sm font-medium text-text-primary">Additional Context</h2>
-            {directState === 'saved' && (
-              <span className="text-xs text-success ml-auto">Saved</span>
+            <button
+              type="submit"
+              disabled={!githubUrl.trim() || githubState === 'saving'}
+              className={saveBtnCls}
+            >
+              {githubState === 'saving' ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
+              ) : 'Connect GitHub'}
+            </button>
+            {githubEditing && (
+              <button
+                type="button"
+                onClick={() => { setGithubEditing(false); setGithubState('idle'); setGithubError(null); }}
+                className={outlineBtnCls}
+              >
+                Cancel
+              </button>
             )}
           </div>
-          <form onSubmit={handleDirectSave} className="space-y-2">
-            <textarea
-              value={directText}
-              onChange={(e) => {
-                setDirectText(e.target.value);
-                setDirectState('idle');
-              }}
-              placeholder="Describe your skills, projects, or achievements not captured in your resume…"
-              rows={6}
-              className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm text-text-primary placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
-            />
-            <div className="flex justify-end">
-              <Button
-                type="submit"
-                variant="outline"
-                size="sm"
-                disabled={!directText.trim() || directState === 'saving'}
-              >
-                {directState === 'saving' ? 'Saving…' : 'Save'}
-              </Button>
-            </div>
-          </form>
-        </section>
+        </form>
+      </CardBox>
+    );
+  };
 
-        {/* Parsed profile */}
-        {uploadState.phase === 'ready' && uploadState.record.extracted_profile && (
-          <section className="space-y-3 pt-4 border-t border-border-subtle">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
-              {!editingProfile && uploadState.record.extracted_profile.resume && (
-                <button
-                  onClick={() => { setEditingProfile(true); setProfileSaved(false); }}
-                  className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-primary transition-colors"
-                >
-                  <Pencil className="h-3 w-3" />
-                  Edit
-                </button>
+  /* ─── Render ─────────────────────────────────────────────────────────────── */
+
+  const hasProfile = uploadState.phase === 'ready' && !!uploadState.record.extracted_profile;
+
+  return (
+    <div className="h-full flex flex-col bg-surface-elevated">
+
+      {/* Topbar */}
+      <div className="shrink-0 flex items-center h-12 px-6 bg-surface-elevated">
+        <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">My Experience</span>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-6xl mx-auto px-6 lg:px-16 pt-12 pb-24">
+
+          {/* Three input sections */}
+          <div className="divide-y divide-zinc-950/5 dark:divide-white/5 [&>*:first-child]:pt-0">
+
+            {/* Resume */}
+            <SettingRow
+              title="Resume"
+              description="Upload a PDF, DOCX, or TXT file. We'll extract your experience automatically."
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              {renderResumeContent()}
+            </SettingRow>
+
+            {/* GitHub */}
+            <SettingRow
+              title="GitHub"
+              description="Import your public repos to enrich your profile with real project context."
+            >
+              {renderGithubContent()}
+            </SettingRow>
+
+            {/* Additional Context */}
+            <SettingRow
+              title="Additional Context"
+              description="Skills, projects, or achievements not captured in your resume."
+            >
+              <form onSubmit={handleDirectSave} className="space-y-3">
+                <textarea
+                  value={directText}
+                  onChange={(e) => { setDirectText(e.target.value); setDirectState('idle'); }}
+                  placeholder="Describe your skills, projects, or achievements not captured in your resume…"
+                  rows={6}
+                  className={textareaCls}
+                />
+                <div className="flex items-center justify-between">
+                  {directState === 'saved' && (
+                    <span className="text-sm text-success">Saved</span>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={!directText.trim() || directState === 'saving'}
+                    className={cn(saveBtnCls, 'ml-auto')}
+                  >
+                    {directState === 'saving' ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
+                    ) : 'Save'}
+                  </button>
+                </div>
+              </form>
+            </SettingRow>
+
+          </div>
+
+          {/* Parsed profile — full-width section below the input rows */}
+          {hasProfile && uploadState.phase === 'ready' && (
+            <div className="mt-8 pt-8 border-t border-zinc-950/5 dark:border-white/5">
+
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
+                  <p className="text-sm text-text-secondary mt-0.5">
+                    Extracted from your sources — used to generate every tailoring.
+                  </p>
+                </div>
+                {!editingProfile && uploadState.record.extracted_profile?.resume && (
+                  <button
+                    type="button"
+                    onClick={() => { setEditingProfile(true); setProfileSaved(false); }}
+                    className={outlineBtnCls}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {profileSaved && (
+                <div className="flex items-center justify-between px-4 py-3 mb-6 rounded-xl bg-surface-base border border-border-subtle text-xs">
+                  <span className="text-text-secondary">
+                    Profile updated — you may want to regenerate tailorings for active applications.
+                  </span>
+                  <a
+                    href="/dashboard"
+                    className="text-text-link hover:underline shrink-0 ml-3 whitespace-nowrap"
+                  >
+                    View tailorings →
+                  </a>
+                </div>
+              )}
+
+              {editingProfile && uploadState.record.extracted_profile?.resume ? (
+                <EditableResumeProfile
+                  profile={uploadState.record.extracted_profile.resume}
+                  onSave={handleSaveProfile}
+                  onCancel={() => setEditingProfile(false)}
+                />
+              ) : (
+                <ParsedProfile
+                  profile={uploadState.record.extracted_profile!}
+                  rawResumeText={uploadState.record.raw_resume_text}
+                />
               )}
             </div>
+          )}
 
-            {profileSaved && (
-              <div className="flex items-center justify-between px-3 py-2 rounded-md bg-surface-elevated border border-border-subtle text-xs">
-                <span className="text-text-secondary">
-                  Profile updated — you may want to regenerate tailorings for active applications.
-                </span>
-                <a
-                  href="/dashboard"
-                  className="text-text-link hover:underline flex-shrink-0 ml-3 whitespace-nowrap"
-                >
-                  View tailorings →
-                </a>
-              </div>
-            )}
-
-            {editingProfile && uploadState.record.extracted_profile.resume ? (
-              <EditableResumeProfile
-                profile={uploadState.record.extracted_profile.resume}
-                onSave={handleSaveProfile}
-                onCancel={() => setEditingProfile(false)}
-              />
-            ) : (
-              <ParsedProfile
-                profile={uploadState.record.extracted_profile}
-                rawResumeText={uploadState.record.raw_resume_text}
-              />
-            )}
-          </section>
-        )}
+        </div>
       </div>
+
     </div>
   );
 }

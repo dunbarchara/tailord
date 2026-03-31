@@ -28,6 +28,7 @@ export default function PendingPage() {
   return (
     <div className="min-h-screen flex flex-col bg-surface-base">
       <Header />
+      <div className="h-14" />
       <div className="flex-1 flex items-center justify-center px-6 py-16">
       <div className="max-w-md w-full mx-auto text-center space-y-6">
         <div className="flex justify-center">

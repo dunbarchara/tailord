@@ -15,7 +15,7 @@ export default async function DashboardLayout({
     : []
 
   return (
-    <div className="flex h-screen bg-surface-base overflow-hidden">
+    <div className="flex h-screen bg-surface-base overflow-hidden" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'", WebkitFontSmoothing: 'auto' }}>
       <Sidebar tailorings={tailorings} />
       <main className="flex-1 overflow-y-auto">
         {children}

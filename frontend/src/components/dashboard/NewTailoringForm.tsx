@@ -2,11 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Link2, Sparkles, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { Link2, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { formatElapsed } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -15,15 +12,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import type { TailoringListItem } from '@/types';
 
 type FormState = 'idle' | 'processing' | 'error';
-
 type Phase = 'scraping';
 
 interface PhaseState {
   status: 'pending' | 'running' | 'done';
-  elapsed: number; // seconds
+  elapsed: number;
 }
 
 const PHASE_LABELS: Record<Phase, string> = {
@@ -40,18 +37,27 @@ function normalizeUrl(raw: string): string {
   }
 }
 
+/* ─── Shared styles ──────────────────────────────────────────────────────── */
+
+const inputCls =
+  'w-full h-10 rounded-xl border border-border-default bg-surface-elevated px-3 pl-9 text-sm text-text-primary placeholder:text-text-disabled outline-none transition-colors duration-100 hover:border-border-strong hover:bg-surface-base focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] disabled:opacity-50 disabled:cursor-not-allowed';
+
+const submitBtnCls =
+  'inline-flex items-center justify-center gap-2 h-9 px-4 rounded-[10px] text-sm font-normal tracking-[-0.1px] bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 transition-opacity disabled:bg-surface-base dark:disabled:bg-surface-overlay disabled:text-text-disabled disabled:cursor-not-allowed disabled:hover:opacity-100';
+
+/* ─── Component ──────────────────────────────────────────────────────────── */
+
 export function NewTailoringForm() {
   const router = useRouter();
   const [url, setUrl] = useState('');
   const [formState, setFormState] = useState<FormState>('idle');
-  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [tailorings, setTailorings] = useState<TailoringListItem[]>([]);
   const [duplicate, setDuplicate] = useState<TailoringListItem | null>(null);
   const [phases, setPhases] = useState<Record<Phase, PhaseState>>({
     scraping: { status: 'pending', elapsed: 0 },
   });
 
-  // Per-phase timers
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activePhaseRef = useRef<Phase | null>(null);
 
@@ -59,15 +65,14 @@ export function NewTailoringForm() {
     fetch('/api/tailorings')
       .then((r) => r.json())
       .then((data) => Array.isArray(data) ? setTailorings(data) : [])
-      .catch(() => { });
+      .catch(() => {});
   }, []);
 
-  // Tick the active phase's elapsed counter every second
   useEffect(() => {
     timerRef.current = setInterval(() => {
       const phase = activePhaseRef.current;
       if (!phase) return;
-      setPhases(prev => ({
+      setPhases((prev) => ({
         ...prev,
         [phase]: { ...prev[phase], elapsed: prev[phase].elapsed + 1 },
       }));
@@ -77,11 +82,11 @@ export function NewTailoringForm() {
 
   function startPhase(phase: Phase) {
     activePhaseRef.current = phase;
-    setPhases(prev => ({ ...prev, [phase]: { status: 'running', elapsed: 0 } }));
+    setPhases((prev) => ({ ...prev, [phase]: { status: 'running', elapsed: 0 } }));
   }
 
   function completePhase(phase: Phase) {
-    setPhases(prev => ({
+    setPhases((prev) => ({
       ...prev,
       [phase]: { ...prev[phase], status: 'done' },
     }));
@@ -91,9 +96,7 @@ export function NewTailoringForm() {
     setFormState('processing');
     setErrorMessage('');
     setDuplicate(null);
-    setPhases({
-      scraping: { status: 'pending', elapsed: 0 },
-    });
+    setPhases({ scraping: { status: 'pending', elapsed: 0 } });
 
     try {
       const res = await fetch('/api/tailorings', {
@@ -135,14 +138,12 @@ export function NewTailoringForm() {
 
           if (event === 'stage') {
             const stage = data as Phase;
-            // Mark previous phase done
             const prev = PHASE_ORDER[PHASE_ORDER.indexOf(stage) - 1];
             if (prev) completePhase(prev);
             startPhase(stage);
           } else if (event === 'ready') {
-            // Mark all phases done
             activePhaseRef.current = null;
-            setPhases(prev => {
+            setPhases((prev) => {
               const next = { ...prev };
               for (const p of PHASE_ORDER) next[p] = { ...prev[p], status: 'done' };
               return next;
@@ -169,13 +170,9 @@ export function NewTailoringForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
-
     const normalized = normalizeUrl(url);
-    const existing = tailorings.find(
-      (t) => t.job_url && normalizeUrl(t.job_url) === normalized,
-    );
+    const existing = tailorings.find((t) => t.job_url && normalizeUrl(t.job_url) === normalized);
     if (existing) { setDuplicate(existing); return; }
-
     await submitTailoring();
   };
 
@@ -209,90 +206,115 @@ export function NewTailoringForm() {
         </DialogContent>
       </Dialog>
 
-      <div className="h-full overflow-y-auto custom-scrollbar">
-        <div className="max-w-2xl mx-auto p-6 lg:p-8 space-y-6">
-          <div>
-            <h1 className="text-2xl font-semibold text-text-primary">New Tailoring</h1>
-            <p className="mt-1 text-text-secondary">
-              Paste a job posting URL to generate a tailored application.
-            </p>
-          </div>
+      {/* Shell — matches Settings layout */}
+      <div className="h-full flex flex-col bg-surface-elevated">
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="job-url" className="text-sm font-medium text-text-primary">
-                Job Posting URL
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Link2 className="h-4 w-4 text-text-tertiary" />
+        {/* Topbar */}
+        <div className="shrink-0 flex items-center h-12 px-6 bg-surface-elevated">
+          <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">
+            New Tailoring
+          </span>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="max-w-6xl mx-auto px-6 lg:px-16 pt-12 pb-24 [&>*:first-child]:pt-0">
+            <div className="divide-y divide-zinc-950/5 dark:divide-white/5">
+
+              {/* Section row */}
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-8 gap-x-12 gap-y-4">
+
+                {/* Left: section title + description */}
+                <div className="col-span-3 flex flex-col gap-1">
+                  <h2 className="text-sm text-text-primary">
+                    Create New Tailoring
+                  </h2>
+                  <p className="text-sm text-text-secondary">
+                    Paste a job posting URL and Tailord will generate a role-specific document mapped to your experience.
+                  </p>
                 </div>
-                <Input
-                  id="job-url"
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://company.com/careers/job-posting"
-                  disabled={isProcessing}
-                  className="pl-9"
-                  required
-                />
-              </div>
-            </div>
 
-            {/* Phase list — visible during processing, pending steps hidden */}
-            {isProcessing && (
-              <div className="space-y-2 animate-fade-in">
-                {PHASE_ORDER.filter(phase => phases[phase].status !== 'pending').map((phase) => {
-                  const { status, elapsed } = phases[phase];
-                  return (
-                    <div key={phase} className="flex items-center gap-2.5 text-sm">
-                      {status === 'done'
-                        ? <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
-                        : <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />}
-                      <span className="text-text-secondary">
-                        {PHASE_LABELS[phase]}{status === 'running' ? '...' : ''}
-                        <span className="text-text-tertiary"> · {formatElapsed(elapsed)}</span>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                {/* Right: controls */}
+                <div className="col-span-5 space-y-3">
 
-            {formState === 'error' && (
-              <Card className="border-error/30 bg-error-bg animate-fade-in">
-                <CardContent className="pt-4 pb-4">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="h-5 w-5 text-error flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-text-primary">Unable to create tailoring</p>
-                      <p className="text-sm text-text-secondary mt-1">{errorMessage}</p>
+                  {/* URL field */}
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="job-url" className="text-sm font-medium text-text-primary">
+                      Job posting URL
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Link2 className="h-4 w-4 text-text-tertiary" />
+                      </div>
+                      <input
+                        id="job-url"
+                        type="url"
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        placeholder="https://company.com/careers/role"
+                        disabled={isProcessing}
+                        required
+                        className={inputCls}
+                      />
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )}
 
-            <Button
-              type="submit"
-              disabled={!url.trim() || isProcessing}
-              className="gap-2"
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Processing…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Create Tailoring
-                </>
-              )}
-            </Button>
-          </form>
+                  {/* Processing phases */}
+                  {isProcessing && (
+                    <div className="space-y-2">
+                      {PHASE_ORDER.filter((phase) => phases[phase].status !== 'pending').map((phase) => {
+                        const { status, elapsed } = phases[phase];
+                        return (
+                          <div key={phase} className="flex items-center gap-2.5 text-sm">
+                            {status === 'done'
+                              ? <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                              : <Loader2 className="h-4 w-4 text-text-tertiary animate-spin shrink-0" />}
+                            <span className="text-text-secondary">
+                              {PHASE_LABELS[phase]}{status === 'running' ? '…' : ''}
+                            </span>
+                            <span className="text-text-disabled text-xs">{formatElapsed(elapsed)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Error state */}
+                  {formState === 'error' && (
+                    <div className="flex items-start gap-3 rounded-xl border border-error/30 bg-error-bg px-4 py-3">
+                      <AlertCircle className="h-4 w-4 text-error shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-text-primary">Unable to create tailoring</p>
+                        <p className="text-sm text-text-secondary mt-0.5">{errorMessage}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Submit */}
+                  <button
+                    type="submit"
+                    disabled={!url.trim() || isProcessing}
+                    className={submitBtnCls}
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Processing…
+                      </>
+                    ) : (
+                      <>
+                        Create Tailoring
+                      </>
+                    )}
+                  </button>
+
+                </div>
+              </form>
+
+            </div>
+          </div>
         </div>
+
       </div>
     </>
   );

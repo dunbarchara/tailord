@@ -3,11 +3,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Globe, Lock, Settings, ExternalLink,
+  Globe, Lock, Settings, ExternalLink, Copy, CheckCircle2, ChevronDown,
   Mail, Phone,
   AlignLeft, Briefcase, GraduationCap, Layers, FolderOpen,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 import { ProfileSidebar } from '@/components/profile/ProfileSidebar';
 import type { ExtractedProfile } from '@/types';
 
@@ -234,11 +238,33 @@ function ContactSection({
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
+/* ─── Shared button styles (mirrors TailoringDetail) ─────────────────────── */
+
+const textBtnCls =
+  'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[10px] ' +
+  'bg-surface-elevated border border-border-default text-text-secondary ' +
+  'text-sm font-normal tracking-[-0.1px] ' +
+  'hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary ' +
+  'transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+
+/* ─── Page ──────────────────────────────────────────────────────────────── */
+
 export default function ProfilePage() {
   const [user, setUser] = useState<UserData | null>(null);
   const [resume, setResume] = useState<ExtractedProfile | null>(null);
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Profile popover state
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profilePublic, setProfilePublic] = useState(false);
+  const [togglingVisibility, setTogglingVisibility] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [origin, setOrigin] = useState('https://tailord.app');
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -247,6 +273,7 @@ export default function ProfilePage() {
     ])
       .then(([userData, experienceData]: [UserData, ExperienceData]) => {
         setUser(userData);
+        setProfilePublic(userData.profile_public ?? false);
         setResume(experienceData?.extracted_profile?.resume ?? null);
         setGithubUsername(experienceData?.github_username ?? null);
       })
@@ -254,10 +281,48 @@ export default function ProfilePage() {
       .finally(() => setLoading(false));
   }, []);
 
+  async function handleToggleVisibility(value: boolean) {
+    setTogglingVisibility(true);
+    try {
+      const res = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_public: value }),
+      });
+      if (!res.ok) throw new Error();
+      setProfilePublic(value);
+      setUser((prev) => prev ? { ...prev, profile_public: value } : prev);
+    } catch {
+      toast.error('Failed to update visibility.');
+    } finally {
+      setTogglingVisibility(false);
+    }
+  }
+
+  function handleCopyProfileUrl() {
+    if (!user?.username_slug) return;
+    navigator.clipboard.writeText(`${origin}/u/${user.username_slug}`);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  }
+
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
+      <div className="h-full flex flex-col bg-surface-elevated">
+        <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-6 gap-2 bg-surface-elevated border-b border-border-subtle">
+          <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">My Profile</span>
+          <div />
+          <div className="flex justify-end">
+            <div className={cn(textBtnCls, 'opacity-40 pointer-events-none')}>
+              <Lock className="h-3.5 w-3.5" />
+              <span>Profile</span>
+              <ChevronDown className="h-3.5 w-3.5 text-text-disabled" />
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
+        </div>
       </div>
     );
   }
@@ -287,42 +352,112 @@ export default function ProfilePage() {
   ].filter(Boolean) as Array<{ id: string; label: string }>;
 
   return (
-    <div>
-      {/* Visibility banner */}
-      <div className="sticky top-0 z-10 border-b border-border-subtle bg-surface-elevated px-6 py-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-text-secondary">
-          {user?.profile_public ? (
-            <>
-              <Globe className="h-3.5 w-3.5 text-success" />
-              <span>Public</span>
-              {user.username_slug && (
-                <a
-                  href={`/u/${user.username_slug}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-text-link hover:underline ml-1"
-                >
-                  tailord.app/u/{user.username_slug}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
-            </>
-          ) : (
-            <>
-              <Lock className="h-3.5 w-3.5 text-text-tertiary" />
-              <span className="text-text-tertiary">Private — only you can see this</span>
-            </>
-          )}
+    <div className="h-full flex flex-col bg-surface-elevated">
+
+      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-6 gap-2 bg-surface-elevated border-b border-border-subtle">
+
+        {/* Left: title */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">
+            My Profile
+          </span>
         </div>
-        <Link
-          href="/dashboard/settings"
-          className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
-        >
-          <Settings className="h-3.5 w-3.5" />
-          Visibility settings
-        </Link>
+
+        {/* Center: empty */}
+        <div />
+
+        {/* Right: profile popover */}
+        <div className="flex items-center justify-end gap-1">
+          <Popover open={profileOpen} onOpenChange={setProfileOpen}>
+            <PopoverTrigger asChild>
+              <button type="button" className={textBtnCls}>
+                {profilePublic
+                  ? <Globe className="h-3.5 w-3.5 text-brand-accent" />
+                  : <Lock className="h-3.5 w-3.5" />}
+                <span>Profile</span>
+                <ChevronDown className="h-3.5 w-3.5 text-text-disabled" />
+              </button>
+            </PopoverTrigger>
+
+            <PopoverContent align="end" sideOffset={6} className="w-80 p-0 rounded-2xl border-border-subtle shadow-lg overflow-hidden">
+
+              {/* Header */}
+              <div className="px-4 pt-4 pb-3">
+                <p className="text-sm font-medium text-text-primary tracking-[-0.1px]">
+                  {profilePublic ? 'Profile is public' : 'Share your profile'}
+                </p>
+                <p className="text-sm text-text-secondary mt-0.5">
+                  Anyone with the link can view your profile — no sign-in required.
+                </p>
+              </div>
+
+              {/* Profile URL (when public + slug exists) */}
+              {profilePublic && user?.username_slug && (
+                <div className="border-t border-border-subtle px-4 py-3">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-base border border-border-subtle">
+                    <Globe className="h-3.5 w-3.5 text-text-tertiary shrink-0" />
+                    <a
+                      href={`/u/${user.username_slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 text-xs text-text-link hover:underline truncate"
+                    >
+                      {origin}/u/{user.username_slug}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleCopyProfileUrl}
+                      className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
+                      title="Copy link"
+                    >
+                      {copiedUrl
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                        : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Visibility toggle */}
+              <div className="border-t border-border-subtle px-4 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Public profile</p>
+                    <p className="text-xs text-text-tertiary mt-0.5">
+                      {user?.username_slug
+                        ? 'Anyone with the link can view'
+                        : 'Set a username in Settings to share'}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={profilePublic}
+                    onCheckedChange={handleToggleVisibility}
+                    disabled={togglingVisibility || !user?.username_slug}
+                  />
+                </div>
+              </div>
+
+              {/* Settings link */}
+              <div className="border-t border-border-subtle px-4 py-3">
+                <Link
+                  href="/dashboard/settings"
+                  onClick={() => setProfileOpen(false)}
+                  className={cn(textBtnCls, 'w-full justify-center')}
+                >
+                  <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  Profile settings
+                </Link>
+              </div>
+
+            </PopoverContent>
+          </Popover>
+        </div>
+
       </div>
 
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto min-h-0">
       {/* Profile preview */}
       <div className="flex-1">
         <div className="mx-auto max-w-[1216px] px-6 lg:flex lg:gap-12 lg:px-16">
@@ -380,6 +515,7 @@ export default function ProfilePage() {
           </p>
         </footer>
       </div>
+      </div>{/* end scrollable content */}
     </div>
   );
 }

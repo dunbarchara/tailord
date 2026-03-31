@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { GFS_Didot } from 'next/font/google';
+import { GFS_Didot, Inter } from 'next/font/google';
 import './globals.css';
 import ClientWrapper from "@/components/ClientWrapper"
 
@@ -9,9 +9,18 @@ const gfsDidot = GFS_Didot({
   variable: '--font-serif-display',
 });
 
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: 'Tailord',
   description: 'Let Tailord showcase your relevant experience.',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({
@@ -20,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={gfsDidot.variable}>
+    <html lang="en" suppressHydrationWarning className={`${gfsDidot.variable} ${inter.variable}`}>
       <head>
         <script
           dangerouslySetInnerHTML={{
