@@ -373,7 +373,7 @@ export function SettingsPanel() {
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center h-12 px-6 bg-surface-elevated">
-        <h1 className="text-sm font-semibold text-text-primary tracking-[-0.1px]">Settings</h1>
+        <h1 className="text-sm font-medium text-text-primary tracking-[-0.1px]">Settings</h1>
       </div>
 
       {/* ── Scrollable area ─────────────────────────────────────────────── */}
