@@ -1,8 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { fetchTailorings } from '@/lib/tailorings';
-import { EmptyState } from '@/components/dashboard/EmptyState';
-import { RecentTailorings } from '@/components/dashboard/RecentTailorings';
+import { DashboardHome } from '@/components/dashboard/DashboardHome';
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -12,11 +11,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="h-full">
-      {tailorings.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <RecentTailorings tailorings={tailorings} />
-      )}
+      <DashboardHome
+        name={session?.user?.name ?? null}
+        tailorings={tailorings}
+      />
     </div>
   );
 }
