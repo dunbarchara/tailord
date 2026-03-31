@@ -67,7 +67,7 @@ function StatusBadge({ status }: { status: TailoringListItem['generation_status'
       </span>
     );
   }
-  if (status === 'failed') {
+  if (status === 'error') {
     return (
       <span className="inline-flex items-center gap-1 py-0.5 px-1.5 rounded-md text-xs font-medium bg-red-100 dark:bg-red-950/20 text-red-600 dark:text-red-400">
         <AlertCircle className="h-2.5 w-2.5" />
@@ -115,14 +115,6 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
   const [displayName, setDisplayName] = useState<string | null>(name);
 
   useEffect(() => {
-    fetch('/api/users')
-      .then((r) => r.json())
-      .then((data) => {
-        const n = [data.preferred_first_name, data.preferred_last_name].filter(Boolean).join(' ');
-        setDisplayName(n || name);
-      })
-      .catch(() => {});
-
     function onNameChanged(e: Event) {
       const { firstName, lastName } = (e as CustomEvent).detail;
       const n = [firstName, lastName].filter(Boolean).join(' ');

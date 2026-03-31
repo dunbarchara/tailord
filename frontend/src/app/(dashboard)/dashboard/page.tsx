@@ -1,18 +1,21 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { fetchTailorings } from '@/lib/tailorings';
+import { fetchTailorings, fetchDisplayName } from '@/lib/tailorings';
 import { DashboardHome } from '@/components/dashboard/DashboardHome';
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  const tailorings = session?.user?.id
-    ? await fetchTailorings(session.user.id, session.user.email ?? '', session.user.name)
-    : [];
+  const [tailorings, displayName] = session?.user?.id
+    ? await Promise.all([
+        fetchTailorings(session.user.id, session.user.email ?? '', session.user.name),
+        fetchDisplayName(session.user.id, session.user.email ?? '', session.user.name),
+      ])
+    : [[], null];
 
   return (
     <div className="h-full">
       <DashboardHome
-        name={session?.user?.name ?? null}
+        name={displayName}
         tailorings={tailorings}
       />
     </div>

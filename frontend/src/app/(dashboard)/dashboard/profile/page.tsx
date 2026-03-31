@@ -260,6 +260,11 @@ export default function ProfilePage() {
   const [profilePublic, setProfilePublic] = useState(false);
   const [togglingVisibility, setTogglingVisibility] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [origin, setOrigin] = useState('https://tailord.app');
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -296,7 +301,7 @@ export default function ProfilePage() {
 
   function handleCopyProfileUrl() {
     if (!user?.username_slug) return;
-    navigator.clipboard.writeText(`https://tailord.app/u/${user.username_slug}`);
+    navigator.clipboard.writeText(`${origin}/u/${user.username_slug}`);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
   }
@@ -398,7 +403,7 @@ export default function ProfilePage() {
                       rel="noopener noreferrer"
                       className="flex-1 text-xs text-text-link hover:underline truncate"
                     >
-                      tailord.app/u/{user.username_slug}
+                      {origin}/u/{user.username_slug}
                     </a>
                     <button
                       type="button"
@@ -410,15 +415,6 @@ export default function ProfilePage() {
                         ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                         : <Copy className="h-3.5 w-3.5" />}
                     </button>
-                    <a
-                      href={`/u/${user.username_slug}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
-                      title="Open profile"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
                   </div>
                 </div>
               )}
