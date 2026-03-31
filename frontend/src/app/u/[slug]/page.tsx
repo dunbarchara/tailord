@@ -46,10 +46,10 @@ export async function generateMetadata({
     ?? `View ${name}'s professional profile on Tailord.`
 
   return {
-    title: `${name} — Tailord`,
+    title: `${name} — Profile — Tailord`,
     description,
     openGraph: {
-      title: `${name} — Tailord`,
+      title: `${name} — Profile — Tailord`,
       description,
       url: `https://tailord.app/u/${slug}`,
       type: 'profile',
@@ -283,7 +283,7 @@ export default async function PublicProfilePage({
 
   if (!data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-base">
+      <div className="min-h-screen flex items-center justify-center bg-surface-elevated">
         <div className="text-center space-y-3">
           <p className="text-xl font-semibold text-text-primary">Not found</p>
           <p className="text-text-secondary text-sm">This profile doesn&apos;t exist or isn&apos;t public yet.</p>
@@ -314,7 +314,7 @@ export default async function PublicProfilePage({
   ].filter(Boolean) as Array<{ id: string; label: string }>
 
   return (
-    <div className="bg-surface-base">
+    <div className="bg-surface-elevated">
       <div className="mx-auto max-w-[1216px] px-6 lg:flex lg:gap-12 lg:px-16">
         <ProfileSidebar
           name={data.name}

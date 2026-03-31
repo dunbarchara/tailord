@@ -61,6 +61,13 @@ export function ProfileSidebar({
     };
 
     const update = (e?: Event) => {
+      // Ignore scroll events from containers that don't hold our section elements
+      // (e.g. the sidebar tailorings list in the dashboard)
+      if (e?.target instanceof Element) {
+        const firstSection = document.getElementById(navSections[0]?.id ?? '');
+        if (firstSection && !e.target.contains(firstSection)) return;
+      }
+
       const { scrollTop, scrollMax } = getScrollState(e);
 
       if (scrollTop <= 0) {
