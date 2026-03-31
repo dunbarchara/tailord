@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
-import { Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw, Lock, Globe, Link, Info } from 'lucide-react';
+import {
+  Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw,
+  Lock, Globe, Link as LinkIcon, ChevronDown,
+} from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import { toast } from 'sonner';
 import { cn, toastError, formatElapsed } from '@/lib/utils';
@@ -24,6 +27,29 @@ import type { Tailoring, ChunksResponse } from '@/types';
 
 const POLL_INTERVAL = 3000;
 
+/* ─── Shared button styles ─────────────────────────────────────────────── */
+
+// Icon-only button (Open Live Preview style)
+const iconBtnCls =
+  'inline-flex items-center justify-center h-8 w-8 rounded-[10px] ' +
+  'bg-surface-elevated border border-border-default text-text-secondary ' +
+  'hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary ' +
+  'transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface-elevated disabled:hover:border-border-default disabled:hover:text-text-secondary';
+
+// Text button (Publish style)
+const textBtnCls =
+  'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[10px] ' +
+  'bg-surface-elevated border border-border-default text-text-secondary ' +
+  'text-sm font-normal tracking-[-0.1px] ' +
+  'hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary ' +
+  'transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+
+// Vertical divider between button groups
+function ToolDivider() {
+  return <div className="h-4 w-px bg-border-default mx-0.5 shrink-0" />;
+}
+
+/* ─── Notion export row ────────────────────────────────────────────────── */
 
 function NotionViewRow({
   label,
@@ -33,17 +59,17 @@ function NotionViewRow({
   disabledReason,
   onExport,
 }: {
-  label: string
-  pageUrl: string | null
-  exporting: boolean
-  disabled?: boolean
-  disabledReason?: string
-  onExport: () => void
+  label: string;
+  pageUrl: string | null;
+  exporting: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  onExport: () => void;
 }) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-text-secondary">{label}</span>
+    <div className="flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-text-primary">{label}</p>
         {pageUrl && (
           <a
             href={pageUrl}
@@ -51,28 +77,29 @@ function NotionViewRow({
             rel="noopener noreferrer"
             className="text-xs text-text-link hover:underline"
           >
-            Open
+            Open in Notion →
           </a>
         )}
       </div>
-      <Button
-        size="sm"
-        variant={pageUrl ? 'outline' : 'default'}
-        className="w-full text-xs h-8 gap-2"
+      <button
+        type="button"
         onClick={onExport}
         disabled={exporting || disabled}
         title={disabled ? disabledReason : undefined}
+        className={cn(textBtnCls, 'shrink-0')}
       >
         {exporting
           ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
           : pageUrl
             ? <RotateCcw className="h-3.5 w-3.5" />
             : <SiNotion className="h-3.5 w-3.5" />}
-        {pageUrl ? 'Refresh' : disabled ? disabledReason! : 'Export'}
-      </Button>
+        {pageUrl ? 'Refresh' : disabled ? (disabledReason ?? 'Export') : 'Export'}
+      </button>
     </div>
   );
 }
+
+/* ─── Main component ────────────────────────────────────────────────────── */
 
 interface TailoringDetailProps {
   tailoringId: string;
@@ -87,7 +114,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [copiedLink, setCopiedLink] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regenSsePhase, setRegenSsePhase] = useState<string | null>(null);
-  // Tick counter to force re-render of elapsed time display every second
   const [, setElapsedTick] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
@@ -128,7 +154,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     load();
   }, [tailoringId]);
 
-  // Poll generation status every 2s when the tailoring is still being generated
   useEffect(() => {
     if (!tailoring || tailoring.generation_status !== 'generating') return;
     const interval = setInterval(async () => {
@@ -139,14 +164,14 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         const titleJustResolved = !tailoring?.title && data.title;
         setTailoring(data);
         if (titleJustResolved || data.generation_status !== 'generating') {
-          router.refresh(); // keep sidebar label + icon in sync
+          router.refresh();
         }
         if (data.generation_status !== 'generating') {
           clearInterval(interval);
           if (data.generation_status === 'ready') {
             setRegenerating(false);
             setRegenSsePhase(null);
-            setChunksData(null); // reset so chunk polling restarts
+            setChunksData(null);
           }
         }
       } catch { /* ignore */ }
@@ -154,7 +179,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     return () => clearInterval(interval);
   }, [tailoringId, tailoring?.generation_status]);
 
-  // Tick every second to update elapsed time display when generating
   useEffect(() => {
     if (!tailoring || tailoring.generation_status !== 'generating') return;
     const interval = setInterval(() => setElapsedTick(t => t + 1), 1000);
@@ -163,7 +187,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
-
     async function fetchChunks() {
       try {
         const res = await fetch(`/api/tailorings/${tailoringId}/chunks`);
@@ -183,7 +206,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         if (interval) clearInterval(interval);
       }
     }
-
     fetchChunks();
     interval = setInterval(fetchChunks, POLL_INTERVAL);
     return () => { if (interval) clearInterval(interval); };
@@ -197,7 +219,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     setShowRegenConfirm(false);
     setRegenerating(true);
     setRegenSsePhase(null);
-
     try {
       const res = await fetch(`/api/tailorings/${tailoringId}`, { method: 'POST' });
       if (!res.ok || !res.body) {
@@ -206,21 +227,17 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         setRegenerating(false);
         return;
       }
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const boundary = buffer.lastIndexOf('\n\n');
         if (boundary === -1) continue;
         const complete = buffer.slice(0, boundary + 2);
         buffer = buffer.slice(boundary + 2);
-
         for (const block of complete.split('\n\n')) {
           if (!block.trim()) continue;
           let event: string | null = null;
@@ -230,12 +247,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             else if (line.startsWith('data: ')) data = line.slice(6);
           }
           if (!data) continue;
-
           if (event === 'stage') {
             setRegenSsePhase(data);
           } else if (event === 'ready') {
-            // Scraping done; extraction + matching + generation running in background.
-            // Switch to polling (the generation_status poll effect takes over).
             setRegenSsePhase(null);
             setTailoring(prev => prev ? {
               ...prev,
@@ -244,7 +258,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               generation_stage: 'extracting',
               generation_error: null,
             } : null);
-            router.refresh(); // update sidebar to show generating indicator
+            router.refresh();
             return;
           } else if (event === 'error') {
             const payload = JSON.parse(data);
@@ -363,7 +377,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-surface-elevated">
         <Loader2 className="h-6 w-6 animate-spin text-brand-primary" />
       </div>
     );
@@ -371,7 +385,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
   if (error || !tailoring) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-surface-elevated">
         <div className="flex items-center gap-2 text-text-secondary">
           <AlertCircle className="h-5 w-5 text-error" />
           <span className="text-sm">{error ?? 'Tailoring not found.'}</span>
@@ -381,9 +395,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   }
 
   const createdDate = new Date(tailoring.created_at).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    year: 'numeric', month: 'short', day: 'numeric',
   });
 
   const shareUrl = tailoring.public_slug && tailoring.author_username_slug
@@ -394,44 +406,45 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const postingOn = tailoring.posting_public;
   const anyPublic = letterOn || postingOn;
 
-  function ShareButtonLabel() {
-    if (letterOn && postingOn) return <><Globe className="h-3.5 w-3.5" />Public</>;
-    if (letterOn) return <><Globe className="h-3.5 w-3.5" />Public · Letter</>;
-    if (postingOn) return <><Globe className="h-3.5 w-3.5" />Public · Posting</>;
-    return <><Lock className="h-3.5 w-3.5" />Share</>;
-  }
+  const canCopy = activeTab !== 'posting' && (
+    activeTab === 'analysis' ? !!chunksData : !!tailoring.generated_output
+  );
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-surface-elevated">
 
-      {/* Toolbar */}
-      <header className="relative flex items-center h-11 px-4 border-b border-border-subtle bg-surface-base flex-shrink-0">
-        {/* Left: breadcrumb + date */}
-        <div className="flex items-center gap-1.5 min-w-0 text-sm" style={{ maxWidth: '50%' }}>
-          <span className="font-medium text-text-primary truncate max-w-[180px]">
+      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-3 gap-2 bg-surface-elevated border-b border-border-subtle">
+
+        {/* Left: title / company */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-sm font-semibold text-text-primary tracking-[-0.1px] truncate max-w-[200px]">
             {tailoring.title ?? 'Tailoring'}
           </span>
           {tailoring.company && (
             <>
-              <span className="text-text-tertiary flex-shrink-0">/</span>
-              <span className="text-text-secondary truncate max-w-[140px]">{tailoring.company}</span>
+              <span className="text-text-tertiary shrink-0 text-sm">/</span>
+              <span className="text-sm font-medium text-text-tertiary tracking-[-0.1px] truncate max-w-[160px]">
+                {tailoring.company}
+              </span>
             </>
           )}
-          <span className="text-text-tertiary flex-shrink-0">·</span>
-          <span className="text-text-tertiary text-xs flex-shrink-0">{createdDate}</span>
+          <span className="text-text-disabled shrink-0 text-sm">·</span>
+          <span className="text-xs text-text-disabled shrink-0">{createdDate}</span>
         </div>
 
-        {/* Centre: tabs — absolutely centred in the toolbar */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0">
+        {/* Center: segment tabs — grid col 2, naturally centered */}
+        <div className="flex items-center gap-0.5 p-0.5 bg-surface-overlay rounded-[10px]">
           {(['letter', 'posting', 'analysis'] as const).map(tab => (
             <button
               key={tab}
+              type="button"
               onClick={() => setActiveTab(tab)}
               className={cn(
-                'px-3 h-11 text-xs font-medium border-b-2 transition-colors',
+                'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] transition-colors whitespace-nowrap',
                 activeTab === tab
-                  ? 'border-brand-primary text-text-primary'
-                  : 'border-transparent text-text-tertiary hover:text-text-secondary'
+                  ? 'bg-surface-elevated border border-border-default text-text-primary shadow-[0px_1px_2px_0px_rgba(20,21,26,0.05)]'
+                  : 'text-text-tertiary hover:text-text-secondary'
               )}
             >
               {tab === 'letter' ? 'Letter' : tab === 'posting' ? 'Posting' : 'Analysis'}
@@ -440,79 +453,153 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
 
         {/* Right: actions */}
-        <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
+        <div className="flex items-center gap-1 justify-end">
+
+          {/* Copy */}
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={!canCopy}
+            title={copied ? 'Copied!' : 'Copy content'}
+            className={cn(iconBtnCls, copied && 'text-success hover:text-success')}
+          >
+            {copied
+              ? <CheckCircle2 className="h-4 w-4" />
+              : <Copy className="h-4 w-4" />}
+          </button>
+
+          {/* Notion */}
+          <Popover open={notionOpen} onOpenChange={setNotionOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                title="Export to Notion"
+                className={iconBtnCls}
+              >
+                <SiNotion className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" sideOffset={6} className="w-72 p-0 rounded-2xl border-border-subtle shadow-lg overflow-hidden">
+              <div className="px-4 pt-4 pb-3">
+                <p className="text-sm font-semibold text-text-primary tracking-[-0.1px]">Export to Notion</p>
+                <p className="text-sm text-text-secondary mt-0.5">Send your tailoring directly to Notion.</p>
+              </div>
+              <div className="border-t border-border-subtle px-4 py-3">
+                {!notionConnected ? (
+                  <p className="text-sm text-text-secondary">
+                    Connect your Notion workspace in{' '}
+                    <a href="/dashboard/settings" className="text-text-link hover:underline">Settings</a>{' '}
+                    to export.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    <NotionViewRow
+                      label="Letter"
+                      pageUrl={tailoring.notion_page_url ?? null}
+                      exporting={exportingNotionLetter}
+                      disabled={exportingNotionPosting}
+                      onExport={() => handleExportToNotion('letter')}
+                    />
+                    <NotionViewRow
+                      label="Posting"
+                      pageUrl={tailoring.notion_posting_page_url ?? null}
+                      exporting={exportingNotionPosting}
+                      disabled={exportingNotionLetter || chunksData?.enrichment_status !== 'complete'}
+                      disabledReason={chunksData?.enrichment_status !== 'complete' ? 'Enrichment not ready' : undefined}
+                      onExport={() => handleExportToNotion('posting')}
+                    />
+                  </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <ToolDivider />
+
+          {/* Regenerate */}
+          <button
+            type="button"
             onClick={() => setShowRegenConfirm(true)}
             disabled={regenerating}
-            title="Regenerate"
+            title={regenerating ? 'Regenerating…' : 'Regenerate'}
+            className={iconBtnCls}
           >
             {regenerating
               ? <Loader2 className="h-4 w-4 animate-spin" />
               : <RotateCcw className="h-4 w-4" />}
-          </Button>
+          </button>
 
-          {/* Share popover */}
+          <ToolDivider />
+
+          {/* Share — Publish style */}
           <Popover open={shareOpen} onOpenChange={setShareOpen}>
             <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 px-2.5 text-xs font-normal ml-1"
-              >
-                <ShareButtonLabel />
-              </Button>
+              <button type="button" className={textBtnCls}>
+                {anyPublic
+                  ? <Globe className="h-3.5 w-3.5 text-brand-accent" />
+                  : <Lock className="h-3.5 w-3.5" />}
+                <span>{anyPublic ? 'Public' : 'Share'}</span>
+                <ChevronDown className="h-3.5 w-3.5 text-text-disabled" />
+              </button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80 p-0">
+
+            <PopoverContent align="end" sideOffset={6} className="w-80 p-0 rounded-2xl border-border-subtle shadow-lg overflow-hidden">
+
+              {/* Header */}
               <div className="px-4 pt-4 pb-3">
-                {anyPublic && shareUrl ? (
-                  <>
-                    <p className="text-sm font-medium text-text-primary mb-3">Shareable link</p>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-surface-sunken border border-border-subtle">
-                      <Link className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
-                      <a
-                        href={shareUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 text-xs text-text-link hover:underline truncate"
-                      >
-                        {shareUrl}
-                      </a>
-                      <button
-                        onClick={handleCopyLink}
-                        className="flex-shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
-                        title="Copy link"
-                      >
-                        {copiedLink
-                          ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                          : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-text-primary mb-1">Share this tailoring</p>
-                    <p className="text-xs text-text-tertiary mb-3">
-                      Publish read-only views — no sign-in required.
-                    </p>
-                  </>
-                )}
+                <p className="text-sm font-semibold text-text-primary tracking-[-0.1px]">
+                  {anyPublic ? 'Shared' : 'Share this tailoring'}
+                </p>
+                <p className="text-sm text-text-secondary mt-0.5">
+                  Publish read-only views — no sign-in required.
+                </p>
               </div>
 
+              {/* Shareable link (when public) */}
+              {anyPublic && shareUrl && (
+                <div className="border-t border-border-subtle px-4 py-3">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-base border border-border-subtle">
+                    <LinkIcon className="h-3.5 w-3.5 text-text-tertiary shrink-0" />
+                    <a
+                      href={shareUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 text-xs text-text-link hover:underline truncate"
+                    >
+                      {shareUrl}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleCopyLink}
+                      className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
+                      title="Copy link"
+                    >
+                      {copiedLink
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                        : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Toggles */}
-              <div className="px-4 pb-3 space-y-3 border-t border-border-subtle pt-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-text-primary">Advocacy Letter</span>
+              <div className="border-t border-border-subtle px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Advocacy Letter</p>
+                    <p className="text-xs text-text-tertiary mt-0.5">Share the generated letter</p>
+                  </div>
                   <Switch
                     checked={letterOn}
                     onCheckedChange={v => handleToggleShare('letter', v)}
                     disabled={sharing}
                   />
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-text-primary">Job Posting</span>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Job Posting</p>
+                    <p className="text-xs text-text-tertiary mt-0.5">Gap matches hidden, partials shown as green</p>
+                  </div>
                   <Switch
                     checked={postingOn}
                     onCheckedChange={v => handleToggleShare('posting', v)}
@@ -521,88 +608,31 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 </div>
               </div>
 
-              {/* Note */}
-              <div className="px-4 pb-3 pt-1">
-                <p className="flex items-start gap-1.5 text-xs text-text-tertiary leading-relaxed">
-                  <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                  In the public job posting view, gap matches are hidden and partial matches appear as green.
-                </p>
-              </div>
-
               {/* Make private */}
               {anyPublic && (
-                <div className="px-4 pb-4 border-t border-border-subtle pt-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs h-8 gap-2"
+                <div className="border-t border-border-subtle px-4 py-3">
+                  <button
+                    type="button"
                     onClick={() => { setShareOpen(false); setShowMakePrivateConfirm(true); }}
                     disabled={sharing}
+                    className={cn(
+                      textBtnCls,
+                      'w-full justify-center text-red-600 border-red-200 dark:border-red-900/40 ',
+                      'hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-600 hover:border-red-300'
+                    )}
                   >
                     <Lock className="h-3.5 w-3.5" />
                     Make private
-                  </Button>
+                  </button>
                 </div>
               )}
             </PopoverContent>
           </Popover>
 
-          <Popover open={notionOpen} onOpenChange={setNotionOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Notion">
-                  <SiNotion className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-72 p-0">
-                <div className="px-4 pt-4 pb-3">
-                  <p className="text-sm font-medium text-text-primary mb-3">Export to Notion</p>
-                  {!notionConnected ? (
-                    <p className="text-xs text-text-tertiary">
-                      Connect your Notion workspace in{' '}
-                      <a href="/dashboard/settings" className="text-text-link hover:underline">Settings</a>{' '}
-                      to export.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {/* Letter row */}
-                      <NotionViewRow
-                        label="Letter"
-                        pageUrl={tailoring.notion_page_url}
-                        exporting={exportingNotionLetter}
-                        disabled={exportingNotionPosting}
-                        onExport={() => handleExportToNotion('letter')}
-                      />
-                      {/* Posting row */}
-                      <NotionViewRow
-                        label="Posting"
-                        pageUrl={tailoring.notion_posting_page_url}
-                        exporting={exportingNotionPosting}
-                        disabled={exportingNotionLetter || chunksData?.enrichment_status !== 'complete'}
-                        disabledReason={chunksData?.enrichment_status !== 'complete' ? 'Enrichment not complete' : undefined}
-                        onExport={() => handleExportToNotion('posting')}
-                      />
-                    </div>
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={handleCopy}
-            disabled={activeTab === 'posting' || !tailoring.generated_output}
-            title={copied ? 'Copied' : 'Copy content'}
-          >
-            {copied
-              ? <CheckCircle2 className="h-4 w-4 text-success" />
-              : <Copy className="h-4 w-4" />}
-          </Button>
         </div>
-      </header>
+      </div>
 
-      {/* Content */}
+      {/* ── Content ─────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'letter' && (
           <div className="max-w-3xl mx-auto px-6 py-10">
@@ -625,7 +655,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               )}
             </header>
 
-            {/* SSE phase banner: scraping/extracting during regen */}
             {regenSsePhase && (
               <div className="flex items-center gap-2 mb-6 text-sm text-text-secondary animate-fade-in">
                 <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />
@@ -633,7 +662,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               </div>
             )}
 
-            {/* Generation phase list: matching/generating (initial load or regen background task) */}
             {tailoring.generation_status === 'generating' && !regenSsePhase && (() => {
               const stage = tailoring.generation_stage;
               const startedAt = tailoring.generation_started_at
@@ -646,8 +674,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               const extractingDone = stage === 'matching' || stage === 'generating';
               const phases = [
                 { key: 'extracting', label: 'Extracting requirements', done: extractingDone, running: stage === 'extracting' },
-                { key: 'matching',   label: 'Matching to your profile', done: matchingDone, running: stage === 'matching' },
-                { key: 'generating', label: 'Writing your tailoring',   done: false,        running: stage === 'generating' },
+                { key: 'matching', label: 'Matching to your profile', done: matchingDone, running: stage === 'matching' },
+                { key: 'generating', label: 'Writing your tailoring', done: false, running: stage === 'generating' },
               ];
               return (
                 <div className="space-y-2 mb-8 animate-fade-in">
@@ -668,7 +696,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               );
             })()}
 
-            {/* Error state */}
             {tailoring.generation_status === 'error' && (
               <div className="mb-8 flex items-start gap-3 text-sm">
                 <AlertCircle className="h-4 w-4 text-error flex-shrink-0 mt-0.5" />
@@ -710,6 +737,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         )}
       </div>
 
+      {/* ── Dialogs ──────────────────────────────────────────────────────── */}
+
       <Dialog open={showRegenConfirm} onOpenChange={setShowRegenConfirm}>
         <DialogContent>
           <DialogHeader>
@@ -739,6 +768,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

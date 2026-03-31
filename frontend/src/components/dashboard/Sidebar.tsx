@@ -357,9 +357,30 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
   const router = useRouter();
   const activeItem = getActiveItem(pathname);
   const [collapsed, setCollapsed] = useState(false);
+  const [smallScreen, setSmallScreen] = useState(false);
   const [query, setQuery] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Derive combined collapsed state
+  const isCollapsed = collapsed || smallScreen;
+
+  // Expand handler: clears both manual and auto-collapse
+  function handleExpand() {
+    setCollapsed(false);
+    setSmallScreen(false);
+  }
+
+  // Responsive auto-collapse via matchMedia
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    setSmallScreen(mq.matches);
+    function onChange(e: MediaQueryListEvent) {
+      setSmallScreen(e.matches);
+    }
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   const filteredTailorings = query.trim()
     ? tailorings.filter((t) => {
@@ -382,15 +403,20 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
     }
   }
 
-  const w = collapsed ? '60px' : '240px';
-
   return (
     <>
       <aside
-        className="hidden lg:flex flex-col bg-surface-base border-r border-border-subtle transition-[width] duration-200 overflow-hidden shrink-0"
-        style={{ width: w }}
+        className={cn(
+          'flex flex-col bg-surface-base border-r border-border-subtle transition-[width] duration-200 overflow-hidden shrink-0',
+          isCollapsed ? 'w-[60px]' : 'w-[240px]',
+        )}
       >
-        <div className="flex grow flex-col overflow-hidden" style={{ width: w, minWidth: w }}>
+        <div
+          className={cn(
+            'flex grow flex-col overflow-hidden',
+            isCollapsed ? 'w-[60px] min-w-[60px]' : 'w-[240px] min-w-[240px]',
+          )}
+        >
 
           {/* Workspace header */}
           <div className="flex items-end pb-1.5 h-12 px-3 shrink-0">
@@ -399,7 +425,7 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
               className="flex items-center py-1.5 gap-1 px-[7px] rounded-[10px] hover:bg-black/5 dark:hover:bg-white/5 outline-none transition-colors"
             >
               <img alt="Tailord logo" className="h-[22px] w-[22px] shrink-0" src="/logo.svg" />
-              {!collapsed && (
+              {!isCollapsed && (
                 <span
                   className="text-text-primary text-[16px] leading-none font-semibold tracking-tight whitespace-nowrap"
                   style={{ fontFamily: 'var(--font-inter), ui-sans-serif, system-ui' }}
@@ -417,14 +443,14 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
 
             {/* Primary nav */}
             <nav className="flex flex-col gap-0.5">
-              <NavItem icon={IconHome}   label="Home"          href="/dashboard"           active={activeItem === 'Home'}          collapsed={collapsed} />
-              <NavItem icon={IconEditor} label="My Experience" href="/dashboard/experience" active={activeItem === 'My Experience'} collapsed={collapsed} />
-              <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href="/dashboard/profile" active={activeItem === 'My Profile'} collapsed={collapsed} />
+              <NavItem icon={IconHome}   label="Home"          href="/dashboard"           active={activeItem === 'Home'}          collapsed={isCollapsed} />
+              <NavItem icon={IconEditor} label="My Experience" href="/dashboard/experience" active={activeItem === 'My Experience'} collapsed={isCollapsed} />
+              <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href="/dashboard/profile" active={activeItem === 'My Profile'} collapsed={isCollapsed} />
             </nav>
 
             {/* Tailorings section header + controls */}
             <div className="flex flex-col gap-0.5">
-              {collapsed ? (
+              {isCollapsed ? (
                 <div className="h-7 px-2 flex items-center">
                   <div className="h-px w-full bg-border-subtle" />
                 </div>
@@ -433,8 +459,8 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
                   Tailorings
                 </span>
               )}
-              <NavItem icon={(p) => <Plus {...p} size={18} strokeWidth={1.8} />} label="New Tailoring" href="/dashboard/tailorings/new" active={activeItem === 'New Tailoring'} collapsed={collapsed} />
-              <SearchBar collapsed={collapsed} onExpand={() => setCollapsed(false)} query={query} onQueryChange={setQuery} />
+              <NavItem icon={(p) => <Plus {...p} size={18} strokeWidth={1.8} />} label="New Tailoring" href="/dashboard/tailorings/new" active={activeItem === 'New Tailoring'} collapsed={isCollapsed} />
+              <SearchBar collapsed={isCollapsed} onExpand={handleExpand} query={query} onQueryChange={setQuery} />
             </div>
 
           </div>
@@ -443,7 +469,7 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
           <div className="relative flex-1 min-h-0">
             <div className="h-full overflow-y-auto px-3 py-1">
               <div className="flex flex-col gap-0.5 pb-5">
-                {collapsed ? (() => {
+                {isCollapsed ? (() => {
                   const activeTailoring = tailorings.find(t => activeItem === t.id) ?? tailorings[0];
                   const hasMore = tailorings.length > 1;
                   return (
@@ -460,7 +486,7 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
                       {hasMore && (
                         <button
                           type="button"
-                          onClick={() => setCollapsed(false)}
+                          onClick={handleExpand}
                           title="Show all tailorings"
                           className="flex items-center justify-center h-8 w-full rounded-[10px] border border-transparent text-text-disabled hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-secondary transition-colors"
                         >
@@ -482,7 +508,7 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
                 ))}
               </div>
             </div>
-            {!collapsed && (
+            {!isCollapsed && (
               <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-surface-base to-transparent" />
             )}
           </div>
@@ -493,17 +519,17 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
               <div className="h-px bg-border-subtle" />
             </div>
             <div className="flex flex-col gap-0.5">
-              <AccountPopover collapsed={collapsed} />
+              <AccountPopover collapsed={isCollapsed} />
             </div>
             <div className="mt-0.5" />
             <button
               type="button"
-              onClick={() => setCollapsed(!collapsed)}
+              onClick={() => isCollapsed ? handleExpand() : setCollapsed(true)}
               className={cn(navItemBase, navItemInactive)}
-              title={collapsed ? 'Expand' : 'Collapse'}
+              title={isCollapsed ? 'Expand' : 'Collapse'}
             >
               <IconCollapse className="size-[18px] shrink-0" />
-              {!collapsed && <span>Collapse</span>}
+              {!isCollapsed && <span>Collapse</span>}
             </button>
           </div>
 
