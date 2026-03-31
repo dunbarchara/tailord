@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Link2, Sparkles, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
-import { formatElapsed, cn } from '@/lib/utils';
+import { Link2, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { formatElapsed } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
