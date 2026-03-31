@@ -304,8 +304,8 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <div className="h-full flex flex-col bg-surface-elevated">
-        <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-3 gap-2 bg-surface-elevated border-b border-border-subtle">
-          <span className="text-sm font-semibold text-text-primary tracking-[-0.1px]">My Profile</span>
+        <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-6 gap-2 bg-surface-elevated border-b border-border-subtle">
+          <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">My Profile</span>
           <div />
           <div className="flex justify-end">
             <div className={cn(textBtnCls, 'opacity-40 pointer-events-none')}>
@@ -350,11 +350,11 @@ export default function ProfilePage() {
     <div className="h-full flex flex-col bg-surface-elevated">
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-3 gap-2 bg-surface-elevated border-b border-border-subtle">
+      <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-6 gap-2 bg-surface-elevated border-b border-border-subtle">
 
         {/* Left: title */}
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-sm font-semibold text-text-primary tracking-[-0.1px]">
+          <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">
             My Profile
           </span>
         </div>
@@ -379,7 +379,7 @@ export default function ProfilePage() {
 
               {/* Header */}
               <div className="px-4 pt-4 pb-3">
-                <p className="text-sm font-semibold text-text-primary tracking-[-0.1px]">
+                <p className="text-sm font-medium text-text-primary tracking-[-0.1px]">
                   {profilePublic ? 'Profile is public' : 'Share your profile'}
                 </p>
                 <p className="text-sm text-text-secondary mt-0.5">

@@ -418,7 +418,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
         {/* Left: title / company */}
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-sm font-semibold text-text-primary tracking-[-0.1px] truncate max-w-[200px]">
+          <span className="text-sm font-medium text-text-primary tracking-[-0.1px] truncate max-w-[200px]">
             {tailoring.title ?? 'Tailoring'}
           </span>
           {tailoring.company && (
