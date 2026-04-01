@@ -260,10 +260,30 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [x] Row click: `router.push(/dashboard/tailorings/${t.id})`
 - [x] New Tailoring primary button placed next to "Your Tailorings / N tailorings generated" section header (not the greeting row)
 
+#### 8. Analysis tab redesign + TailoringDetail overhaul ✅
+
+**Analysis tab** reworked from an admin debug tool into a candidate-facing "Fit Analysis" view. Architecture documented in `16-tailoring-detail-architecture.md`.
+
+- [x] **`?debug=1` preservation** — existing `MatchAnalysis` (chunk scores, rationale, chunk IDs) rendered at `?debug=1`; amber "debug" pill shown in toolbar; copy button exports `chunksToMarkdown` in debug mode. Production UI unaffected.
+- [x] **`FitAnalysis` component** (`src/components/dashboard/FitAnalysis.tsx`): flat list in original posting order (no section grouping); header bar with company + role + Strong/Partial/Gap dot-counts; context blurb row with Info icon; `MatchCard` per chunk with vertical colored bar (`w-1 self-stretch rounded-full`), score dot + label, requirement text, advocacy blurb (Strong/Partial only), source tag. Styling matches `ProductPreview` mockup exactly: `rounded-3xl`, `shadow-md`, `text-xs` score labels, `mb-2` requirement margin, `min-h-[2rem]` bar.
+- [x] **`fitAnalysisToText()`** export for copy button — preserves original posting order, prefixes each line with `[STRONG]` / `[PARTIAL]` / `[GAP]`.
+- [x] **Tab hierarchy** — Analysis is default tab; tab order: Analysis → Posting → Letter. Letter + Posting visually grouped as a joined pill with internal divider, separated from Analysis by a `|` text divider. All tabs use bordered inactive state (matching right-side icon buttons: `bg-surface-elevated border border-border-default`); active state darkens to `bg-surface-overlay border-border-strong`.
+- [x] **Scroll reset** — `useRef` + `useEffect` resets `scrollTop` to 0 on tab switch; fixes scroll position bleeding across tabs.
+- [x] **`-webkit-font-smoothing: antialiased`** on dashboard layout (was `auto`) — softer, easier-to-read text rendering.
+
+**Public shared page** (`PublicTailoringView.tsx`):
+- [x] Tab order flipped: Job Posting is default and first tab; Advocacy Letter is secondary.
+
+**Share menu + Notion export** (`TailoringDetail.tsx`):
+- [x] Share menu toggle order: Job Posting before Advocacy Letter.
+- [x] Notion export popover row order: Posting before Letter.
+
+**Notion backend** (`notion.py`, `notion_export.py`):
+- [x] `chunks_to_notion_markdown` now uses `advocacy_blurb` (candidate-facing, recruiter-appropriate) instead of `match_rationale` (internal LLM scoring rationale) — matches what the public Job Posting view renders on chunk expand.
+- [x] Page creation order enforced: when a Letter is the first export into a fresh container, a "Job Posting" stub page is created first (claiming the top Notion sidebar position). When the user later exports Posting, the stub is overwritten via `update_notion_page`. If Posting is exported first, no stub is needed.
+
 #### Remaining — Frontend Rework
-- [ ] **Analysis tab redesign** — rework from admin debug view into candidate-facing "Fit Analysis": Strong/Partial/Gap sections with candidate-facing advocacy blurbs; raw rationale + chunk scores moved to `?debug=1`. Primary tab in dashboard. Letter + Posting become "Preview" tabs. See `16-tailoring-detail-architecture.md`.
-- [ ] **Public shared page tab order** — flip so enriched posting is default/hero view; letter is secondary tab
-- [ ] **Homepage `ProductPreview`** — blocked on Analysis tab redesign. Screenshot once Analysis tab is polished; consider showing both views (Analysis left, Enriched Posting right)
+- [ ] **Homepage `ProductPreview`** — still showing stylized mockup. Screenshot the real Analysis tab UI once satisfied with polish; consider showing both views (Analysis left, Enriched Posting right). See `16-tailoring-detail-architecture.md`.
 - [ ] Extend accent touchpoints to dashboard primary buttons and inline links (`--color-text-link`)
 
 ---
@@ -374,7 +394,7 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
 | A5 ✅ | User | Miscellaneous UX | Profile visibility switch, account deletion, custom pronouns, homepage redesign v1, job chunk advocacy blurbs |
-| A6 ✅ | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match, full dashboard UI overhaul (sidebar, New Tailoring, Settings, My Profile, My Experience, Home) |
+| A6 ✅ | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match, full dashboard UI overhaul (sidebar, New Tailoring, Settings, My Profile, My Experience, Home); Analysis tab redesign (FitAnalysis, debug mode, tab hierarchy, scroll reset); public page tab order flip; Notion advocacy_blurb + page ordering |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |
