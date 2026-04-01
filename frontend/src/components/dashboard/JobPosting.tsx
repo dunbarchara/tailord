@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
+import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
 
 interface JobPostingProps {
   data: ChunksResponse | null;
@@ -20,31 +21,6 @@ interface JobPostingProps {
 
 function stripMarkdown(text: string): string {
   return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
-}
-
-// Renders **bold**, *italic*, and [text](url) inline markers as React nodes.
-// Links render as their anchor text only (no href) — the Posting view is for
-// reading, not navigation. The "View job posting →" header link covers that.
-// Chunk data is left unchanged — styling lives in the render layer.
-function InlineMarkdown({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g);
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={i} className="font-medium text-text-primary">{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith('*') && part.endsWith('*')) {
-          return <em key={i}>{part.slice(1, -1)}</em>;
-        }
-        const linkMatch = part.match(/^\[([^\]]+)\]\([^)]+\)$/);
-        if (linkMatch) {
-          return <InlineMarkdown key={i} text={linkMatch[1]} />;
-        }
-        return part;
-      })}
-    </>
-  );
 }
 
 function scoreBarColor(score: number | null, publicMode?: boolean): string | null {
