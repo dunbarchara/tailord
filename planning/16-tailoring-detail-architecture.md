@@ -27,13 +27,18 @@ The advocacy letter is genuine supplementary value: a narrative synthesis for hi
 This is the tab the candidate lives in. It's the canonical internal view — the source of truth about the match. The Letter and Posting are both derived from what this tab represents.
 
 **What it should show:**
-- **Strong matches** — confidence signals. "Here's the case for you." Candidate-facing advocacy blurbs per matched requirement.
-- **Partial matches** — talking points. "You're close here. Worth being ready to discuss." Framed as preparation, not weakness.
-- **Gaps** — honest private signals. Brief, not alarming. Ideally actionable: "Add context about X in your experience to strengthen this."
+- **Strong matches** — advocacy blurb only. The candidate already fits; the advocacy tells them how to present it. Rationale adds no new actionable signal at this score level.
+- **Partial matches** — advocacy blurb + rationale. Both earn their place here. The advocacy shows how to frame the partial match; the rationale explains *why it's partial and not strong* — that's the signal that tells the candidate what's missing and what to prepare. Rationale rendered as secondary text below the advocacy (smaller, more muted).
+- **Gaps** — rationale only (advocacy is null for gaps by design). Currently gap cards show nothing but the requirement text. The rationale fills this: *"No evidence of X found in profile"* is directly actionable — the candidate knows exactly what to add to their experience.
+
+**Rationale vs. advocacy — why both belong in this tab:**
+The advocacy blurb is written for a recruiter (external voice, confidence framing). The rationale is the LLM's analytical reasoning (internal voice, diagnostic). The Analysis tab is the candidate's private view — the place where analytical honesty is more valuable than polished presentation. Showing rationale here, at the score levels where it changes what the user does next, is consistent with the tab's purpose: empowerment through accurate self-assessment, not optimism.
+
+**Alternative — expandable rationale:**
+Rather than inline tiered display, rationale could sit behind a click expand (same interaction pattern as the JobPosting chunk expand). Default card shows advocacy only; clicking reveals rationale in a callout below. Keeps the Analysis tab visually clean at a glance; trades discoverability for density control. The tradeoff is that for gaps — where rationale is the most actionable signal — it risks being missed entirely. Worth exploring if the tiered inline approach feels too heavy in practice.
 
 **What it should not show (move to admin/debug):**
-- Raw rationale text and internal scoring labels
-- Chunk IDs, score integers, debug metadata
+- Chunk IDs, score integers, raw match metadata
 - Anything that reads as an LLM evaluation tool rather than a candidate empowerment tool
 
 **Why it's primary:** This is where the platform's north star lives — making the candidate more capable, not just producing documents for them. The Analysis tab is where a candidate learns something actionable about their position. It's also the natural home for the proactive enrichment loop: if a gap surfaces here, the right action is "add context to your experience."
