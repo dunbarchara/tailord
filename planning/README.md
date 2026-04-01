@@ -13,6 +13,13 @@
 | `03-strategic-direction.md` | Where to take the product — Notion integration, platform pitches, strategic bets |
 | `04-employment-strategy.md` | How Tailord helps the job search, how to present it, which communities to target |
 | `05-technical-debt-and-polish.md` | Technical issues to fix before public launch |
+| `06-north-star-empowerment.md` | Product north star — proactive, guided enrichment over passive output generation |
+| `09-tailoring-philosophy.md` | What a Tailoring is, the advocacy philosophy, voice/tone, format specification |
+| `11-adjusted-sprint-plan.md` | Active sprint plan — Days A1–A6 (user-facing) and P1–P3 (platform hardening) |
+| `13-homepage-redesign.md` | Homepage redesign iteration log — headline, sections, ProductPreview |
+| `15-mintlify-design-match.md` | Mintlify design match strategy — token analysis, implementation status, reference log |
+| `16-tailoring-detail-architecture.md` | Three-view architecture — Analysis (candidate), Enriched Posting (recruiter), Letter (narrative); Analysis tab redesign direction |
+| `17-ai-agent-friendly.md` | Platform design for humans, developers, and AI agents — MCP server direction, structured public data, OpenAPI schema, agentic use cases |
 
 ## Summary
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import {
   Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw,
@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
+import { FitAnalysis, fitAnalysisToText } from '@/components/dashboard/FitAnalysis';
 import { JobPosting } from '@/components/dashboard/JobPosting';
 import type { Tailoring, ChunksResponse } from '@/types';
 
@@ -107,6 +108,8 @@ interface TailoringDetailProps {
 
 export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isDebug = searchParams?.get('debug') === '1';
   const [tailoring, setTailoring] = useState<Tailoring | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +122,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('letter');
+  const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('analysis');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
@@ -359,7 +364,10 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const handleCopy = () => {
     if (!tailoring) return;
     if (activeTab === 'analysis' && chunksData) {
-      navigator.clipboard.writeText(chunksToMarkdown(chunksData, tailoring.title, tailoring.company));
+      const text = isDebug
+        ? chunksToMarkdown(chunksData, tailoring.title, tailoring.company)
+        : fitAnalysisToText(chunksData, tailoring.title, tailoring.company);
+      navigator.clipboard.writeText(text);
     } else if (tailoring.generated_output) {
       navigator.clipboard.writeText(tailoring.generated_output);
     }
@@ -416,7 +424,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="shrink-0 grid grid-cols-[1fr_auto_1fr] items-center h-12 px-3 gap-2 bg-surface-elevated border-b border-border-subtle">
 
-        {/* Left: title / company */}
+        {/* Left: title / company / debug pill */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-sm font-medium text-text-primary tracking-[-0.1px] truncate max-w-[200px]">
             {tailoring.title ?? 'Tailoring'}
@@ -431,25 +439,59 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           )}
           <span className="text-text-disabled shrink-0 text-sm">·</span>
           <span className="text-xs text-text-disabled shrink-0">{createdDate}</span>
+          {isDebug && (
+            <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
+              debug
+            </span>
+          )}
         </div>
 
         {/* Center: segment tabs — grid col 2, naturally centered */}
-        <div className="flex items-center gap-0.5 p-0.5 bg-surface-overlay rounded-[10px]">
-          {(['letter', 'posting', 'analysis'] as const).map(tab => (
+        <div className="flex items-center gap-1.5">
+          {/* Analysis pill */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('analysis')}
+            className={cn(
+              'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
+              activeTab === 'analysis'
+                ? 'bg-surface-overlay border-border-strong text-text-primary'
+                : 'bg-surface-elevated border-border-default text-text-secondary hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary'
+            )}
+          >
+            Analysis
+          </button>
+
+          {/* Text divider */}
+          <span className="text-border-strong text-sm select-none">|</span>
+
+          {/* Posting + Letter joined pill */}
+          <div className="flex rounded-[8px] border border-border-default overflow-hidden">
             <button
-              key={tab}
               type="button"
-              onClick={() => setActiveTab(tab)}
+              onClick={() => setActiveTab('posting')}
               className={cn(
-                'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] transition-colors whitespace-nowrap',
-                activeTab === tab
-                  ? 'bg-surface-elevated border border-border-default text-text-primary shadow-[0px_1px_2px_0px_rgba(20,21,26,0.05)]'
-                  : 'text-text-tertiary hover:text-text-secondary'
+                'px-3 h-7 text-sm font-normal tracking-[-0.1px] border-r border-border-default transition-colors whitespace-nowrap',
+                activeTab === 'posting'
+                  ? 'bg-surface-overlay text-text-primary'
+                  : 'bg-surface-elevated text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
               )}
             >
-              {tab === 'letter' ? 'Letter' : tab === 'posting' ? 'Posting' : 'Analysis'}
+              Posting
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setActiveTab('letter')}
+              className={cn(
+                'px-3 h-7 text-sm font-normal tracking-[-0.1px] transition-colors whitespace-nowrap',
+                activeTab === 'letter'
+                  ? 'bg-surface-overlay text-text-primary'
+                  : 'bg-surface-elevated text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
+              )}
+            >
+              Letter
+            </button>
+          </div>
         </div>
 
         {/* Right: actions */}
@@ -494,19 +536,19 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 ) : (
                   <div className="space-y-3">
                     <NotionViewRow
-                      label="Letter"
-                      pageUrl={tailoring.notion_page_url ?? null}
-                      exporting={exportingNotionLetter}
-                      disabled={exportingNotionPosting}
-                      onExport={() => handleExportToNotion('letter')}
-                    />
-                    <NotionViewRow
                       label="Posting"
                       pageUrl={tailoring.notion_posting_page_url ?? null}
                       exporting={exportingNotionPosting}
                       disabled={exportingNotionLetter || chunksData?.enrichment_status !== 'complete'}
                       disabledReason={chunksData?.enrichment_status !== 'complete' ? 'Enrichment not ready' : undefined}
                       onExport={() => handleExportToNotion('posting')}
+                    />
+                    <NotionViewRow
+                      label="Letter"
+                      pageUrl={tailoring.notion_page_url ?? null}
+                      exporting={exportingNotionLetter}
+                      disabled={exportingNotionPosting}
+                      onExport={() => handleExportToNotion('letter')}
                     />
                   </div>
                 )}
@@ -586,23 +628,23 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <div className="border-t border-border-subtle px-4 py-3 space-y-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium text-text-primary">Advocacy Letter</p>
-                    <p className="text-xs text-text-tertiary mt-0.5">Share the generated letter</p>
-                  </div>
-                  <Switch
-                    checked={letterOn}
-                    onCheckedChange={v => handleToggleShare('letter', v)}
-                    disabled={sharing}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
                     <p className="text-sm font-medium text-text-primary">Job Posting</p>
                     <p className="text-xs text-text-tertiary mt-0.5">Gap matches hidden, partials shown as green</p>
                   </div>
                   <Switch
                     checked={postingOn}
                     onCheckedChange={v => handleToggleShare('posting', v)}
+                    disabled={sharing}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Advocacy Letter</p>
+                    <p className="text-xs text-text-tertiary mt-0.5">Share the generated letter</p>
+                  </div>
+                  <Switch
+                    checked={letterOn}
+                    onCheckedChange={v => handleToggleShare('letter', v)}
                     disabled={sharing}
                   />
                 </div>
@@ -633,7 +675,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       </div>
 
       {/* ── Content ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'letter' && (
           <div className="max-w-3xl mx-auto px-6 py-10">
             <header className="mb-8 pb-5 border-b border-border-subtle">
@@ -733,7 +775,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           />
         )}
         {activeTab === 'analysis' && (
-          <MatchAnalysis data={chunksData} error={chunksError} />
+          isDebug
+            ? <MatchAnalysis data={chunksData} error={chunksError} />
+            : <FitAnalysis data={chunksData} error={chunksError} title={tailoring.title} company={tailoring.company} />
         )}
       </div>
 

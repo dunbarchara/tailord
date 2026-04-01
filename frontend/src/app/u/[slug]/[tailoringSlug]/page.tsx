@@ -1,5 +1,7 @@
+import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import type { ChunksResponse, JobChunk } from '@/types'
 import { PublicTailoringView } from './PublicTailoringView'
 
@@ -16,7 +18,8 @@ interface PublicTailoring {
   author_name: string | null
 }
 
-async function fetchPublicTailoring(
+// cache() deduplicates the fetch across generateMetadata + the page component
+const fetchPublicTailoring = cache(async function fetchPublicTailoring(
   userSlug: string,
   tailoringSlug: string
 ): Promise<PublicTailoring | null> {
@@ -30,6 +33,31 @@ async function fetchPublicTailoring(
     return res.json()
   } catch {
     return null
+  }
+})
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string; tailoringSlug: string }>
+}): Promise<Metadata> {
+  const { slug, tailoringSlug } = await params
+  const tailoring = await fetchPublicTailoring(slug, tailoringSlug)
+
+  if (!tailoring) {
+    return { title: 'Tailoring Not Found — Tailord' }
+  }
+
+  const name = tailoring.author_name ?? slug
+  const roleDesc = tailoring.title
+    ? `${tailoring.title}${tailoring.company ? ` at ${tailoring.company}` : ''}`
+    : tailoring.company ?? null
+
+  return {
+    title: `${name} — Tailoring — Tailord`,
+    description: roleDesc
+      ? `${name}'s tailored application for ${roleDesc}.`
+      : `${name}'s tailored application on Tailord.`,
   }
 }
 
@@ -56,7 +84,7 @@ export default async function PublicTailoringPage({
     : null
 
   return (
-    <div className="min-h-screen bg-surface-base print:bg-white">
+    <div className="min-h-screen bg-surface-elevated print:bg-white">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="px-6">

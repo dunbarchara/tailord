@@ -192,20 +192,20 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
               </div>
 
               {/* Table */}
-              <div className="rounded-2xl overflow-hidden border border-border-subtle">
-                <table className="w-full text-sm">
+              <div className="rounded-2xl overflow-hidden border border-border-subtle overflow-x-auto">
+                <table className="w-full min-w-[480px] table-fixed text-sm">
                   <thead>
                     <tr className="bg-surface-base border-b border-border-subtle">
-                      <th className="px-4 h-9 text-left text-xs font-medium text-text-tertiary tracking-wider w-[45%]">
+                      <th className="px-4 h-9 text-left text-xs font-medium text-text-tertiary tracking-wider w-[55%]">
                         Role
                       </th>
-                      <th className="px-4 h-9 text-left text-xs font-medium text-text-tertiary tracking-wider w-[20%]">
+                      <th className="px-4 h-9 text-left text-xs font-medium text-text-tertiary tracking-wider w-[15%]">
                         Status
                       </th>
-                      <th className="px-4 h-9 text-left text-xs font-medium text-text-tertiary tracking-wider hidden sm:table-cell w-[15%]">
+                      <th className="px-4 h-9 text-left text-xs font-medium text-text-tertiary tracking-wider w-[15%]">
                         Visibility
                       </th>
-                      <th className="px-4 h-9 text-right text-xs font-medium text-text-tertiary tracking-wider w-[20%] pr-4">
+                      <th className="px-4 h-9 text-left text-xs font-medium text-text-tertiary tracking-wider w-[15%]">
                         Created
                       </th>
                     </tr>
@@ -240,13 +240,13 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
                           </td>
 
                           {/* Visibility */}
-                          <td className="px-4 py-3.5 hidden sm:table-cell">
+                          <td className="px-4 py-3.5">
                             <VisibilityBadge isPublic={t.is_public} />
                           </td>
 
                           {/* Date + chevron */}
-                          <td className="px-4 py-3.5 pr-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
+                          <td className="px-4 py-3.5">
+                            <div className="flex items-center gap-2">
                               <span
                                 suppressHydrationWarning
                                 className="text-xs text-text-tertiary whitespace-nowrap"

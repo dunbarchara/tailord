@@ -27,7 +27,7 @@ export function PublicTailoringView({
 }: PublicTailoringViewProps) {
   const bothPublic = letterPublic && postingPublic
   const [activeTab, setActiveTab] = useState<'letter' | 'posting'>(
-    letterPublic ? 'letter' : 'posting'
+    postingPublic ? 'posting' : 'letter'
   )
 
   const showLetter = letterPublic && (!bothPublic || activeTab === 'letter')
@@ -39,7 +39,7 @@ export function PublicTailoringView({
       {bothPublic && (
         <div className="px-6">
         <div className="flex items-center gap-0 border-b border-border-subtle">
-          {(['letter', 'posting'] as const).map(tab => (
+          {(['posting', 'letter'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}

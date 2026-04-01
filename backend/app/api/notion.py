@@ -164,6 +164,8 @@ def export_tailoring_to_notion(
         if parent_page_id != user.notion_parent_page_id:
             user.notion_parent_page_id = parent_page_id
 
+        is_new_container = not tailoring.notion_container_page_id
+
         container_page_id = get_or_create_tailoring_container(
             access_token=user.notion_access_token,
             parent_page_id=parent_page_id,
@@ -176,6 +178,21 @@ def export_tailoring_to_notion(
         )
         if container_page_id != tailoring.notion_container_page_id:
             tailoring.notion_container_page_id = container_page_id
+
+        # Enforce page order: Posting must be created before Letter so it
+        # holds the top position in the Notion sidebar. If this is a new
+        # container and we're exporting the Letter first, create an empty
+        # Posting placeholder first so the ordering is preserved.
+        if is_new_container and view == "letter" and not tailoring.notion_posting_page_id:
+            stub_id, stub_url = create_notion_page(
+                access_token=user.notion_access_token,
+                parent_page_id=container_page_id,
+                title="Job Posting",
+                markdown="*Export the Job Posting view from Tailord to populate this page.*",
+            )
+            tailoring.notion_posting_page_id = stub_id
+            tailoring.notion_posting_page_url = stub_url
+            logger.info("Created Posting stub %s to reserve top position for tailoring %s", stub_id, tailoring_id)
 
         page_id, page_url = create_notion_page(
             access_token=user.notion_access_token,
