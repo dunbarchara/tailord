@@ -261,7 +261,9 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [x] New Tailoring primary button placed next to "Your Tailorings / N tailorings generated" section header (not the greeting row)
 
 #### Remaining — Frontend Rework
-- [ ] Homepage `ProductPreview` — replace stylized mockup with real screenshot once UI is polished enough
+- [ ] **Analysis tab redesign** — rework from admin debug view into candidate-facing "Fit Analysis": Strong/Partial/Gap sections with candidate-facing advocacy blurbs; raw rationale + chunk scores moved to `?debug=1`. Primary tab in dashboard. Letter + Posting become "Preview" tabs. See `16-tailoring-detail-architecture.md`.
+- [ ] **Public shared page tab order** — flip so enriched posting is default/hero view; letter is secondary tab
+- [ ] **Homepage `ProductPreview`** — blocked on Analysis tab redesign. Screenshot once Analysis tab is polished; consider showing both views (Analysis left, Enriched Posting right)
 - [ ] Extend accent touchpoints to dashboard primary buttons and inline links (`--color-text-link`)
 
 ---
