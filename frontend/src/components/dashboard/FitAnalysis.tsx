@@ -92,19 +92,19 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
   return (
     <div className="px-5 py-4 flex gap-4 items-start">
       {/* Vertical score bar */}
-      <div className={cn('mt-1 w-0.5 self-stretch rounded-full flex-shrink-0 min-h-[1.25rem]', config.bar)} />
+      <div className={cn('mt-1.5 w-1 self-stretch rounded-full flex-shrink-0 min-h-[2rem]', config.bar)} />
 
       <div className="flex-1 min-w-0">
         {/* Score label */}
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <span className={cn('h-1.5 w-1.5 rounded-full flex-shrink-0', config.dot)} />
-          <span className={cn('text-[10px] font-medium uppercase tracking-wide', config.text)}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className={cn(`text-xs font-medium flex items-center gap-1.5`, config.text)}>
+            <span className={cn('h-1.5 w-1.5 rounded-full flex-shrink-0', config.dot)} />
             {config.label}
           </span>
         </div>
 
         {/* Requirement text */}
-        <p className="text-sm text-text-primary leading-snug mb-1.5">
+        <p className="text-sm text-text-primary leading-snug mb-2">
           {chunk.content}
         </p>
 
@@ -185,7 +185,7 @@ export function FitAnalysis({ data, error, title, company }: FitAnalysisProps) {
       )}
 
       {hasAny && (
-        <div className="rounded-2xl border border-border-subtle bg-surface-elevated overflow-hidden">
+        <div className="rounded-3xl border border-border-subtle bg-surface-elevated shadow-md overflow-hidden">
 
           {/* Header bar */}
           <div
@@ -194,7 +194,7 @@ export function FitAnalysis({ data, error, title, company }: FitAnalysisProps) {
           >
             <div className="min-w-0">
               {company && (
-                <p className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary mb-0.5 truncate">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-0.5 truncate">
                   {company}
                 </p>
               )}

@@ -4,8 +4,8 @@ Notion page creation and update using the native markdown API.
 Page hierarchy:
   Tailord - Tailorings  (workspace root, one per user)
     └─ {Job Title — Company}  (per-tailoring container)
-        ├─ Letter
-        └─ Posting
+        ├─ Posting  (primary — created first to hold top position)
+        └─ Letter
 """
 import logging
 import re
@@ -51,8 +51,8 @@ def chunks_to_notion_markdown(chunks: list) -> str:
     Convert enriched job chunks to Notion enhanced markdown (public mode):
     - chunk_type='header' chunks are skipped (section field is used as the heading)
     - score=0 (gap) chunks are omitted
-    - score=2 (strong) → green_bg toggle with rationale
-    - score=1 (partial) → yellow_bg toggle with rationale
+    - score=2 (strong) → green_bg toggle with advocacy blurb + source
+    - score=1 (partial) → yellow_bg toggle with advocacy blurb + source
     - score=-1 or None (N/A) → plain bullet or paragraph, no toggle
     """
     lines = []
@@ -98,12 +98,12 @@ def chunks_to_notion_markdown(chunks: list) -> str:
         lines.append(f"<details{color_attr}>")
         lines.append(f"<summary>{content}</summary>")
 
-        if chunk.match_rationale or chunk.experience_source:
+        if chunk.advocacy_blurb or chunk.experience_source:
             lines.append('\t<callout color="gray_bg">')
-            if chunk.match_rationale:
-                rationale = _escape(_strip_links(chunk.match_rationale.strip()))
-                lines.append(f'\t\t{rationale}')
-            if chunk.match_rationale and chunk.experience_source:
+            if chunk.advocacy_blurb:
+                advocacy = _escape(_strip_links(chunk.advocacy_blurb.strip()))
+                lines.append(f'\t\t{advocacy}')
+            if chunk.advocacy_blurb and chunk.experience_source:
                 lines.append('\t\t---')
             if chunk.experience_source:
                 label = _SOURCE_LABELS.get(chunk.experience_source, chunk.experience_source)

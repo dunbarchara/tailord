@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -123,6 +123,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('analysis');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
@@ -534,19 +536,19 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 ) : (
                   <div className="space-y-3">
                     <NotionViewRow
-                      label="Letter"
-                      pageUrl={tailoring.notion_page_url ?? null}
-                      exporting={exportingNotionLetter}
-                      disabled={exportingNotionPosting}
-                      onExport={() => handleExportToNotion('letter')}
-                    />
-                    <NotionViewRow
                       label="Posting"
                       pageUrl={tailoring.notion_posting_page_url ?? null}
                       exporting={exportingNotionPosting}
                       disabled={exportingNotionLetter || chunksData?.enrichment_status !== 'complete'}
                       disabledReason={chunksData?.enrichment_status !== 'complete' ? 'Enrichment not ready' : undefined}
                       onExport={() => handleExportToNotion('posting')}
+                    />
+                    <NotionViewRow
+                      label="Letter"
+                      pageUrl={tailoring.notion_page_url ?? null}
+                      exporting={exportingNotionLetter}
+                      disabled={exportingNotionPosting}
+                      onExport={() => handleExportToNotion('letter')}
                     />
                   </div>
                 )}
@@ -626,23 +628,23 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <div className="border-t border-border-subtle px-4 py-3 space-y-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium text-text-primary">Advocacy Letter</p>
-                    <p className="text-xs text-text-tertiary mt-0.5">Share the generated letter</p>
-                  </div>
-                  <Switch
-                    checked={letterOn}
-                    onCheckedChange={v => handleToggleShare('letter', v)}
-                    disabled={sharing}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
                     <p className="text-sm font-medium text-text-primary">Job Posting</p>
                     <p className="text-xs text-text-tertiary mt-0.5">Gap matches hidden, partials shown as green</p>
                   </div>
                   <Switch
                     checked={postingOn}
                     onCheckedChange={v => handleToggleShare('posting', v)}
+                    disabled={sharing}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">Advocacy Letter</p>
+                    <p className="text-xs text-text-tertiary mt-0.5">Share the generated letter</p>
+                  </div>
+                  <Switch
+                    checked={letterOn}
+                    onCheckedChange={v => handleToggleShare('letter', v)}
                     disabled={sharing}
                   />
                 </div>
@@ -673,7 +675,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       </div>
 
       {/* ── Content ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'letter' && (
           <div className="max-w-3xl mx-auto px-6 py-10">
             <header className="mb-8 pb-5 border-b border-border-subtle">
