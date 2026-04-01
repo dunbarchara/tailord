@@ -19,6 +19,7 @@
 | `13-homepage-redesign.md` | Homepage redesign iteration log — headline, sections, ProductPreview |
 | `15-mintlify-design-match.md` | Mintlify design match strategy — token analysis, implementation status, reference log |
 | `16-tailoring-detail-architecture.md` | Three-view architecture — Analysis (candidate), Enriched Posting (recruiter), Letter (narrative); Analysis tab redesign direction |
+| `17-ai-agent-friendly.md` | Platform design for humans, developers, and AI agents — MCP server direction, structured public data, OpenAPI schema, agentic use cases |
 
 ## Summary
 
