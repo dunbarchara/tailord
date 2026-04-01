@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Globe, Lock, Settings, ExternalLink, Copy, CheckCircle2, ChevronDown,
+  Globe, Lock, Settings, Copy, CheckCircle2, ChevronDown,
   Mail, Phone,
   AlignLeft, Briefcase, GraduationCap, Layers, FolderOpen,
 } from 'lucide-react';
