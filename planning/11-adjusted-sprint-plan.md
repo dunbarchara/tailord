@@ -300,7 +300,7 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 
 #### Prompt Injection
 - [ ] Audit all LLM calls: user-supplied content always in the `user` role, never interpolated into `system` prompt
-- [ ] Add a scrape sanitization step: strip `<script>`, hidden text, and suspiciously long invisible elements before passing scraped content to the LLM
+- [ ] **Scrape sanitisation** — strip non-posting content before it enters the chunk extraction pipeline. Two categories to handle: (1) page-level chrome: `<script>`, hidden elements, suspiciously long invisible text; (2) ATS form footer chrome: content appended by job board platforms (Ashby, Greenhouse, Lever, Workday) after the actual job description — salary ranges, EEO/diversity boilerplate, "By clicking Submit Application..." consent paragraphs, reCAPTCHA notices, privacy policy links. These are currently scraped alongside the posting, chunked, and sent to the LLM for scoring. They produce spurious Gap chunks (or batch errors when they contain embedded URLs/markdown links that trip up local models) and pollute the Analysis and Posting views with non-requirement content. Target: identify the posting body boundary and discard everything below it, or strip known ATS footer patterns by regex/heuristic before chunking.
 - [ ] Cap scraped content length fed to the LLM (e.g., 8k tokens) — limits injection surface and cost
 - [ ] Confirm LLM output is only ever rendered as Markdown, never as raw HTML or executed
 
