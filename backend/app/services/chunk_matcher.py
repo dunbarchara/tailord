@@ -105,7 +105,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
 
                 # Pad results if LLM returned fewer than chunks sent
                 while len(batch_results) < len(batch):
-                    batch_results.append(ChunkMatchResult(score=0, rationale="Not evaluated (batch error)"))
+                    batch_results.append(ChunkMatchResult(score=-1, rationale="Not evaluated (batch error)"))
 
                 for chunk, match in zip(batch, batch_results):
                     result_map[chunk.position] = match
@@ -116,7 +116,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
             if chunk.chunk_type == "header":
                 all_results.append((chunk, ChunkMatchResult(score=-1, rationale="Section header")))
             else:
-                all_results.append((chunk, result_map.get(chunk.position, ChunkMatchResult(score=0, rationale="Not evaluated"))))
+                all_results.append((chunk, result_map.get(chunk.position, ChunkMatchResult(score=-1, rationale="Not evaluated"))))
 
         # Persist JobChunk rows
         now = datetime.now(timezone.utc)

@@ -3,6 +3,7 @@
 import { Loader2, AlertCircle, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
+import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -105,13 +106,13 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
 
         {/* Requirement text */}
         <p className="text-sm text-text-primary leading-snug mb-2">
-          {chunk.content}
+          <InlineMarkdown text={chunk.content} />
         </p>
 
         {/* Advocacy blurb — Strong and Partial only */}
         {chunk.advocacy_blurb && variant !== 'gap' && (
           <p className="text-xs text-text-secondary leading-relaxed mb-2">
-            {chunk.advocacy_blurb}
+            <InlineMarkdown text={chunk.advocacy_blurb} />
           </p>
         )}
 

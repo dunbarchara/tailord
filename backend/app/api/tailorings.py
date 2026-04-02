@@ -17,7 +17,7 @@ from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
 from app.services.job_extractor import extract_job
-from app.services.tailoring_generator import generate_tailoring
+from app.services.tailoring_generator import generate_tailoring, _format_sourced_profile
 from app.services.requirement_matcher import match_requirements
 from app.services.chunk_matcher import enrich_job_chunks
 from app.core.playwright_helper import get_rendered_content
@@ -441,6 +441,61 @@ def get_tailoring_chunks(
     return {
         "enrichment_status": tailoring.enrichment_status,
         "chunks": [_serialize_chunk(c) for c in chunks],
+    }
+
+
+@router.get("/tailorings/{tailoring_id}/debug-info")
+def get_tailoring_debug_info(
+    tailoring_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    from app.prompts import chunk_matching as chunk_prompt
+    from app.prompts import tailoring as tailoring_prompt
+
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    extracted_profile = experience.extracted_profile if experience else {}
+    formatted_profile = _format_sourced_profile(
+        extracted_profile,
+        candidate_name=user.name,
+        pronouns=user.pronouns if hasattr(user, "pronouns") else None,
+    )
+
+    # Build a sample chunk-matching user message from the first real batch
+    chunks = (
+        db.query(JobChunk)
+        .filter(JobChunk.job_id == tailoring.job_id)
+        .order_by(JobChunk.position)
+        .limit(3)
+        .all()
+    )
+    sample_chunks_block = "\n".join(
+        f"{i}. [{c.chunk_type.upper()}] {c.content}"
+        for i, c in enumerate(chunks, start=1)
+    )
+    first_section = chunks[0].section or "General" if chunks else "General"
+    sample_user_message = chunk_prompt.USER_TEMPLATE.format(
+        extracted_profile=formatted_profile,
+        section=first_section,
+        chunks_block=sample_chunks_block,
+    ) if chunks else "(No chunks available)"
+
+    job = tailoring.job
+    return {
+        "model": tailoring.model or settings.llm_model,
+        "formatted_profile": formatted_profile,
+        "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
+        "sample_chunk_user_message": sample_user_message,
+        "tailoring_system_prompt": tailoring_prompt.SYSTEM if hasattr(tailoring_prompt, "SYSTEM") else None,
     }
 
 

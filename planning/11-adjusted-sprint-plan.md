@@ -264,7 +264,9 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 
 **Analysis tab** reworked from an admin debug tool into a candidate-facing "Fit Analysis" view. Architecture documented in `16-tailoring-detail-architecture.md`.
 
-- [x] **`?debug=1` preservation** — existing `MatchAnalysis` (chunk scores, rationale, chunk IDs) rendered at `?debug=1`; amber "debug" pill shown in toolbar; copy button exports `chunksToMarkdown` in debug mode. Production UI unaffected.
+- [x] **`?debug=1` debug tab** — loading a tailoring with `?debug=1` adds a fourth "Debug" tab (after a second `|` divider; only rendered when `isDebug`). Tab renders `DebugPanel` component. The amber "debug" pill in the toolbar remains. Production UI unaffected.
+  - `DebugPanel` (`src/components/dashboard/DebugPanel.tsx`): fetches `GET /api/tailorings/{id}/debug` on mount. Sections: model badge; Chunk Analysis (reuses `MatchAnalysis`); Formatted Profile (raw text fed to LLM); Chunk Matching System Prompt; Sample User Message (first batch); Tailoring Generation System Prompt (if present); Full Debug Dump (copies all sections as one block for pasting into a review conversation). Each section has an independent copy button.
+  - Backend `GET /tailorings/{id}/debug-info` returns: `model`, `formatted_profile`, `chunk_matching_system_prompt`, `sample_chunk_user_message`, `tailoring_system_prompt`. Constructs sample user message from first 3 chunks using `chunk_prompt.USER_TEMPLATE`.
 - [x] **`FitAnalysis` component** (`src/components/dashboard/FitAnalysis.tsx`): flat list in original posting order (no section grouping); header bar with company + role + Strong/Partial/Gap dot-counts; context blurb row with Info icon; `MatchCard` per chunk with vertical colored bar (`w-1 self-stretch rounded-full`), score dot + label, requirement text, advocacy blurb (Strong/Partial only), source tag. Styling matches `ProductPreview` mockup exactly: `rounded-3xl`, `shadow-md`, `text-xs` score labels, `mb-2` requirement margin, `min-h-[2rem]` bar.
 - [x] **`fitAnalysisToText()`** export for copy button — preserves original posting order, prefixes each line with `[STRONG]` / `[PARTIAL]` / `[GAP]`.
 - [x] **Tab hierarchy** — Analysis is default tab; tab order: Analysis → Posting → Letter. Letter + Posting visually grouped as a joined pill with internal divider, separated from Analysis by a `|` text divider. All tabs use bordered inactive state (matching right-side icon buttons: `bg-surface-elevated border border-border-default`); active state darkens to `bg-surface-overlay border-border-strong`.
@@ -284,8 +286,37 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 
 #### Remaining — Frontend Rework
 - [ ] **FitAnalysis — rationale + advocacy per score level** — tiered display: Strong shows advocacy only (user already fits, advocacy tells them how to present it); Partial shows advocacy + rationale (advocacy for framing, rationale explains *why it's partial*, styled smaller/muted below); Gap shows rationale only (advocacy is null by design — rationale fills the currently empty card with actionable signal: what's missing and why). See `16-tailoring-detail-architecture.md` for full rationale. **Alternative:** expandable rationale behind a click (same pattern as JobPosting chunk expand) — keeps default cards clean, rationale one tap away. Tradeoff: lower discoverability, but rationale feels supplementary rather than primary. Worth exploring if the inline tiered approach feels too dense in practice.
+- [ ] **Generation timing + expectation setting** — the Analysis tab is now the default view, but its content (chunk enrichment) takes as long to complete as the Posting tab — both finish well after the Letter. A first-time user landing on Analysis after generation completes may see an empty or loading state with no context. Options to explore, in any combination: (1) a "this will take a few more minutes" message on the Analysis and Posting tabs while enrichment is pending, with a pointer to the Letter which is already available; (2) loading indicators on the Posting and Analysis tab labels themselves (spinner or pulsing dot) while enrichment is in progress; (3) a dismissible banner on the Analysis tab that surfaces when `enrichment_status` is pending/processing, explaining what's still running and when to check back; (4) auto-switch to the Letter tab immediately after generation completes so the user lands on ready content, with a subtle indicator that Analysis and Posting are still processing. The Letter is always ready first — lean into that as a "here's something to read right now" moment.
 - [ ] **Homepage `ProductPreview`** — still showing stylized mockup. Screenshot the real Analysis tab UI once satisfied with polish; consider showing both views (Analysis left, Enriched Posting right). See `16-tailoring-detail-architecture.md`.
 - [ ] Extend accent touchpoints to dashboard primary buttons and inline links (`--color-text-link`)
+
+#### Debug + Eval Pipeline (graduated roadmap)
+
+The `?debug=1` tab is Level 0 — a manual, per-tailoring inspection tool. The roadmap below builds toward automated quality measurement.
+
+**Level 1 — Metadata fields on `Tailoring` model** *(low effort, high payoff)*
+- Add `model_name` (string), `generation_duration_ms` (int), `chunk_batch_count` (int), `chunk_error_count` (int) columns to `Tailoring`
+- Populate during `_finalize_tailoring`: record the model used, wall-clock time from `generation_started_at` to complete, number of LLM batches dispatched, and how many resulted in parse errors
+- Surface in the Debug tab's model badge row (timing + batch stats) — no new UI needed beyond what the tab already shows
+- These fields make it possible to correlate model version, generation time, and error rate across tailorings without pulling log files
+
+**Level 2 — Profile snapshot on `Tailoring`** *(medium effort)*
+- Store a `profile_snapshot` JSON column on `Tailoring` at generation time: the exact `formatted_profile` string (or structured dict) sent to the LLM
+- Motivation: `Experience` is mutable — users edit it after tailorings are generated. The debug tab currently reconstructs the profile from the *current* experience, which may differ from what was used at generation time. A snapshot makes the debug view accurate and enables "what would change if I regenerated now?" comparisons.
+- Also enables future diff views between profile versions.
+
+**Level 3 — Debug log table** *(deferred, feature-flagged)*
+- A `tailoring_debug_logs` table: one row per generation run, storing `chunk_batch_payloads` (JSON), `chunk_batch_responses` (JSON), `llm_call_log` (sequence of model/prompt/response triples)
+- Gate behind a `DEBUG_LOGGING_ENABLED` env flag — off by default in production due to storage cost and PII in resume content
+- Enable selectively for specific users (add `debug_logging` flag to `User` model) or for local dev
+- This is the foundation for the eval pipeline (Level 4)
+
+**Level 4 — Eval pipeline** *(longer term)*
+- Build a test set of (job URL, profile) pairs with human-labeled expected chunk scores and advocacy blurb quality ratings
+- Eval runner: re-runs chunk matching on the test set using the current prompt + model, computes agreement with human labels (exact match, off-by-one tolerance)
+- Diff view: side-by-side comparison of two runs (e.g., prompt change A vs B, or model X vs Y) — highlight chunks where scores diverged
+- CI integration: run eval on PR when `prompts/chunk_matching.py` changes; fail (or warn) if agreement drops below threshold
+- This closes the loop on prompt iteration: changes to scoring rules or examples become measurable rather than anecdotal
 
 ---
 
@@ -299,7 +330,7 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 
 #### Prompt Injection
 - [ ] Audit all LLM calls: user-supplied content always in the `user` role, never interpolated into `system` prompt
-- [ ] Add a scrape sanitization step: strip `<script>`, hidden text, and suspiciously long invisible elements before passing scraped content to the LLM
+- [ ] **Scrape sanitisation** — strip non-posting content before it enters the chunk extraction pipeline. Two categories to handle: (1) page-level chrome: `<script>`, hidden elements, suspiciously long invisible text; (2) ATS form footer chrome: content appended by job board platforms (Ashby, Greenhouse, Lever, Workday) after the actual job description — salary ranges, EEO/diversity boilerplate, "By clicking Submit Application..." consent paragraphs, reCAPTCHA notices, privacy policy links. These are currently scraped alongside the posting, chunked, and sent to the LLM for scoring. They produce spurious Gap chunks (or batch errors when they contain embedded URLs/markdown links that trip up local models) and pollute the Analysis and Posting views with non-requirement content. Target: identify the posting body boundary and discard everything below it, or strip known ATS footer patterns by regex/heuristic before chunking.
 - [ ] Cap scraped content length fed to the LLM (e.g., 8k tokens) — limits injection surface and cost
 - [ ] Confirm LLM output is only ever rendered as Markdown, never as raw HTML or executed
 
@@ -376,6 +407,9 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [ ] **Token budget cap:** `truncate_to_tokens(text, max_tokens)` helper (tiktoken) — apply to scraped job markdown before any LLM prompt. Prevents runaway costs and context length errors on unusually long postings.
 - [ ] **Job URL caching:** skip Playwright scrape + job extraction LLM for recently-seen URLs (< 7 days); rerun all other LLM steps fresh. Implement once extraction quality feels stable enough to trust cached output.
 - [ ] **Profile formatting as compact prose:** replace the raw JSON profile dump fed to the LLM with a compact prose block — more natural context, better performance on smaller models.
+- [ ] **Prompt minimisation — chunk matching:** trim `chunk_matching.py` system prompt. Cut to 3–4 examples (from 7); make examples shorter; tighten rules. Each added rule or example competes for the model's attention — the prompt should teach *reasoning patterns*, not enumerate domain-specific exceptions. See `18-scoring-reliability.md`.
+- [ ] **Reduce chunk batch size:** lower from ~8–10 chunks per batch to 3–5. More calls, smaller context per call, errors isolated. No architecture change required.
+- [ ] **Evidence extraction architecture (experimental):** decompose chunk matching into two sequential phases: (1) one call that reads the candidate profile and extracts a flat list of explicit atomic evidence claims; (2) scoring calls that match requirement chunks against the evidence list rather than the raw profile. The evidence list is smaller, auditable, and structurally prevents inferred claims (e.g. "No Terraform" is explicit — the model cannot invent it). Validate against eval baseline before committing. See `18-scoring-reliability.md` for full tradeoff analysis.
 - [ ] **Prompt iteration:** review and tighten `generate_tailoring` system prompt; consider few-shot examples for profile extraction.
 - [ ] **LLM response validation + retry:** after each `llm_parse` call, assert that the response meets minimum content expectations before committing the result. Retry the full LLM request (up to 2 additional attempts) on validation failure before falling back. Validation rules to implement per call site:
   - **Chunk matching (`chunk_matcher.py`):** for each `ChunkMatchResult` with `score >= 1`, assert `advocacy_blurb` is non-null and non-empty. A batch where all scored chunks lack advocacy blurbs should be treated as a failed response and retried — this is the known failure mode where the LLM silently omits advocacy statements entirely.
@@ -395,7 +429,7 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 | A3 | User | Polish, cleanup, docs | Dead code removed, README, portfolio write-up |
 | A4 ✅ | User | My Experience improvements | SSE phase list during processing, `EditableResumeProfile`, `PATCH /experience/profile`, stale tailoring banner |
 | A5 ✅ | User | Miscellaneous UX | Profile visibility switch, account deletion, custom pronouns, homepage redesign v1, job chunk advocacy blurbs |
-| A6 ✅ | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match, full dashboard UI overhaul (sidebar, New Tailoring, Settings, My Profile, My Experience, Home); Analysis tab redesign (FitAnalysis, debug mode, tab hierarchy, scroll reset); public page tab order flip; Notion advocacy_blurb + page ordering |
+| A6 ✅ | User | Frontend rework | Homepage redesign, accent color system, Mintlify design match, full dashboard UI overhaul (sidebar, New Tailoring, Settings, My Profile, My Experience, Home); Analysis tab redesign (FitAnalysis, debug mode, tab hierarchy, scroll reset); public page tab order flip; Notion advocacy_blurb + page ordering; `?debug=1` Debug tab (DebugPanel, backend debug-info endpoint, per-section copy buttons, Full Debug Dump) |
 | P1 | Platform | Security review | Prompt injection, auth/token abuse, SSRF, rate limiting, secrets audit |
 | P2 | Platform | Testing + CI gate | pytest, Jest, GitHub Actions PR gate |
 | P3 | Platform | Staging + pipeline hardening | Azure revision-based staging, token budget cap, URL caching, prompt iteration |

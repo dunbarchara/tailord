@@ -21,9 +21,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
 import { FitAnalysis, fitAnalysisToText } from '@/components/dashboard/FitAnalysis';
 import { JobPosting } from '@/components/dashboard/JobPosting';
+import { DebugPanel } from '@/components/dashboard/DebugPanel';
 import type { Tailoring, ChunksResponse } from '@/types';
 
 const POLL_INTERVAL = 3000;
@@ -122,7 +122,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [showMakePrivateConfirm, setShowMakePrivateConfirm] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis'>('analysis');
+  const [activeTab, setActiveTab] = useState<'letter' | 'posting' | 'analysis' | 'debug'>('analysis');
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
@@ -364,10 +364,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const handleCopy = () => {
     if (!tailoring) return;
     if (activeTab === 'analysis' && chunksData) {
-      const text = isDebug
-        ? chunksToMarkdown(chunksData, tailoring.title, tailoring.company)
-        : fitAnalysisToText(chunksData, tailoring.title, tailoring.company);
-      navigator.clipboard.writeText(text);
+      navigator.clipboard.writeText(fitAnalysisToText(chunksData, tailoring.title, tailoring.company));
     } else if (tailoring.generated_output) {
       navigator.clipboard.writeText(tailoring.generated_output);
     }
@@ -414,7 +411,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const postingOn = tailoring.posting_public;
   const anyPublic = letterOn || postingOn;
 
-  const canCopy = activeTab !== 'posting' && (
+  const canCopy = activeTab !== 'posting' && activeTab !== 'debug' && (
     activeTab === 'analysis' ? !!chunksData : !!tailoring.generated_output
   );
 
@@ -492,6 +489,25 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               Letter
             </button>
           </div>
+
+          {/* Debug tab — only when ?debug=1 */}
+          {isDebug && (
+            <>
+              <span className="text-border-strong text-sm select-none">|</span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('debug')}
+                className={cn(
+                  'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
+                  activeTab === 'debug'
+                    ? 'bg-surface-overlay border-border-strong text-text-primary'
+                    : 'bg-surface-elevated border-border-default text-text-secondary hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary'
+                )}
+              >
+                Debug
+              </button>
+            </>
+          )}
         </div>
 
         {/* Right: actions */}
@@ -775,9 +791,16 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           />
         )}
         {activeTab === 'analysis' && (
-          isDebug
-            ? <MatchAnalysis data={chunksData} error={chunksError} />
-            : <FitAnalysis data={chunksData} error={chunksError} title={tailoring.title} company={tailoring.company} />
+          <FitAnalysis data={chunksData} error={chunksError} title={tailoring.title} company={tailoring.company} />
+        )}
+        {activeTab === 'debug' && (
+          <DebugPanel
+            tailoringId={tailoring.id}
+            chunksData={chunksData}
+            chunksError={chunksError}
+            title={tailoring.title}
+            company={tailoring.company}
+          />
         )}
       </div>
 

@@ -1,0 +1,213 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Copy, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
+import type { ChunksResponse } from '@/types';
+
+/* ─── Types ──────────────────────────────────────────────────────────────── */
+
+interface DebugInfo {
+  model: string | null;
+  formatted_profile: string;
+  chunk_matching_system_prompt: string;
+  sample_chunk_user_message: string;
+  tailoring_system_prompt: string | null;
+}
+
+interface DebugPanelProps {
+  tailoringId: string;
+  chunksData: ChunksResponse | null;
+  chunksError: string | null;
+  title?: string | null;
+  company?: string | null;
+}
+
+/* ─── Copy button ─────────────────────────────────────────────────────────── */
+
+function CopyButton({ getText }: { getText: () => string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(getText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : 'Copy'}
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border border-border-default bg-surface-elevated text-text-secondary hover:bg-surface-overlay hover:text-text-primary transition-colors"
+    >
+      {copied
+        ? <><CheckCircle2 className="h-3 w-3 text-success" /> Copied</>
+        : <><Copy className="h-3 w-3" /> Copy</>}
+    </button>
+  );
+}
+
+/* ─── Section wrapper ────────────────────────────────────────────────────── */
+
+function DebugSection({
+  label,
+  children,
+  onCopy,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onCopy: () => string;
+}) {
+  return (
+    <section className="mb-10">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xs font-medium uppercase tracking-widest text-text-tertiary">{label}</h2>
+        <CopyButton getText={onCopy} />
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/* ─── Code block ─────────────────────────────────────────────────────────── */
+
+function CodeBlock({ text }: { text: string }) {
+  return (
+    <pre className="text-xs text-text-secondary leading-relaxed bg-surface-base border border-border-subtle rounded-xl p-4 overflow-x-auto whitespace-pre-wrap break-words font-mono">
+      {text}
+    </pre>
+  );
+}
+
+/* ─── Component ──────────────────────────────────────────────────────────── */
+
+export function DebugPanel({ tailoringId, chunksData, chunksError, title, company }: DebugPanelProps) {
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetch(`/api/tailorings/${tailoringId}/debug`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(setDebugInfo)
+      .catch(() => setError('Failed to load debug info'))
+      .finally(() => setLoading(false));
+  }, [tailoringId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 p-8 text-sm text-text-secondary">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading debug info…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 p-8 text-sm text-text-secondary">
+        <AlertCircle className="h-4 w-4 text-error" />
+        {error}
+      </div>
+    );
+  }
+
+  const header = [
+    `# Debug — ${title ?? 'Tailoring'}${company ? ` @ ${company}` : ''}`,
+    debugInfo?.model ? `Model: ${debugInfo.model}` : null,
+  ].filter(Boolean).join('\n');
+
+  return (
+    <div className="max-w-4xl mx-auto px-6 py-8">
+
+      {/* Meta */}
+      {debugInfo?.model && (
+        <div className="mb-8 flex items-center gap-2">
+          <span className="text-xs text-text-tertiary">Model</span>
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium bg-surface-overlay border border-border-subtle text-text-secondary">
+            {debugInfo.model}
+          </span>
+        </div>
+      )}
+
+      {/* Chunk Analysis */}
+      <DebugSection
+        label="Chunk Analysis"
+        onCopy={() => chunksData ? chunksToMarkdown(chunksData, title, company) : '(no chunk data)'}
+      >
+        <MatchAnalysis data={chunksData} error={chunksError} />
+      </DebugSection>
+
+      {/* Profile */}
+      {debugInfo && (
+        <DebugSection
+          label="Formatted Profile"
+          onCopy={() => debugInfo.formatted_profile}
+        >
+          <CodeBlock text={debugInfo.formatted_profile} />
+        </DebugSection>
+      )}
+
+      {/* Prompts */}
+      {debugInfo && (
+        <>
+          <DebugSection
+            label="Chunk Matching — System Prompt"
+            onCopy={() => debugInfo.chunk_matching_system_prompt}
+          >
+            <CodeBlock text={debugInfo.chunk_matching_system_prompt} />
+          </DebugSection>
+
+          <DebugSection
+            label="Chunk Matching — Sample User Message (first batch)"
+            onCopy={() => debugInfo.sample_chunk_user_message}
+          >
+            <CodeBlock text={debugInfo.sample_chunk_user_message} />
+          </DebugSection>
+
+          {debugInfo.tailoring_system_prompt && (
+            <DebugSection
+              label="Tailoring Generation — System Prompt"
+              onCopy={() => debugInfo.tailoring_system_prompt!}
+            >
+              <CodeBlock text={debugInfo.tailoring_system_prompt} />
+            </DebugSection>
+          )}
+
+          <DebugSection
+            label="Full Debug Dump"
+            onCopy={() => [
+              header,
+              '',
+              '## Formatted Profile',
+              debugInfo.formatted_profile,
+              '',
+              '## Chunk Matching — System Prompt',
+              debugInfo.chunk_matching_system_prompt,
+              '',
+              '## Chunk Matching — Sample User Message',
+              debugInfo.sample_chunk_user_message,
+              debugInfo.tailoring_system_prompt ? `\n## Tailoring System Prompt\n${debugInfo.tailoring_system_prompt}` : '',
+              '',
+              '## Chunk Analysis',
+              chunksData ? chunksToMarkdown(chunksData, title, company) : '(no chunk data)',
+            ].join('\n')}
+          >
+            <p className="text-xs text-text-tertiary">
+              Copies all sections above — formatted profile, all prompts, and full chunk analysis — as a single block for pasting into a review conversation.
+            </p>
+          </DebugSection>
+        </>
+      )}
+
+    </div>
+  );
+}
