@@ -29,7 +29,7 @@ variable "api_key" { # Provided once at provision time
 
 variable "llm_model" {
   type    = string
-  default = "gpt-5-nano"
+  default = "gpt-5.4-mini"
 }
 
 variable "log_level" {
