@@ -84,13 +84,13 @@ export default async function PublicTailoringPage({
     : null
 
   return (
-    <div className="min-h-screen bg-surface-elevated print:bg-white">
+    <div className="min-h-screen bg-surface-elevated print:bg-white" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'", WebkitFontSmoothing: 'antialiased' }}>
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="px-6">
           <header className="pt-12 pb-5 border-b border-border-subtle print:pt-6">
             <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
-              {tailoring.company ?? 'Tailoring'}
+              {[tailoring.company, tailoring.author_name].filter(Boolean).join(' · ')}
             </p>
             <h1 className="text-xl font-semibold text-text-primary">
               {tailoring.title ?? ''}

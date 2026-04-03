@@ -174,27 +174,14 @@ def _strip_city(institution: str) -> str:
     return re.split(r"\s*[,—–·•]\s*|\s+-\s+", institution, maxsplit=1)[0].strip()
 
 
-def _extract_education_line(extracted_profile: dict) -> str | None:
-    """Return a compact education string for the candidate brief footer, or None."""
-    education = (extracted_profile.get("resume") or {}).get("education") or []
-    if not education:
-        return None
-    entry = education[0]
-    degree = entry.get("degree", "").strip()
-    institution = _strip_city(entry.get("institution", "").strip())
-    if degree and institution:
-        return f"{degree}, {institution}"
-    return degree or institution or None
-
-
 def _render_tailoring(
     content: TailoringContent,
     candidate_name: str,
     candidate_email: str | None,
     candidate_linkedin: str | None,
+    candidate_title: str | None,
     company: str,
     job_title: str,
-    education_line: str | None,
     job_url: str | None = None,
 ) -> str:
     """Deterministically render a TailoringContent object into the final markdown document."""
@@ -233,8 +220,8 @@ def _render_tailoring(
 
     # Candidate brief footer
     brief_parts = [candidate_name]
-    if education_line:
-        brief_parts.append(education_line)
+    if candidate_title:
+        brief_parts.append(candidate_title)
     if candidate_email:
         brief_parts.append(f"[{candidate_email}](mailto:{candidate_email})")
     if candidate_linkedin:
@@ -283,8 +270,8 @@ def generate_tailoring(
         candidate_name=candidate_name,
         candidate_email=candidate_email,
         candidate_linkedin=candidate_linkedin,
+        candidate_title=resume.get("title") or None,
         company=company,
         job_title=job_title,
-        education_line=_extract_education_line(extracted_profile),
         job_url=job_url,
     )
