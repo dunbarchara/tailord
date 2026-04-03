@@ -314,7 +314,7 @@ export default async function PublicProfilePage({
   ].filter(Boolean) as Array<{ id: string; label: string }>
 
   return (
-    <div className="bg-surface-elevated">
+    <div className="bg-surface-elevated" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'", WebkitFontSmoothing: 'antialiased' }}>
       <div className="mx-auto max-w-[1216px] px-6 lg:flex lg:gap-12 lg:px-16">
         <ProfileSidebar
           name={data.name}

@@ -36,13 +36,13 @@ CRITICAL RULES — read before scoring:
 8. A -1 rationale needs only a one-phrase reason (e.g. "company perk, not a candidate requirement").
 9. experience_source must be "resume", "github", or "user_input". Set to null for -1 or 0.
 10. Return JSON only. No markdown fences. Exactly as many results as input chunks.
-11. For scores 2 and 1, populate advocacy_blurb with a 1–2 sentence statement in third person that advocates for the candidate on this specific requirement. Use the candidate's name and pronouns from the [CANDIDATE] block.
+11. For scores 2 and 1, populate advocacy_blurb with a 1–2 sentence statement in third person that advocates for the candidate on this specific requirement. Use the candidate's first name and pronouns from the [CANDIDATE] block.
     - rationale and advocacy_blurb convey the same core argument — the difference is register and audience. rationale is analytical: it explains the scoring decision as if reviewing the profile internally. advocacy_blurb is advocating: it presents the same evidence as if making the case for the candidate to a recruiter.
-    - always use the candidate's name (and pronouns where natural) from the [CANDIDATE] block. never write "the candidate" — this is impersonal and breaks the advocating voice. if no [CANDIDATE] block is present, use "they/their".
+    - always use the candidate's first name (and pronouns where natural) from the [CANDIDATE] block. never write "the candidate" — this is impersonal and breaks the advocating voice. if no [CANDIDATE] block is present, use "they/their".
     - the advocacy_blurb must respect the score. a partial match should read like a partial — acknowledge the proximity honestly rather than overclaiming. a recruiter who sees a candid partial will trust the strong matches more because of it.
     - always anchor to specific evidence from the profile (role, project, technology, outcome). never write generic platitudes ("demonstrates strong communication", "exhibits a problem-solving mindset") — these are meaningless without specifics.
     - bad: "The candidate demonstrates strong collaboration skills across teams." — impersonal, vague, no evidence.
-    - good: "[CANDIDATE_NAME] has worked directly with product and design teams throughout their time at Acme, co-owning the new feature delivery process across three cross-functional sprints."
+    - good: "[FIRST_NAME] has worked directly with product and design teams throughout their time at Acme, co-owning the new feature delivery process across three cross-functional sprints."
     - for scores 0 and -1, set advocacy_blurb to null.
 
 ---
@@ -57,7 +57,7 @@ Profile excerpt:
 Section: Requirements
 Chunk: 1. [BULLET] 3+ years of professional software engineering experience
 Correct output:
-{"results": [{"score": 2, "rationale": "Pre-computed total of 5.2 years exceeds the 3+ year requirement.", "advocacy_blurb": "[CANDIDATE_NAME] brings over five years of professional software engineering experience across two roles, exceeding this requirement with a track record of progressively senior work.", "experience_source": "resume"}]}
+{"results": [{"score": 2, "rationale": "Pre-computed total of 5.2 years exceeds the 3+ year requirement.", "advocacy_blurb": "[FIRST_NAME] brings over five years of professional software engineering experience across two roles, exceeding this requirement with a track record of progressively senior work.", "experience_source": "resume"}]}
 
 EXAMPLE 2 (Partial — adjacent skill, not exact match; advocacy reflects proximity honestly, does not overclaim):
 Profile excerpt:
@@ -67,7 +67,7 @@ Profile excerpt:
 Section: Requirements
 Chunk: 1. [BULLET] Expertise in Vue.js or React for frontend development
 Correct output:
-{"results": [{"score": 1, "rationale": "React is listed in technical skills and used in a prior role for internal tooling, but the profile shows limited React depth — no production-scale or customer-facing React work documented.", "advocacy_blurb": "[CANDIDATE_NAME] has built with React in a professional context — maintaining an internal tooling dashboard — and brings a strong TypeScript foundation. The depth of React-specific experience is limited to internal tooling rather than customer-facing work.", "experience_source": "resume"}]}
+{"results": [{"score": 1, "rationale": "React is listed in technical skills and used in a prior role for internal tooling, but the profile shows limited React depth — no production-scale or customer-facing React work documented.", "advocacy_blurb": "[FIRST_NAME] has built with React in a professional context — maintaining an internal tooling dashboard — and brings a strong TypeScript foundation. The depth of React-specific experience is limited to internal tooling rather than customer-facing work.", "experience_source": "resume"}]}
 
 EXAMPLE 3 (Gap — real requirement, no evidence):
 Profile excerpt:

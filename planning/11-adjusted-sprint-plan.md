@@ -420,6 +420,111 @@ The `?debug=1` tab is Level 0 — a manual, per-tailoring inspection tool. The r
 
 ---
 
+## Phase 3 — Block-Based Persistence (Architectural Evolution)
+
+**Philosophy:** Persist composable units — chunks, advocacy statements, experience bullets — rather than rendered blobs. Each block is independently addressable, reusable across surfaces, and a natural unit for future editing, vector embedding, and semantic retrieval. The job chunk model has already validated this pattern; the goal is to extend it to the rest of the platform.
+
+**Backwards compatibility stance:** There are no real users. Existing tailorings are retained for historical comparison only. Prefer simple, clean solutions over backwards-compatible ones. When a fallback is trivial to add, add it; when it requires meaningful complexity, don't.
+
+See `18-scoring-reliability.md` for the broader context on block-based persistence and vector embedding direction.
+
+---
+
+### Step 1 — `structured_output` on `Tailoring` *(prerequisite for Step 2)*
+
+**Goal:** Decouple the LLM-generated substance (advocacy statements, closing) from the rendered presentation (greeting, footer, formatting). Enable template iteration without LLM regeneration.
+
+**What changes:**
+
+Add `structured_output` (JSONB, nullable) to the `Tailoring` model:
+
+```python
+# backend/app/models/database.py
+structured_output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+```
+
+Stored shape mirrors `TailoringContent`:
+
+```json
+{
+  "advocacy_statements": [
+    { "header": "Five years of platform-scale infrastructure ownership", "body": "...", "sources": ["Resume"] },
+    { "header": "Self-serve infrastructure at scale", "body": "...", "sources": ["Resume"] }
+  ],
+  "closing": "Charles brings the infrastructure depth and operational track record..."
+}
+```
+
+**Generation change (`tailoring_generator.py`):** `generate_tailoring()` returns both the rendered string and the structured content. Or split into `generate_tailoring_content()` → `TailoringContent` and `render_tailoring()` → `str`, with the caller responsible for saving both.
+
+**Serve-time change:** The GET `/tailorings/{id}` endpoint renders from `structured_output` when present, falls back to `generated_output` for any existing tailorings that predate this change:
+
+```python
+if tailoring.structured_output:
+    output = render_tailoring(tailoring.structured_output, ...)
+else:
+    output = tailoring.generated_output  # pre-migration tailorings
+```
+
+**What this immediately unlocks:**
+- Greeting and footer template changes apply to all future tailorings without regeneration
+- `generated_output` becomes a deprecated field — still present but no longer the source of truth for new tailorings
+- Alembic migration: single nullable column addition, no data migration required
+
+---
+
+### Step 2 — Individual `AdvocacyStatement` records
+
+**Goal:** Make advocacy statements first-class DB records. Enables independent rendering across all surfaces (letter, analysis, Notion, public posting), future per-statement editing/regeneration, and in-app approval flows.
+
+**New table:**
+
+```python
+class AdvocacyStatement(Base):
+    __tablename__ = "advocacy_statements"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tailoring_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tailorings.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    position: Mapped[int]            # display order, 0-indexed
+    header: Mapped[str]              # bold section header in the letter
+    body: Mapped[str]                # 2-4 sentence advocacy body
+    sources: Mapped[list[str]] = mapped_column(JSON)  # ["Resume"], ["GitHub"], ["Resume", "Direct Input"]
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+```
+
+**Relationship on `Tailoring`:**
+
+```python
+advocacy_statements: Mapped[list["AdvocacyStatement"]] = relationship(
+    "AdvocacyStatement", back_populates="tailoring",
+    order_by="AdvocacyStatement.position", cascade="all, delete-orphan"
+)
+```
+
+**Generation change:** After the LLM call, write each `TailoringContent.advocacy_statements[i]` as an `AdvocacyStatement` record. `structured_output` (Step 1) and `AdvocacyStatement` records are written together — they describe the same content at different granularities.
+
+**Serve-time change:** Letter render assembles from `AdvocacyStatement` records joined on `tailoring_id`, ordered by `position`. Falls back to `structured_output` render or `generated_output` for pre-migration tailorings.
+
+**What this unlocks beyond Step 1:**
+- Analysis view can join chunks to advocacy statements (same chunk → same requirement → same advocacy statement)
+- Notion export queries statement records directly, no markdown parsing
+- Per-statement regeneration: "regenerate just this section" without touching the rest
+- Per-statement editing: user can refine wording in-app
+- Approval flow: mark statements as approved/flagged before sharing
+- Chunk `advocacy_blurb` and the corresponding `AdvocacyStatement.body` can be linked — same claim, two granularities (chunk-level one-liner vs. letter-level 2-4 sentences)
+
+**Alembic migration:** new table, no destructive changes. Existing tailorings have no `AdvocacyStatement` records — serve-time fallback handles them.
+
+---
+
+### Step 3 — Individual experience bullet records *(deferred)*
+
+Store each work experience bullet, skill entry, and education entry as an individual record on `Experience` rather than inside a JSON blob. This is the prerequisite for vector embedding (embed each bullet independently at processing time) and for the conversational enrichment vision (add evidence to specific bullets via direct input). Schema and timing TBD once Steps 1–2 are stable.
+
+---
+
 ## Summary
 
 | Day | Phase | Focus | Key output |
