@@ -2,14 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
 import {
   Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw,
-  Lock, Globe, Link as LinkIcon, ChevronDown,
+  Lock, Globe, Link as LinkIcon, ChevronDown, Info,
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import { toast } from 'sonner';
-import { cn, toastError, formatElapsed } from '@/lib/utils';
+import { cn, toastError } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -24,6 +23,7 @@ import {
 import { FitAnalysis, fitAnalysisToText } from '@/components/dashboard/FitAnalysis';
 import { JobPosting } from '@/components/dashboard/JobPosting';
 import { DebugPanel } from '@/components/dashboard/DebugPanel';
+import { AdvocacyLetter } from '@/components/dashboard/AdvocacyLetter';
 import type { Tailoring, ChunksResponse } from '@/types';
 
 const POLL_INTERVAL = 3000;
@@ -128,6 +128,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
+  const [userName, setUserName] = useState<string | null>(null);
   const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
   const [exportingNotionPosting, setExportingNotionPosting] = useState(false);
   const [notionOpen, setNotionOpen] = useState(false);
@@ -150,6 +151,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         ]);
         setTailoring(tailoringData);
         setNotionConnected(!!userData?.notion_workspace_name);
+        const preferredName = [userData?.preferred_first_name, userData?.preferred_last_name]
+          .filter(Boolean).join(' ').trim() || userData?.name || null;
+        setUserName(preferredName);
       } catch {
         setError('Could not reach the server.');
       } finally {
@@ -191,6 +195,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   }, [tailoring?.generation_status]);
 
   useEffect(() => {
+    // Don't poll if generation already failed — enrichment will never complete
+    if (tailoring?.generation_status === 'error') return;
+
     let interval: ReturnType<typeof setInterval> | null = null;
     async function fetchChunks() {
       try {
@@ -214,11 +221,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     fetchChunks();
     interval = setInterval(fetchChunks, POLL_INTERVAL);
     return () => { if (interval) clearInterval(interval); };
-  }, [tailoringId]);
-
-  const REGEN_SSE_LABELS: Record<string, string> = {
-    scraping: 'Fetching job posting...',
-  };
+  }, [tailoringId, tailoring?.generation_status]);
 
   async function handleRegenerate() {
     setShowRegenConfirm(false);
@@ -399,6 +402,14 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     );
   }
 
+  const generationFailed = tailoring.generation_status === 'error';
+  const enrichmentComplete = chunksData?.enrichment_status === 'complete';
+  const effectiveChunksError = chunksError ?? (
+    generationFailed && !enrichmentComplete
+      ? (tailoring.generation_error ?? 'Generation failed — try regenerating this tailoring.')
+      : null
+  );
+
   const createdDate = new Date(tailoring.created_at).toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
   });
@@ -517,7 +528,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           <button
             type="button"
             onClick={handleCopy}
-            disabled={!canCopy}
+            disabled={!canCopy || generationFailed}
             title={copied ? 'Copied!' : 'Copy content'}
             className={cn(iconBtnCls, copied && 'text-success hover:text-success')}
           >
@@ -532,6 +543,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <button
                 type="button"
                 title="Export to Notion"
+                disabled={generationFailed}
                 className={iconBtnCls}
               >
                 <SiNotion className="h-4 w-4" />
@@ -592,7 +604,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           {/* Share — Publish style */}
           <Popover open={shareOpen} onOpenChange={setShareOpen}>
             <PopoverTrigger asChild>
-              <button type="button" className={textBtnCls}>
+              <button type="button" disabled={generationFailed} className={textBtnCls}>
                 {anyPublic
                   ? <Globe className="h-3.5 w-3.5 text-brand-accent" />
                   : <Lock className="h-3.5 w-3.5" />}
@@ -690,116 +702,52 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
       </div>
 
+      {/* ── Preview banner ───────────────────────────────────────────────── */}
+      {(activeTab === 'letter' || activeTab === 'posting') && (
+        <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border-subtle bg-surface-base text-xs text-text-tertiary">
+          <Info className="h-3.5 w-3.5 shrink-0" />
+          This is a preview. Shared tailorings omit gaps and show partials as green.
+        </div>
+      )}
+
       {/* ── Content ─────────────────────────────────────────────────────── */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'letter' && (
-          <div className="max-w-3xl mx-auto px-6 py-10">
-            <header className="mb-8 pb-5 border-b border-border-subtle">
-              <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
-                {tailoring.company ?? 'Tailoring'}
-              </p>
-              <h1 className="text-xl font-semibold text-text-primary">
-                {tailoring.title ?? ''}
-              </h1>
-              {tailoring.job_url && (
-                <a
-                  href={tailoring.job_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block mt-2 text-sm text-text-link hover:underline"
-                >
-                  View job posting →
-                </a>
-              )}
-            </header>
-
-            {regenSsePhase && (
-              <div className="flex items-center gap-2 mb-6 text-sm text-text-secondary animate-fade-in">
-                <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />
-                {REGEN_SSE_LABELS[regenSsePhase] ?? 'Updating…'}
-              </div>
-            )}
-
-            {tailoring.generation_status === 'generating' && !regenSsePhase && (() => {
-              const stage = tailoring.generation_stage;
-              const startedAt = tailoring.generation_started_at
-                ? new Date(tailoring.generation_started_at).getTime()
-                : null;
-              const totalElapsed = startedAt
-                ? Math.floor((Date.now() - startedAt) / 1000)
-                : 0;
-              const matchingDone = stage === 'generating';
-              const extractingDone = stage === 'matching' || stage === 'generating';
-              const phases = [
-                { key: 'extracting', label: 'Extracting requirements', done: extractingDone, running: stage === 'extracting' },
-                { key: 'matching', label: 'Matching to your profile', done: matchingDone, running: stage === 'matching' },
-                { key: 'generating', label: 'Writing your tailoring', done: false, running: stage === 'generating' },
-              ];
-              return (
-                <div className="space-y-2 mb-8 animate-fade-in">
-                  {phases.filter(({ done, running }) => done || running).map(({ key, label, done, running }) => (
-                    <div key={key} className="flex items-center gap-2.5 text-sm">
-                      {done
-                        ? <CheckCircle2 className="h-4 w-4 text-success flex-shrink-0" />
-                        : <Loader2 className="h-4 w-4 text-brand-primary animate-spin flex-shrink-0" />}
-                      <span className="text-text-secondary">
-                        {label}{running ? '...' : ''}
-                        {running && startedAt && (
-                          <span className="text-text-tertiary"> · {formatElapsed(totalElapsed)}</span>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-
-            {tailoring.generation_status === 'error' && (
-              <div className="mb-8 flex items-start gap-3 text-sm">
-                <AlertCircle className="h-4 w-4 text-error flex-shrink-0 mt-0.5" />
-                <span className="text-text-secondary">
-                  {tailoring.generation_error ?? 'Generation failed. Try regenerating.'}
-                </span>
-              </div>
-            )}
-
-            {tailoring.generated_output && (
-              <div className={cn(
-                "prose prose-sm max-w-none text-text-primary",
-                "prose-headings:text-text-primary prose-headings:font-semibold",
-                "prose-p:text-text-secondary prose-p:leading-relaxed",
-                "prose-hr:my-6",
-                "prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs",
-                "prose-strong:text-text-primary",
-                "prose-hr:border-border-subtle",
-                "prose-a:text-text-link prose-a:underline prose-a:underline-offset-2",
-                tailoring.generation_status === 'generating' && "opacity-40",
-              )}>
-                <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
-              </div>
-            )}
-          </div>
+          <AdvocacyLetter
+            tailoring={tailoring}
+            regenSsePhase={regenSsePhase}
+            generationFailed={generationFailed}
+            authorName={userName}
+          />
         )}
         {activeTab === 'posting' && (
           <JobPosting
             data={chunksData}
-            error={chunksError}
+            error={effectiveChunksError}
             title={tailoring.title}
             company={tailoring.company}
             jobUrl={tailoring.job_url}
+            authorName={userName}
             generationReady={tailoring.generation_status === 'ready'}
           />
         )}
         {activeTab === 'analysis' && (
-          <FitAnalysis data={chunksData} error={chunksError} title={tailoring.title} company={tailoring.company} />
+          <FitAnalysis
+            data={chunksData}
+            error={effectiveChunksError}
+            title={tailoring.title}
+            company={tailoring.company}
+            jobUrl={tailoring.job_url}
+          />
         )}
         {activeTab === 'debug' && (
           <DebugPanel
             tailoringId={tailoring.id}
             chunksData={chunksData}
-            chunksError={chunksError}
+            chunksError={effectiveChunksError}
             title={tailoring.title}
             company={tailoring.company}
+            jobUrl={tailoring.job_url}
           />
         )}
       </div>

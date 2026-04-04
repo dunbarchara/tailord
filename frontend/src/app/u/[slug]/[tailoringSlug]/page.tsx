@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import type { ChunksResponse, JobChunk } from '@/types'
 import { PublicTailoringView } from './PublicTailoringView'
+import { TailoringHeader } from '@/components/dashboard/TailoringHeader'
 
 interface PublicTailoring {
   title: string | null
@@ -88,24 +89,13 @@ export default async function PublicTailoringPage({
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="px-6">
-          <header className="pt-12 pb-5 border-b border-border-subtle print:pt-6">
-            <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
-              {[tailoring.company, tailoring.author_name].filter(Boolean).join(' · ')}
-            </p>
-            <h1 className="text-xl font-semibold text-text-primary">
-              {tailoring.title ?? ''}
-            </h1>
-            {tailoring.job_url && (
-              <a
-                href={tailoring.job_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-2 text-sm text-text-link hover:underline print:hidden"
-              >
-                View job posting →
-              </a>
-            )}
-          </header>
+          <TailoringHeader
+            company={tailoring.company}
+            title={tailoring.title}
+            jobUrl={tailoring.job_url}
+            authorName={tailoring.author_name}
+            className="pt-12 print:pt-6"
+          />
         </div>
 
         {/* Content */}

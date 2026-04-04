@@ -4,10 +4,12 @@ import React, { useState } from 'react';
 import { Loader2, AlertCircle, Copy, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
+import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
 
-interface MatchAnalysisProps {
+interface ChunkAnalysisProps {
   data: ChunksResponse | null;
   error: string | null;
+  jobUrl?: string | null;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -194,16 +196,9 @@ function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
   return groups;
 }
 
-export function MatchAnalysis({ data, error }: MatchAnalysisProps) {
+export function ChunkAnalysis({ data, error, jobUrl }: ChunkAnalysisProps) {
 
-  if (error) {
-    return (
-      <div className="flex items-center gap-2 p-6 text-sm text-text-secondary">
-        <AlertCircle className="h-4 w-4 text-error flex-shrink-0" />
-        {error}
-      </div>
-    );
-  }
+  if (error) return <TailoringErrorState message={error} jobUrl={jobUrl} />;
 
   if (!data) {
     return (
