@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
+import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
 
 interface JobPostingProps {
   data: ChunksResponse | null;
@@ -150,13 +151,7 @@ function SectionBlock({
 export function JobPosting({ data, error, title, company, jobUrl, publicMode, hideHeader, generationReady }: JobPostingProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  if (error) {
-    return (
-      <div className="max-w-3xl mx-auto px-6 py-10 text-sm text-text-secondary">
-        Could not load job posting data.
-      </div>
-    );
-  }
+  if (error) return <TailoringErrorState message={error} jobUrl={jobUrl} />;
 
   if (!data) {
     return (

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Copy, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MatchAnalysis, chunksToMarkdown } from '@/components/dashboard/MatchAnalysis';
+import { ChunkAnalysis, chunksToMarkdown } from '@/components/dashboard/ChunkAnalysis';
 import type { ChunksResponse } from '@/types';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -22,6 +22,7 @@ interface DebugPanelProps {
   chunksError: string | null;
   title?: string | null;
   company?: string | null;
+  jobUrl?: string | null;
 }
 
 /* ─── Copy button ─────────────────────────────────────────────────────────── */
@@ -87,7 +88,7 @@ function CodeBlock({ text }: { text: string }) {
 
 /* ─── Component ──────────────────────────────────────────────────────────── */
 
-export function DebugPanel({ tailoringId, chunksData, chunksError, title, company }: DebugPanelProps) {
+export function DebugPanel({ tailoringId, chunksData, chunksError, title, company, jobUrl }: DebugPanelProps) {
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +144,7 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
         label="Chunk Analysis"
         onCopy={() => chunksData ? chunksToMarkdown(chunksData, title, company) : '(no chunk data)'}
       >
-        <MatchAnalysis data={chunksData} error={chunksError} />
+        <ChunkAnalysis data={chunksData} error={chunksError} jobUrl={jobUrl} />
       </DebugSection>
 
       {/* Profile */}

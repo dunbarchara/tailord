@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Loader2, Globe, Plus, User, Sun, Moon, LogOut, Settings, ChevronsUpDown, Trash2 } from 'lucide-react';
+import { Loader2, Globe, Plus, User, Sun, Moon, LogOut, Settings, ChevronsUpDown, Trash2, AlertCircle } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from '@/components/ThemeProvider';
 import {
@@ -188,6 +188,7 @@ function TailoringItem({
 }) {
   const label = tailoringLabel(tailoring);
   const generating = tailoring.generation_status === 'generating';
+  const failed = tailoring.generation_status === 'error';
   const Icon = generating
     ? ({ className }: { className?: string }) => <Loader2 className={cn(className, 'animate-spin')} />
     : IconWorkflows;
@@ -217,10 +218,18 @@ function TailoringItem({
         <Icon className="size-[18px] shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-normal tracking-[-0.1px] leading-5">{label}</p>
-          {(tailoring.company || generating) && (
-            <p className="truncate text-xs text-text-disabled leading-4 mt-0.5">
-              {generating && !tailoring.company ? 'Generating...' : tailoring.company}
-            </p>
+          {(tailoring.company || generating || failed) && (
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="truncate text-xs text-text-disabled leading-4 min-w-0">
+                {generating && !tailoring.company ? 'Generating...' : tailoring.company}
+              </p>
+              {failed && (
+                <span className="inline-flex items-center gap-1 py-0.5 px-1.5 rounded-md text-[10px] font-medium bg-red-100 dark:bg-red-950/20 text-red-600 dark:text-red-400 shrink-0">
+                  <AlertCircle className="h-2.5 w-2.5" />
+                  Failed
+                </span>
+              )}
+            </div>
           )}
         </div>
       </Link>

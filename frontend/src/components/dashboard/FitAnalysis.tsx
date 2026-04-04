@@ -4,6 +4,7 @@ import { Loader2, AlertCircle, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
+import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -12,6 +13,7 @@ interface FitAnalysisProps {
   error: string | null;
   title?: string | null;
   company?: string | null;
+  jobUrl?: string | null;
 }
 
 /* ─── Constants ──────────────────────────────────────────────────────────── */
@@ -75,6 +77,7 @@ export function fitAnalysisToText(
     const label = SCORE_CONFIG[variant].label.toUpperCase();
     lines.push(`[${label}] ${c.content}`);
     if (c.advocacy_blurb && variant !== 'gap') lines.push(`  → ${c.advocacy_blurb}`);
+    if (c.match_rationale && (variant === 'partial' || variant === 'gap')) lines.push(`  ~ ${c.match_rationale}`);
     lines.push('');
   }
 
@@ -109,10 +112,20 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
           <InlineMarkdown text={chunk.content} />
         </p>
 
-        {/* Advocacy blurb — Strong and Partial only */}
+        {/* Advocacy blurb — Strong and Partial */}
         {chunk.advocacy_blurb && variant !== 'gap' && (
           <p className="text-xs text-text-secondary leading-relaxed mb-2">
             <InlineMarkdown text={chunk.advocacy_blurb} />
+          </p>
+        )}
+
+        {/* Rationale — Partial (diagnostic: why it's partial) and Gap (actionable: what's missing) */}
+        {chunk.match_rationale && (variant === 'partial' || variant === 'gap') && (
+          <p className={cn(
+            'text-[11px] leading-relaxed mb-2',
+            variant === 'partial' ? 'text-text-tertiary' : 'text-text-secondary',
+          )}>
+            <InlineMarkdown text={chunk.match_rationale} />
           </p>
         )}
 
@@ -132,16 +145,9 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
 
 /* ─── Component ──────────────────────────────────────────────────────────── */
 
-export function FitAnalysis({ data, error, title, company }: FitAnalysisProps) {
+export function FitAnalysis({ data, error, title, company, jobUrl }: FitAnalysisProps) {
 
-  if (error) {
-    return (
-      <div className="flex items-center gap-2 p-6 text-sm text-text-secondary">
-        <AlertCircle className="h-4 w-4 text-error flex-shrink-0" />
-        {error}
-      </div>
-    );
-  }
+  if (error) return <TailoringErrorState message={error} jobUrl={jobUrl} />;
 
   if (!data) {
     return (
