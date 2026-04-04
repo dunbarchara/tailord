@@ -117,10 +117,15 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
         {chunk.advocacy_blurb && variant !== 'gap' && (
           <div className="flex items-center gap-1.5 mb-2">
             <HiOutlineSparkles className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
-            <p className="text-xs text-text-secondary leading-relaxed">
+            <p className="ml-[5px] text-xs text-text-secondary leading-relaxed">
               <InlineMarkdown text={chunk.advocacy_blurb} />
             </p>
           </div>
+        )}
+
+        {/* Divider between advocacy and rationale on partial matches */}
+        {chunk.advocacy_blurb && chunk.match_rationale && variant === 'partial' && (
+          <hr className="mb-2 border-border-strong" />
         )}
 
         {/* Rationale — Partial (diagnostic: why it's partial) and Gap (actionable: what's missing) */}
@@ -130,20 +135,20 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
             variant === 'partial' ? 'text-text-tertiary' : 'text-text-secondary',
           )}>
             <Info className="h-3.5 w-3.5 shrink-0" />
-            <p className="text-xs leading-relaxed italic">
+            <p className="ml-[5px] text-xs leading-relaxed italic">
               <InlineMarkdown text={chunk.match_rationale} />
             </p>
           </div>
         )}
 
-        {/* Source tag — Strong and Partial only */}
+        {/* Source — Strong and Partial only */}
         {source && variant !== 'gap' && (
-          <span className={cn(
-            'inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium border',
-            config.sourceCls,
-          )}>
-            {source}
-          </span>
+          <div className="flex items-center gap-1.5 text-text-tertiary">
+            <span className="w-3.5 shrink-0" />
+            <p className="ml-[5px] text-xs leading-relaxed">
+              Source: {source}
+            </p>
+          </div>
         )}
       </div>
     </div>
