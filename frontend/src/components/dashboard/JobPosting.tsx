@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Info, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
@@ -98,16 +98,22 @@ function ChunkItem({
             {chunk.advocacy_blurb && (
               <p className="text-xs text-text-secondary leading-relaxed">{chunk.advocacy_blurb}</p>
             )}
-            {chunk.advocacy_blurb && chunk.experience_source && (
+            {chunk.advocacy_blurb && chunk.experience_source && chunk.match_score !== 0 && (
               <hr className="my-1.5 border-border-strong" />
             )}
-            {chunk.experience_source && (
+            {chunk.experience_source && chunk.match_score !== 0 && (
               <p className="text-xs text-text-tertiary">
                 Source:{' '}
                 <span className="font-medium text-text-secondary">
                   {chunk.source_label ?? chunk.experience_source}
                 </span>
               </p>
+            )}
+            {!publicMode && chunk.match_score === 0 && chunk.match_rationale && (
+              <div className="flex items-center gap-1.5 text-text-tertiary">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                <p className="text-xs leading-relaxed italic">{chunk.match_rationale}</p>
+              </div>
             )}
           </div>
         </div>

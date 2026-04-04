@@ -1,6 +1,7 @@
 'use client';
 
 import { Loader2, AlertCircle, Info } from 'lucide-react';
+import { HiOutlineSparkles } from 'react-icons/hi2';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
@@ -114,19 +115,25 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
 
         {/* Advocacy blurb — Strong and Partial */}
         {chunk.advocacy_blurb && variant !== 'gap' && (
-          <p className="text-xs text-text-secondary leading-relaxed mb-2">
-            <InlineMarkdown text={chunk.advocacy_blurb} />
-          </p>
+          <div className="flex items-center gap-1.5 mb-2">
+            <HiOutlineSparkles className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+            <p className="text-xs text-text-secondary leading-relaxed">
+              <InlineMarkdown text={chunk.advocacy_blurb} />
+            </p>
+          </div>
         )}
 
         {/* Rationale — Partial (diagnostic: why it's partial) and Gap (actionable: what's missing) */}
         {chunk.match_rationale && (variant === 'partial' || variant === 'gap') && (
-          <p className={cn(
-            'text-[11px] leading-relaxed mb-2',
+          <div className={cn(
+            'flex items-center gap-1.5 mb-2',
             variant === 'partial' ? 'text-text-tertiary' : 'text-text-secondary',
           )}>
-            <InlineMarkdown text={chunk.match_rationale} />
-          </p>
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <p className="text-xs leading-relaxed italic">
+              <InlineMarkdown text={chunk.match_rationale} />
+            </p>
+          </div>
         )}
 
         {/* Source tag — Strong and Partial only */}
