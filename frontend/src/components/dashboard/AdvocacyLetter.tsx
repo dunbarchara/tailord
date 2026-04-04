@@ -4,6 +4,7 @@ import { CheckCircle2, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn, formatElapsed } from '@/lib/utils';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
+import { TailoringHeader } from '@/components/dashboard/TailoringHeader';
 import type { Tailoring } from '@/types';
 
 const REGEN_SSE_LABELS: Record<string, string> = {
@@ -14,9 +15,10 @@ interface AdvocacyLetterProps {
   tailoring: Tailoring;
   regenSsePhase: string | null;
   generationFailed: boolean;
+  authorName?: string | null;
 }
 
-export function AdvocacyLetter({ tailoring, regenSsePhase, generationFailed }: AdvocacyLetterProps) {
+export function AdvocacyLetter({ tailoring, regenSsePhase, generationFailed, authorName }: AdvocacyLetterProps) {
   if (generationFailed) {
     return (
       <TailoringErrorState
@@ -41,24 +43,13 @@ export function AdvocacyLetter({ tailoring, regenSsePhase, generationFailed }: A
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
-      <header className="mb-8 pb-5 border-b border-border-subtle">
-        <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
-          {tailoring.company ?? 'Tailoring'}
-        </p>
-        <h1 className="text-xl font-semibold text-text-primary">
-          {tailoring.title ?? ''}
-        </h1>
-        {tailoring.job_url && (
-          <a
-            href={tailoring.job_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block mt-2 text-sm text-text-link hover:underline"
-          >
-            View job posting →
-          </a>
-        )}
-      </header>
+      <TailoringHeader
+        company={tailoring.company}
+        title={tailoring.title}
+        jobUrl={tailoring.job_url}
+        authorName={authorName}
+        className="mb-8"
+      />
 
       {regenSsePhase && (
         <div className="flex items-center gap-2 mb-6 text-sm text-text-secondary animate-fade-in">

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw,
-  Lock, Globe, Link as LinkIcon, ChevronDown,
+  Lock, Globe, Link as LinkIcon, ChevronDown, Info,
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import { toast } from 'sonner';
@@ -128,6 +128,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
+  const [userName, setUserName] = useState<string | null>(null);
   const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
   const [exportingNotionPosting, setExportingNotionPosting] = useState(false);
   const [notionOpen, setNotionOpen] = useState(false);
@@ -150,6 +151,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         ]);
         setTailoring(tailoringData);
         setNotionConnected(!!userData?.notion_workspace_name);
+        const preferredName = [userData?.preferred_first_name, userData?.preferred_last_name]
+          .filter(Boolean).join(' ').trim() || userData?.name || null;
+        setUserName(preferredName);
       } catch {
         setError('Could not reach the server.');
       } finally {
@@ -698,6 +702,14 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
       </div>
 
+      {/* ── Preview banner ───────────────────────────────────────────────── */}
+      {(activeTab === 'letter' || activeTab === 'posting') && (
+        <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border-subtle bg-surface-base text-xs text-text-tertiary">
+          <Info className="h-3.5 w-3.5 shrink-0" />
+          This is a preview. Shared tailorings omit gaps and show partials as green.
+        </div>
+      )}
+
       {/* ── Content ─────────────────────────────────────────────────────── */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
         {activeTab === 'letter' && (
@@ -705,6 +717,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             tailoring={tailoring}
             regenSsePhase={regenSsePhase}
             generationFailed={generationFailed}
+            authorName={userName}
           />
         )}
         {activeTab === 'posting' && (
@@ -714,6 +727,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             title={tailoring.title}
             company={tailoring.company}
             jobUrl={tailoring.job_url}
+            authorName={userName}
             generationReady={tailoring.generation_status === 'ready'}
           />
         )}

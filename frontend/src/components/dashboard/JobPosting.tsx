@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
+import { TailoringHeader } from '@/components/dashboard/TailoringHeader';
 
 interface JobPostingProps {
   data: ChunksResponse | null;
@@ -13,6 +14,7 @@ interface JobPostingProps {
   title: string | null;
   company: string | null;
   jobUrl: string | null;
+  authorName?: string | null;
   publicMode?: boolean;
   hideHeader?: boolean;
   /** Whether the main tailoring generation has finished. When false, the posting analysis hasn't started yet. */
@@ -154,7 +156,7 @@ function SectionBlock({
   );
 }
 
-export function JobPosting({ data, error, title, company, jobUrl, publicMode, hideHeader, generationReady }: JobPostingProps) {
+export function JobPosting({ data, error, title, company, jobUrl, authorName, publicMode, hideHeader, generationReady }: JobPostingProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (error) return <TailoringErrorState message={error} jobUrl={jobUrl} />;
@@ -172,26 +174,14 @@ export function JobPosting({ data, error, title, company, jobUrl, publicMode, hi
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
-      {/* Header — matches Letter/public page style */}
       {!hideHeader && (
-        <header className="mb-8 pb-5 border-b border-border-subtle">
-          <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-1">
-            {company ?? 'Company'}
-          </p>
-          <h1 className="text-xl font-semibold text-text-primary">
-            {title ?? 'Job Posting'}
-          </h1>
-          {jobUrl && (
-            <a
-              href={jobUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block mt-2 text-sm text-text-link hover:underline"
-            >
-              View job posting →
-            </a>
-          )}
-        </header>
+        <TailoringHeader
+          company={company}
+          title={title}
+          jobUrl={jobUrl}
+          authorName={authorName}
+          className="mb-8"
+        />
       )}
 
       {/* Sections */}
