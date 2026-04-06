@@ -285,38 +285,10 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [x] Page creation order enforced: when a Letter is the first export into a fresh container, a "Job Posting" stub page is created first (claiming the top Notion sidebar position). When the user later exports Posting, the stub is overwritten via `update_notion_page`. If Posting is exported first, no stub is needed.
 
 #### Remaining — Frontend Rework
-- [ ] **FitAnalysis — rationale + advocacy per score level** — tiered display: Strong shows advocacy only (user already fits, advocacy tells them how to present it); Partial shows advocacy + rationale (advocacy for framing, rationale explains *why it's partial*, styled smaller/muted below); Gap shows rationale only (advocacy is null by design — rationale fills the currently empty card with actionable signal: what's missing and why). See `16-tailoring-detail-architecture.md` for full rationale. **Alternative:** expandable rationale behind a click (same pattern as JobPosting chunk expand) — keeps default cards clean, rationale one tap away. Tradeoff: lower discoverability, but rationale feels supplementary rather than primary. Worth exploring if the inline tiered approach feels too dense in practice.
-- [ ] **Generation timing + expectation setting** — the Analysis tab is now the default view, but its content (chunk enrichment) takes as long to complete as the Posting tab — both finish well after the Letter. A first-time user landing on Analysis after generation completes may see an empty or loading state with no context. Options to explore, in any combination: (1) a "this will take a few more minutes" message on the Analysis and Posting tabs while enrichment is pending, with a pointer to the Letter which is already available; (2) loading indicators on the Posting and Analysis tab labels themselves (spinner or pulsing dot) while enrichment is in progress; (3) a dismissible banner on the Analysis tab that surfaces when `enrichment_status` is pending/processing, explaining what's still running and when to check back; (4) auto-switch to the Letter tab immediately after generation completes so the user lands on ready content, with a subtle indicator that Analysis and Posting are still processing. The Letter is always ready first — lean into that as a "here's something to read right now" moment.
-- [ ] **Homepage `ProductPreview`** — still showing stylized mockup. Screenshot the real Analysis tab UI once satisfied with polish; consider showing both views (Analysis left, Enriched Posting right). See `16-tailoring-detail-architecture.md`.
-- [ ] Extend accent touchpoints to dashboard primary buttons and inline links (`--color-text-link`)
-
-#### Debug + Eval Pipeline (graduated roadmap)
-
-The `?debug=1` tab is Level 0 — a manual, per-tailoring inspection tool. The roadmap below builds toward automated quality measurement.
-
-**Level 1 — Metadata fields on `Tailoring` model** *(low effort, high payoff)*
-- Add `model_name` (string), `generation_duration_ms` (int), `chunk_batch_count` (int), `chunk_error_count` (int) columns to `Tailoring`
-- Populate during `_finalize_tailoring`: record the model used, wall-clock time from `generation_started_at` to complete, number of LLM batches dispatched, and how many resulted in parse errors
-- Surface in the Debug tab's model badge row (timing + batch stats) — no new UI needed beyond what the tab already shows
-- These fields make it possible to correlate model version, generation time, and error rate across tailorings without pulling log files
-
-**Level 2 — Profile snapshot on `Tailoring`** *(medium effort)*
-- Store a `profile_snapshot` JSON column on `Tailoring` at generation time: the exact `formatted_profile` string (or structured dict) sent to the LLM
-- Motivation: `Experience` is mutable — users edit it after tailorings are generated. The debug tab currently reconstructs the profile from the *current* experience, which may differ from what was used at generation time. A snapshot makes the debug view accurate and enables "what would change if I regenerated now?" comparisons.
-- Also enables future diff views between profile versions.
-
-**Level 3 — Debug log table** *(deferred, feature-flagged)*
-- A `tailoring_debug_logs` table: one row per generation run, storing `chunk_batch_payloads` (JSON), `chunk_batch_responses` (JSON), `llm_call_log` (sequence of model/prompt/response triples)
-- Gate behind a `DEBUG_LOGGING_ENABLED` env flag — off by default in production due to storage cost and PII in resume content
-- Enable selectively for specific users (add `debug_logging` flag to `User` model) or for local dev
-- This is the foundation for the eval pipeline (Level 4)
-
-**Level 4 — Eval pipeline** *(longer term)*
-- Build a test set of (job URL, profile) pairs with human-labeled expected chunk scores and advocacy blurb quality ratings
-- Eval runner: re-runs chunk matching on the test set using the current prompt + model, computes agreement with human labels (exact match, off-by-one tolerance)
-- Diff view: side-by-side comparison of two runs (e.g., prompt change A vs B, or model X vs Y) — highlight chunks where scores diverged
-- CI integration: run eval on PR when `prompts/chunk_matching.py` changes; fail (or warn) if agreement drops below threshold
-- This closes the loop on prompt iteration: changes to scoring rules or examples become measurable rather than anecdotal
+- [x] **FitAnalysis — rationale + advocacy per score level** — tiered display: Strong shows advocacy only; Partial shows advocacy + hr divider + rationale (italic, muted, Info icon); Gap shows rationale only (italic, Info icon, no source). Source rendered as plain text with icon-width spacer alignment (Strong/Partial only). HiOutlineSparkles icon on advocacy blurbs.
+- [x] **Generation timing + expectation setting** — replaced partial-loading tab interface with a dedicated `GenerationView` that hides the tab bar entirely during generation and enrichment. Tabs are revealed as a complete package only when both are settled. `GenerationView` shows a phase list (Extracting requirements → Matching to your profile → Writing your tailoring → Scoring requirements) with elapsed timer on the running phase, and a heading ("Generating your Tailoring — this could take a minute…"). Toolbar center shows pulsing "Generating…" text; toolbar buttons remain visible but disabled (regen enabled on failure). Sidebar spinner persists through enrichment via deferred `router.refresh()`.
+- [ ] **Homepage `ProductPreview`** — still showing stylized mockup. Low priority — revisit once the product surface is stable. See `16-tailoring-detail-architecture.md`.
+- ~~Extend accent touchpoints to dashboard primary buttons and inline links~~ — dropped. The charcoal/cream scheme is working well; more green in the dashboard would be counterproductive.
 
 ---
 
@@ -417,6 +389,36 @@ The `?debug=1` tab is Level 0 — a manual, per-tailoring inspection tool. The r
   - **Profile extraction (`profile_extractor.py`):** assert `summary` is non-empty and `work_experience` list is non-empty (or absent from resume — distinguish "no work history" from "extraction failure").
   - **Requirement matching (`requirement_matcher.py`):** assert at least one `RequirementMatch` result is returned.
   - Implement as a shared `llm_parse_with_retry(client, ..., validate_fn, max_retries=2)` wrapper around `llm_parse`, or as inline retry loops per call site — prefer the wrapper to avoid duplicating retry logic.
+
+---
+
+### Debug + Eval Pipeline (graduated roadmap)
+
+The `?debug=1` tab is Level 0 — a manual, per-tailoring inspection tool. The roadmap below builds toward automated quality measurement. Not user-facing; belongs in the platform phase alongside testing and hardening.
+
+**Level 1 — Metadata fields on `Tailoring` model** *(low effort, high payoff)*
+- Add `model_name` (string), `generation_duration_ms` (int), `chunk_batch_count` (int), `chunk_error_count` (int) columns to `Tailoring`
+- Populate during `_finalize_tailoring`: record the model used, wall-clock time from `generation_started_at` to complete, number of LLM batches dispatched, and how many resulted in parse errors
+- Surface in the Debug tab's model badge row (timing + batch stats) — no new UI needed beyond what the tab already shows
+- These fields make it possible to correlate model version, generation time, and error rate across tailorings without pulling log files
+
+**Level 2 — Profile snapshot on `Tailoring`** *(medium effort)*
+- Store a `profile_snapshot` JSON column on `Tailoring` at generation time: the exact `formatted_profile` string (or structured dict) sent to the LLM
+- Motivation: `Experience` is mutable — users edit it after tailorings are generated. The debug tab currently reconstructs the profile from the *current* experience, which may differ from what was used at generation time. A snapshot makes the debug view accurate and enables "what would change if I regenerated now?" comparisons.
+- Also enables future diff views between profile versions.
+
+**Level 3 — Debug log table** *(deferred, feature-flagged)*
+- A `tailoring_debug_logs` table: one row per generation run, storing `chunk_batch_payloads` (JSON), `chunk_batch_responses` (JSON), `llm_call_log` (sequence of model/prompt/response triples)
+- Gate behind a `DEBUG_LOGGING_ENABLED` env flag — off by default in production due to storage cost and PII in resume content
+- Enable selectively for specific users (add `debug_logging` flag to `User` model) or for local dev
+- This is the foundation for the eval pipeline (Level 4)
+
+**Level 4 — Eval pipeline** *(longer term)*
+- Build a test set of (job URL, profile) pairs with human-labeled expected chunk scores and advocacy blurb quality ratings
+- Eval runner: re-runs chunk matching on the test set using the current prompt + model, computes agreement with human labels (exact match, off-by-one tolerance)
+- Diff view: side-by-side comparison of two runs (e.g., prompt change A vs B, or model X vs Y) — highlight chunks where scores diverged
+- CI integration: run eval on PR when `prompts/chunk_matching.py` changes; fail (or warn) if agreement drops below threshold
+- This closes the loop on prompt iteration: changes to scoring rules or examples become measurable rather than anecdotal
 
 ---
 

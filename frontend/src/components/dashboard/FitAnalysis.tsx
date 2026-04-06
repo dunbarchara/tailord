@@ -15,6 +15,7 @@ interface FitAnalysisProps {
   title?: string | null;
   company?: string | null;
   jobUrl?: string | null;
+  authorName?: string | null;
 }
 
 /* ─── Constants ──────────────────────────────────────────────────────────── */
@@ -117,10 +118,15 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
         {chunk.advocacy_blurb && variant !== 'gap' && (
           <div className="flex items-center gap-1.5 mb-2">
             <HiOutlineSparkles className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
-            <p className="text-xs text-text-secondary leading-relaxed">
+            <p className="ml-[5px] text-xs text-text-secondary leading-relaxed">
               <InlineMarkdown text={chunk.advocacy_blurb} />
             </p>
           </div>
+        )}
+
+        {/* Divider between advocacy and rationale on partial matches */}
+        {chunk.advocacy_blurb && chunk.match_rationale && variant === 'partial' && (
+          <hr className="mb-2 border-border-strong" />
         )}
 
         {/* Rationale — Partial (diagnostic: why it's partial) and Gap (actionable: what's missing) */}
@@ -130,20 +136,20 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
             variant === 'partial' ? 'text-text-tertiary' : 'text-text-secondary',
           )}>
             <Info className="h-3.5 w-3.5 shrink-0" />
-            <p className="text-xs leading-relaxed italic">
+            <p className="ml-[5px] text-xs leading-relaxed italic">
               <InlineMarkdown text={chunk.match_rationale} />
             </p>
           </div>
         )}
 
-        {/* Source tag — Strong and Partial only */}
+        {/* Source — Strong and Partial only */}
         {source && variant !== 'gap' && (
-          <span className={cn(
-            'inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium border',
-            config.sourceCls,
-          )}>
-            {source}
-          </span>
+          <div className="flex items-center gap-1.5 text-text-tertiary">
+            <span className="w-3.5 shrink-0" />
+            <p className="ml-[5px] text-xs leading-relaxed">
+              Source: {source}
+            </p>
+          </div>
         )}
       </div>
     </div>
@@ -152,115 +158,124 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
 
 /* ─── Component ──────────────────────────────────────────────────────────── */
 
-export function FitAnalysis({ data, error, title, company, jobUrl }: FitAnalysisProps) {
-
-  if (error) return <TailoringErrorState message={error} jobUrl={jobUrl} />;
-
-  if (!data) {
-    return (
-      <div className="flex items-center gap-2 p-6 text-sm text-text-secondary">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading…
-      </div>
-    );
-  }
-
-  const isPending = data.enrichment_status === 'pending' || data.enrichment_status === 'processing';
-  const isError = data.enrichment_status === 'error';
-
-  const scored = data.chunks.filter(c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1);
+export function FitAnalysis({ data, error, title, company, jobUrl, authorName }: FitAnalysisProps) {
+  const scored = data
+    ? data.chunks.filter(c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1)
+    : [];
   const strong = scored.filter(c => c.match_score === 2);
   const partial = scored.filter(c => c.match_score === 1);
   const gap = scored.filter(c => c.match_score === 0);
   const hasAny = scored.length > 0;
+  const isPending = data && (data.enrichment_status === 'pending' || data.enrichment_status === 'processing');
+  const isError = data && data.enrichment_status === 'error';
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-8">
 
-      {/* Pending */}
-      {isPending && (
-        <div className="flex items-center gap-2 mb-6 text-sm text-text-secondary">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Analyzing your fit…
+      {error && <TailoringErrorState message={error} jobUrl={jobUrl} />}
+
+      {!error && !data && (
+        <div className="flex items-center gap-2 text-sm text-text-secondary">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading…
         </div>
       )}
 
-      {/* Error */}
-      {isError && (
-        <div className="flex items-center gap-2 mb-6 text-sm text-error">
-          <AlertCircle className="h-3.5 w-3.5" />
-          Analysis failed — try regenerating this tailoring.
-        </div>
-      )}
-
-      {/* No data */}
-      {!hasAny && !isPending && !isError && (
-        <p className="text-sm text-text-tertiary">No match data available.</p>
-      )}
-
-      {hasAny && (
-        <div className="rounded-3xl border border-border-subtle bg-surface-elevated shadow-md overflow-hidden">
-
-          {/* Header bar */}
-          <div
-            className="px-5 py-4 border-b border-border-subtle flex items-center justify-between gap-4"
-            style={{ backgroundColor: 'var(--color-brand-accent-subtle)' }}
-          >
-            <div className="min-w-0">
-              {company && (
-                <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-0.5 truncate">
-                  {company}
-                </p>
-              )}
-              {title && (
-                <p className="text-sm font-semibold text-text-primary truncate">
-                  {title}
-                </p>
-              )}
-              {!company && !title && (
-                <p className="text-sm font-semibold text-text-primary">Fit Analysis</p>
-              )}
+      {!error && data && (
+        <>
+          {isPending && (
+            <div className="flex items-center gap-2 mb-6 text-sm text-text-secondary">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Analyzing your fit…
             </div>
-            <div className="flex items-center gap-3 text-xs text-text-tertiary flex-shrink-0">
-              {strong.length > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-score-strong" />
-                  {strong.length} Strong
-                </span>
-              )}
-              {partial.length > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-score-partial" />
-                  {partial.length} Partial
-                </span>
-              )}
-              {gap.length > 0 && (
-                <span className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-score-gap" />
-                  {gap.length} Gap
-                </span>
-              )}
+          )}
+          {isError && (
+            <div className="flex items-center gap-2 mb-6 text-sm text-error">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Analysis failed — try regenerating this tailoring.
             </div>
-          </div>
+          )}
+          {!hasAny && !isPending && !isError && (
+            <p className="text-sm text-text-tertiary">No match data available.</p>
+          )}
 
-          {/* Context blurb */}
-          <div className="px-5 py-3 border-b border-border-subtle bg-surface-base flex items-start gap-2">
-            <Info className="h-3.5 w-3.5 text-text-disabled mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-text-tertiary leading-relaxed">
-              Requirements extracted from the job posting, scored against your saved experience.
-              Strong and Partial matches include supporting evidence from your profile.
-              Gaps are requirements without a direct match — add context to your experience to address them.
-            </p>
-          </div>
+          {hasAny && (
+            <div className="rounded-3xl border border-border-subtle bg-surface-elevated shadow-md overflow-hidden">
 
-          {/* Requirement cards — in original posting order */}
-          <div className="divide-y divide-border-subtle">
-            {scored.map(c => (
-              <MatchCard key={c.id} chunk={c} />
-            ))}
-          </div>
+              {/* Header bar */}
+              <div
+                className="px-5 py-4 border-b border-border-subtle flex items-center justify-between gap-4"
+                style={{ backgroundColor: 'var(--color-brand-accent-subtle)' }}
+              >
+                <div className="min-w-0">
+                  {(company || authorName) && (
+                    <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary mb-0.5 truncate">
+                      {company && <span>{company}</span>}
+                      {company && authorName && <span> · </span>}
+                      {authorName && <span>{authorName}</span>}
+                    </p>
+                  )}
+                  {title && (
+                    <p className="text-sm font-semibold text-text-primary truncate">
+                      {title}
+                    </p>
+                  )}
+                  {!company && !title && !authorName && (
+                    <p className="text-sm font-semibold text-text-primary">Fit Analysis</p>
+                  )}
+                  {jobUrl && (
+                    <a
+                      href={jobUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block mt-1 text-sm text-text-link hover:underline"
+                    >
+                      View job posting →
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 text-xs text-text-tertiary flex-shrink-0">
+                  {strong.length > 0 && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-score-strong" />
+                      {strong.length} Strong
+                    </span>
+                  )}
+                  {partial.length > 0 && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-score-partial" />
+                      {partial.length} Partial
+                    </span>
+                  )}
+                  {gap.length > 0 && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-score-gap" />
+                      {gap.length} Gap
+                    </span>
+                  )}
+                </div>
+              </div>
 
-        </div>
+              {/* Context blurb */}
+              <div className="px-5 py-3 border-b border-border-subtle bg-surface-base flex items-start gap-2">
+                <Info className="h-3.5 w-3.5 text-text-disabled mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-text-tertiary leading-relaxed">
+                  Requirements extracted from the job posting, scored against your saved experience.
+                  Strong and Partial matches include supporting evidence from your profile.
+                  Gaps are requirements without a direct match — add context to your experience to address them.
+                </p>
+              </div>
+
+              {/* Requirement cards — in original posting order */}
+              <div className="divide-y divide-border-subtle">
+                {scored.map(c => (
+                  <MatchCard key={c.id} chunk={c} />
+                ))}
+              </div>
+
+            </div>
+          )}
+        </>
       )}
 
     </div>

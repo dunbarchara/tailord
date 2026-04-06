@@ -24,6 +24,8 @@ import { FitAnalysis, fitAnalysisToText } from '@/components/dashboard/FitAnalys
 import { JobPosting } from '@/components/dashboard/JobPosting';
 import { DebugPanel } from '@/components/dashboard/DebugPanel';
 import { AdvocacyLetter } from '@/components/dashboard/AdvocacyLetter';
+import { GenerationView } from '@/components/dashboard/GenerationView';
+import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
 import type { Tailoring, ChunksResponse } from '@/types';
 
 const POLL_INTERVAL = 3000;
@@ -132,6 +134,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
   const [exportingNotionPosting, setExportingNotionPosting] = useState(false);
   const [notionOpen, setNotionOpen] = useState(false);
+  // Track enrichment status transitions so we can call router.refresh() exactly once
+  // when enrichment settles, keeping the sidebar spinner alive through the enrichment phase.
+  const prevEnrichmentStatusRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     async function load() {
@@ -150,6 +155,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           userRes.ok ? userRes.json() : null,
         ]);
         setTailoring(tailoringData);
+        if (tailoringData.generation_status === 'error') {
+          router.refresh();
+        }
         setNotionConnected(!!userData?.notion_workspace_name);
         const preferredName = [userData?.preferred_first_name, userData?.preferred_last_name]
           .filter(Boolean).join(' ').trim() || userData?.name || null;
@@ -172,7 +180,10 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         const data = await res.json();
         const titleJustResolved = !tailoring?.title && data.title;
         setTailoring(data);
-        if (titleJustResolved || data.generation_status !== 'generating') {
+        // Refresh on title resolution (sidebar shows the title) and on error (shows Failed badge).
+        // Do NOT refresh when status → 'ready': the sidebar spinner should stay until enrichment
+        // completes. The chunks polling effect will call router.refresh() when enrichment settles.
+        if (titleJustResolved || data.generation_status === 'error') {
           router.refresh();
         }
         if (data.generation_status !== 'generating') {
@@ -189,10 +200,11 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   }, [tailoringId, tailoring?.generation_status]);
 
   useEffect(() => {
-    if (!tailoring || tailoring.generation_status !== 'generating') return;
+    const enrichmentDone = chunksData?.enrichment_status === 'complete' || chunksData?.enrichment_status === 'error';
+    if (!tailoring || (tailoring.generation_status !== 'generating' && enrichmentDone)) return;
     const interval = setInterval(() => setElapsedTick(t => t + 1), 1000);
     return () => clearInterval(interval);
-  }, [tailoring?.generation_status]);
+  }, [tailoring?.generation_status, chunksData?.enrichment_status]);
 
   useEffect(() => {
     // Don't poll if generation already failed — enrichment will never complete
@@ -210,8 +222,17 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         }
         const json: ChunksResponse = await res.json();
         setChunksData(json);
+        const prevStatus = prevEnrichmentStatusRef.current;
+        prevEnrichmentStatusRef.current = json.enrichment_status;
+        const enrichmentJustSettled =
+          (json.enrichment_status === 'complete' || json.enrichment_status === 'error') &&
+          prevStatus !== undefined &&  // skip on first fetch (no transition observed yet)
+          prevStatus !== 'complete' && prevStatus !== 'error';
         if (json.enrichment_status === 'complete' || json.enrichment_status === 'error') {
           if (interval) clearInterval(interval);
+        }
+        if (enrichmentJustSettled) {
+          router.refresh();
         }
       } catch {
         setChunksError('Could not reach the server.');
@@ -404,11 +425,23 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
 
   const generationFailed = tailoring.generation_status === 'error';
   const enrichmentComplete = chunksData?.enrichment_status === 'complete';
+  // Enrichment is settled once it's complete, errored, or the chunks API itself failed
+  const enrichmentSettled = enrichmentComplete || chunksData?.enrichment_status === 'error' || !!chunksError;
+  // Show the generation view (hiding tabs) while generation or enrichment is still running
+  const showGenerationView = !generationFailed && (
+    tailoring.generation_status === 'generating' ||
+    (tailoring.generation_status === 'ready' && !enrichmentSettled)
+  );
   const effectiveChunksError = chunksError ?? (
     generationFailed && !enrichmentComplete
       ? (tailoring.generation_error ?? 'Generation failed — try regenerating this tailoring.')
       : null
   );
+
+  const startedAt = tailoring.generation_started_at
+    ? new Date(tailoring.generation_started_at).getTime()
+    : null;
+  const elapsed = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
 
   const createdDate = new Date(tailoring.created_at).toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
@@ -454,69 +487,78 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           )}
         </div>
 
-        {/* Center: segment tabs — grid col 2, naturally centered */}
+        {/* Center: segment tabs — hidden during generation/error */}
         <div className="flex items-center gap-1.5">
-          {/* Analysis pill */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('analysis')}
-            className={cn(
-              'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
-              activeTab === 'analysis'
-                ? 'bg-surface-overlay border-border-strong text-text-primary'
-                : 'bg-surface-elevated border-border-default text-text-secondary hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary'
-            )}
-          >
-            Analysis
-          </button>
-
-          {/* Text divider */}
-          <span className="text-border-strong text-sm select-none">|</span>
-
-          {/* Posting + Letter joined pill */}
-          <div className="flex rounded-[8px] border border-border-default overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setActiveTab('posting')}
-              className={cn(
-                'px-3 h-7 text-sm font-normal tracking-[-0.1px] border-r border-border-default transition-colors whitespace-nowrap',
-                activeTab === 'posting'
-                  ? 'bg-surface-overlay text-text-primary'
-                  : 'bg-surface-elevated text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
-              )}
-            >
-              Posting
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('letter')}
-              className={cn(
-                'px-3 h-7 text-sm font-normal tracking-[-0.1px] transition-colors whitespace-nowrap',
-                activeTab === 'letter'
-                  ? 'bg-surface-overlay text-text-primary'
-                  : 'bg-surface-elevated text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
-              )}
-            >
-              Letter
-            </button>
-          </div>
-
-          {/* Debug tab — only when ?debug=1 */}
-          {isDebug && (
+          {showGenerationView && (
+            <span className="text-sm text-text-disabled animate-pulse tracking-[-0.1px] select-none">
+              Generating…
+            </span>
+          )}
+          {!showGenerationView && !generationFailed && (
             <>
-              <span className="text-border-strong text-sm select-none">|</span>
+              {/* Analysis pill */}
               <button
                 type="button"
-                onClick={() => setActiveTab('debug')}
+                onClick={() => setActiveTab('analysis')}
                 className={cn(
                   'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
-                  activeTab === 'debug'
+                  activeTab === 'analysis'
                     ? 'bg-surface-overlay border-border-strong text-text-primary'
                     : 'bg-surface-elevated border-border-default text-text-secondary hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary'
                 )}
               >
-                Debug
+                Analysis
               </button>
+
+              {/* Text divider */}
+              <span className="text-border-strong text-sm select-none">|</span>
+
+              {/* Posting + Letter joined pill */}
+              <div className="flex rounded-[8px] border border-border-default overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('posting')}
+                  className={cn(
+                    'px-3 h-7 text-sm font-normal tracking-[-0.1px] border-r border-border-default transition-colors whitespace-nowrap',
+                    activeTab === 'posting'
+                      ? 'bg-surface-overlay text-text-primary'
+                      : 'bg-surface-elevated text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
+                  )}
+                >
+                  Posting
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('letter')}
+                  className={cn(
+                    'px-3 h-7 text-sm font-normal tracking-[-0.1px] transition-colors whitespace-nowrap',
+                    activeTab === 'letter'
+                      ? 'bg-surface-overlay text-text-primary'
+                      : 'bg-surface-elevated text-text-secondary hover:bg-surface-overlay hover:text-text-primary'
+                  )}
+                >
+                  Letter
+                </button>
+              </div>
+
+              {/* Debug tab — only when ?debug=1 */}
+              {isDebug && (
+                <>
+                  <span className="text-border-strong text-sm select-none">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('debug')}
+                    className={cn(
+                      'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
+                      activeTab === 'debug'
+                        ? 'bg-surface-overlay border-border-strong text-text-primary'
+                        : 'bg-surface-elevated border-border-default text-text-secondary hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary'
+                    )}
+                  >
+                    Debug
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -528,7 +570,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           <button
             type="button"
             onClick={handleCopy}
-            disabled={!canCopy || generationFailed}
+            disabled={showGenerationView || !canCopy}
             title={copied ? 'Copied!' : 'Copy content'}
             className={cn(iconBtnCls, copied && 'text-success hover:text-success')}
           >
@@ -543,7 +585,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               <button
                 type="button"
                 title="Export to Notion"
-                disabled={generationFailed}
+                disabled={showGenerationView || generationFailed}
                 className={iconBtnCls}
               >
                 <SiNotion className="h-4 w-4" />
@@ -590,7 +632,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           <button
             type="button"
             onClick={() => setShowRegenConfirm(true)}
-            disabled={regenerating}
+            disabled={regenerating || showGenerationView}
             title={regenerating ? 'Regenerating…' : 'Regenerate'}
             className={iconBtnCls}
           >
@@ -604,7 +646,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           {/* Share — Publish style */}
           <Popover open={shareOpen} onOpenChange={setShareOpen}>
             <PopoverTrigger asChild>
-              <button type="button" disabled={generationFailed} className={textBtnCls}>
+              <button type="button" disabled={showGenerationView || generationFailed} className={textBtnCls}>
                 {anyPublic
                   ? <Globe className="h-3.5 w-3.5 text-brand-accent" />
                   : <Lock className="h-3.5 w-3.5" />}
@@ -702,8 +744,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
         </div>
       </div>
 
-      {/* ── Preview banner ───────────────────────────────────────────────── */}
-      {(activeTab === 'letter' || activeTab === 'posting') && (
+      {/* ── Preview banner (letter / posting tabs only) ───────────────────── */}
+      {!showGenerationView && !generationFailed && (activeTab === 'letter' || activeTab === 'posting') && (
         <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border-subtle bg-surface-base text-xs text-text-tertiary">
           <Info className="h-3.5 w-3.5 shrink-0" />
           This is a preview. Shared tailorings omit gaps and show partials as green.
@@ -711,45 +753,69 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       )}
 
       {/* ── Content ─────────────────────────────────────────────────────── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
-        {activeTab === 'letter' && (
-          <AdvocacyLetter
+      <div ref={scrollRef} className="flex-1 overflow-y-scroll custom-scrollbar">
+
+        {/* Generation in progress */}
+        {showGenerationView && (
+          <GenerationView
             tailoring={tailoring}
             regenSsePhase={regenSsePhase}
-            generationFailed={generationFailed}
-            authorName={userName}
+            enrichmentSettled={enrichmentSettled}
+            elapsed={elapsed}
           />
         )}
-        {activeTab === 'posting' && (
-          <JobPosting
-            data={chunksData}
-            error={effectiveChunksError}
-            title={tailoring.title}
-            company={tailoring.company}
-            jobUrl={tailoring.job_url}
-            authorName={userName}
-            generationReady={tailoring.generation_status === 'ready'}
-          />
-        )}
-        {activeTab === 'analysis' && (
-          <FitAnalysis
-            data={chunksData}
-            error={effectiveChunksError}
-            title={tailoring.title}
-            company={tailoring.company}
+
+        {/* Generation failed */}
+        {generationFailed && (
+          <TailoringErrorState
+            message={tailoring.generation_error ?? 'Generation failed — try regenerating this tailoring.'}
             jobUrl={tailoring.job_url}
           />
         )}
-        {activeTab === 'debug' && (
-          <DebugPanel
-            tailoringId={tailoring.id}
-            chunksData={chunksData}
-            chunksError={effectiveChunksError}
-            title={tailoring.title}
-            company={tailoring.company}
-            jobUrl={tailoring.job_url}
-          />
+
+        {/* Tabs — revealed once generation and enrichment are both complete */}
+        {!showGenerationView && !generationFailed && (
+          <>
+            {activeTab === 'letter' && (
+              <AdvocacyLetter
+                tailoring={tailoring}
+                authorName={userName}
+              />
+            )}
+            {activeTab === 'posting' && (
+              <JobPosting
+                data={chunksData}
+                error={effectiveChunksError}
+                title={tailoring.title}
+                company={tailoring.company}
+                jobUrl={tailoring.job_url}
+                authorName={userName}
+                generationReady={tailoring.generation_status === 'ready'}
+              />
+            )}
+            {activeTab === 'analysis' && (
+              <FitAnalysis
+                data={chunksData}
+                error={effectiveChunksError}
+                title={tailoring.title}
+                company={tailoring.company}
+                jobUrl={tailoring.job_url}
+                authorName={userName}
+              />
+            )}
+            {activeTab === 'debug' && (
+              <DebugPanel
+                tailoringId={tailoring.id}
+                chunksData={chunksData}
+                chunksError={effectiveChunksError}
+                title={tailoring.title}
+                company={tailoring.company}
+                jobUrl={tailoring.job_url}
+              />
+            )}
+          </>
         )}
+
       </div>
 
       {/* ── Dialogs ──────────────────────────────────────────────────────── */}

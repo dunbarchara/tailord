@@ -91,6 +91,57 @@ The MCP server is probably the highest-signal starting point because it forces y
 
 ---
 
+---
+
+## Headless Enrichment Layer — Job Board Integration
+
+*A distinct and higher-leverage B2B direction: Tailord as infrastructure, not product.*
+
+### The Model
+
+Job boards with user accounts already have the two inputs Tailord needs: a user's stored resume/experience, and a specific job posting. What they lack is the enrichment layer — structured scoring, advocacy blurbs, fit analysis.
+
+The vision: a job board like Ashby, Greenhouse, or Lever could pass user context to Tailord's backend and get back enriched, structured data for any given job posting. The user never knows Tailord exists — Ashby surfaces the analysis in their own UI, in their own voice.
+
+This is Tailord as an enrichment microservice. The platform retains its brand and UX; Tailord provides the intelligence.
+
+### What This Requires
+
+- **A backend-to-backend auth model**: the job board authenticates to Tailord's API with a partner API key; user context (resume text, structured experience) is passed per-request or stored as a Tailord profile tied to that user's identity in the job board's system
+- **A clean request/response contract**: `POST /enrich` — body contains job URL (or raw job text) + user profile (or a reference to a stored profile); response returns chunks with scores, advocacy blurbs, and fit summary
+- **No UI dependency**: the enrichment pipeline must work headlessly — no SSE stream a human watches, just a synchronous or async job that returns structured JSON
+- **Webhooks or polling**: for async enrichment (which takes 30–45s), the partner either polls a job ID or receives a webhook when enrichment is complete
+
+### Two Consumer Postures
+
+The enrichment output can be surfaced in fundamentally different directions depending on who the job board chooses to show it to:
+
+**Candidate-facing**: The job board surfaces enriched views to the applicant — "here's how you match this role, here's what to emphasize." The candidate sees the intelligence before or during their application. Tailord's role: score the candidate's profile against the posting before they apply.
+
+**Recruiter/hiring-team-facing**: The job board surfaces enriched views to the hiring team, not the candidate. The candidate submits an application normally; the recruiter sees structured scoring and sourced claims for each applicant vs. the role — automated screening intelligence. The candidate never knows enrichment happened. Tailord's role: score submitted applications against the role spec after they apply.
+
+Both postures use the same Tailord enrichment pipeline. The difference is entirely in how the job board chooses to surface the output. Tailord doesn't need to know or care which direction the data flows — that's the partner's product decision. This makes the integration model clean: one API, two very different product experiences.
+
+The recruiter-facing posture is particularly interesting because it puts Tailord's intelligence in front of the people who act on it — hiring decisions — rather than adding it to the already-crowded candidate workflow.
+
+### Why This Direction Is Compelling
+
+- Tailord's differentiation (honest scoring, advocate-voice blurbs, requirement-level analysis) is most valuable *inside* the hiring workflow, not as a separate tool users have to remember to use
+- Most job seekers don't seek out external tools — they use what's in front of them. Embedding Tailord's intelligence in the platform they're already on removes the activation barrier entirely
+- From a business model perspective: API usage billed per enrichment call scales better than per-seat SaaS, and the partner handles all user acquisition
+- This is the model Clearbit used for enrichment, or how Stripe powers payments inside other products — infrastructure that's invisible to end users but essential to the experience
+
+### Design Constraint
+
+The current generation pipeline is SSE-based and designed for a human watching a progress list. A headless mode needs:
+1. A synchronous blocking endpoint (for short jobs) or an async job ID + poll/webhook pattern
+2. The same enrichment pipeline, but without any SSE events or stage-tracking UI concerns
+3. A stripped-down response schema — just the data the partner needs, no internal debug fields
+
+This is achievable as a thin wrapper around the existing `_finalize_tailoring` + chunk enrichment pipeline.
+
+---
+
 ## Suggested Starting Point
 
 1. Clean up the OpenAPI schema (already partial — mostly naming/description work)
