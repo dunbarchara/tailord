@@ -78,7 +78,7 @@ jobs:
       - name: pytest
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/app_test
+          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/app_test
           API_KEY: test-key
           LLM_BASE_URL: http://localhost:1234/v1
           LLM_MODEL: test-model
