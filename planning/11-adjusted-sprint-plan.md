@@ -420,7 +420,7 @@ Single workflow (`.github/workflows/ci.yml`) with parallel jobs, triggering on e
 
 #### Container scanning (deploy workflow)
 
-- [x] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — `aquasecurity/trivy-action@0.29.0` runs after each `docker build`, before `docker push`. Build+push steps split into three separate steps (build → scan → push) for both frontend and backend images.
+- [x] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — `aquasecurity/trivy-action@v0.35.0` runs after each `docker build`, before `docker push`. Build+push steps split into three separate steps (build → scan → push) for both frontend and backend images.
 - [x] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
 
 ---
