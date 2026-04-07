@@ -390,38 +390,38 @@ Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contribu
 
 Single workflow (`.github/workflows/ci.yml`) with parallel jobs, triggering on every PR to `main` and push to `main`.
 
-- [ ] **pre-commit job**: runs `pre-commit run --all-files` — covers gitleaks secret scan, ruff lint, and standard hooks across the whole repo. Fastest feedback loop for secrets and style issues.
-- [ ] **Backend job** (parallel):
+- [x] **pre-commit job**: runs `pre-commit run --all-files` with `SKIP=eslint-frontend` — covers gitleaks secret scan, ruff lint, and standard hooks. ESLint skipped here; runs as a dedicated step in the frontend job.
+- [x] **Backend job** (parallel):
   - `uv run ruff check backend/` — lint gate
-  - `uv run bandit -r backend/app/ -ll` — Python SAST (checks for `eval`, subprocess injection, hardcoded passwords, etc.). `-ll` = medium+ severity only, avoids noise.
+  - `uv run bandit -r app/ -ll -q` — Python SAST. Fixed two real issues it surfaced: `requests.post` (notion OAuth) and `requests.get` (GitHub API) had no timeout — added `timeout=15` and `timeout=10` respectively.
   - `uv run pip-audit` — dependency CVE scan against `uv.lock`
-  - `uv run pytest` — test suite
-- [ ] **Frontend job** (parallel):
+  - `uv run pytest` — test suite with real PostgreSQL service container (`postgres:16-alpine`); `app_test` DB created via psql before test run
+  - `bandit[toml]` and `pip-audit` added to `[dependency-groups] dev` in `pyproject.toml`
+- [x] **Frontend job** (parallel):
   - `npm run lint` — ESLint including `eslint-plugin-security` rules
-  - `npm run build` — type-check + build (catches TypeScript errors CI-wide)
-  - `npm test` — Jest unit tests
+  - `npm run build` — type-check + Next.js compile; dummy `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `API_BASE_URL`, `API_KEY` provided as env vars (Next.js validates them at build time)
+  - `npm test -- --ci` — Jest in non-interactive mode
   - `npm audit --audit-level=high` — dependency CVE scan, high+ severity only
-- [ ] **Infra job** (parallel, triggered only on changes to `infra/**`):
-  - `checkov -d infra/providers/azure/ --framework terraform` — IaC misconfiguration scan (open ports, missing encryption, IAM over-permission). Skip in PRs that don't touch `infra/`.
-- [ ] Cache `uv` deps and `node_modules` between runs — target < 4 min total
-- [ ] Branch protection rule on `main`: require all CI jobs to pass before merge
+- [x] **Infra job** (parallel): `checkov -d infra/providers/azure/ --framework terraform --compact --quiet` — runs on every PR (Checkov is fast; job-level path filtering not supported natively in GitHub Actions)
+- [x] Cache: `astral-sh/setup-uv@v5` with `enable-cache: true` (uv store); `actions/setup-node@v4` with `cache: npm`
+- [ ] Branch protection rule on `main`: require all CI jobs to pass before merge — **GitHub UI setting, not a file change. Go to repo Settings → Branches → Add rule for `main`, check "Require status checks to pass" and select: `pre-commit`, `backend`, `frontend`, `infra`.**
 
 ---
 
 #### Dependabot
 
-- [ ] Add `.github/dependabot.yml` — enables automated PRs for outdated/vulnerable dependencies:
-  - `npm` ecosystem → `frontend/`, weekly
-  - `pip` ecosystem → `backend/`, weekly
-  - `github-actions` ecosystem → `.github/workflows/`, weekly
-- [ ] Dependabot PRs are gated by the same CI workflow — they only land if tests + security scans pass
+- [x] Add `.github/dependabot.yml` — enables automated PRs for outdated/vulnerable dependencies:
+  - `npm` ecosystem → `frontend/`, weekly Monday
+  - `pip` ecosystem → `backend/`, weekly Monday
+  - `github-actions` ecosystem → `.github/workflows/`, weekly Monday
+- [x] Dependabot PRs are gated by the same CI workflow — they only land if tests + security scans pass
 
 ---
 
 #### Container scanning (deploy workflow)
 
-- [ ] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — runs after the Docker image is built but before it is pushed to ACR. Blocks deploy on critical CVEs in the OS layer or installed packages. Both frontend and backend images scanned.
-- [ ] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
+- [x] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — `aquasecurity/trivy-action@0.29.0` runs after each `docker build`, before `docker push`. Build+push steps split into three separate steps (build → scan → push) for both frontend and backend images.
+- [x] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
 
 ---
 

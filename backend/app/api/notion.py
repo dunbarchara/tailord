@@ -62,6 +62,7 @@ def notion_callback(
             "code": code,
             "redirect_uri": settings.notion_redirect_uri,
         },
+        timeout=15,
     )
 
     if response.status_code != 200:
