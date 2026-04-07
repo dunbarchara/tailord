@@ -330,9 +330,9 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [x] Verify alembic migrations — two raw SQL usages, both safe: `sa.text("now()")` is the standard `server_default` pattern (fixed fragment, no user input); `op.execute("UPDATE tailorings SET letter_public = is_public")` is a fully hardcoded one-time data backfill in `b8c9d0e1f2a3`.
 
 #### Secrets & Config
-- [ ] Grep for hardcoded secrets, API keys, connection strings in source
-- [ ] Confirm `.env` files are gitignored and untracked
-- [ ] Review Azure Key Vault usage — confirm all production secrets come from Key Vault, not plain Container App env vars
+- [x] **Grep for hardcoded secrets:** `grep -rn` across all `.py` and `.ts`/`.tsx` files for API key patterns — **no matches**. Source is clean.
+- [x] **`.env` files gitignored and untracked:** Three local `.env` files exist (`infra/providers/azure/.env.prod`, `frontend/.env.local`, `backend/.env`). Root `.gitignore` covers all three (`.env` matches `backend/.env`; `.env.*` matches the other two, including the subdirectory path — confirmed via `git check-ignore`). None are tracked (`git ls-files` returns empty for all three).
+- [x] **Azure Key Vault usage:** All production secrets — `database-url`, `api-key`, `storage-connection-string`, `nextauth-secret`, `google-client-id`, `google-client-secret`, `llm-api-key`, `notion-client-id`, `notion-client-secret` — are stored in Key Vault and injected into Container Apps via `key_vault_secret_id` references (not hardcoded plain env vars). Container Apps managed identity (`azurerm_user_assigned_identity.container_apps`) holds `Key Vault Secrets User` RBAC role. Terraform deployer holds `Key Vault Secrets Officer`. No plaintext secret values in `main.tf` env blocks. ✓
 
 #### Cost & Performance
 - [ ] Confirm Playwright timeout applies to both navigation and content extraction
