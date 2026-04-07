@@ -69,6 +69,11 @@ class Experience(Base):
     processed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Set at request time (before processing begins) — used for the 5-min cooldown check.
+    # processed_at captures completion; this captures the trigger.
+    last_process_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     user: Mapped["User"] = relationship("User", back_populates="experience")
 
@@ -116,6 +121,11 @@ class Tailoring(Base):
     generation_stage: Mapped[str | None] = mapped_column(String, nullable=True)
     generation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     generation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set when generation completes (status → "ready"). Pairs with generation_started_at
+    # to give wall-clock generation time without log parsing.
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set at the API boundary when a regen is triggered — UI "last refreshed" display field.
+    last_regenerated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     enrichment_status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     letter_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     posting_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -140,6 +150,31 @@ class Tailoring(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="tailorings")
     job: Mapped["Job"] = relationship("Job", back_populates="tailorings")
+
+
+class LlmTriggerLog(Base):
+    """
+    One row per LLM pipeline trigger. Used for sliding-window rate limiting.
+
+    Storing triggers in a separate table (rather than updating a timestamp on the
+    parent row) is necessary because a user can trigger the same Tailoring multiple
+    times — last_regenerated_at would only record the most recent event, making 10
+    rapid regens on one tailoring look like a single event in the last hour.
+
+    event_type values: 'tailoring_create' | 'tailoring_regen' | 'experience_process'
+    """
+    __tablename__ = "llm_trigger_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class JobChunk(Base):

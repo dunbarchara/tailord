@@ -1,7 +1,7 @@
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,7 +13,7 @@ from app.auth import require_api_key
 from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
-from app.models.database import Experience, User
+from app.models.database import Experience, LlmTriggerLog, User
 from app.services.experience_processor import (
     _friendly_processing_error,
     _normalize_resume_text,
@@ -25,6 +25,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
+
+# Minimum gap between experience processing triggers per user.
+_EXPERIENCE_PROCESS_COOLDOWN_MINUTES = 5
 
 
 def _has_non_resume_sources(e: Experience) -> bool:
@@ -170,7 +173,19 @@ async def trigger_process(
     if not experience:
         raise HTTPException(status_code=404, detail="Experience record not found")
 
+    if experience.last_process_requested_at:
+        cooldown_end = experience.last_process_requested_at + timedelta(minutes=_EXPERIENCE_PROCESS_COOLDOWN_MINUTES)
+        if datetime.now(timezone.utc) < cooldown_end:
+            remaining = max(1, int((cooldown_end - datetime.now(timezone.utc)).total_seconds() / 60) + 1)
+            logger.warning("Experience process cooldown active: user=%s", user.id)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {remaining} minute(s) before re-processing your experience.",
+            )
+
+    experience.last_process_requested_at = datetime.now(timezone.utc)
     experience.status = "processing"
+    db.add(LlmTriggerLog(user_id=user.id, event_type="experience_process"))
     db.commit()
 
     storage_key = body.storage_key

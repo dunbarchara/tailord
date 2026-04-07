@@ -307,11 +307,17 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [x] Confirm LLM output is only ever rendered as Markdown, never as raw HTML or executed — confirmed: `AdvocacyLetter.tsx` and `PublicTailoringView.tsx` both use `<ReactMarkdown>`; the three `dangerouslySetInnerHTML` usages in the codebase are for static developer-authored content (schema.org JSON-LD, privacy policy, terms) only
 
 #### Auth & Token Abuse
-- [ ] **API key exposure:** `X-API-Key` header never logged, never returned in error responses, not accessible to client-side JS
-- [ ] **Session abuse:** confirm `session.user.id` (google_sub) is validated on every backend call; a forged `X-User-Id` header from a direct backend call should not work (backend is internal-only, but belt-and-suspenders)
-- [ ] **Public slug enumeration:** verify no endpoint leaks a list of all public slugs (now scoped per user — `/tailorings/public/{username_slug}/{tailoring_slug}`)
-- [ ] **Rate limiting:** no per-user limit on tailoring creation — add a guard (e.g., 10/hour) or at minimum log a warning on high-frequency creation
-- [ ] **OAuth state validation:** confirm CSRF state param is validated on Google OAuth callback and Notion OAuth callback
+- [x] **API key exposure:** confirmed — `X-API-Key` never logged (no logging in `auth.py`, `uvicorn.access` silenced), not returned in error responses, not accessible to client JS (`env.ts` uses non-`NEXT_PUBLIC_` env vars, only consumed from server-side API routes)
+- [x] **Session abuse:** confirmed — trust chain is `X-API-Key` (server secret shared only with the frontend) + `X-User-Id` (google_sub from NextAuth JWT). A forged `X-User-Id` also requires the API key. Backend has no public ingress. `require_approved_user` adds approval gate. No changes needed.
+- [x] **Public slug enumeration:** confirmed — `GET /tailorings/public/{username_slug}/{tailoring_slug}` requires both slugs; `GET /users/public/{username_slug}` does not expose a tailoring list; `GET /tailorings` is auth-gated and user-scoped. Public slugs have a 4-char random suffix (~1.7M combinations per company+title pair).
+- [x] **Rate limiting:** implemented via `llm_trigger_log` table (one row per LLM pipeline trigger — separate table required because `last_regenerated_at` on the Tailoring row only records the most recent regen, making 10 rapid regens on one tailoring look like a single event). Three operations covered:
+  - `POST /tailorings` (create) + `POST /tailorings/{id}/regenerate`: combined 10/hour per user, checked against `llm_trigger_log`; both log `tailoring_create` / `tailoring_regen` events
+  - `POST /experience/process`: 5-minute cooldown per user via `experiences.last_process_requested_at` (single record per user — window counting not needed)
+  - `POST /experience/github` and `POST /experience/user-input`: no LLM calls, not rate limited
+  - Schema additions: `llm_trigger_log` table, `tailorings.last_regenerated_at` (UI "last refreshed" display), `tailorings.generated_at` (wall-clock completion time, pairs with `generation_started_at`), `experiences.last_process_requested_at`
+  - Migration: `a9b8c7d6e5f4_add_llm_rate_limiting_fields`
+  - TODO (future): softer approach — warn at 8 triggers, block at 10
+- [x] **OAuth state validation:** confirmed — Notion: `notion/route.ts` generates UUID state in httpOnly `sameSite:lax` cookie (5-min TTL), validated in callback before code exchange. Google: NextAuth handles CSRF state automatically.
 
 #### Input Validation
 - [ ] **SSRF:** `job_url` passed to Playwright — validate as HTTP/HTTPS only; block `file://`, `ftp://`, internal Azure metadata URLs (`169.254.169.254`)
