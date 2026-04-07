@@ -18,13 +18,15 @@ resource "azurerm_user_assigned_identity" "container_apps" {
 # KEY VAULT
 # -----------------------------
 resource "azurerm_key_vault" "tailord" {
-  name                       = "${var.project_name}-kv"
-  resource_group_name        = azurerm_resource_group.tailord.name
-  location                   = azurerm_resource_group.tailord.location
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
-  rbac_authorization_enabled = true
-  tags                       = local.tags
+  name                          = "${var.project_name}-kv"
+  resource_group_name           = azurerm_resource_group.tailord.name
+  location                      = azurerm_resource_group.tailord.location
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
+  rbac_authorization_enabled    = true
+  soft_delete_retention_days    = 7
+  purge_protection_enabled      = true
+  tags                          = local.tags
 }
 
 # Terraform deployer — write secrets
@@ -48,6 +50,7 @@ resource "azurerm_role_assignment" "kv_secrets_user" {
 resource "azurerm_key_vault_secret" "database_url" {
   name         = "database-url"
   value        = "postgresql+psycopg://tailord:${var.db_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord"
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -55,6 +58,7 @@ resource "azurerm_key_vault_secret" "database_url" {
 resource "azurerm_key_vault_secret" "api_key" {
   name         = "api-key"
   value        = var.api_key
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -62,6 +66,7 @@ resource "azurerm_key_vault_secret" "api_key" {
 resource "azurerm_key_vault_secret" "storage_connection_string" {
   name         = "storage-connection-string"
   value        = azurerm_storage_account.uploads.primary_connection_string
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -69,6 +74,7 @@ resource "azurerm_key_vault_secret" "storage_connection_string" {
 resource "azurerm_key_vault_secret" "nextauth_secret" {
   name         = "nextauth-secret"
   value        = var.nextauth_secret
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -76,6 +82,7 @@ resource "azurerm_key_vault_secret" "nextauth_secret" {
 resource "azurerm_key_vault_secret" "google_client_id" {
   name         = "google-client-id"
   value        = var.google_client_id
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -83,6 +90,7 @@ resource "azurerm_key_vault_secret" "google_client_id" {
 resource "azurerm_key_vault_secret" "google_client_secret" {
   name         = "google-client-secret"
   value        = var.google_client_secret
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -90,6 +98,7 @@ resource "azurerm_key_vault_secret" "google_client_secret" {
 resource "azurerm_key_vault_secret" "llm_api_key" {
   name         = "llm-api-key"
   value        = azurerm_cognitive_account.tailord_foundry.primary_access_key
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -97,6 +106,7 @@ resource "azurerm_key_vault_secret" "llm_api_key" {
 resource "azurerm_key_vault_secret" "notion_client_id" {
   name         = "notion-client-id"
   value        = var.notion_client_id
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
@@ -104,6 +114,7 @@ resource "azurerm_key_vault_secret" "notion_client_id" {
 resource "azurerm_key_vault_secret" "notion_client_secret" {
   name         = "notion-client-secret"
   value        = var.notion_client_secret
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
