@@ -22,7 +22,7 @@ from app.services.requirement_matcher import match_requirements
 from app.services.chunk_matcher import enrich_job_chunks
 from app.core.playwright_helper import get_rendered_content
 from app.models.database import Experience, Job, JobChunk, LlmTriggerLog, Tailoring, User
-from app.models.mvp_schemas import TailoringCreate
+from app.models.mvp_schemas import TailoringCreate, _validate_job_url
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 
 router = APIRouter()
@@ -349,6 +349,10 @@ async def create_tailoring(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    try:
+        _validate_job_url(body.job_url, is_local=settings.environment == "local")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     _check_tailoring_rate_limit(user.id, db)
     db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_create"))
     db.commit()

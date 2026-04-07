@@ -320,9 +320,10 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [x] **OAuth state validation:** confirmed — Notion: `notion/route.ts` generates UUID state in httpOnly `sameSite:lax` cookie (5-min TTL), validated in callback before code exchange. Google: NextAuth handles CSRF state automatically.
 
 #### Input Validation
-- [ ] **SSRF:** `job_url` passed to Playwright — validate as HTTP/HTTPS only; block `file://`, `ftp://`, internal Azure metadata URLs (`169.254.169.254`)
-- [ ] **File upload:** confirm backend enforces file type (PDF/DOCX/TXT) and size limits at presigned URL generation, not just client-side
-- [ ] **XSS:** tailoring output rendered as Markdown — confirm renderer sanitizes HTML, no `dangerouslySetInnerHTML` with raw LLM output
+- [x] **SSRF:** `field_validator` on `TailoringCreate.job_url` in `mvp_schemas.py` — requires `http`/`https` scheme; blocks `169.254.169.254` (Azure IMDS) and `168.63.129.16` (Azure wire server) in all environments; blocks `localhost` by name and `127/8`, `::1` loopback ranges in production; blocks RFC 1918 (`10/8`, `172.16/12`, `192.168/16`) and link-local (`169.254/16`, `fc00::/7`) in all environments. `localhost` allowed in `environment=local` for mock page testing (`/mock/job-software-engineer`). HTTP scheme allowed in both environments — Playwright follows redirects, so HTTP→HTTPS upgrades work transparently and blocking HTTP would break legitimate job boards. Known gap: DNS-based SSRF (public hostname resolving to private IP) — mitigate at infra layer via Azure Container App egress policy.
+- [x] **File upload type:** confirmed — extension checked against `ALLOWED_EXTENSIONS` in `get_upload_url` before presigned URL is issued; no change needed.
+- [x] **File upload size:** 10 MB cap added in `trigger_process` SSE stream after `download_bytes` — yields error event directly (bypasses `_friendly_processing_error` to show exact size in the message). Resumes are typically < 500 KB; 10 MB is a generous ceiling.
+- [x] **XSS:** confirmed — `AdvocacyLetter.tsx` and `PublicTailoringView.tsx` use `<ReactMarkdown>`; no `dangerouslySetInnerHTML` on LLM output anywhere.
 
 #### SQL Injection
 - [ ] Confirm all DB queries go through SQLAlchemy ORM — grep for `text(`, `execute(`, `f"SELECT`, `f"INSERT`

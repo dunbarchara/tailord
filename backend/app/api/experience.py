@@ -29,6 +29,10 @@ ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
 # Minimum gap between experience processing triggers per user.
 _EXPERIENCE_PROCESS_COOLDOWN_MINUTES = 5
 
+# Resumes are typically < 500 KB. 10 MB is a generous ceiling that still
+# blocks accidental or malicious oversized uploads before text extraction.
+_MAX_RESUME_BYTES = 10 * 1024 * 1024  # 10 MB
+
 
 def _has_non_resume_sources(e: Experience) -> bool:
     """Return True if the experience row has data from any source other than the uploaded file."""
@@ -198,6 +202,16 @@ async def trigger_process(
             file_bytes = await anyio.to_thread.run_sync(
                 lambda: get_storage_client().download_bytes(storage_key)
             )
+
+            if len(file_bytes) > _MAX_RESUME_BYTES:
+                mb = len(file_bytes) / 1024 / 1024
+                logger.warning("File too large: %.1f MB user=%s", mb, user.id)
+                experience.status = "error"
+                experience.error_message = f"File is too large ({mb:.1f} MB). Please upload a file under 10 MB."
+                db.commit()
+                yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+                return
+
             text = await anyio.to_thread.run_sync(
                 lambda: extract_text(file_bytes, filename)
             )
