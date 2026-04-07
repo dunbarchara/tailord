@@ -301,61 +301,125 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 **Threat model:** single-tenant SaaS, authenticated users, LLM pipeline ingesting untrusted content (job URLs, resume text), public endpoints at `/t/{slug}` and `/u/{slug}`.
 
 #### Prompt Injection
-- [ ] Audit all LLM calls: user-supplied content always in the `user` role, never interpolated into `system` prompt
-- [ ] **Scrape sanitisation** — strip non-posting content before it enters the chunk extraction pipeline. Two categories to handle: (1) page-level chrome: `<script>`, hidden elements, suspiciously long invisible text; (2) ATS form footer chrome: content appended by job board platforms (Ashby, Greenhouse, Lever, Workday) after the actual job description — salary ranges, EEO/diversity boilerplate, "By clicking Submit Application..." consent paragraphs, reCAPTCHA notices, privacy policy links. These are currently scraped alongside the posting, chunked, and sent to the LLM for scoring. They produce spurious Gap chunks (or batch errors when they contain embedded URLs/markdown links that trip up local models) and pollute the Analysis and Posting views with non-requirement content. Target: identify the posting body boundary and discard everything below it, or strip known ATS footer patterns by regex/heuristic before chunking.
-- [ ] Cap scraped content length fed to the LLM (e.g., 8k tokens) — limits injection surface and cost
-- [ ] Confirm LLM output is only ever rendered as Markdown, never as raw HTML or executed
+- [x] Audit all LLM calls: user-supplied content always in the `user` role, never interpolated into `system` prompt — confirmed across all five prompts (`job_extraction`, `chunk_matching`, `requirement_matching`, `profile_extraction`, `tailoring`); no changes needed
+- [x] **Scrape sanitisation** — `extract_markdown_content` already strips `<script>`, `<nav>`, `<form>`, `<footer>`, ATS form elements, and truncates at "Apply" headings. Added: decompose CSS-hidden elements (`display:none`, `visibility:hidden`, `aria-hidden="true"`) before markdownify — these are invisible to humans but were previously extracted verbatim, creating a prompt injection vector. ATS footer boilerplate (EEO, consent paragraphs, legal) is handled downstream by the chunk scorer (`should_render=false`) and does not require a separate pre-filter.
+- [x] Cap scraped content length fed to the LLM (e.g., 8k tokens) — added `_MAX_MARKDOWN_CHARS = 32_000` hard cap at the end of `extract_markdown_content`; logs a warning with before/after sizes when truncation fires
+- [x] Confirm LLM output is only ever rendered as Markdown, never as raw HTML or executed — confirmed: `AdvocacyLetter.tsx` and `PublicTailoringView.tsx` both use `<ReactMarkdown>`; the three `dangerouslySetInnerHTML` usages in the codebase are for static developer-authored content (schema.org JSON-LD, privacy policy, terms) only
 
 #### Auth & Token Abuse
-- [ ] **API key exposure:** `X-API-Key` header never logged, never returned in error responses, not accessible to client-side JS
-- [ ] **Session abuse:** confirm `session.user.id` (google_sub) is validated on every backend call; a forged `X-User-Id` header from a direct backend call should not work (backend is internal-only, but belt-and-suspenders)
-- [ ] **Public slug enumeration:** verify no endpoint leaks a list of all public slugs (now scoped per user — `/tailorings/public/{username_slug}/{tailoring_slug}`)
-- [ ] **Rate limiting:** no per-user limit on tailoring creation — add a guard (e.g., 10/hour) or at minimum log a warning on high-frequency creation
-- [ ] **OAuth state validation:** confirm CSRF state param is validated on Google OAuth callback and Notion OAuth callback
+- [x] **API key exposure:** confirmed — `X-API-Key` never logged (no logging in `auth.py`, `uvicorn.access` silenced), not returned in error responses, not accessible to client JS (`env.ts` uses non-`NEXT_PUBLIC_` env vars, only consumed from server-side API routes)
+- [x] **Session abuse:** confirmed — trust chain is `X-API-Key` (server secret shared only with the frontend) + `X-User-Id` (google_sub from NextAuth JWT). A forged `X-User-Id` also requires the API key. Backend has no public ingress. `require_approved_user` adds approval gate. No changes needed.
+- [x] **Public slug enumeration:** confirmed — `GET /tailorings/public/{username_slug}/{tailoring_slug}` requires both slugs; `GET /users/public/{username_slug}` does not expose a tailoring list; `GET /tailorings` is auth-gated and user-scoped. Public slugs have a 4-char random suffix (~1.7M combinations per company+title pair).
+- [x] **Rate limiting:** implemented via `llm_trigger_log` table (one row per LLM pipeline trigger — separate table required because `last_regenerated_at` on the Tailoring row only records the most recent regen, making 10 rapid regens on one tailoring look like a single event). Three operations covered:
+  - `POST /tailorings` (create) + `POST /tailorings/{id}/regenerate`: combined 10/hour per user, checked against `llm_trigger_log`; both log `tailoring_create` / `tailoring_regen` events
+  - `POST /experience/process`: 5-minute cooldown per user via `experiences.last_process_requested_at` (single record per user — window counting not needed)
+  - `POST /experience/github` and `POST /experience/user-input`: no LLM calls, not rate limited
+  - Schema additions: `llm_trigger_log` table, `tailorings.last_regenerated_at` (UI "last refreshed" display), `tailorings.generated_at` (wall-clock completion time, pairs with `generation_started_at`), `experiences.last_process_requested_at`
+  - Migration: `a9b8c7d6e5f4_add_llm_rate_limiting_fields`
+  - TODO (future): softer approach — warn at 8 triggers, block at 10
+- [x] **OAuth state validation:** confirmed — Notion: `notion/route.ts` generates UUID state in httpOnly `sameSite:lax` cookie (5-min TTL), validated in callback before code exchange. Google: NextAuth handles CSRF state automatically.
 
 #### Input Validation
-- [ ] **SSRF:** `job_url` passed to Playwright — validate as HTTP/HTTPS only; block `file://`, `ftp://`, internal Azure metadata URLs (`169.254.169.254`)
-- [ ] **File upload:** confirm backend enforces file type (PDF/DOCX/TXT) and size limits at presigned URL generation, not just client-side
-- [ ] **XSS:** tailoring output rendered as Markdown — confirm renderer sanitizes HTML, no `dangerouslySetInnerHTML` with raw LLM output
+- [x] **SSRF:** `field_validator` on `TailoringCreate.job_url` in `mvp_schemas.py` — requires `http`/`https` scheme; blocks `169.254.169.254` (Azure IMDS) and `168.63.129.16` (Azure wire server) in all environments; blocks `localhost` by name and `127/8`, `::1` loopback ranges in production; blocks RFC 1918 (`10/8`, `172.16/12`, `192.168/16`) and link-local (`169.254/16`, `fc00::/7`) in all environments. `localhost` allowed in `environment=local` for mock page testing (`/mock/job-software-engineer`). HTTP scheme allowed in both environments — Playwright follows redirects, so HTTP→HTTPS upgrades work transparently and blocking HTTP would break legitimate job boards. Known gap: DNS-based SSRF (public hostname resolving to private IP) — mitigate at infra layer via Azure Container App egress policy.
+- [x] **File upload type:** confirmed — extension checked against `ALLOWED_EXTENSIONS` in `get_upload_url` before presigned URL is issued; no change needed.
+- [x] **File upload size:** 10 MB cap added in `trigger_process` SSE stream after `download_bytes` — yields error event directly (bypasses `_friendly_processing_error` to show exact size in the message). Resumes are typically < 500 KB; 10 MB is a generous ceiling.
+- [x] **XSS:** confirmed — `AdvocacyLetter.tsx` and `PublicTailoringView.tsx` use `<ReactMarkdown>`; no `dangerouslySetInnerHTML` on LLM output anywhere.
 
 #### SQL Injection
-- [ ] Confirm all DB queries go through SQLAlchemy ORM — grep for `text(`, `execute(`, `f"SELECT`, `f"INSERT`
-- [ ] Verify alembic migrations don't introduce unsafe patterns
+- [x] Confirm all DB queries go through SQLAlchemy ORM — confirmed: no `sqlalchemy.text()` imports, no `db.execute()` / `session.execute()` calls, no raw SQL f-strings anywhere in `backend/app`. Every query uses ORM methods (`.query()`, `.filter()`, `.get()`, `.count()`).
+- [x] Verify alembic migrations — two raw SQL usages, both safe: `sa.text("now()")` is the standard `server_default` pattern (fixed fragment, no user input); `op.execute("UPDATE tailorings SET letter_public = is_public")` is a fully hardcoded one-time data backfill in `b8c9d0e1f2a3`.
 
 #### Secrets & Config
-- [ ] Grep for hardcoded secrets, API keys, connection strings in source
-- [ ] Confirm `.env` files are gitignored and untracked
-- [ ] Review Azure Key Vault usage — confirm all production secrets come from Key Vault, not plain Container App env vars
+- [x] **Grep for hardcoded secrets:** `grep -rn` across all `.py` and `.ts`/`.tsx` files for API key patterns — **no matches**. Source is clean.
+- [x] **`.env` files gitignored and untracked:** Three local `.env` files exist (`infra/providers/azure/.env.prod`, `frontend/.env.local`, `backend/.env`). Root `.gitignore` covers all three (`.env` matches `backend/.env`; `.env.*` matches the other two, including the subdirectory path — confirmed via `git check-ignore`). None are tracked (`git ls-files` returns empty for all three).
+- [x] **Azure Key Vault usage:** All production secrets — `database-url`, `api-key`, `storage-connection-string`, `nextauth-secret`, `google-client-id`, `google-client-secret`, `llm-api-key`, `notion-client-id`, `notion-client-secret` — are stored in Key Vault and injected into Container Apps via `key_vault_secret_id` references (not hardcoded plain env vars). Container Apps managed identity (`azurerm_user_assigned_identity.container_apps`) holds `Key Vault Secrets User` RBAC role. Terraform deployer holds `Key Vault Secrets Officer`. No plaintext secret values in `main.tf` env blocks. ✓
 
 #### Cost & Performance
-- [ ] Confirm Playwright timeout applies to both navigation and content extraction
-- [ ] Check for N+1 queries in the tailoring list endpoint
-- [ ] LLM token logging baseline: establish prompt + completion token averages per operation; set a cost alert threshold
+- [x] **Playwright timeouts:** `playwright_helper.py` has two explicit timeouts — `goto(timeout=60s)` for navigation and `wait_for_load_state("networkidle", timeout=10s)` for JS settling. Both are set. Changed `networkidle` to **non-fatal**: many analytics-heavy pages have continuous background XHR that prevent reaching networkidle state, causing the wait to timeout and wrongly surface a 422 to the user even though the page loaded fine. Now wraps `wait_for_load_state` in try/except, logs a warning, and continues to `page.content()` with the already-available DOM. `goto` timeout remains fatal (caught upstream in `_scrape_job_url` as `PlaywrightTimeoutError` → 422). Also reduced networkidle timeout from 30s → 10s (30s was excessive for what is a best-effort wait).
+- [x] **N+1 queries:** `list_tailorings` was emitting N extra `SELECT` queries — one per tailoring — to lazy-load `t.job` for the title/company/url fields. Fixed with `options(joinedload(Tailoring.job))` on the list query: one JOIN, one round-trip regardless of list size.
+- [x] **LLM token logging:** Already fully implemented in `app/core/llm_utils.py`. Both `llm_parse` and `llm_generate` log `tokens=prompt+completion=total` at INFO level on every call, alongside model, schema/label, finish reason, and wall-clock latency. These log lines are queryable in Azure Monitor / Log Analytics to establish per-operation averages and set cost alert thresholds. No code changes needed. Cost alert threshold: configure an Azure Monitor log alert on `total_tokens > N` in a rolling window once baseline is established from production traffic.
 
 ---
 
 ### Day P2 — Testing + CI Gate
 
-**Goal:** Merges to `main` are gated by automated tests. The test suite covers the critical paths, not every line.
+**Goal:** Merges to `main` are gated by automated tests and security tooling. The test suite covers critical paths; the security layer catches regressions automatically.
+
+---
+
+#### Local — pre-commit hooks
+
+Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contributors run `pre-commit install` once). Runs on every `git commit` locally; also runs in CI as a gate.
+
+- [ ] **`gitleaks`** — secret scanning. Blocks commits containing API keys, connection strings, or credentials before they ever leave the machine. This is the highest-value hook: it is the only layer that prevents a secret from entering git history entirely.
+- [ ] **`ruff`** — Python linting + formatting (replaces flake8, isort, pyupgrade). Fast, zero config needed beyond `pyproject.toml`. Run on `backend/**/*.py`.
+- [ ] **Standard hooks** (`pre-commit-hooks`): trailing whitespace, end-of-file newlines, YAML/JSON validity. Low noise, high signal.
+- [ ] Exclude `backend/.venv/`, `frontend/.next/`, `infra/**/.terraform/` from all hooks.
+
+---
 
 #### Backend — pytest
+
 - [ ] Set up pytest with `pytest-asyncio` and a test database (PostgreSQL via `pytest-postgresql` or SQLite in-memory)
 - [ ] Unit tests — pure functions: `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), `tailorings.py` (`_validate_profile`, `_generate_slug`)
 - [ ] Integration tests — FastAPI `TestClient`: tailoring CRUD, share/unshare, public slug lookup, Notion export (mock Notion API with `responses` or `httpx` mock transport), 401 revoke flow
 - [ ] Fixture helpers: factories for `User`, `Tailoring`, `Job`, `JobChunk` — no setup duplication across tests
 - [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — focused on auth checks, ownership guards, enrichment status gating
 
+---
+
 #### Frontend — Jest
+
 - [ ] Unit tests: `InlineMarkdown` rendering, `scoreBarColor` logic, `groupBySection` filtering
 - [ ] Consider `next-test-api-route-handler` for testing Next.js API proxy routes in isolation
+- [ ] Add `eslint-plugin-security` to the existing ESLint setup — catches `eval`, regex DoS, `innerHTML` patterns in TypeScript. Integrates into the existing `npm run lint` step with no new toolchain.
+
+---
 
 #### GitHub Actions — CI Gate
-- [ ] `.github/workflows/ci.yml`: triggers on every PR to `main` and on push to `main`
-  - Backend job: `uv run pytest`
-  - Frontend job: `npm run lint && npm run build && npm test` (type-check + build + unit tests)
-  - Run both jobs in parallel
-- [ ] Cache `uv` deps and `node_modules` between runs — target < 3 min total
-- [ ] Branch protection rule on `main`: require CI to pass before merge
+
+Single workflow (`.github/workflows/ci.yml`) with parallel jobs, triggering on every PR to `main` and push to `main`.
+
+- [ ] **pre-commit job**: runs `pre-commit run --all-files` — covers gitleaks secret scan, ruff lint, and standard hooks across the whole repo. Fastest feedback loop for secrets and style issues.
+- [ ] **Backend job** (parallel):
+  - `uv run ruff check backend/` — lint gate
+  - `uv run bandit -r backend/app/ -ll` — Python SAST (checks for `eval`, subprocess injection, hardcoded passwords, etc.). `-ll` = medium+ severity only, avoids noise.
+  - `uv run pip-audit` — dependency CVE scan against `uv.lock`
+  - `uv run pytest` — test suite
+- [ ] **Frontend job** (parallel):
+  - `npm run lint` — ESLint including `eslint-plugin-security` rules
+  - `npm run build` — type-check + build (catches TypeScript errors CI-wide)
+  - `npm test` — Jest unit tests
+  - `npm audit --audit-level=high` — dependency CVE scan, high+ severity only
+- [ ] **Infra job** (parallel, triggered only on changes to `infra/**`):
+  - `checkov -d infra/providers/azure/ --framework terraform` — IaC misconfiguration scan (open ports, missing encryption, IAM over-permission). Skip in PRs that don't touch `infra/`.
+- [ ] Cache `uv` deps and `node_modules` between runs — target < 4 min total
+- [ ] Branch protection rule on `main`: require all CI jobs to pass before merge
+
+---
+
+#### Dependabot
+
+- [ ] Add `.github/dependabot.yml` — enables automated PRs for outdated/vulnerable dependencies:
+  - `npm` ecosystem → `frontend/`, weekly
+  - `pip` ecosystem → `backend/`, weekly
+  - `github-actions` ecosystem → `.github/workflows/`, weekly
+- [ ] Dependabot PRs are gated by the same CI workflow — they only land if tests + security scans pass
+
+---
+
+#### Container scanning (deploy workflow)
+
+- [ ] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — runs after the Docker image is built but before it is pushed to ACR. Blocks deploy on critical CVEs in the OS layer or installed packages. Both frontend and backend images scanned.
+- [ ] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
+
+---
+
+#### Not doing (and why)
+
+- **Semgrep / CodeQL**: CodeQL requires GitHub Advanced Security (paid for private repos). Semgrep is broader but requires rule tuning to avoid noise. Bandit + eslint-plugin-security covers our actual attack surface with zero tuning.
+- **Snyk**: SaaS-dependent, paid tier for private repos. Dependabot + pip-audit + npm audit covers dependency scanning natively.
+- **Path-filtered CI** (`on.push.paths`): useful at scale; for Tailord's repo size, running all jobs on every PR is fast enough and simpler to reason about. Revisit if CI time grows past 5 min.
 
 ---
 

@@ -4,12 +4,12 @@ import re
 import random
 import string
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_api_key
 from app.config import settings
@@ -21,12 +21,38 @@ from app.services.tailoring_generator import generate_tailoring, _format_sourced
 from app.services.requirement_matcher import match_requirements
 from app.services.chunk_matcher import enrich_job_chunks
 from app.core.playwright_helper import get_rendered_content
-from app.models.database import Experience, Job, JobChunk, Tailoring, User
-from app.models.mvp_schemas import TailoringCreate
+from app.models.database import Experience, Job, JobChunk, LlmTriggerLog, Tailoring, User
+from app.models.mvp_schemas import TailoringCreate, _validate_job_url
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Combined limit: tailoring creates + regens share one pool per user per hour.
+# Each trigger costs ~4 LLM calls (job extraction, req matching, generation, chunk scoring).
+# TODO: consider a softer approach — warn at 8, block at 10.
+_TAILORING_HOURLY_LIMIT = 10
+
+
+def _check_tailoring_rate_limit(user_id, db: Session) -> None:
+    """Raise 429 if the user has hit the combined create+regen limit in the last hour."""
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    count = (
+        db.query(LlmTriggerLog)
+        .filter(
+            LlmTriggerLog.user_id == user_id,
+            LlmTriggerLog.event_type.in_(["tailoring_create", "tailoring_regen"]),
+            LlmTriggerLog.created_at >= one_hour_ago,
+        )
+        .count()
+    )
+    if count >= _TAILORING_HOURLY_LIMIT:
+        logger.warning("Rate limit hit: user=%s tailoring triggers in last hour=%d", user_id, count)
+        raise HTTPException(
+            status_code=429,
+            detail="You've created too many tailorings in the last hour. Please wait before trying again.",
+        )
+
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
@@ -181,6 +207,7 @@ def _finalize_tailoring(
         tailoring.model = settings.llm_model
         tailoring.generation_status = "ready"
         tailoring.generation_stage = None
+        tailoring.generated_at = datetime.now(timezone.utc)
         tailoring.enrichment_status = "pending"
         db.commit()
         logger.info("_finalize_tailoring: tailoring %s ready", tailoring_id)
@@ -322,6 +349,13 @@ async def create_tailoring(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    try:
+        _validate_job_url(body.job_url, is_local=settings.environment == "local")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    _check_tailoring_rate_limit(user.id, db)
+    db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_create"))
+    db.commit()
     return StreamingResponse(
         _stream_tailoring(body.job_url, user, db, background_tasks),
         media_type="text/event-stream",
@@ -344,6 +378,11 @@ async def regenerate_tailoring(
     )
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    _check_tailoring_rate_limit(user.id, db)
+    tailoring.last_regenerated_at = datetime.now(timezone.utc)
+    db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_regen"))
+    db.commit()
 
     return StreamingResponse(
         _stream_tailoring(tailoring.job.job_url, user, db, background_tasks, existing_tailoring=tailoring),
@@ -622,6 +661,7 @@ def list_tailorings(
 ):
     tailorings = (
         db.query(Tailoring)
+        .options(joinedload(Tailoring.job))
         .filter(Tailoring.user_id == user.id)
         .order_by(Tailoring.created_at.desc())
         .all()

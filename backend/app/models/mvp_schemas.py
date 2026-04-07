@@ -1,6 +1,85 @@
-from pydantic import BaseModel
-from typing import List, Optional
+import ipaddress
 from datetime import datetime
+from typing import List, Optional
+from urllib.parse import urlparse
+
+from pydantic import BaseModel
+
+
+# ── SSRF protection for job_url ───────────────────────────────────────────────
+#
+# Playwright fetches whatever URL it's given, so we must reject URLs that point
+# at internal infrastructure before the request leaves the process.
+#
+# Always blocked (both local and production):
+#   169.254.169.254 — Azure IMDS / AWS EC2 instance metadata (exposes managed
+#                     identity tokens and instance credentials)
+#   168.63.129.16   — Azure wire server (DHCP, health probes)
+#
+# Blocked in production only (localhost allowed in local dev for mock testing):
+#   localhost, 127.x.x.x, ::1 — loopback
+#
+# IP ranges blocked in both environments (RFC 1918 + link-local):
+#   10/8, 172.16/12, 192.168/16 — private LAN
+#   169.254/16                   — link-local (covers IMDS by range too)
+#   fc00::/7                     — IPv6 unique local
+#
+# Known gap: DNS-based SSRF (a public hostname that resolves to a private IP)
+# is not blocked here. Mitigate at the infra layer via Azure Container App
+# egress policies or a VNet with no route to private subnets.
+
+_SSRF_ALWAYS_BLOCKED_HOSTS = frozenset({
+    "169.254.169.254",
+    "168.63.129.16",
+})
+
+_SSRF_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+_SSRF_LOOPBACK_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+]
+
+
+def _validate_job_url(url: str, is_local: bool) -> None:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise ValueError("Invalid URL.")
+
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Job URL must use http or https.")
+
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError("Job URL has no host.")
+
+    if host in _SSRF_ALWAYS_BLOCKED_HOSTS:
+        raise ValueError("That URL is not allowed.")
+
+    # Localhost by name — allowed in local dev for mock page testing, blocked in prod
+    if not is_local and host == "localhost":
+        raise ValueError("That URL is not allowed.")
+
+    # IP address range checks
+    try:
+        addr = ipaddress.ip_address(host)
+        networks = list(_SSRF_PRIVATE_NETWORKS)
+        if not is_local:
+            networks += _SSRF_LOOPBACK_NETWORKS
+        for network in networks:
+            if addr in network:
+                raise ValueError("That URL points to an internal or private address.")
+    except ValueError as exc:
+        if "internal" in str(exc) or "not allowed" in str(exc):
+            raise
+        # host is not an IP literal — fine, it's a regular hostname
 
 
 class ProfileInput(BaseModel):

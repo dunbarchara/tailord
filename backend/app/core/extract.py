@@ -258,6 +258,10 @@ def validate_job_content(markdown: str, html: str | None = None) -> tuple[bool, 
     return True, ""
 
 
+# Hard ceiling on markdown fed to the LLM — limits prompt injection surface and token cost.
+# ~8k tokens at ~4 chars/token. Truncation is logged as a warning.
+_MAX_MARKDOWN_CHARS = 32_000
+
 # Headings that signal the start of an application form section.
 # Content at or after these headings is not part of the job description.
 _APPLY_SECTION_PATTERNS = re.compile(
@@ -279,6 +283,16 @@ def extract_markdown_content(html: str) -> str:
     for tag in soup(["form", "select", "option", "input", "textarea", "button"]):
         tag.decompose()
 
+    # Strip CSS-hidden elements — prompt injection vector.
+    # A malicious job page can embed hidden text (display:none / visibility:hidden /
+    # aria-hidden) that is invisible to humans but extracted verbatim by BeautifulSoup
+    # and passed to the LLM. Decompose these before conversion.
+    _HIDDEN_STYLE = re.compile(r'display\s*:\s*none|visibility\s*:\s*hidden', re.IGNORECASE)
+    for tag in soup.find_all(style=_HIDDEN_STYLE):
+        tag.decompose()
+    for tag in soup.find_all(attrs={"aria-hidden": "true"}):
+        tag.decompose()
+
     markdown_content = md(str(soup), heading_style="ATX")
     markdown_content = reduce_newlines_to_two(markdown_content)
 
@@ -287,5 +301,13 @@ def extract_markdown_content(html: str) -> str:
     match = _APPLY_SECTION_PATTERNS.search(markdown_content)
     if match:
         markdown_content = markdown_content[:match.start()].rstrip()
+
+    # Hard-cap content length to limit prompt injection surface and token cost.
+    if len(markdown_content) > _MAX_MARKDOWN_CHARS:
+        logger.warning(
+            "extract_markdown_content: truncated %d → %d chars",
+            len(markdown_content), _MAX_MARKDOWN_CHARS,
+        )
+        markdown_content = markdown_content[:_MAX_MARKDOWN_CHARS]
 
     return markdown_content
