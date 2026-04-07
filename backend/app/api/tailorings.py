@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_api_key
 from app.config import settings
@@ -661,6 +661,7 @@ def list_tailorings(
 ):
     tailorings = (
         db.query(Tailoring)
+        .options(joinedload(Tailoring.job))
         .filter(Tailoring.user_id == user.id)
         .order_by(Tailoring.created_at.desc())
         .all()
