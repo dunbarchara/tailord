@@ -326,8 +326,8 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 - [x] **XSS:** confirmed — `AdvocacyLetter.tsx` and `PublicTailoringView.tsx` use `<ReactMarkdown>`; no `dangerouslySetInnerHTML` on LLM output anywhere.
 
 #### SQL Injection
-- [ ] Confirm all DB queries go through SQLAlchemy ORM — grep for `text(`, `execute(`, `f"SELECT`, `f"INSERT`
-- [ ] Verify alembic migrations don't introduce unsafe patterns
+- [x] Confirm all DB queries go through SQLAlchemy ORM — confirmed: no `sqlalchemy.text()` imports, no `db.execute()` / `session.execute()` calls, no raw SQL f-strings anywhere in `backend/app`. Every query uses ORM methods (`.query()`, `.filter()`, `.get()`, `.count()`).
+- [x] Verify alembic migrations — two raw SQL usages, both safe: `sa.text("now()")` is the standard `server_default` pattern (fixed fragment, no user input); `op.execute("UPDATE tailorings SET letter_public = is_public")` is a fully hardcoded one-time data backfill in `b8c9d0e1f2a3`.
 
 #### Secrets & Config
 - [ ] Grep for hardcoded secrets, API keys, connection strings in source
