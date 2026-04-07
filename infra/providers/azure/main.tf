@@ -23,12 +23,14 @@ resource "azurerm_container_registry" "tailord" {
 # STORAGE
 # -----------------------------
 resource "azurerm_storage_account" "uploads" {
-  name                     = "${replace(var.project_name, "-", "")}uploads"
-  resource_group_name      = azurerm_resource_group.tailord.name
-  location                 = azurerm_resource_group.tailord.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-  tags                     = local.tags
+  name                              = "${replace(var.project_name, "-", "")}uploads"
+  resource_group_name               = azurerm_resource_group.tailord.name
+  location                          = azurerm_resource_group.tailord.location
+  account_tier                      = "Standard"
+  account_replication_type          = "LRS"
+  allow_nested_items_to_be_public   = false
+  min_tls_version                   = "TLS1_2"
+  tags                              = local.tags
 
   blob_properties {
     cors_rule {

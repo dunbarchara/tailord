@@ -1,10 +1,8 @@
 import ipaddress
-from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 from urllib.parse import urlparse
 
 from pydantic import BaseModel
-
 
 # ── SSRF protection for job_url ───────────────────────────────────────────────
 #
@@ -28,10 +26,12 @@ from pydantic import BaseModel
 # is not blocked here. Mitigate at the infra layer via Azure Container App
 # egress policies or a VNet with no route to private subnets.
 
-_SSRF_ALWAYS_BLOCKED_HOSTS = frozenset({
-    "169.254.169.254",
-    "168.63.129.16",
-})
+_SSRF_ALWAYS_BLOCKED_HOSTS = frozenset(
+    {
+        "169.254.169.254",
+        "168.63.129.16",
+    }
+)
 
 _SSRF_PRIVATE_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -86,11 +86,14 @@ class ProfileInput(BaseModel):
     resume_text: str
     github_username: str
 
+
 class JobInput(BaseModel):
     job_url: str
 
+
 class GenerateInput(BaseModel):
     job_id: str
+
 
 class GeneratedOutput(BaseModel):
     content: str

@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from azure.storage.blob import BlobServiceClient, BlobSasPermissions, generate_blob_sas
+from azure.storage.blob import BlobSasPermissions, BlobServiceClient, generate_blob_sas
 
 from app.clients.storage_client import StorageClient
 from app.config import settings

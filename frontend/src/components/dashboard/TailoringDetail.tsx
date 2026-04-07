@@ -169,6 +169,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       }
     }
     load();
+    // router is stable across renders in Next.js — safe to omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tailoringId]);
 
   useEffect(() => {
@@ -197,6 +199,10 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       } catch { /* ignore */ }
     }, 2000);
     return () => clearInterval(interval);
+    // Intentional: depend only on generation_status, not the full tailoring object, so the
+    // interval isn't reset on every field update — only on generation state transitions.
+    // router is stable across renders in Next.js.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tailoringId, tailoring?.generation_status]);
 
   useEffect(() => {
@@ -204,6 +210,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     if (!tailoring || (tailoring.generation_status !== 'generating' && enrichmentDone)) return;
     const interval = setInterval(() => setElapsedTick(t => t + 1), 1000);
     return () => clearInterval(interval);
+    // Intentional: depend on specific sub-fields to avoid spurious interval restarts on unrelated updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tailoring?.generation_status, chunksData?.enrichment_status]);
 
   useEffect(() => {
@@ -242,6 +250,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     fetchChunks();
     interval = setInterval(fetchChunks, POLL_INTERVAL);
     return () => { if (interval) clearInterval(interval); };
+    // Intentional: restart chunks polling only on generation_status transitions.
+    // router is stable across renders in Next.js.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tailoringId, tailoring?.generation_status]);
 
   async function handleRegenerate() {

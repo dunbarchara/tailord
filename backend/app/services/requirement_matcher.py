@@ -10,7 +10,9 @@ from app.services.tailoring_generator import _format_sourced_profile
 logger = logging.getLogger(__name__)
 
 
-def match_requirements(extracted_job: dict, extracted_profile: dict, pronouns: str | None = None) -> list[dict]:
+def match_requirements(
+    extracted_job: dict, extracted_profile: dict, pronouns: str | None = None
+) -> list[dict]:
     """
     Fast pipeline: single LLM call scoring all requirements against the candidate profile.
     Returns matches sorted by score desc, filtered to score >= 1.
@@ -35,10 +37,13 @@ def match_requirements(extracted_job: dict, extracted_profile: dict, pronouns: s
         model=settings.llm_model,
         messages=[
             {"role": "system", "content": prompt.SYSTEM},
-            {"role": "user", "content": prompt.USER_TEMPLATE.format(
-                extracted_profile=formatted_profile,
-                requirements_block=requirements_block,
-            )},
+            {
+                "role": "user",
+                "content": prompt.USER_TEMPLATE.format(
+                    extracted_profile=formatted_profile,
+                    requirements_block=requirements_block,
+                ),
+            },
         ],
         response_model=RequirementMatchList,
         temperature=prompt.TEMPERATURE,

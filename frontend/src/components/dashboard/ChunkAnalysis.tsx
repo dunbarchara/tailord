@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Loader2, AlertCircle, Copy, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { groupChunksForAnalysis } from '@/lib/chunks';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
 
@@ -185,16 +186,6 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
   );
 }
 
-function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
-  const groups = new Map<string, JobChunk[]>();
-  for (const chunk of chunks) {
-    if (chunk.chunk_type === 'header') continue;
-    const key = chunk.section ?? '';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(chunk);
-  }
-  return groups;
-}
 
 export function ChunkAnalysis({ data, error, jobUrl }: ChunkAnalysisProps) {
 
@@ -211,7 +202,7 @@ export function ChunkAnalysis({ data, error, jobUrl }: ChunkAnalysisProps) {
 
   const isPending = data.enrichment_status === 'pending' || data.enrichment_status === 'processing';
   const isError = data.enrichment_status === 'error';
-  const groups = groupBySection(data.chunks);
+  const groups = groupChunksForAnalysis(data.chunks);
 
   return (
     <div className="max-w-3xl mx-auto px-8 py-8">

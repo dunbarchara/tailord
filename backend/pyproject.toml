@@ -28,6 +28,29 @@ dependencies = [
 ]
 
 [tool.uv]
-dev-dependencies = [
+
+[dependency-groups]
+dev = [
   "pytest",
+  "pytest-mock",
+  "pytest-cov",
+  "httpx",
+  "pre-commit",
+  "ruff",
+  "bandit[toml]",
+  "pip-audit",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=app --cov-report=term-missing"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+exclude = [".venv", "__pycache__", "alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I"]
+ignore = ["E501"]  # line length handled by formatter

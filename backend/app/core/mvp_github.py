@@ -3,7 +3,7 @@ import requests
 
 def fetch_repos(username: str) -> list[dict]:
     url = f"https://api.github.com/users/{username}/repos"
-    resp = requests.get(url, params={"per_page": 100, "sort": "pushed"})
+    resp = requests.get(url, params={"per_page": 100, "sort": "pushed"}, timeout=10)
     if resp.status_code == 404:
         raise ValueError(f"GitHub user '{username}' not found")
     if resp.status_code != 200:
@@ -12,7 +12,8 @@ def fetch_repos(username: str) -> list[dict]:
     repos = resp.json()
 
     filtered = [
-        r for r in repos
+        r
+        for r in repos
         if not r.get("fork")
         and not r.get("archived")
         # Drop repos with no stars AND no description — pure noise

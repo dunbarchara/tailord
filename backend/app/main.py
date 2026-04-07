@@ -1,8 +1,9 @@
 from fastapi import FastAPI
-from app.api import users, experience, tailorings, notion
-from app.config import settings
-from app.logging import setup_logging
+
+from app.api import experience, notion, tailorings, users
 from app.clients.llm_client import validate_llm_config
+from app.logging import setup_logging
+
 
 def create_app() -> FastAPI:
     setup_logging()
@@ -19,5 +20,6 @@ def create_app() -> FastAPI:
     app.include_router(tailorings.router)
     app.include_router(notion.router)
     return app
+
 
 app = create_app()

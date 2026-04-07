@@ -22,9 +22,9 @@ def _friendly_processing_error(exc: Exception) -> str:
     return "Something went wrong while processing your file. Please try uploading again."
 
 
-_BULLET_MARKER = re.compile(r'^[•\-\*]\s*$')
-_BULLET_START = re.compile(r'^[•\-\*]\s+\S')
-_SECTION_HEADER = re.compile(r'^[A-Z][A-Za-z\s]{0,30}$')
+_BULLET_MARKER = re.compile(r"^[•\-\*]\s*$")
+_BULLET_START = re.compile(r"^[•\-\*]\s+\S")
+_SECTION_HEADER = re.compile(r"^[A-Z][A-Za-z\s]{0,30}$")
 
 
 def _normalize_resume_text(text: str) -> str:
@@ -41,7 +41,7 @@ def _normalize_resume_text(text: str) -> str:
 
     Also collapses 3+ consecutive blank lines to 2 to reduce noise.
     """
-    lines = [l.rstrip() for l in text.splitlines()]
+    lines = [line.rstrip() for line in text.splitlines()]
 
     # Pass 1: merge orphaned bullet markers with the next non-empty line
     merged: list[str] = []
@@ -78,8 +78,8 @@ def _normalize_resume_text(text: str) -> str:
             joined.append(line)
 
     # Pass 3: collapse 3+ blank lines → 2, collapse runs of spaces within lines
-    normalized = re.sub(r'\n{3,}', '\n\n', '\n'.join(joined))
-    normalized = re.sub(r'[ \t]{2,}', ' ', normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", "\n".join(joined))
+    normalized = re.sub(r"[ \t]{2,}", " ", normalized)
     return normalized.strip()
 
 
@@ -87,13 +87,17 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
 
     if ext == "pdf":
-        from pdfminer.high_level import extract_text as pdfminer_extract
         from io import BytesIO
+
+        from pdfminer.high_level import extract_text as pdfminer_extract
+
         return pdfminer_extract(BytesIO(file_bytes))
 
     elif ext in ("doc", "docx"):
-        from docx import Document
         from io import BytesIO
+
+        from docx import Document
+
         doc = Document(BytesIO(file_bytes))
         return "\n".join(p.text for p in doc.paragraphs)
 
@@ -107,8 +111,12 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
     persist structured profile to DB. Creates its own DB session since the request
     session is closed by the time background tasks run.
     """
-    logger.info("process_experience start: experience_id=%s storage_key=%s filename=%s",
-                experience_id, storage_key, filename)
+    logger.info(
+        "process_experience start: experience_id=%s storage_key=%s filename=%s",
+        experience_id,
+        storage_key,
+        filename,
+    )
     from app.clients.database import SessionLocal
 
     db = SessionLocal()
@@ -131,7 +139,10 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
             normalized = _normalize_resume_text(text)
             logger.debug(
                 "Extracted %d chars from %s, normalized to %d chars, running LLM profile extraction\n--- NORMALIZED TEXT ---\n%s\n--- END ---",
-                len(text), filename, len(normalized), normalized[:4000],
+                len(text),
+                filename,
+                len(normalized),
+                normalized[:4000],
             )
 
             profile = extract_profile(normalized)

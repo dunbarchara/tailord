@@ -167,7 +167,7 @@ export function ExperienceManager() {
 
   const [processingStage, setProcessingStage] = useState<string | null>(null);
   const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);

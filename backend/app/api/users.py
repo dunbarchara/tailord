@@ -1,5 +1,6 @@
 import logging
 import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
@@ -12,12 +13,31 @@ from app.models.database import Experience, Job, Tailoring, User
 
 logger = logging.getLogger(__name__)
 
-_USERNAME_RE = re.compile(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
-_RESERVED = frozenset([
-    'dashboard', 'admin', 'api', 'settings', 'login', 'register',
-    'u', 't', 'auth', 'notion', 'help', 'about', 'pricing', 'terms',
-    'privacy', 'careers', 'blog', 'tailord', 'me', 'public',
-])
+_USERNAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
+_RESERVED = frozenset(
+    [
+        "dashboard",
+        "admin",
+        "api",
+        "settings",
+        "login",
+        "register",
+        "u",
+        "t",
+        "auth",
+        "notion",
+        "help",
+        "about",
+        "pricing",
+        "terms",
+        "privacy",
+        "careers",
+        "blog",
+        "tailord",
+        "me",
+        "public",
+    ]
+)
 
 router = APIRouter()
 
@@ -69,17 +89,19 @@ class UserUpdate(BaseModel):
     username_slug: str | None = None
     pronouns: str | None = None
 
-    @field_validator('username_slug')
+    @field_validator("username_slug")
     @classmethod
     def validate_username_slug(cls, v: str | None) -> str | None:
         if v is None:
             return v
         if len(v) < 3 or len(v) > 30:
-            raise ValueError('Username must be between 3 and 30 characters')
+            raise ValueError("Username must be between 3 and 30 characters")
         if not _USERNAME_RE.match(v):
-            raise ValueError('Username may only contain lowercase letters, numbers, and hyphens, and cannot start or end with a hyphen')
+            raise ValueError(
+                "Username may only contain lowercase letters, numbers, and hyphens, and cannot start or end with a hyphen"
+            )
         if v in _RESERVED:
-            raise ValueError('That username is reserved')
+            raise ValueError("That username is reserved")
         return v
 
 
@@ -96,14 +118,16 @@ def update_user(
         user.preferred_last_name = body.preferred_last_name or None
     if body.profile_public is not None:
         user.profile_public = body.profile_public
-    if 'pronouns' in body.model_fields_set:
+    if "pronouns" in body.model_fields_set:
         user.pronouns = body.pronouns or None
-    if 'username_slug' in body.model_fields_set:
+    if "username_slug" in body.model_fields_set:
         new_slug = body.username_slug or None
         if new_slug is not None:
-            existing = db.query(User).filter(User.username_slug == new_slug, User.id != user.id).first()
+            existing = (
+                db.query(User).filter(User.username_slug == new_slug, User.id != user.id).first()
+            )
             if existing:
-                raise HTTPException(status_code=409, detail='That username is already taken')
+                raise HTTPException(status_code=409, detail="That username is already taken")
         user.username_slug = new_slug
     db.commit()
     db.refresh(user)
@@ -165,7 +189,11 @@ def delete_user(
         try:
             get_storage_client().delete_object(experience.s3_key)
         except Exception:
-            logger.warning("Failed to delete storage object %s for user %s — continuing", experience.s3_key, user.id)
+            logger.warning(
+                "Failed to delete storage object %s for user %s — continuing",
+                experience.s3_key,
+                user.id,
+            )
 
     # 2. Delete tailorings (must precede jobs due to FK)
     db.query(Tailoring).filter(Tailoring.user_id == user.id).delete()

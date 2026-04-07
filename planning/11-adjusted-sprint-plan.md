@@ -351,28 +351,38 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 
 Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contributors run `pre-commit install` once). Runs on every `git commit` locally; also runs in CI as a gate.
 
-- [ ] **`gitleaks`** — secret scanning. Blocks commits containing API keys, connection strings, or credentials before they ever leave the machine. This is the highest-value hook: it is the only layer that prevents a secret from entering git history entirely.
-- [ ] **`ruff`** — Python linting + formatting (replaces flake8, isort, pyupgrade). Fast, zero config needed beyond `pyproject.toml`. Run on `backend/**/*.py`.
-- [ ] **Standard hooks** (`pre-commit-hooks`): trailing whitespace, end-of-file newlines, YAML/JSON validity. Low noise, high signal.
-- [ ] Exclude `backend/.venv/`, `frontend/.next/`, `infra/**/.terraform/` from all hooks.
+- [x] **`gitleaks`** — secret scanning. Blocks commits containing API keys, connection strings, or credentials before they ever leave the machine. This is the highest-value hook: it is the only layer that prevents a secret from entering git history entirely.
+- [x] **`ruff`** — Python linting + formatting (replaces flake8, isort, pyupgrade). Fast, zero config needed beyond `pyproject.toml`. Run on `backend/**/*.py`.
+- [x] **Standard hooks** (`pre-commit-hooks`): trailing whitespace, end-of-file newlines, YAML/JSON validity. Low noise, high signal.
+- [x] **Frontend ESLint** (local hook): runs `npm run lint` in `frontend/`; scoped to `^frontend/.*\.(ts|tsx|js|jsx|mjs)$` so it only fires when frontend files change.
+- [x] Exclude `backend/.venv/`, `frontend/.next/`, `infra/**/.terraform/` from all hooks.
 
 ---
 
 #### Backend — pytest
 
-- [ ] Set up pytest with `pytest-asyncio` and a test database (PostgreSQL via `pytest-postgresql` or SQLite in-memory)
-- [ ] Unit tests — pure functions: `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), `tailorings.py` (`_validate_profile`, `_generate_slug`)
-- [ ] Integration tests — FastAPI `TestClient`: tailoring CRUD, share/unshare, public slug lookup, Notion export (mock Notion API with `responses` or `httpx` mock transport), 401 revoke flow
-- [ ] Fixture helpers: factories for `User`, `Tailoring`, `Job`, `JobChunk` — no setup duplication across tests
-- [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — focused on auth checks, ownership guards, enrichment status gating
+- [x] Set up pytest with a real PostgreSQL test database (`app_test`) — `pytest-mock`, `pytest-cov`, `httpx` added as dev deps; `pythonpath = ["."]` and `testpaths = ["tests"]` in `pyproject.toml`
+- [x] Unit tests — pure functions: `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), `tailorings.py` (`_validate_profile`, `_generate_slug`) — 51 tests
+- [x] Integration tests — FastAPI `TestClient`: tailoring CRUD, share/unshare, public slug lookup, user CRUD, public profile, auth guards (401/403/422) — 32 tests
+- [x] Fixture helpers: `make_user`, `make_job`, `make_tailoring` factories; `conftest.py` split into top-level (no DB) and `integration/conftest.py` (DB engine, schema lifecycle, per-test cleanup via `table.delete()`)
+- [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — currently 42% overall; `app/api/users.py` at 78%, `app/api/tailorings.py` at 39%. Remaining gap: SSE streaming, background tasks, Notion export API, experience endpoints — deferred (see below)
+
+**Not done / deferred:**
+- Notion export API integration tests (mock Notion API with `responses` or `httpx`) — deferred to a follow-up; requires mocking `requests.Session` calls
+- Experience endpoint tests — lower priority; no pure functions, primarily file upload + SSE flow
+- SSE streaming tests — complex to test with `TestClient`; background task completion not observable
+- `pytest-asyncio` — not needed; `TestClient` handles `async def` routes synchronously
 
 ---
 
 #### Frontend — Jest
 
-- [ ] Unit tests: `InlineMarkdown` rendering, `scoreBarColor` logic, `groupBySection` filtering
-- [ ] Consider `next-test-api-route-handler` for testing Next.js API proxy routes in isolation
-- [ ] Add `eslint-plugin-security` to the existing ESLint setup — catches `eval`, regex DoS, `innerHTML` patterns in TypeScript. Integrates into the existing `npm run lint` step with no new toolchain.
+- [x] Unit tests: `InlineMarkdown` rendering (8 tests), `scoreBarColor` logic (8 tests), `groupBySection` + `groupChunksForAnalysis` filtering (10 tests) — 26 tests total, all passing
+- [x] Jest infrastructure: `jest` + `jest-environment-jsdom` + `@testing-library/react` + `@testing-library/jest-dom`; `jest.config.ts` using `next/jest` (SWC transform, auto-reads `@/*` tsconfig paths); `"test"` and `"test:coverage"` scripts added to `package.json`
+- [x] `scoreBarColor` and `groupBySection` extracted from `JobPosting.tsx` into `src/lib/chunks.ts` (exported); `groupChunksForAnalysis` (the ChunkAnalysis variant) extracted alongside — both components updated to import from shared module
+- [x] Add `eslint-plugin-security` to the existing ESLint setup — catches `eval`, regex DoS, `innerHTML` patterns in TypeScript. `detect-object-injection` disabled globally (fires on all typed bracket-notation access in TypeScript — too many false positives to be actionable).
+- [x] ESLint full pass: fixed all warnings/errors surfaced by first `npm run lint` run — escaped apostrophes (`You&apos;ll`), replaced `<img>` with Next.js `<Image>`, removed unused imports, extracted inline components defined during render (`SpinningLoader` in `Sidebar.tsx`), added `// eslint-disable-next-line` with explanatory comments for intentional `exhaustive-deps` omissions in `TailoringDetail.tsx` (polling effects depend on sub-fields only to avoid spurious interval restarts). `npm run lint` now exits clean.
+- [ ] `next-test-api-route-handler` — deferred; API routes are thin proxies with no independent logic, testing them means testing the mock more than the route
 
 ---
 
@@ -380,38 +390,38 @@ Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contribu
 
 Single workflow (`.github/workflows/ci.yml`) with parallel jobs, triggering on every PR to `main` and push to `main`.
 
-- [ ] **pre-commit job**: runs `pre-commit run --all-files` — covers gitleaks secret scan, ruff lint, and standard hooks across the whole repo. Fastest feedback loop for secrets and style issues.
-- [ ] **Backend job** (parallel):
+- [x] **pre-commit job**: runs `pre-commit run --all-files` with `SKIP=eslint-frontend` — covers gitleaks secret scan, ruff lint, and standard hooks. ESLint skipped here; runs as a dedicated step in the frontend job.
+- [x] **Backend job** (parallel):
   - `uv run ruff check backend/` — lint gate
-  - `uv run bandit -r backend/app/ -ll` — Python SAST (checks for `eval`, subprocess injection, hardcoded passwords, etc.). `-ll` = medium+ severity only, avoids noise.
+  - `uv run bandit -r app/ -ll -q` — Python SAST. Fixed two real issues it surfaced: `requests.post` (notion OAuth) and `requests.get` (GitHub API) had no timeout — added `timeout=15` and `timeout=10` respectively.
   - `uv run pip-audit` — dependency CVE scan against `uv.lock`
-  - `uv run pytest` — test suite
-- [ ] **Frontend job** (parallel):
+  - `uv run pytest` — test suite with real PostgreSQL service container (`postgres:16-alpine`); `app_test` DB created via psql before test run
+  - `bandit[toml]` and `pip-audit` added to `[dependency-groups] dev` in `pyproject.toml`
+- [x] **Frontend job** (parallel):
   - `npm run lint` — ESLint including `eslint-plugin-security` rules
-  - `npm run build` — type-check + build (catches TypeScript errors CI-wide)
-  - `npm test` — Jest unit tests
+  - `npm run build` — type-check + Next.js compile; dummy `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `API_BASE_URL`, `API_KEY` provided as env vars (Next.js validates them at build time)
+  - `npm test -- --ci` — Jest in non-interactive mode
   - `npm audit --audit-level=high` — dependency CVE scan, high+ severity only
-- [ ] **Infra job** (parallel, triggered only on changes to `infra/**`):
-  - `checkov -d infra/providers/azure/ --framework terraform` — IaC misconfiguration scan (open ports, missing encryption, IAM over-permission). Skip in PRs that don't touch `infra/`.
-- [ ] Cache `uv` deps and `node_modules` between runs — target < 4 min total
-- [ ] Branch protection rule on `main`: require all CI jobs to pass before merge
+- [x] **Infra job** (parallel): `checkov -d infra/providers/azure/ --framework terraform --compact --quiet` — runs on every PR (Checkov is fast; job-level path filtering not supported natively in GitHub Actions)
+- [x] Cache: `astral-sh/setup-uv@v5` with `enable-cache: true` (uv store); `actions/setup-node@v4` with `cache: npm`
+- [ ] Branch protection rule on `main`: require all CI jobs to pass before merge — **GitHub UI setting, not a file change. Go to repo Settings → Branches → Add rule for `main`, check "Require status checks to pass" and select: `pre-commit`, `backend`, `frontend`, `infra`.**
 
 ---
 
 #### Dependabot
 
-- [ ] Add `.github/dependabot.yml` — enables automated PRs for outdated/vulnerable dependencies:
-  - `npm` ecosystem → `frontend/`, weekly
-  - `pip` ecosystem → `backend/`, weekly
-  - `github-actions` ecosystem → `.github/workflows/`, weekly
-- [ ] Dependabot PRs are gated by the same CI workflow — they only land if tests + security scans pass
+- [x] Add `.github/dependabot.yml` — enables automated PRs for outdated/vulnerable dependencies:
+  - `npm` ecosystem → `frontend/`, weekly Monday
+  - `pip` ecosystem → `backend/`, weekly Monday
+  - `github-actions` ecosystem → `.github/workflows/`, weekly Monday
+- [x] Dependabot PRs are gated by the same CI workflow — they only land if tests + security scans pass
 
 ---
 
 #### Container scanning (deploy workflow)
 
-- [ ] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — runs after the Docker image is built but before it is pushed to ACR. Blocks deploy on critical CVEs in the OS layer or installed packages. Both frontend and backend images scanned.
-- [ ] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
+- [x] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — `aquasecurity/trivy-action@0.29.0` runs after each `docker build`, before `docker push`. Build+push steps split into three separate steps (build → scan → push) for both frontend and backend images.
+- [x] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
 
 ---
 

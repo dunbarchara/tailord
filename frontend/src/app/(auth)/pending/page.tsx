@@ -41,7 +41,7 @@ export default function PendingPage() {
           <h1 className="text-2xl font-semibold text-primary">Access pending</h1>
           <p className="text-primary">
             Your account{session?.user.email ? ` (${session.user.email})` : ""} is
-            awaiting approval. You'll have full access once an admin reviews your request.
+            awaiting approval. You&apos;ll have full access once an admin reviews your request.
           </p>
         </div>
 

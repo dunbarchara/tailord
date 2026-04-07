@@ -1,0 +1,81 @@
+skip-check:
+  # ── Private endpoints ──────────────────────────────────────────────────────
+  # Private endpoint setup requires VNet peering, private DNS zones, and
+  # dedicated subnets — significant networking complexity and cost for this scale.
+  - CKV2_AZURE_32  # Key Vault private endpoint
+  - CKV2_AZURE_33  # Storage private endpoint
+  - CKV2_AZURE_57  # PostgreSQL Flexible Server private endpoint
+
+  # ── Customer-managed encryption keys ───────────────────────────────────────
+  # CMKs require Azure Key Vault key + managed HSM setup. Microsoft-managed keys
+  # provide sufficient encryption for this project's threat model.
+  - CKV2_AZURE_1   # Storage CMK encryption
+  - CKV2_AZURE_22  # Cognitive Services CMK
+
+  # ── Geo-redundancy ─────────────────────────────────────────────────────────
+  # B_Standard_B1ms PostgreSQL tier does not support geo-redundant backups.
+  # LRS is cost-appropriate for user upload storage at this scale.
+  - CKV_AZURE_136  # PostgreSQL geo-redundant backups
+  - CKV_AZURE_206  # Storage account replication (requires ZRS/GRS)
+
+  # ── Audit logging ──────────────────────────────────────────────────────────
+  # Queue service is not used. Blob read logging is a nice-to-have, not critical.
+  - CKV_AZURE_33   # Queue service logging (queues not in use)
+  - CKV2_AZURE_21  # Blob service read request logging
+
+  # ── Storage account ────────────────────────────────────────────────────────
+  # "tailorduploads" is a valid Azure storage account name; Checkov's pattern
+  # check enforces a stricter convention than Azure requires.
+  - CKV_AZURE_43   # Storage account naming convention
+
+  # Shared key (connection string) access is required for the application's
+  # storage client. Disabling it would break presigned PUT URL generation.
+  - CKV2_AZURE_40  # Disallow shared key authorization
+  - CKV2_AZURE_41  # SAS token expiration policy
+
+  # Soft delete on blob/container adds cost and complexity for user upload files
+  # where data retention beyond account lifetime is not required.
+  - CKV2_AZURE_38  # Storage soft delete
+
+  # ── Azure AI Foundry (Cognitive Services) ──────────────────────────────────
+  # Public network access is required — the application calls the OpenAI-compatible
+  # endpoint from Container Apps which do not have a static IP for allowlisting.
+  # Local authentication (account key via Key Vault) is the auth mechanism used.
+  - CKV_AZURE_134  # Cognitive Services disable public network access
+  - CKV_AZURE_236  # Cognitive Services disable local authentication
+  - CKV_AZURE_238  # Cognitive Services managed identity (uses account key)
+
+  # ── Key Vault networking ────────────────────────────────────────────────────
+  # Container Apps access Key Vault via RBAC + managed identity, not IP firewall.
+  # Adding a firewall allowlist would require static IPs on Container Apps (not available).
+  - CKV_AZURE_109  # Key Vault firewall rules
+  - CKV_AZURE_189  # Key Vault disable public network access
+
+  # ── PostgreSQL networking ───────────────────────────────────────────────────
+  # start_ip=0.0.0.0 / end_ip=0.0.0.0 is Azure's documented pattern for
+  # "allow connections from Azure services" — it does not open to the public internet.
+  - CKV2_AZURE_26  # PostgreSQL overly permissive firewall rule
+
+  # ── Key Vault secret expiration ────────────────────────────────────────────
+  # Expiration dates on application secrets (database URL, API keys) require a
+  # rotation process that does not yet exist. Skipping until rotation automation
+  # is implemented.
+  - CKV_AZURE_41   # Key Vault secret expiration dates
+
+  # ── Storage networking ──────────────────────────────────────────────────────
+  # Public network access must remain enabled: presigned PUT URLs (used for
+  # direct browser-to-storage uploads) require the storage endpoint to be
+  # reachable. Access is controlled via SAS tokens, not network restrictions.
+  - CKV_AZURE_59   # Storage disallow public access (conflicts with presigned URL uploads)
+
+  # ── Azure Container Registry (ACR — Basic SKU) ─────────────────────────────
+  # The following checks require ACR Premium SKU features or external tooling
+  # (Microsoft Defender for Containers) that are not cost-appropriate at this scale.
+  - CKV_AZURE_139  # ACR disable public networking (GitHub Actions pushes require public access)
+  - CKV_AZURE_163  # ACR vulnerability scanning (requires Defender for Containers)
+  - CKV_AZURE_164  # ACR content trust / signed images (not available on Basic SKU)
+  - CKV_AZURE_165  # ACR geo-replication (Premium SKU only)
+  - CKV_AZURE_166  # ACR quarantine policy (Premium SKU only)
+  - CKV_AZURE_167  # ACR untagged manifest retention policy (Premium SKU only)
+  - CKV_AZURE_233  # ACR zone redundancy (Premium SKU only)
+  - CKV_AZURE_237  # ACR dedicated data endpoints (Premium SKU only)

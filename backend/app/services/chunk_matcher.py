@@ -12,10 +12,14 @@ from app.services.tailoring_generator import _format_sourced_profile
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 3  # Smaller batches reduce output token count — advocacy_blurb roughly doubles output length
+BATCH_SIZE = (
+    3  # Smaller batches reduce output token count — advocacy_blurb roughly doubles output length
+)
 
 
-def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: dict, pronouns: str | None = None) -> None:
+def enrich_job_chunks(
+    job_id: uuid.UUID, job_markdown: str, extracted_profile: dict, pronouns: str | None = None
+) -> None:
     """
     Background task: extract chunks from job markdown, match against candidate profile,
     and persist JobChunk rows to DB. Sets enrichment_status on related tailorings.
@@ -44,6 +48,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
 
         # Group non-header chunks by section, preserving original order
         from collections import OrderedDict
+
         section_map: OrderedDict[str, list] = OrderedDict()
         for chunk in chunks:
             if chunk.chunk_type == "header":
@@ -58,7 +63,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
             last_paragraph: str | None = None  # most recent paragraph seen in this section
 
             for batch_start in range(0, len(section_chunks), BATCH_SIZE):
-                batch = section_chunks[batch_start: batch_start + BATCH_SIZE]
+                batch = section_chunks[batch_start : batch_start + BATCH_SIZE]
 
                 # Always carry the most recent paragraph-type chunk seen before
                 # this batch as preceding context. Paragraphs establish the frame
@@ -67,7 +72,9 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
                 # span). Bullets don't carry this framing power, so we skip them.
                 preceding = ""
                 if last_paragraph is not None:
-                    preceding = f"PRECEDING CONTEXT (do not score):\n[PARAGRAPH] {last_paragraph}\n\n"
+                    preceding = (
+                        f"PRECEDING CONTEXT (do not score):\n[PARAGRAPH] {last_paragraph}\n\n"
+                    )
 
                 # Update last_paragraph with any paragraph in this batch before
                 # moving to the next — so the next batch inherits the latest one.
@@ -86,11 +93,14 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
                         model=settings.llm_model,
                         messages=[
                             {"role": "system", "content": prompt.SYSTEM},
-                            {"role": "user", "content": prompt.USER_TEMPLATE.format(
-                                extracted_profile=formatted_profile,
-                                section=section,
-                                chunks_block=chunks_block,
-                            )},
+                            {
+                                "role": "user",
+                                "content": prompt.USER_TEMPLATE.format(
+                                    extracted_profile=formatted_profile,
+                                    section=section,
+                                    chunks_block=chunks_block,
+                                ),
+                            },
                         ],
                         response_model=ChunkMatchBatch,
                         temperature=prompt.TEMPERATURE,
@@ -99,13 +109,17 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
                 except Exception:
                     logger.exception(
                         "enrich_job_chunks: LLM batch failed for job_id=%s section=%r batch_start=%d",
-                        job_id, section, batch_start,
+                        job_id,
+                        section,
+                        batch_start,
                     )
                     batch_results = []
 
                 # Pad results if LLM returned fewer than chunks sent
                 while len(batch_results) < len(batch):
-                    batch_results.append(ChunkMatchResult(score=-1, rationale="Not evaluated (batch error)"))
+                    batch_results.append(
+                        ChunkMatchResult(score=-1, rationale="Not evaluated (batch error)")
+                    )
 
                 for chunk, match in zip(batch, batch_results):
                     result_map[chunk.position] = match
@@ -116,7 +130,14 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
             if chunk.chunk_type == "header":
                 all_results.append((chunk, ChunkMatchResult(score=-1, rationale="Section header")))
             else:
-                all_results.append((chunk, result_map.get(chunk.position, ChunkMatchResult(score=-1, rationale="Not evaluated"))))
+                all_results.append(
+                    (
+                        chunk,
+                        result_map.get(
+                            chunk.position, ChunkMatchResult(score=-1, rationale="Not evaluated")
+                        ),
+                    )
+                )
 
         # Persist JobChunk rows
         now = datetime.now(timezone.utc)
@@ -144,6 +165,7 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
         logger.exception("enrich_job_chunks failed for job_id=%s", job_id)
         try:
             from app.models.database import Tailoring as _Tailoring
+
             _set_enrichment_status(db, _Tailoring, job_id, "error")
             db.commit()
         except Exception:
@@ -154,6 +176,6 @@ def enrich_job_chunks(job_id: uuid.UUID, job_markdown: str, extracted_profile: d
 
 
 def _set_enrichment_status(db, tailoring_model, job_id: uuid.UUID, status: str) -> None:
-    db.query(tailoring_model).filter(
-        tailoring_model.job_id == job_id
-    ).update({"enrichment_status": status})
+    db.query(tailoring_model).filter(tailoring_model.job_id == job_id).update(
+        {"enrichment_status": status}
+    )

@@ -8,10 +8,19 @@ from app.core.llm_utils import llm_parse
 from app.prompts import tailoring as prompt
 from app.schemas.llm_outputs import TailoringContent
 
-
 _MONTH_ABBR = {
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
 
 
@@ -21,15 +30,15 @@ def _parse_duration_date(token: str) -> date | None:
     if t in ("present", "current", "now", "today"):
         return date.today()
     # MM/YYYY or MM-YYYY
-    m = re.match(r'^(\d{1,2})[/-](\d{4})$', t)
+    m = re.match(r"^(\d{1,2})[/-](\d{4})$", t)
     if m:
         return date(int(m.group(2)), int(m.group(1)), 1)
     # Mon YYYY (e.g. "Jan 2020")
-    m = re.match(r'^([a-z]{3})\s+(\d{4})$', t)
+    m = re.match(r"^([a-z]{3})\s+(\d{4})$", t)
     if m and m.group(1) in _MONTH_ABBR:
         return date(int(m.group(2)), _MONTH_ABBR[m.group(1)], 1)
     # YYYY only
-    m = re.match(r'^(\d{4})$', t)
+    m = re.match(r"^(\d{4})$", t)
     if m:
         return date(int(m.group(1)), 1, 1)
     return None
@@ -38,7 +47,7 @@ def _parse_duration_date(token: str) -> date | None:
 def _parse_duration_years(duration: str) -> float:
     """Return fractional years for a duration string like '01/2020 - 04/2023'."""
     # Split on ' - ', ' – ', ' — ', ' to '
-    parts = re.split(r'\s*[-–—]\s*|\s+to\s+', duration.strip(), maxsplit=1)
+    parts = re.split(r"\s*[-–—]\s*|\s+to\s+", duration.strip(), maxsplit=1)
     if len(parts) != 2:
         return 0.0
     start = _parse_duration_date(parts[0])
@@ -113,7 +122,7 @@ def _format_sourced_profile(
             candidate_lines.append(
                 f"Pronouns: {pronouns} — use these when referring to the candidate in third person."
             )
-        sections.append(f"[CANDIDATE]\n" + "\n".join(candidate_lines))
+        sections.append("[CANDIDATE]\n" + "\n".join(candidate_lines))
 
     signals = _compute_profile_signals(sourced_profile)
     sections.append(f"[COMPUTED SIGNALS — treat as ground truth]\n{signals}")
@@ -146,7 +155,7 @@ def _format_ranked_matches(matches: list[dict]) -> str:
         source_key = match.get("experience_source")
         source_label = source_labels.get(source_key, source_key) if source_key else None
 
-        header = f"[{score_label}] {req_label}: \"{req}\""
+        header = f'[{score_label}] {req_label}: "{req}"'
         if source_label and rationale:
             detail = f"  → {source_label} — {rationale}"
         elif rationale:
@@ -212,7 +221,9 @@ def _render_tailoring(
     closing = content.closing.rstrip()
     if candidate_email:
         lines += [closing, ""]
-        lines.append(f"If you're interested in continuing the conversation, {first_name} can be reached at [{candidate_email}](mailto:{candidate_email}).")
+        lines.append(
+            f"If you're interested in continuing the conversation, {first_name} can be reached at [{candidate_email}](mailto:{candidate_email})."
+        )
     else:
         lines.append(closing)
 
@@ -225,7 +236,11 @@ def _render_tailoring(
     if candidate_email:
         brief_parts.append(f"[{candidate_email}](mailto:{candidate_email})")
     if candidate_linkedin:
-        linkedin_url = candidate_linkedin if candidate_linkedin.startswith("http") else f"https://{candidate_linkedin}"
+        linkedin_url = (
+            candidate_linkedin
+            if candidate_linkedin.startswith("http")
+            else f"https://{candidate_linkedin}"
+        )
         brief_parts.append(f"[LinkedIn]({linkedin_url})")
     lines.append(f"*{' · '.join(brief_parts)}*")
 
@@ -246,20 +261,27 @@ def generate_tailoring(
     candidate_email: str | None = resume.get("email") or None
     candidate_linkedin: str | None = resume.get("linkedin") or None
 
-    ranked_matches_block = _format_ranked_matches(ranked_matches if ranked_matches is not None else [])
+    ranked_matches_block = _format_ranked_matches(
+        ranked_matches if ranked_matches is not None else []
+    )
 
     content = llm_parse(
         get_llm_client(),
         model=settings.llm_model,
         messages=[
             {"role": "system", "content": prompt.SYSTEM},
-            {"role": "user", "content": prompt.USER_TEMPLATE.format(
-                candidate_name=candidate_name,
-                job_title=job_title,
-                company=company,
-                ranked_matches_block=ranked_matches_block,
-                extracted_profile=_format_sourced_profile(extracted_profile, candidate_name=candidate_name, pronouns=pronouns),
-            )},
+            {
+                "role": "user",
+                "content": prompt.USER_TEMPLATE.format(
+                    candidate_name=candidate_name,
+                    job_title=job_title,
+                    company=company,
+                    ranked_matches_block=ranked_matches_block,
+                    extracted_profile=_format_sourced_profile(
+                        extracted_profile, candidate_name=candidate_name, pronouns=pronouns
+                    ),
+                ),
+            },
         ],
         response_model=TailoringContent,
         temperature=prompt.TEMPERATURE,

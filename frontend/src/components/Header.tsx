@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTheme } from './ThemeProvider';
 import { Moon, Sun, Menu, X } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
@@ -18,7 +19,7 @@ export function Header() {
       <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 h-14">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-1 shrink-0">
-          <img src="/logo.svg" alt="" className="h-6 w-6" />
+          <Image src="/logo.svg" alt="" width={24} height={24} className="h-6 w-6" />
           <span className="text-[18px] font-semibold tracking-tight text-text-primary">Tailord</span>
         </Link>
 

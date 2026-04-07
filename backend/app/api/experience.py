@@ -169,18 +169,26 @@ async def trigger_process(
     db: Session = Depends(get_db),
 ):
     logger.info("trigger_process: user=%s storage_key=%s", user.id, body.storage_key)
-    experience = db.query(Experience).filter(
-        Experience.user_id == user.id,
-        Experience.s3_key == body.storage_key,
-    ).first()
+    experience = (
+        db.query(Experience)
+        .filter(
+            Experience.user_id == user.id,
+            Experience.s3_key == body.storage_key,
+        )
+        .first()
+    )
 
     if not experience:
         raise HTTPException(status_code=404, detail="Experience record not found")
 
     if experience.last_process_requested_at:
-        cooldown_end = experience.last_process_requested_at + timedelta(minutes=_EXPERIENCE_PROCESS_COOLDOWN_MINUTES)
+        cooldown_end = experience.last_process_requested_at + timedelta(
+            minutes=_EXPERIENCE_PROCESS_COOLDOWN_MINUTES
+        )
         if datetime.now(timezone.utc) < cooldown_end:
-            remaining = max(1, int((cooldown_end - datetime.now(timezone.utc)).total_seconds() / 60) + 1)
+            remaining = max(
+                1, int((cooldown_end - datetime.now(timezone.utc)).total_seconds() / 60) + 1
+            )
             logger.warning("Experience process cooldown active: user=%s", user.id)
             raise HTTPException(
                 status_code=429,
@@ -207,21 +215,19 @@ async def trigger_process(
                 mb = len(file_bytes) / 1024 / 1024
                 logger.warning("File too large: %.1f MB user=%s", mb, user.id)
                 experience.status = "error"
-                experience.error_message = f"File is too large ({mb:.1f} MB). Please upload a file under 10 MB."
+                experience.error_message = (
+                    f"File is too large ({mb:.1f} MB). Please upload a file under 10 MB."
+                )
                 db.commit()
                 yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
                 return
 
-            text = await anyio.to_thread.run_sync(
-                lambda: extract_text(file_bytes, filename)
-            )
+            text = await anyio.to_thread.run_sync(lambda: extract_text(file_bytes, filename))
             normalized = _normalize_resume_text(text)
 
             yield "event: stage\ndata: analyzing\n\n"
 
-            profile = await anyio.to_thread.run_sync(
-                lambda: extract_profile(normalized)
-            )
+            profile = await anyio.to_thread.run_sync(lambda: extract_profile(normalized))
 
             experience.raw_resume_text = normalized
             experience.extracted_profile = {"resume": profile}
@@ -274,7 +280,9 @@ def delete_experience(
         try:
             get_storage_client().delete_object(e.s3_key)
         except Exception:
-            logger.warning("delete_experience: storage delete failed for key=%s — continuing", e.s3_key)
+            logger.warning(
+                "delete_experience: storage delete failed for key=%s — continuing", e.s3_key
+            )
 
     if _has_non_resume_sources(e):
         # Other sources exist — clear only the file upload fields
@@ -323,6 +331,7 @@ def get_github_repos(
     user: User = Depends(require_approved_user),
 ):
     from app.core.mvp_github import fetch_repos
+
     return {"username": username, "repos": fetch_repos(username)}
 
 

@@ -1,0 +1,47 @@
+# Run `pre-commit install` once after cloning to activate these hooks locally.
+# CI runs `pre-commit run --all-files` on every PR.
+
+repos:
+  # Secret scanning — blocks commits containing API keys, tokens, or credentials.
+  # Highest-value hook: only layer that prevents secrets from entering git history entirely.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.27.2
+    hooks:
+      - id: gitleaks
+
+  # Python linting + formatting (replaces flake8, isort, pyupgrade).
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.3
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/.*\.py$
+      - id: ruff-format
+        files: ^backend/.*\.py$
+
+  # Frontend ESLint — catches type errors, security issues, and React hook violations.
+  # Runs only when frontend files change; ~2-5s on a warm node_modules.
+  - repo: local
+    hooks:
+      - id: eslint-frontend
+        name: ESLint (frontend)
+        language: system
+        entry: bash -c 'cd frontend && npm run lint'
+        files: ^frontend/.*\.(ts|tsx|js|jsx|mjs)$
+        pass_filenames: false
+
+  # Standard hygiene hooks.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+
+exclude: |
+  (?x)^(
+    backend/\.venv/.*|
+    frontend/\.next/.*|
+    infra/.*/.terraform/.*
+  )$

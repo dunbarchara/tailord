@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+
+  # ─── pre-commit ────────────────────────────────────────────────────────────
+  # Covers: gitleaks secret scan, ruff lint + format, whitespace/EOF/YAML/JSON.
+  # The eslint-frontend hook is skipped here — the frontend job runs lint independently
+  # (the hook requires node_modules present and is faster to run as a plain npm step).
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans full history
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: pre-commit/action@v3.0.1
+        env:
+          SKIP: eslint-frontend
+
+  # ─── backend ───────────────────────────────────────────────────────────────
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: uv sync --dev
+
+      - name: Create test database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE app_test;"
+
+      - name: Ruff lint
+        working-directory: ./backend
+        run: uv run ruff check .
+
+      - name: Bandit SAST
+        working-directory: ./backend
+        run: uv run bandit -r app/ -ll -q
+
+      - name: pip-audit (dependency CVE scan)
+        working-directory: ./backend
+        run: uv run pip-audit
+
+      - name: pytest
+        working-directory: ./backend
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/app_test
+          API_KEY: test-key
+          LLM_BASE_URL: http://localhost:1234/v1
+          LLM_MODEL: test-model
+          STORAGE_PROVIDER: aws
+          AWS_S3_BUCKET: test-bucket
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_REGION: us-east-1
+        run: uv run pytest
+
+  # ─── frontend ──────────────────────────────────────────────────────────────
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: ESLint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Build (type-check + Next.js compile)
+        working-directory: ./frontend
+        env:
+          NEXTAUTH_SECRET: ci-placeholder-secret
+          NEXTAUTH_URL: http://localhost:3000
+          GOOGLE_CLIENT_ID: ci-placeholder
+          GOOGLE_CLIENT_SECRET: ci-placeholder
+          API_BASE_URL: http://localhost:8000
+          API_KEY: ci-placeholder
+        run: npm run build
+
+      - name: Jest
+        working-directory: ./frontend
+        run: npm test -- --ci
+
+      - name: npm audit
+        working-directory: ./frontend
+        run: npm audit --audit-level=high --omit=dev
+
+  # ─── infra ─────────────────────────────────────────────────────────────────
+  # Only runs when infra/** files change. Scans Terraform for misconfigurations.
+  # GitHub Actions doesn't support job-level path filtering — we use a separate
+  # workflow trigger with paths: to skip this cheaply on non-infra PRs.
+  infra:
+    name: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Checkov (Terraform IaC scan)
+        run: checkov -d infra/providers/azure/ --framework terraform --compact --quiet --config-file infra/providers/azure/.checkov.yaml
