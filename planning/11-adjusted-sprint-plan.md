@@ -351,10 +351,10 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 
 Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contributors run `pre-commit install` once). Runs on every `git commit` locally; also runs in CI as a gate.
 
-- [ ] **`gitleaks`** — secret scanning. Blocks commits containing API keys, connection strings, or credentials before they ever leave the machine. This is the highest-value hook: it is the only layer that prevents a secret from entering git history entirely.
-- [ ] **`ruff`** — Python linting + formatting (replaces flake8, isort, pyupgrade). Fast, zero config needed beyond `pyproject.toml`. Run on `backend/**/*.py`.
-- [ ] **Standard hooks** (`pre-commit-hooks`): trailing whitespace, end-of-file newlines, YAML/JSON validity. Low noise, high signal.
-- [ ] Exclude `backend/.venv/`, `frontend/.next/`, `infra/**/.terraform/` from all hooks.
+- [x] **`gitleaks`** — secret scanning. Blocks commits containing API keys, connection strings, or credentials before they ever leave the machine. This is the highest-value hook: it is the only layer that prevents a secret from entering git history entirely.
+- [x] **`ruff`** — Python linting + formatting (replaces flake8, isort, pyupgrade). Fast, zero config needed beyond `pyproject.toml`. Run on `backend/**/*.py`.
+- [x] **Standard hooks** (`pre-commit-hooks`): trailing whitespace, end-of-file newlines, YAML/JSON validity. Low noise, high signal.
+- [x] Exclude `backend/.venv/`, `frontend/.next/`, `infra/**/.terraform/` from all hooks.
 
 ---
 
