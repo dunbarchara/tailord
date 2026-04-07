@@ -1,8 +1,9 @@
 import logging
+from typing import Literal
+
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Literal
 
 from app.auth import require_api_key
 from app.config import settings
@@ -105,10 +106,14 @@ def export_tailoring_to_notion(
     if not user.notion_access_token:
         raise HTTPException(status_code=403, detail="Notion not connected")
 
-    tailoring = db.query(Tailoring).filter(
-        Tailoring.id == tailoring_id,
-        Tailoring.user_id == user.id,
-    ).first()
+    tailoring = (
+        db.query(Tailoring)
+        .filter(
+            Tailoring.id == tailoring_id,
+            Tailoring.user_id == user.id,
+        )
+        .first()
+    )
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
@@ -132,7 +137,9 @@ def export_tailoring_to_notion(
             .all()
         )
         if not chunks:
-            raise HTTPException(status_code=422, detail="No enriched chunks available for posting export")
+            raise HTTPException(
+                status_code=422, detail="No enriched chunks available for posting export"
+            )
         markdown = chunks_to_notion_markdown(chunks)
         existing_page_id = tailoring.notion_posting_page_id
 
@@ -147,14 +154,25 @@ def export_tailoring_to_notion(
                 markdown=markdown,
             )
             if updated:
-                logger.info("Updated Notion %s page %s for tailoring %s", view, existing_page_id, tailoring_id)
-                page_url = tailoring.notion_page_url if view == "letter" else tailoring.notion_posting_page_url
+                logger.info(
+                    "Updated Notion %s page %s for tailoring %s",
+                    view,
+                    existing_page_id,
+                    tailoring_id,
+                )
+                page_url = (
+                    tailoring.notion_page_url
+                    if view == "letter"
+                    else tailoring.notion_posting_page_url
+                )
                 return {"page_url": page_url}
 
         # Lock user and tailoring rows before container creation to prevent
         # concurrent exports racing to create duplicate parent/container pages.
         user = db.query(User).filter(User.id == user.id).with_for_update().first()
-        tailoring = db.query(Tailoring).filter(Tailoring.id == tailoring_id).with_for_update().first()
+        tailoring = (
+            db.query(Tailoring).filter(Tailoring.id == tailoring_id).with_for_update().first()
+        )
 
         # Ensure workspace-level and per-tailoring container pages exist
         parent_page_id = get_or_create_parent_page(
@@ -192,7 +210,11 @@ def export_tailoring_to_notion(
             )
             tailoring.notion_posting_page_id = stub_id
             tailoring.notion_posting_page_url = stub_url
-            logger.info("Created Posting stub %s to reserve top position for tailoring %s", stub_id, tailoring_id)
+            logger.info(
+                "Created Posting stub %s to reserve top position for tailoring %s",
+                stub_id,
+                tailoring_id,
+            )
 
         page_id, page_url = create_notion_page(
             access_token=user.notion_access_token,
@@ -221,5 +243,11 @@ def export_tailoring_to_notion(
         tailoring.notion_posting_page_url = page_url
     db.commit()
 
-    logger.info("Exported tailoring %s (%s) to Notion page %s for user %s", tailoring_id, view, page_id, user.id)
+    logger.info(
+        "Exported tailoring %s (%s) to Notion page %s for user %s",
+        tailoring_id,
+        view,
+        page_id,
+        user.id,
+    )
     return {"page_url": page_url}

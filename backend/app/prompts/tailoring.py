@@ -58,4 +58,3 @@ Return JSON matching this schema exactly:
   "closing": "1–2 sentence synthesis of the argument."
 }}
 """
-

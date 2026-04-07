@@ -5,9 +5,10 @@ Both the API serialisation layer (tailorings.py) and the Notion export service
 (notion_export.py) use these to ensure the Posting view and the Notion Posting
 page apply identical filtering and labelling logic.
 """
+
 import re
 
-_NOISE_PATTERN = re.compile(r'^(\[.+\]\(.+\)|!\[.*\]\(.+\))$')
+_NOISE_PATTERN = re.compile(r"^(\[.+\]\(.+\)|!\[.*\]\(.+\))$")
 
 SOURCE_LABELS: dict[str, str] = {
     "resume": "Resume",

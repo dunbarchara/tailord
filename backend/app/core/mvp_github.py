@@ -12,7 +12,8 @@ def fetch_repos(username: str) -> list[dict]:
     repos = resp.json()
 
     filtered = [
-        r for r in repos
+        r
+        for r in repos
         if not r.get("fork")
         and not r.get("archived")
         # Drop repos with no stars AND no description — pure noise

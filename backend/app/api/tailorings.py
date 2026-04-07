@@ -1,13 +1,15 @@
 import json
 import logging
-import re
 import random
+import re
 import string
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
@@ -16,14 +18,14 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
-from app.services.job_extractor import extract_job
-from app.services.tailoring_generator import generate_tailoring, _format_sourced_profile
-from app.services.requirement_matcher import match_requirements
-from app.services.chunk_matcher import enrich_job_chunks
 from app.core.playwright_helper import get_rendered_content
 from app.models.database import Experience, Job, JobChunk, LlmTriggerLog, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate, _validate_job_url
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
+from app.services.chunk_matcher import enrich_job_chunks
+from app.services.job_extractor import extract_job
+from app.services.requirement_matcher import match_requirements
+from app.services.tailoring_generator import _format_sourced_profile, generate_tailoring
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -127,7 +129,6 @@ async def _scrape_job_url(url: str) -> tuple[str, str]:
     return html, job_markdown
 
 
-
 def _finalize_tailoring(
     tailoring_id: str,
     job_id: str,
@@ -147,6 +148,7 @@ def _finalize_tailoring(
     Stages: extracting → matching → generating
     """
     from app.clients.database import SessionLocal
+
     db = SessionLocal()
     try:
         tailoring = db.get(Tailoring, tailoring_id)
@@ -165,7 +167,9 @@ def _finalize_tailoring(
             logger.exception("Job extraction failed for tailoring %s", tailoring_id)
             tailoring.generation_status = "error"
             tailoring.generation_stage = None
-            tailoring.generation_error = "We couldn't extract the job description. Try regenerating."
+            tailoring.generation_error = (
+                "We couldn't extract the job description. Try regenerating."
+            )
             db.commit()
             return
 
@@ -199,7 +203,9 @@ def _finalize_tailoring(
             logger.exception("Tailoring generation failed for tailoring %s", tailoring_id)
             tailoring.generation_status = "error"
             tailoring.generation_stage = None
-            tailoring.generation_error = "Tailoring generation failed. You can retry by regenerating."
+            tailoring.generation_error = (
+                "Tailoring generation failed. You can retry by regenerating."
+            )
             db.commit()
             return
 
@@ -249,12 +255,23 @@ async def _stream_tailoring(
     Error events: on any failure before the background task is scheduled.
     """
     try:
-        experience = db.query(Experience).filter(
-            Experience.user_id == user.id,
-            Experience.status == "ready",
-        ).first()
+        experience = (
+            db.query(Experience)
+            .filter(
+                Experience.user_id == user.id,
+                Experience.status == "ready",
+            )
+            .first()
+        )
         if not experience or not experience.extracted_profile:
-            yield _sse("error", json.dumps({"detail": "No experience found — upload a resume or add a GitHub profile first."}))
+            yield _sse(
+                "error",
+                json.dumps(
+                    {
+                        "detail": "No experience found — upload a resume or add a GitHub profile first."
+                    }
+                ),
+            )
             return
         try:
             _validate_profile(experience.extracted_profile)
@@ -266,7 +283,9 @@ async def _stream_tailoring(
         # db.commit() closes the implicit read transaction so the connection doesn't
         # sit idle-in-transaction for the entire scraping duration (5–15s).
         extracted_profile = experience.extracted_profile
-        preferred = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
+        preferred = " ".join(
+            filter(None, [user.preferred_first_name, user.preferred_last_name])
+        ).strip()
         candidate_name = preferred or user.name or user.email
         candidate_pronouns = user.pronouns or None
         if existing_tailoring:
@@ -327,18 +346,21 @@ async def _stream_tailoring(
 
     except Exception:
         logger.exception("Unexpected error in _stream_tailoring")
-        yield _sse("error", json.dumps({"detail": "An unexpected error occurred. Please try again."}))
+        yield _sse(
+            "error", json.dumps({"detail": "An unexpected error occurred. Please try again."})
+        )
 
 
 def _generate_slug(company: str | None, title: str | None) -> str:
     def slugify(s: str) -> str:
         s = s.lower().strip()
-        s = re.sub(r'[^\w\s-]', '', s)
-        s = re.sub(r'[\s_-]+', '-', s).strip('-')
+        s = re.sub(r"[^\w\s-]", "", s)
+        s = re.sub(r"[\s_-]+", "-", s).strip("-")
         return s[:20]
+
     parts = [p for p in [slugify(company or ""), slugify(title or "")] if p]
-    suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
-    return '-'.join(parts + [suffix])
+    suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+    return "-".join(parts + [suffix])
 
 
 @router.post("/tailorings")
@@ -385,7 +407,9 @@ async def regenerate_tailoring(
     db.commit()
 
     return StreamingResponse(
-        _stream_tailoring(tailoring.job.job_url, user, db, background_tasks, existing_tailoring=tailoring),
+        _stream_tailoring(
+            tailoring.job.job_url, user, db, background_tasks, existing_tailoring=tailoring
+        ),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
@@ -443,7 +467,9 @@ def get_tailoring(
         "generation_status": tailoring.generation_status,
         "generation_stage": tailoring.generation_stage,
         "generation_error": tailoring.generation_error,
-        "generation_started_at": tailoring.generation_started_at.isoformat() if tailoring.generation_started_at else None,
+        "generation_started_at": tailoring.generation_started_at.isoformat()
+        if tailoring.generation_started_at
+        else None,
         "letter_public": tailoring.letter_public,
         "posting_public": tailoring.posting_public,
         "is_public": tailoring.is_public,
@@ -518,23 +544,27 @@ def get_tailoring_debug_info(
         .all()
     )
     sample_chunks_block = "\n".join(
-        f"{i}. [{c.chunk_type.upper()}] {c.content}"
-        for i, c in enumerate(chunks, start=1)
+        f"{i}. [{c.chunk_type.upper()}] {c.content}" for i, c in enumerate(chunks, start=1)
     )
     first_section = chunks[0].section or "General" if chunks else "General"
-    sample_user_message = chunk_prompt.USER_TEMPLATE.format(
-        extracted_profile=formatted_profile,
-        section=first_section,
-        chunks_block=sample_chunks_block,
-    ) if chunks else "(No chunks available)"
+    sample_user_message = (
+        chunk_prompt.USER_TEMPLATE.format(
+            extracted_profile=formatted_profile,
+            section=first_section,
+            chunks_block=sample_chunks_block,
+        )
+        if chunks
+        else "(No chunks available)"
+    )
 
-    job = tailoring.job
     return {
         "model": tailoring.model or settings.llm_model,
         "formatted_profile": formatted_profile,
         "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
         "sample_chunk_user_message": sample_user_message,
-        "tailoring_system_prompt": tailoring_prompt.SYSTEM if hasattr(tailoring_prompt, "SYSTEM") else None,
+        "tailoring_system_prompt": tailoring_prompt.SYSTEM
+        if hasattr(tailoring_prompt, "SYSTEM")
+        else None,
     }
 
 
@@ -633,9 +663,13 @@ def get_public_tailoring(
         "created_at": tailoring.created_at.isoformat(),
         "author_slug": author.username_slug if author else None,
         "author_name": (
-            " ".join(p for p in [author.preferred_first_name, author.preferred_last_name] if p).strip()
+            " ".join(
+                p for p in [author.preferred_first_name, author.preferred_last_name] if p
+            ).strip()
             or author.name
-        ) if author else None,
+        )
+        if author
+        else None,
     }
 
     if tailoring.posting_public:
@@ -671,7 +705,9 @@ def list_tailorings(
         {
             "id": str(t.id),
             "title": t.job.extracted_job.get("title") if t.job and t.job.extracted_job else None,
-            "company": t.job.extracted_job.get("company") if t.job and t.job.extracted_job else None,
+            "company": t.job.extracted_job.get("company")
+            if t.job and t.job.extracted_job
+            else None,
             "job_url": t.job.job_url if t.job else None,
             "generation_status": t.generation_status,
             "letter_public": t.letter_public,

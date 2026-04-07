@@ -1,6 +1,7 @@
 import logging
 
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import async_playwright
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,9 @@ async def get_rendered_content(url: str) -> str:
             try:
                 await page.wait_for_load_state("networkidle", timeout=_NETWORKIDLE_TIMEOUT_MS)
             except PlaywrightTimeoutError:
-                logger.warning("get_rendered_content: networkidle timeout for %s — using available DOM", url)
+                logger.warning(
+                    "get_rendered_content: networkidle timeout for %s — using available DOM", url
+                )
             return await page.content()
         finally:
             if browser:

@@ -68,10 +68,13 @@ def extract_job(job_markdown: str, html: str | None = None) -> dict:
         model=settings.llm_model,
         messages=[
             {"role": "system", "content": prompt.SYSTEM},
-            {"role": "user", "content": prompt.USER_TEMPLATE.format(
-                hints_block=hints_block,
-                job_markdown=job_markdown,
-            )},
+            {
+                "role": "user",
+                "content": prompt.USER_TEMPLATE.format(
+                    hints_block=hints_block,
+                    job_markdown=job_markdown,
+                ),
+            },
         ],
         response_model=ExtractedJob,
         temperature=prompt.TEMPERATURE,

@@ -7,18 +7,21 @@ Page hierarchy:
         ├─ Posting  (primary — created first to hold top position)
         └─ Letter
 """
+
 import logging
 import re
 
 import requests
 
-from app.services.chunk_display import SOURCE_LABELS as _SOURCE_LABELS, is_display_ready
+from app.services.chunk_display import SOURCE_LABELS as _SOURCE_LABELS
+from app.services.chunk_display import is_display_ready
 
 logger = logging.getLogger(__name__)
 
 
 class NotionAuthError(Exception):
     """Raised when Notion returns 401 — the user has revoked the integration's access."""
+
     pass
 
 
@@ -26,24 +29,24 @@ NOTION_VERSION = "2026-03-11"
 PARENT_PAGE_TITLE = "Tailord - Tailorings"
 TAILORD_ICON = {"type": "external", "external": {"url": "https://tailord.app/tailordicon.png"}}
 
-_ESCAPE_RE = re.compile(r'([\\~`\[\]<>{}|^])')
-_FORMATTING_RE = re.compile(r'\*+')
-_LINK_RE = re.compile(r'!?\[([^\]]*)\]\([^)]*\)')
+_ESCAPE_RE = re.compile(r"([\\~`\[\]<>{}|^])")
+_FORMATTING_RE = re.compile(r"\*+")
+_LINK_RE = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
 
 
 def _escape(text: str) -> str:
     """Escape Notion enhanced markdown special characters, preserving bold/italic (*).."""
-    return _ESCAPE_RE.sub(r'\\\1', text)
+    return _ESCAPE_RE.sub(r"\\\1", text)
 
 
 def _strip_links(text: str) -> str:
     """Replace markdown links [text](url) and images ![alt](url) with their inner text."""
-    return _LINK_RE.sub(r'\1', text)
+    return _LINK_RE.sub(r"\1", text)
 
 
 def _strip_formatting(text: str) -> str:
     """Remove markdown bold/italic markers (e.g. **Section**) from plain text."""
-    return _FORMATTING_RE.sub('', text).strip()
+    return _FORMATTING_RE.sub("", text).strip()
 
 
 def chunks_to_notion_markdown(chunks: list) -> str:
@@ -102,13 +105,13 @@ def chunks_to_notion_markdown(chunks: list) -> str:
             lines.append('\t<callout color="gray_bg">')
             if chunk.advocacy_blurb:
                 advocacy = _escape(_strip_links(chunk.advocacy_blurb.strip()))
-                lines.append(f'\t\t{advocacy}')
+                lines.append(f"\t\t{advocacy}")
             if chunk.advocacy_blurb and chunk.experience_source:
-                lines.append('\t\t---')
+                lines.append("\t\t---")
             if chunk.experience_source:
                 label = _SOURCE_LABELS.get(chunk.experience_source, chunk.experience_source)
-                lines.append(f'\t\t*Source: {label}*')
-            lines.append('\t</callout>')
+                lines.append(f"\t\t*Source: {label}*")
+            lines.append("\t</callout>")
 
         lines.append("</details>")
         lines.append("")
@@ -118,11 +121,13 @@ def chunks_to_notion_markdown(chunks: list) -> str:
 
 def _make_session(access_token: str) -> requests.Session:
     session = requests.Session()
-    session.headers.update({
-        "Authorization": f"Bearer {access_token}",
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json",
-    })
+    session.headers.update(
+        {
+            "Authorization": f"Bearer {access_token}",
+            "Notion-Version": NOTION_VERSION,
+            "Content-Type": "application/json",
+        }
+    )
     return session
 
 
@@ -147,7 +152,9 @@ def _get_or_create_page(
             raise NotionAuthError("Notion access revoked")
         if res.status_code == 200:
             return existing_id, res.json().get("url", "")
-        logger.warning("Notion %s %s inaccessible (%s), creating new", log_label, existing_id, res.status_code)
+        logger.warning(
+            "Notion %s %s inaccessible (%s), creating new", log_label, existing_id, res.status_code
+        )
 
     body: dict = {
         "parent": parent,
@@ -162,7 +169,9 @@ def _get_or_create_page(
         raise NotionAuthError("Notion access revoked")
     if res.status_code != 200:
         logger.error("Notion %s creation failed: %s %s", log_label, res.status_code, res.text)
-        raise ValueError(f"Notion API error {res.status_code}: {res.json().get('message', res.text)}")
+        raise ValueError(
+            f"Notion API error {res.status_code}: {res.json().get('message', res.text)}"
+        )
 
     page = res.json()
     logger.info("Created Notion %s %s", log_label, page["id"])
@@ -276,7 +285,9 @@ def update_notion_page(
     if title_res.status_code == 401:
         raise NotionAuthError("Notion access revoked")
     if title_res.status_code != 200:
-        logger.warning("Notion page %s inaccessible (%s), will create new", page_id, title_res.status_code)
+        logger.warning(
+            "Notion page %s inaccessible (%s), will create new", page_id, title_res.status_code
+        )
         return False
 
     content_res = session.patch(
@@ -287,7 +298,9 @@ def update_notion_page(
         },
     )
     if content_res.status_code != 200:
-        logger.error("Notion content replace failed: %s %s", content_res.status_code, content_res.text)
+        logger.error(
+            "Notion content replace failed: %s %s", content_res.status_code, content_res.text
+        )
         return False
 
     return True

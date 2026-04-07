@@ -31,7 +31,7 @@ export function CTA() {
           </div>
         </div>
       </div>
-      
+
       {/* Background decoration */}
       <svg
         className="absolute inset-0 -z-10 h-full w-full stroke-border-subtle/50 mask-[radial-gradient(100%_100%_at_top_right,white,transparent)]"

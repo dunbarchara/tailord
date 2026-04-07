@@ -1,7 +1,7 @@
 import logging
 import sys
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from app.config import settings
 
@@ -17,9 +17,7 @@ def setup_logging() -> None:
 
     handlers: list[logging.Handler] = []
 
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
     if settings.environment == "local":
         # Ensure log directory exists
@@ -30,7 +28,7 @@ def setup_logging() -> None:
             log_dir / "app.log",
             maxBytes=5 * 1024 * 1024,  # 5 MB
             backupCount=5,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         file_handler.setFormatter(formatter)
         handlers.append(file_handler)

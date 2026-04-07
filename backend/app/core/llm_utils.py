@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import TypeVar, Type
+from typing import Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -11,11 +11,13 @@ T = TypeVar("T", bound=BaseModel)
 
 class LLMRefusalError(Exception):
     """Raised when the LLM refuses to answer due to a safety or policy violation."""
+
     pass
 
 
 class LLMTruncationError(Exception):
     """Raised when the LLM response was cut off mid-output (finish_reason == 'length')."""
+
     pass
 
 
@@ -23,7 +25,7 @@ def strip_json_fences(text: str) -> str:
     """Remove markdown code fences that small LLMs emit despite instructions."""
     text = text.strip()
     if text.startswith("```"):
-        text = text[text.index("\n") + 1:]
+        text = text[text.index("\n") + 1 :]
     if text.endswith("```"):
         text = text[: text.rfind("```")]
     return text.strip()
@@ -60,14 +62,16 @@ def llm_parse(
     - INFO:  model, schema, mode, token usage, finish reason, latency (always visible)
     - DEBUG: full request messages and full response content (set LOG_LEVEL=DEBUG to enable)
     """
-    from app.core.model_config import get_capabilities, JsonMode
+    from app.core.model_config import JsonMode, get_capabilities
 
     caps = get_capabilities(model)
     mode = caps.json_mode
 
     logger.debug(
         "llm_parse request | model=%s mode=%s schema=%s temperature=%s\n\n%s",
-        model, mode.value, response_model.__name__,
+        model,
+        mode.value,
+        response_model.__name__,
         temperature if caps.supports_temperature else "n/a (unsupported)",
         _format_messages(messages),
     )
@@ -87,7 +91,10 @@ def llm_parse(
         if message.refusal:
             logger.warning(
                 "llm_parse refusal | model=%s schema=%s latency=%.2fs reason=%s",
-                model, response_model.__name__, elapsed, message.refusal,
+                model,
+                response_model.__name__,
+                elapsed,
+                message.refusal,
             )
             raise LLMRefusalError(message.refusal)
 
@@ -109,9 +116,14 @@ def llm_parse(
 
     logger.info(
         "llm_parse | model=%s schema=%s mode=%s tokens=%d+%d=%d finish=%s latency=%.2fs",
-        model, response_model.__name__, mode.value,
-        usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
-        finish_reason, elapsed,
+        model,
+        response_model.__name__,
+        mode.value,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        usage.total_tokens,
+        finish_reason,
+        elapsed,
     )
     logger.debug("llm_parse response | raw content:\n%s", raw_content)
 
@@ -142,7 +154,8 @@ def llm_generate(
 
     logger.debug(
         "llm_generate request | model=%s label=%s temperature=%s\n\n%s",
-        model, label,
+        model,
+        label,
         temperature if caps.supports_temperature else "n/a (unsupported)",
         _format_messages(messages),
     )
@@ -160,10 +173,14 @@ def llm_generate(
 
     logger.info(
         "llm_generate | model=%s label=%s temp=%s tokens=%d+%d=%d finish=%s latency=%.2fs",
-        model, label,
+        model,
+        label,
         temperature if caps.supports_temperature else "n/a",
-        usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
-        finish_reason, elapsed,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        usage.total_tokens,
+        finish_reason,
+        elapsed,
     )
     logger.debug("llm_generate response | content:\n%s", content)
 

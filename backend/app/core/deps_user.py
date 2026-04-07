@@ -4,6 +4,7 @@ import unicodedata
 
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
+
 from app.core.deps_database import get_db
 from app.models.database import User
 
@@ -11,15 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 def _slugify(name: str) -> str:
-    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     name = name.lower().strip()
-    name = re.sub(r'[^\w\s-]', '', name)
-    name = re.sub(r'[\s_]+', '-', name).strip('-')
+    name = re.sub(r"[^\w\s-]", "", name)
+    name = re.sub(r"[\s_]+", "-", name).strip("-")
     return name[:30]
 
 
 def _generate_username_slug(name: str | None, db: Session) -> str:
-    base = _slugify(name or '') or 'user'
+    base = _slugify(name or "") or "user"
     slug = base
     counter = 2
     while db.query(User).filter(User.username_slug == slug).first():
@@ -49,12 +50,22 @@ def get_current_user(
         if x_user_image:
             user.avatar_url = x_user_image
         if not user.username_slug:
-            display_name = " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])) or user.name
+            display_name = (
+                " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name]))
+                or user.name
+            )
             user.username_slug = _generate_username_slug(display_name, db)
         db.commit()
-        logger.debug("get_current_user: found user_id=%s email=%s status=%s", user.id, user.email, user.status)
+        logger.debug(
+            "get_current_user: found user_id=%s email=%s status=%s",
+            user.id,
+            user.email,
+            user.status,
+        )
     else:
-        logger.info("get_current_user: creating new user google_sub=%s email=%s", x_user_id, x_user_email)
+        logger.info(
+            "get_current_user: creating new user google_sub=%s email=%s", x_user_id, x_user_email
+        )
         user = User(
             google_sub=x_user_id,
             email=x_user_email or x_user_id,

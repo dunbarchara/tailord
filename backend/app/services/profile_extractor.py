@@ -6,12 +6,12 @@ from app.core.llm_utils import llm_parse
 from app.prompts import profile_extraction as prompt
 from app.schemas.llm_outputs import ExtractedProfile
 
-_LEADING_BULLET = re.compile(r'^[•\-\*·◦▸–—]\s*')
+_LEADING_BULLET = re.compile(r"^[•\-\*·◦▸–—]\s*")
 
 
 def _clean_profile(data: dict) -> dict:
     for job in data.get("work_experience", []):
-        job["bullets"] = [_LEADING_BULLET.sub('', b) for b in job.get("bullets", [])]
+        job["bullets"] = [_LEADING_BULLET.sub("", b) for b in job.get("bullets", [])]
     return data
 
 

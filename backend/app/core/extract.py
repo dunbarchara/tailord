@@ -11,9 +11,22 @@ logger = logging.getLogger(__name__)
 
 # Known ATS platforms and job boards — og:site_name returns these, not the hiring company
 _KNOWN_PLATFORMS = {
-    "linkedin", "greenhouse", "lever", "workday", "indeed", "glassdoor",
-    "smartrecruiters", "jobvite", "bamboohr", "ashby", "rippling",
-    "icims", "taleo", "successfactors", "workable", "recruitee",
+    "linkedin",
+    "greenhouse",
+    "lever",
+    "workday",
+    "indeed",
+    "glassdoor",
+    "smartrecruiters",
+    "jobvite",
+    "bamboohr",
+    "ashby",
+    "rippling",
+    "icims",
+    "taleo",
+    "successfactors",
+    "workable",
+    "recruitee",
 }
 
 
@@ -63,7 +76,7 @@ def _strip_platform_suffix(s: str) -> str:
         idx = s.rfind(sep)
         if idx == -1:
             continue
-        suffix = s[idx + len(sep):]
+        suffix = s[idx + len(sep) :]
         if suffix.lower().strip() in _KNOWN_PLATFORMS:
             return s[:idx].strip()
     return s
@@ -88,7 +101,7 @@ def parse_title_tag(title_str: str) -> dict:
         if sep in lower:
             idx = lower.index(sep)
             job_title = s[:idx].strip()
-            company = _strip_platform_suffix(s[idx + len(sep):].strip())
+            company = _strip_platform_suffix(s[idx + len(sep) :].strip())
             if job_title and company:
                 return {"title": job_title, "company": company}
 
@@ -196,11 +209,11 @@ def _markdown_plain_text(markdown: str) -> str:
     length check reflects readable content, not URL noise embedded in markdown.
     """
     text = markdown
-    text = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)       # images: ![alt](url)
-    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)   # links: [text](url) -> text
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # headings
-    text = re.sub(r'https?://\S+', '', text)                # bare URLs
-    text = re.sub(r'[*_`~]+', '', text)                     # emphasis/code markers
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)  # images: ![alt](url)
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)  # links: [text](url) -> text
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)  # headings
+    text = re.sub(r"https?://\S+", "", text)  # bare URLs
+    text = re.sub(r"[*_`~]+", "", text)  # emphasis/code markers
     return text.strip()
 
 
@@ -265,8 +278,8 @@ _MAX_MARKDOWN_CHARS = 32_000
 # Headings that signal the start of an application form section.
 # Content at or after these headings is not part of the job description.
 _APPLY_SECTION_PATTERNS = re.compile(
-    r'^#+\s*(apply\s+(for|to|now)|submit\s+(your\s+)?application|application\s+form|'
-    r'apply\s+online|how\s+to\s+apply)',
+    r"^#+\s*(apply\s+(for|to|now)|submit\s+(your\s+)?application|application\s+form|"
+    r"apply\s+online|how\s+to\s+apply)",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -287,7 +300,7 @@ def extract_markdown_content(html: str) -> str:
     # A malicious job page can embed hidden text (display:none / visibility:hidden /
     # aria-hidden) that is invisible to humans but extracted verbatim by BeautifulSoup
     # and passed to the LLM. Decompose these before conversion.
-    _HIDDEN_STYLE = re.compile(r'display\s*:\s*none|visibility\s*:\s*hidden', re.IGNORECASE)
+    _HIDDEN_STYLE = re.compile(r"display\s*:\s*none|visibility\s*:\s*hidden", re.IGNORECASE)
     for tag in soup.find_all(style=_HIDDEN_STYLE):
         tag.decompose()
     for tag in soup.find_all(attrs={"aria-hidden": "true"}):
@@ -300,13 +313,14 @@ def extract_markdown_content(html: str) -> str:
     # after this is application UI, not job description content.
     match = _APPLY_SECTION_PATTERNS.search(markdown_content)
     if match:
-        markdown_content = markdown_content[:match.start()].rstrip()
+        markdown_content = markdown_content[: match.start()].rstrip()
 
     # Hard-cap content length to limit prompt injection surface and token cost.
     if len(markdown_content) > _MAX_MARKDOWN_CHARS:
         logger.warning(
             "extract_markdown_content: truncated %d → %d chars",
-            len(markdown_content), _MAX_MARKDOWN_CHARS,
+            len(markdown_content),
+            _MAX_MARKDOWN_CHARS,
         )
         markdown_content = markdown_content[:_MAX_MARKDOWN_CHARS]
 

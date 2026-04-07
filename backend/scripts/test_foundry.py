@@ -13,7 +13,6 @@ Usage (from backend/):
 
 import argparse
 import json
-import os
 import sys
 import textwrap
 import traceback
@@ -84,6 +83,7 @@ SAMPLE_JOB = textwrap.dedent("""
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def header(title: str) -> None:
     print(f"\n{'=' * 60}")
     print(f"  {title}")
@@ -119,10 +119,12 @@ def fail(label: str, exc: BaseException) -> None:
 # Tasks
 # ---------------------------------------------------------------------------
 
+
 def test_profile() -> bool:
     header("Task: profile extraction (ExtractedProfile)")
     try:
         from app.services.profile_extractor import extract_profile
+
         result = extract_profile(SAMPLE_RESUME)
         ok("Parsed successfully")
         ok("summary present", bool(result.get("summary")))
@@ -141,6 +143,7 @@ def test_job() -> bool:
     header("Task: job extraction (ExtractedJob)")
     try:
         from app.services.job_extractor import extract_job
+
         result = extract_job(SAMPLE_JOB)
         ok("Parsed successfully")
         ok("company", result.get("company"))
@@ -177,7 +180,9 @@ def test_tailoring() -> bool:
                     }
                 ],
                 "skills": {"technical": ["Python", "Kubernetes", "Terraform", "AWS"], "soft": []},
-                "education": [{"degree": "B.S. Computer Science", "institution": "UT Austin", "year": "2018"}],
+                "education": [
+                    {"degree": "B.S. Computer Science", "institution": "UT Austin", "year": "2018"}
+                ],
                 "projects": [],
                 "certifications": ["AWS Certified Solutions Architect"],
             }
@@ -190,7 +195,10 @@ def test_tailoring() -> bool:
                 "required": ["7+ years experience", "Distributed systems background"],
                 "preferred": ["Kubernetes experience", "Staff/principal engineer background"],
             },
-            "skills": {"technical": ["Python", "Go", "TypeScript", "Kubernetes", "AWS"], "soft": []},
+            "skills": {
+                "technical": ["Python", "Go", "TypeScript", "Kubernetes", "AWS"],
+                "soft": [],
+            },
         }
 
         result = generate_tailoring(profile, job, candidate_name="Jane Smith")
@@ -236,12 +244,13 @@ def main() -> None:
     # Apply timeout override before any app imports instantiate the client
     if args.timeout is not None:
         import app.clients.llm_client as llm_client_module
+
         llm_client_module.LLM_TIMEOUT_SECONDS = args.timeout
 
     # Print endpoint info before running
+    from app.clients.llm_client import LLM_TIMEOUT_SECONDS
     from app.config import settings
     from app.core.model_config import get_json_mode
-    from app.clients.llm_client import LLM_TIMEOUT_SECONDS
 
     print("\nEndpoint configuration:")
     print(f"  model    : {settings.llm_model}")

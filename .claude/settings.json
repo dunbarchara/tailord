@@ -2,7 +2,7 @@
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true
   },
-  "permissions": {                                                                                                                                                
-        "allow": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]                                                                                                    
+  "permissions": {
+        "allow": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
       }
 }
