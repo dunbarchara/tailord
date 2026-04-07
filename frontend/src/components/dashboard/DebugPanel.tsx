@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Copy, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { ChunkAnalysis, chunksToMarkdown } from '@/components/dashboard/ChunkAnalysis';
 import type { ChunksResponse } from '@/types';
 
@@ -94,6 +93,7 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
     fetch(`/api/tailorings/${tailoringId}/debug`)

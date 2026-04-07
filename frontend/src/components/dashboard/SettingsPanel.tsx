@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
+// eslint-disable-next-line security/detect-unsafe-regex
 const _USERNAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 const _RESERVED = new Set([
   'dashboard', 'admin', 'api', 'settings', 'login', 'register',

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2, Globe, Plus, User, Sun, Moon, LogOut, Settings, ChevronsUpDown, Trash2, AlertCircle } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
@@ -175,6 +176,10 @@ function tailoringLabel(t: TailoringListItem): string {
   return 'Untitled';
 }
 
+function SpinningLoader({ className }: { className?: string }) {
+  return <Loader2 className={cn(className, 'animate-spin')} />;
+}
+
 function TailoringItem({
   tailoring,
   active,
@@ -189,9 +194,7 @@ function TailoringItem({
   const label = tailoringLabel(tailoring);
   const generating = tailoring.generation_status === 'generating';
   const failed = tailoring.generation_status === 'error';
-  const Icon = generating
-    ? ({ className }: { className?: string }) => <Loader2 className={cn(className, 'animate-spin')} />
-    : IconWorkflows;
+  const Icon = generating ? SpinningLoader : IconWorkflows;
 
   if (collapsed) {
     return (
@@ -433,7 +436,7 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
               href="/"
               className="flex items-center py-1.5 gap-1 px-[7px] rounded-[10px] hover:bg-black/5 dark:hover:bg-white/5 outline-none transition-colors"
             >
-              <img alt="Tailord logo" className="h-[22px] w-[22px] shrink-0" src="/logo.svg" />
+              <Image alt="Tailord logo" width={22} height={22} className="h-[22px] w-[22px] shrink-0" src="/logo.svg" />
               {!isCollapsed && (
                 <span
                   className="text-text-primary text-[16px] leading-none font-semibold tracking-tight whitespace-nowrap"

@@ -19,6 +19,17 @@ repos:
       - id: ruff-format
         files: ^backend/.*\.py$
 
+  # Frontend ESLint — catches type errors, security issues, and React hook violations.
+  # Runs only when frontend files change; ~2-5s on a warm node_modules.
+  - repo: local
+    hooks:
+      - id: eslint-frontend
+        name: ESLint (frontend)
+        language: system
+        entry: bash -c 'cd frontend && npm run lint'
+        files: ^frontend/.*\.(ts|tsx|js|jsx|mjs)$
+        pass_filenames: false
+
   # Standard hygiene hooks.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

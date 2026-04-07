@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import type { ExtractedProfile } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { X, Plus } from 'lucide-react';
 
 interface Props {

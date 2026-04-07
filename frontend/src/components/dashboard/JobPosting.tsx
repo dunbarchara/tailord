@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Info, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { groupBySection, scoreBarColor } from '@/lib/chunks';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
@@ -26,24 +27,6 @@ function stripMarkdown(text: string): string {
   return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
 }
 
-function scoreBarColor(score: number | null, publicMode?: boolean): string | null {
-  if (score === 2) return 'bg-score-strong';
-  if (score === 1) return publicMode ? 'bg-score-partial-public' : 'bg-score-partial';
-  if (score === 0) return publicMode ? null : 'bg-score-gap';
-  return null;
-}
-
-function groupBySection(chunks: JobChunk[]): Map<string, JobChunk[]> {
-  const groups = new Map<string, JobChunk[]>();
-  for (const chunk of chunks) {
-    if (!chunk.display_ready) continue;
-    if (chunk.should_render === false) continue;
-    const key = chunk.section!;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(chunk);
-  }
-  return groups;
-}
 
 function ChunkItem({
   chunk,

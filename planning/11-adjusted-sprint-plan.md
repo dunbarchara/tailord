@@ -354,6 +354,7 @@ Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contribu
 - [x] **`gitleaks`** — secret scanning. Blocks commits containing API keys, connection strings, or credentials before they ever leave the machine. This is the highest-value hook: it is the only layer that prevents a secret from entering git history entirely.
 - [x] **`ruff`** — Python linting + formatting (replaces flake8, isort, pyupgrade). Fast, zero config needed beyond `pyproject.toml`. Run on `backend/**/*.py`.
 - [x] **Standard hooks** (`pre-commit-hooks`): trailing whitespace, end-of-file newlines, YAML/JSON validity. Low noise, high signal.
+- [x] **Frontend ESLint** (local hook): runs `npm run lint` in `frontend/`; scoped to `^frontend/.*\.(ts|tsx|js|jsx|mjs)$` so it only fires when frontend files change.
 - [x] Exclude `backend/.venv/`, `frontend/.next/`, `infra/**/.terraform/` from all hooks.
 
 ---
@@ -376,9 +377,12 @@ Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contribu
 
 #### Frontend — Jest
 
-- [ ] Unit tests: `InlineMarkdown` rendering, `scoreBarColor` logic, `groupBySection` filtering
-- [ ] Consider `next-test-api-route-handler` for testing Next.js API proxy routes in isolation
-- [ ] Add `eslint-plugin-security` to the existing ESLint setup — catches `eval`, regex DoS, `innerHTML` patterns in TypeScript. Integrates into the existing `npm run lint` step with no new toolchain.
+- [x] Unit tests: `InlineMarkdown` rendering (8 tests), `scoreBarColor` logic (8 tests), `groupBySection` + `groupChunksForAnalysis` filtering (10 tests) — 26 tests total, all passing
+- [x] Jest infrastructure: `jest` + `jest-environment-jsdom` + `@testing-library/react` + `@testing-library/jest-dom`; `jest.config.ts` using `next/jest` (SWC transform, auto-reads `@/*` tsconfig paths); `"test"` and `"test:coverage"` scripts added to `package.json`
+- [x] `scoreBarColor` and `groupBySection` extracted from `JobPosting.tsx` into `src/lib/chunks.ts` (exported); `groupChunksForAnalysis` (the ChunkAnalysis variant) extracted alongside — both components updated to import from shared module
+- [x] Add `eslint-plugin-security` to the existing ESLint setup — catches `eval`, regex DoS, `innerHTML` patterns in TypeScript. `detect-object-injection` disabled globally (fires on all typed bracket-notation access in TypeScript — too many false positives to be actionable).
+- [x] ESLint full pass: fixed all warnings/errors surfaced by first `npm run lint` run — escaped apostrophes (`You&apos;ll`), replaced `<img>` with Next.js `<Image>`, removed unused imports, extracted inline components defined during render (`SpinningLoader` in `Sidebar.tsx`), added `// eslint-disable-next-line` with explanatory comments for intentional `exhaustive-deps` omissions in `TailoringDetail.tsx` (polling effects depend on sub-fields only to avoid spurious interval restarts). `npm run lint` now exits clean.
+- [ ] `next-test-api-route-handler` — deferred; API routes are thin proxies with no independent logic, testing them means testing the mock more than the route
 
 ---
 
