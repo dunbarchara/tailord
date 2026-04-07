@@ -421,7 +421,19 @@ Single workflow (`.github/workflows/ci.yml`) with parallel jobs, triggering on e
 #### Container scanning (deploy workflow)
 
 - [x] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — `aquasecurity/trivy-action@v0.35.0` runs after each `docker build`, before `docker push`. Build+push steps split into three separate steps (build → scan → push) for both frontend and backend images.
-- [x] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
+- [x] `--exit-code 1 --severity CRITICAL --ignore-unfixed` — blocks only on CVEs where a patched version exists; unfixed OS-layer CVEs (e.g. `libaom3`, `zlib1g` in Debian 12 with no upstream fix) do not block deploys since they are not actionable.
+
+#### Continuous CVE monitoring (implement when repo goes public)
+
+The deploy gate above only blocks actionable CVEs. Unfixed CVEs are silenced but not forgotten — when Debian eventually ships a patch, nothing currently notifies us. This is the gap to close.
+
+**When the GitHub repo goes public**, add a Trivy SARIF upload to CI:
+- Run Trivy a second time with `format: sarif` and `ignore-unfixed: false` (no deploy gate, just reporting)
+- Upload with `github/codeql-action/upload-sarif` → results appear in the repo's **Security → Code scanning** tab
+- GitHub tracks CVEs across runs, shows when status changes (e.g. `affected` → `fixed`), and provides a suppress-with-reason workflow for acknowledged `will_not_fix` findings
+- This is free on public repos and replaces the need for Snyk, Azure Defender for Containers, or a scheduled cron job
+
+ACR (Azure Container Registry) stays private regardless — the SARIF approach scans images in CI before push, not in ACR itself, so repo visibility is what matters here.
 
 ---
 
