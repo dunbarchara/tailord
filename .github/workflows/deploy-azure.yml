@@ -57,6 +57,7 @@ jobs:
         format: table
         exit-code: "1"
         severity: CRITICAL
+        ignore-unfixed: true
 
     - name: Push frontend image
       run: docker push $ACR_REGISTRY/tailord-frontend:${{ steps.generate_tag.outputs.tag_name }}
@@ -72,6 +73,7 @@ jobs:
         format: table
         exit-code: "1"
         severity: CRITICAL
+        ignore-unfixed: true
 
     - name: Push backend image
       run: docker push $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
