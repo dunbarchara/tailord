@@ -343,26 +343,83 @@ All authenticated dashboard pages redesigned to share a unified Mintlify-matched
 
 ### Day P2 — Testing + CI Gate
 
-**Goal:** Merges to `main` are gated by automated tests. The test suite covers the critical paths, not every line.
+**Goal:** Merges to `main` are gated by automated tests and security tooling. The test suite covers critical paths; the security layer catches regressions automatically.
+
+---
+
+#### Local — pre-commit hooks
+
+Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contributors run `pre-commit install` once). Runs on every `git commit` locally; also runs in CI as a gate.
+
+- [ ] **`gitleaks`** — secret scanning. Blocks commits containing API keys, connection strings, or credentials before they ever leave the machine. This is the highest-value hook: it is the only layer that prevents a secret from entering git history entirely.
+- [ ] **`ruff`** — Python linting + formatting (replaces flake8, isort, pyupgrade). Fast, zero config needed beyond `pyproject.toml`. Run on `backend/**/*.py`.
+- [ ] **Standard hooks** (`pre-commit-hooks`): trailing whitespace, end-of-file newlines, YAML/JSON validity. Low noise, high signal.
+- [ ] Exclude `backend/.venv/`, `frontend/.next/`, `infra/**/.terraform/` from all hooks.
+
+---
 
 #### Backend — pytest
+
 - [ ] Set up pytest with `pytest-asyncio` and a test database (PostgreSQL via `pytest-postgresql` or SQLite in-memory)
 - [ ] Unit tests — pure functions: `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), `tailorings.py` (`_validate_profile`, `_generate_slug`)
 - [ ] Integration tests — FastAPI `TestClient`: tailoring CRUD, share/unshare, public slug lookup, Notion export (mock Notion API with `responses` or `httpx` mock transport), 401 revoke flow
 - [ ] Fixture helpers: factories for `User`, `Tailoring`, `Job`, `JobChunk` — no setup duplication across tests
 - [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — focused on auth checks, ownership guards, enrichment status gating
 
+---
+
 #### Frontend — Jest
+
 - [ ] Unit tests: `InlineMarkdown` rendering, `scoreBarColor` logic, `groupBySection` filtering
 - [ ] Consider `next-test-api-route-handler` for testing Next.js API proxy routes in isolation
+- [ ] Add `eslint-plugin-security` to the existing ESLint setup — catches `eval`, regex DoS, `innerHTML` patterns in TypeScript. Integrates into the existing `npm run lint` step with no new toolchain.
+
+---
 
 #### GitHub Actions — CI Gate
-- [ ] `.github/workflows/ci.yml`: triggers on every PR to `main` and on push to `main`
-  - Backend job: `uv run pytest`
-  - Frontend job: `npm run lint && npm run build && npm test` (type-check + build + unit tests)
-  - Run both jobs in parallel
-- [ ] Cache `uv` deps and `node_modules` between runs — target < 3 min total
-- [ ] Branch protection rule on `main`: require CI to pass before merge
+
+Single workflow (`.github/workflows/ci.yml`) with parallel jobs, triggering on every PR to `main` and push to `main`.
+
+- [ ] **pre-commit job**: runs `pre-commit run --all-files` — covers gitleaks secret scan, ruff lint, and standard hooks across the whole repo. Fastest feedback loop for secrets and style issues.
+- [ ] **Backend job** (parallel):
+  - `uv run ruff check backend/` — lint gate
+  - `uv run bandit -r backend/app/ -ll` — Python SAST (checks for `eval`, subprocess injection, hardcoded passwords, etc.). `-ll` = medium+ severity only, avoids noise.
+  - `uv run pip-audit` — dependency CVE scan against `uv.lock`
+  - `uv run pytest` — test suite
+- [ ] **Frontend job** (parallel):
+  - `npm run lint` — ESLint including `eslint-plugin-security` rules
+  - `npm run build` — type-check + build (catches TypeScript errors CI-wide)
+  - `npm test` — Jest unit tests
+  - `npm audit --audit-level=high` — dependency CVE scan, high+ severity only
+- [ ] **Infra job** (parallel, triggered only on changes to `infra/**`):
+  - `checkov -d infra/providers/azure/ --framework terraform` — IaC misconfiguration scan (open ports, missing encryption, IAM over-permission). Skip in PRs that don't touch `infra/`.
+- [ ] Cache `uv` deps and `node_modules` between runs — target < 4 min total
+- [ ] Branch protection rule on `main`: require all CI jobs to pass before merge
+
+---
+
+#### Dependabot
+
+- [ ] Add `.github/dependabot.yml` — enables automated PRs for outdated/vulnerable dependencies:
+  - `npm` ecosystem → `frontend/`, weekly
+  - `pip` ecosystem → `backend/`, weekly
+  - `github-actions` ecosystem → `.github/workflows/`, weekly
+- [ ] Dependabot PRs are gated by the same CI workflow — they only land if tests + security scans pass
+
+---
+
+#### Container scanning (deploy workflow)
+
+- [ ] Add **Trivy** image scan to `.github/workflows/deploy-azure.yml` — runs after the Docker image is built but before it is pushed to ACR. Blocks deploy on critical CVEs in the OS layer or installed packages. Both frontend and backend images scanned.
+- [ ] `--exit-code 1 --severity CRITICAL` — only blocks on critical, avoids noise from informational findings
+
+---
+
+#### Not doing (and why)
+
+- **Semgrep / CodeQL**: CodeQL requires GitHub Advanced Security (paid for private repos). Semgrep is broader but requires rule tuning to avoid noise. Bandit + eslint-plugin-security covers our actual attack surface with zero tuning.
+- **Snyk**: SaaS-dependent, paid tier for private repos. Dependabot + pip-audit + npm audit covers dependency scanning natively.
+- **Path-filtered CI** (`on.push.paths`): useful at scale; for Tailord's repo size, running all jobs on every PR is fast enough and simpler to reason about. Revisit if CI time grows past 5 min.
 
 ---
 
