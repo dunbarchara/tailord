@@ -32,9 +32,17 @@ dependencies = [
 [dependency-groups]
 dev = [
   "pytest",
+  "pytest-mock",
+  "pytest-cov",
+  "httpx",
   "pre-commit",
   "ruff",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=app --cov-report=term-missing"
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100

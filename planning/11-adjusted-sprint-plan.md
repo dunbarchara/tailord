@@ -360,11 +360,17 @@ Use the `pre-commit` framework (`.pre-commit-config.yaml` in repo root, contribu
 
 #### Backend — pytest
 
-- [ ] Set up pytest with `pytest-asyncio` and a test database (PostgreSQL via `pytest-postgresql` or SQLite in-memory)
-- [ ] Unit tests — pure functions: `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), `tailorings.py` (`_validate_profile`, `_generate_slug`)
-- [ ] Integration tests — FastAPI `TestClient`: tailoring CRUD, share/unshare, public slug lookup, Notion export (mock Notion API with `responses` or `httpx` mock transport), 401 revoke flow
-- [ ] Fixture helpers: factories for `User`, `Tailoring`, `Job`, `JobChunk` — no setup duplication across tests
-- [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — focused on auth checks, ownership guards, enrichment status gating
+- [x] Set up pytest with a real PostgreSQL test database (`app_test`) — `pytest-mock`, `pytest-cov`, `httpx` added as dev deps; `pythonpath = ["."]` and `testpaths = ["tests"]` in `pyproject.toml`
+- [x] Unit tests — pure functions: `notion_export.py` (`chunks_to_notion_markdown`, `_escape`, `_strip_links`, `_strip_formatting`), `chunk_display.py` (`is_display_ready`), `tailorings.py` (`_validate_profile`, `_generate_slug`) — 51 tests
+- [x] Integration tests — FastAPI `TestClient`: tailoring CRUD, share/unshare, public slug lookup, user CRUD, public profile, auth guards (401/403/422) — 32 tests
+- [x] Fixture helpers: `make_user`, `make_job`, `make_tailoring` factories; `conftest.py` split into top-level (no DB) and `integration/conftest.py` (DB engine, schema lifecycle, per-test cleanup via `table.delete()`)
+- [ ] Coverage target: 80%+ on `app/api/` and `app/services/` — currently 42% overall; `app/api/users.py` at 78%, `app/api/tailorings.py` at 39%. Remaining gap: SSE streaming, background tasks, Notion export API, experience endpoints — deferred (see below)
+
+**Not done / deferred:**
+- Notion export API integration tests (mock Notion API with `responses` or `httpx`) — deferred to a follow-up; requires mocking `requests.Session` calls
+- Experience endpoint tests — lower priority; no pure functions, primarily file upload + SSE flow
+- SSE streaming tests — complex to test with `TestClient`; background task completion not observable
+- `pytest-asyncio` — not needed; `TestClient` handles `async def` routes synchronously
 
 ---
 
