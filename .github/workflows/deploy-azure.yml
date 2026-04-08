@@ -145,7 +145,8 @@ jobs:
           --name $BACKEND_APP \
           --resource-group $RESOURCE_GROUP \
           --label staging \
-          --revision "$REVISION"
+          --revision "$REVISION" \
+          --yes
 
     - name: Deploy frontend staging revision
       run: |
@@ -171,7 +172,8 @@ jobs:
           --name $FRONTEND_APP \
           --resource-group $RESOURCE_GROUP \
           --label staging \
-          --revision "$REVISION"
+          --revision "$REVISION" \
+          --yes
 
     - name: Wait for staging revisions to be running
       run: |
@@ -263,7 +265,8 @@ jobs:
           --name $BACKEND_APP \
           --resource-group $RESOURCE_GROUP \
           --label prod \
-          --revision "$REVISION"
+          --revision "$REVISION" \
+          --yes
         az containerapp ingress traffic set \
           --name $BACKEND_APP \
           --resource-group $RESOURCE_GROUP \
@@ -276,7 +279,8 @@ jobs:
           --name $FRONTEND_APP \
           --resource-group $RESOURCE_GROUP \
           --label prod \
-          --revision "$REVISION"
+          --revision "$REVISION" \
+          --yes
         az containerapp ingress traffic set \
           --name $FRONTEND_APP \
           --resource-group $RESOURCE_GROUP \
