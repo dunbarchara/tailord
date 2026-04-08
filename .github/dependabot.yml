@@ -15,6 +15,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # eslint 10 removed context.getFilename() — eslint-config-next's bundled
+      # eslint-plugin-react still uses the old API. Unblock when Next.js ships
+      # eslint-config-next with ESLint 10 support.
+      - dependency-name: "eslint"
+        versions: ["10.x"]
 
   # --- BACKEND (pip) ---
   - package-ecosystem: pip
