@@ -187,12 +187,12 @@ jobs:
               --query "properties.runningState" \
               --output tsv 2>/dev/null || echo "Unknown")
             echo "  attempt $i: $STATE"
-            if [ "$STATE" = "Running" ]; then
-              echo "  $APP staging revision is running"
+            if [ "$STATE" = "Running" ] || [ "$STATE" = "RunningAtMaxScale" ]; then
+              echo "  $APP staging revision is running ($STATE)"
               break
             fi
             if [ "$i" = "24" ]; then
-              echo "  ERROR: $APP staging revision did not reach Running state"
+              echo "  ERROR: $APP staging revision did not reach Running state (last state: $STATE)"
               exit 1
             fi
             sleep 10
