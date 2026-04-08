@@ -112,41 +112,9 @@ is the source of truth for which model is deployed.
 
 ## 4. Database bootstrap (first deploy only)
 
-The backend runs `alembic upgrade head` on every startup, which handles future migrations
-automatically. However, on a **fresh database** the historical migrations will fail because
-they reference tables that never existed (e.g. renaming `resumes` → `experiences`).
-
-Bootstrap a fresh DB by creating the schema directly from the current models, then stamping
-Alembic so it treats all historical migrations as already applied:
-
-```bash
-# Temporarily add your local IP to the PostgreSQL firewall
-YOUR_IP=$(curl -s https://api.ipify.org)
-az postgres flexible-server firewall-rule create \
-  --resource-group tailord \
-  --name tailord-db \
-  --rule-name local-bootstrap \
-  --start-ip-address $YOUR_IP \
-  --end-ip-address $YOUR_IP
-
-export DATABASE_URL="postgresql+psycopg://tailord:<db_password>@tailord-db.postgres.database.azure.com/tailord"
-cd backend
-
-# Create all tables from current SQLAlchemy models
-uv run python init_db.py
-
-# Mark all migrations as applied (skips historical ones that don't apply to a fresh DB)
-uv run alembic stamp head
-
-# Remove the temporary firewall rule
-az postgres flexible-server firewall-rule delete \
-  --resource-group tailord \
-  --name tailord-db \
-  --rule-name local-bootstrap \
-  --yes
-```
-
-After this, future `alembic upgrade head` calls will only run genuinely new migrations.
+No manual steps required. The entrypoint runs `alembic upgrade head` on every container
+startup. On a fresh database this creates all tables from the single initial migration.
+On an existing database it is a no-op.
 
 ---
 
