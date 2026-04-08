@@ -445,6 +445,18 @@ ACR (Azure Container Registry) stays private regardless — the SARIF approach s
 
 ---
 
+### Day P2.5 — Internal Admin Page
+
+**Goal:** Founders can approve, view, and manage users without DB access. Lays the foundation for future admin tooling.
+
+- [ ] `/admin` route in Next.js — protected by a separate `ADMIN_KEY` env var checked in middleware (not the user session); inaccessible to regular authenticated users
+- [ ] Pending users list — shows name, email, sign-up date, Google avatar; one-click Approve button
+- [ ] All users list — basic table with status badge; ability to revoke access (set status back to `pending`)
+- [ ] Backend: `GET /admin/users` + `POST /admin/users/{id}/approve` + `POST /admin/users/{id}/revoke` — protected by `ADMIN_KEY` header (separate from `X-API-Key`)
+- [ ] Replaces `dev_approve.py` for staging and prod; `dev_approve.py` can remain for local convenience
+
+---
+
 ### Day P3 — Staging Environment + Pipeline Hardening
 
 **Goal:** A staging environment exists with near-zero idle cost. Remaining pipeline robustness gaps are closed.
