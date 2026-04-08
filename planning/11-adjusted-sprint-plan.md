@@ -469,6 +469,9 @@ ACR (Azure Container Registry) stays private regardless — the SARIF approach s
 - [x] Google OAuth: staging uses **Tailord Prod** client — `https://staging.tailord.app` added as Authorized JavaScript origin and `https://staging.tailord.app/api/auth/callback/google` added as Authorized redirect URI
 - [ ] **Deferred:** create a separate **Tailord Staging** Google OAuth client when there is a team with independently controlled staging vs prod access
 
+#### Experience Section — Known Issues (fix during GitHub processing iteration)
+- [ ] **Race condition: GitHub added while resume is processing** — if GitHub is added mid-processing, the GitHub endpoint sets `status → "ready"` prematurely (before resume extraction completes). The experience processor then finishes and overwrites `github_repos` with `None` (stale read-modify-write). Fix: (1) GitHub endpoint should not touch `status` if it is currently `"processing"`; (2) experience processor should update only its own columns (`extracted_profile`, `status`, `processed_at`) rather than saving the full record, to avoid clobbering concurrent writes.
+
 #### Pipeline Hardening (remaining from Day 8.5)
 - [ ] **Token budget cap:** `truncate_to_tokens(text, max_tokens)` helper (tiktoken) — apply to scraped job markdown before any LLM prompt. Prevents runaway costs and context length errors on unusually long postings.
 - [ ] **Job URL caching:** skip Playwright scrape + job extraction LLM for recently-seen URLs (< 7 days); rerun all other LLM steps fresh. Implement once extraction quality feels stable enough to trust cached output.
