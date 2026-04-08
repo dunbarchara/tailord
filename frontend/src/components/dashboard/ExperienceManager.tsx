@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Upload, Github, FileText, Loader2, CheckCircle, AlertCircle, Pencil, X,
+  Upload, FileText, Loader2, CheckCircle, AlertCircle, Pencil, X,
 } from 'lucide-react';
+import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
 import { cn, toastError, formatElapsed } from '@/lib/utils';
 import { ParsedProfile } from '@/components/dashboard/ParsedProfile';
@@ -587,7 +588,7 @@ export function ExperienceManager() {
       return (
         <CardBox>
           <SourceRow
-            icon={<Github className="h-4 w-4 text-text-secondary" />}
+            icon={<LuGithub className="h-4 w-4 text-text-secondary" />}
             name={uploadState.record.github_username!}
             badge={<StatusBadge label="Connected" variant="green" />}
             description={`${uploadState.record.github_repos?.length ?? 0} repos imported`}
@@ -623,7 +624,7 @@ export function ExperienceManager() {
         <form onSubmit={handleGithubSave} className="space-y-3">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Github className="h-4 w-4 text-text-tertiary" />
+              <LuGithub className="h-4 w-4 text-text-tertiary" />
             </div>
             <input
               type="text"
