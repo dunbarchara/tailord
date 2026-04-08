@@ -10,10 +10,14 @@ env:
   FRONTEND_APP: tailord-frontend
   BACKEND_APP: tailord-backend
   RESOURCE_GROUP: tailord
+  CA_ENV: tailord-env
 
 jobs:
 
-  deploy:
+  # ---------------------------------------------------------------------------
+  # BUILD — build, scan, and push both images to ACR
+  # ---------------------------------------------------------------------------
+  build:
 
     runs-on: ubuntu-latest
 
@@ -24,6 +28,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
+    outputs:
+      tag: ${{ steps.generate_tag.outputs.tag_name }}
 
     steps:
     - name: Checkout code
@@ -78,21 +85,280 @@ jobs:
     - name: Push backend image
       run: docker push $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
 
-    - name: Deploy frontend Container App
-      run: |
-        az containerapp update \
-          --name $FRONTEND_APP \
-          --resource-group $RESOURCE_GROUP \
-          --image $ACR_REGISTRY/tailord-frontend:${{ steps.generate_tag.outputs.tag_name }}
+  # ---------------------------------------------------------------------------
+  # DEPLOY STAGING — create staging revisions for both apps
+  # Staging backend: tailord_staging DB, staging-tailord-uploads container
+  # Staging frontend: staging.tailord.app, points at staging backend revision
+  # ---------------------------------------------------------------------------
+  deploy-staging:
 
-    - name: Deploy backend Container App
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production-azure
+      url: https://staging.tailord.app
+
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+
+    steps:
+    - name: Azure login (OIDC)
+      uses: azure/login@v3
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Get Container App environment default domain
+      id: env_domain
+      run: |
+        DOMAIN=$(az containerapp env show \
+          --name $CA_ENV \
+          --resource-group $RESOURCE_GROUP \
+          --query "properties.defaultDomain" \
+          --output tsv)
+        echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+
+    - name: Deploy backend staging revision
       run: |
         az containerapp update \
           --name $BACKEND_APP \
           --resource-group $RESOURCE_GROUP \
-          --image $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
+          --image $ACR_REGISTRY/tailord-backend:$TAG \
+          --revision-suffix "r${{ github.run_number }}" \
+          --set-env-vars \
+            "DATABASE_URL=secretref:staging-database-url" \
+            "API_KEY=secretref:staging-api-key" \
+            "AZURE_STORAGE_CONNECTION_STRING=secretref:staging-storage-connection-string" \
+            "AZURE_STORAGE_CONTAINER=staging-tailord-uploads" \
+            "ENVIRONMENT=staging"
 
-    - name: Purge old ACR images (keep last 2)
+    - name: Assign staging label to backend revision
+      run: |
+        REVISION="${BACKEND_APP}--r${{ github.run_number }}"
+        az containerapp revision label add \
+          --name $BACKEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --label staging \
+          --revision "$REVISION"
+
+    - name: Deploy frontend staging revision
+      run: |
+        STAGING_BACKEND_URL="https://staging---${BACKEND_APP}.${{ steps.env_domain.outputs.domain }}"
+        az containerapp update \
+          --name $FRONTEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --image $ACR_REGISTRY/tailord-frontend:$TAG \
+          --revision-suffix "r${{ github.run_number }}" \
+          --set-env-vars \
+            "API_KEY=secretref:staging-api-key" \
+            "NEXTAUTH_SECRET=secretref:staging-nextauth-secret" \
+            "GOOGLE_CLIENT_ID=secretref:staging-google-client-id" \
+            "GOOGLE_CLIENT_SECRET=secretref:staging-google-client-secret" \
+            "API_BASE_URL=${STAGING_BACKEND_URL}" \
+            "NEXT_PUBLIC_API_URL=${STAGING_BACKEND_URL}" \
+            "NEXTAUTH_URL=https://staging.tailord.app"
+
+    - name: Assign staging label to frontend revision
+      run: |
+        REVISION="${FRONTEND_APP}--r${{ github.run_number }}"
+        az containerapp revision label add \
+          --name $FRONTEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --label staging \
+          --revision "$REVISION"
+
+    - name: Wait for staging revisions to be running
+      run: |
+        for APP in $BACKEND_APP $FRONTEND_APP; do
+          echo "Waiting for $APP staging revision..."
+          for i in $(seq 1 24); do
+            STATE=$(az containerapp revision show \
+              --name $APP \
+              --resource-group $RESOURCE_GROUP \
+              --revision "${APP}--r${{ github.run_number }}" \
+              --query "properties.runningState" \
+              --output tsv 2>/dev/null || echo "Unknown")
+            echo "  attempt $i: $STATE"
+            if [ "$STATE" = "Running" ]; then
+              echo "  $APP staging revision is running"
+              break
+            fi
+            if [ "$i" = "24" ]; then
+              echo "  ERROR: $APP staging revision did not reach Running state"
+              exit 1
+            fi
+            sleep 10
+          done
+        done
+
+  # ---------------------------------------------------------------------------
+  # SMOKE TEST STAGING — verify staging is healthy before promoting
+  # ---------------------------------------------------------------------------
+  smoke-test-staging:
+
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Health check — staging frontend
+      run: |
+        curl \
+          --fail \
+          --silent \
+          --show-error \
+          --retry 6 \
+          --retry-delay 10 \
+          --retry-connrefused \
+          https://staging.tailord.app/api/health
+
+    - name: Health check — staging backend (via frontend proxy)
+      run: |
+        STATUS=$(curl \
+          --silent \
+          --output /dev/null \
+          --write-out "%{http_code}" \
+          --retry 3 \
+          --retry-delay 5 \
+          https://staging.tailord.app)
+        echo "Staging homepage status: $STATUS"
+        if [ "$STATUS" != "200" ] && [ "$STATUS" != "307" ] && [ "$STATUS" != "302" ]; then
+          echo "ERROR: unexpected status $STATUS"
+          exit 1
+        fi
+
+  # ---------------------------------------------------------------------------
+  # DEPLOY PROD — promote staging revisions to prod
+  # ---------------------------------------------------------------------------
+  deploy-prod:
+
+    needs: smoke-test-staging
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production-azure
+      url: https://tailord.app
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Azure login (OIDC)
+      uses: azure/login@v3
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Promote backend revision to prod
+      run: |
+        REVISION="${BACKEND_APP}--r${{ github.run_number }}"
+        az containerapp revision label add \
+          --name $BACKEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --label prod \
+          --revision "$REVISION"
+        az containerapp ingress traffic set \
+          --name $BACKEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --revision-weight "$REVISION=100"
+
+    - name: Promote frontend revision to prod
+      run: |
+        REVISION="${FRONTEND_APP}--r${{ github.run_number }}"
+        az containerapp revision label add \
+          --name $FRONTEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --label prod \
+          --revision "$REVISION"
+        az containerapp ingress traffic set \
+          --name $FRONTEND_APP \
+          --resource-group $RESOURCE_GROUP \
+          --revision-weight "$REVISION=100"
+
+    - name: Deactivate previous prod revisions
+      run: |
+        for APP in $BACKEND_APP $FRONTEND_APP; do
+          CURRENT_REVISION="${APP}--r${{ github.run_number }}"
+          OLD_REVISIONS=$(az containerapp revision list \
+            --name $APP \
+            --resource-group $RESOURCE_GROUP \
+            --query "[?name!='$CURRENT_REVISION' && properties.active==true].name" \
+            --output tsv)
+          for REV in $OLD_REVISIONS; do
+            echo "Deactivating $REV"
+            az containerapp revision deactivate \
+              --name $APP \
+              --resource-group $RESOURCE_GROUP \
+              --revision "$REV"
+          done
+        done
+
+  # ---------------------------------------------------------------------------
+  # SMOKE TEST PROD — verify prod is healthy after promotion
+  # ---------------------------------------------------------------------------
+  smoke-test-prod:
+
+    needs: deploy-prod
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Health check — prod
+      run: |
+        curl \
+          --fail \
+          --silent \
+          --show-error \
+          --retry 6 \
+          --retry-delay 10 \
+          --retry-connrefused \
+          https://tailord.app/api/health
+
+    - name: Verify prod homepage
+      run: |
+        STATUS=$(curl \
+          --silent \
+          --output /dev/null \
+          --write-out "%{http_code}" \
+          --retry 3 \
+          --retry-delay 5 \
+          https://tailord.app)
+        echo "Prod homepage status: $STATUS"
+        if [ "$STATUS" != "200" ] && [ "$STATUS" != "307" ] && [ "$STATUS" != "302" ]; then
+          echo "ERROR: unexpected status $STATUS"
+          exit 1
+        fi
+
+  # ---------------------------------------------------------------------------
+  # PURGE ACR — clean up old images after successful prod deploy
+  # ---------------------------------------------------------------------------
+  purge-acr:
+
+    needs: smoke-test-prod
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production-azure
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Azure login (OIDC)
+      uses: azure/login@v3
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Purge old ACR images (keep last 3)
       run: |
         for REPO in tailord-frontend tailord-backend; do
           TAGS=$(az acr repository show-tags \
@@ -102,7 +368,7 @@ jobs:
             --output tsv)
 
           TAG_COUNT=$(echo "$TAGS" | grep -c .)
-          DELETE_COUNT=$((TAG_COUNT - 2))
+          DELETE_COUNT=$((TAG_COUNT - 3))
 
           if [ "$DELETE_COUNT" -gt 0 ]; then
             echo "$TAGS" | head -n "$DELETE_COUNT" | while read -r tag; do

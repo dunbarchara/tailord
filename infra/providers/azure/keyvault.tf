@@ -44,75 +44,152 @@ resource "azurerm_role_assignment" "kv_secrets_user" {
 }
 
 # -----------------------------
-# SECRETS
+# PROD SECRETS
 # depends_on role assignment — RBAC propagation can lag writes
 # -----------------------------
-resource "azurerm_key_vault_secret" "database_url" {
-  name         = "database-url"
-  value        = "postgresql+psycopg://tailord:${var.db_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord"
+resource "azurerm_key_vault_secret" "prod_database_url" {
+  name         = "prod-database-url"
+  value        = "postgresql+psycopg://tailord:${var.db_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord_prod"
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "api_key" {
-  name         = "api-key"
+resource "azurerm_key_vault_secret" "prod_api_key" {
+  name         = "prod-api-key"
   value        = var.api_key
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "storage_connection_string" {
-  name         = "storage-connection-string"
+resource "azurerm_key_vault_secret" "prod_storage_connection_string" {
+  name         = "prod-storage-connection-string"
   value        = azurerm_storage_account.uploads.primary_connection_string
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "nextauth_secret" {
-  name         = "nextauth-secret"
+resource "azurerm_key_vault_secret" "prod_nextauth_secret" {
+  name         = "prod-nextauth-secret"
   value        = var.nextauth_secret
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "google_client_id" {
-  name         = "google-client-id"
+resource "azurerm_key_vault_secret" "prod_google_client_id" {
+  name         = "prod-google-client-id"
   value        = var.google_client_id
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "google_client_secret" {
-  name         = "google-client-secret"
+resource "azurerm_key_vault_secret" "prod_google_client_secret" {
+  name         = "prod-google-client-secret"
   value        = var.google_client_secret
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "llm_api_key" {
-  name         = "llm-api-key"
+resource "azurerm_key_vault_secret" "prod_llm_api_key" {
+  name         = "prod-llm-api-key"
   value        = azurerm_cognitive_account.tailord_foundry.primary_access_key
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "notion_client_id" {
-  name         = "notion-client-id"
+resource "azurerm_key_vault_secret" "prod_notion_client_id" {
+  name         = "prod-notion-client-id"
   value        = var.notion_client_id
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "notion_client_secret" {
-  name         = "notion-client-secret"
+resource "azurerm_key_vault_secret" "prod_notion_client_secret" {
+  name         = "prod-notion-client-secret"
+  value        = var.notion_client_secret
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+# -----------------------------
+# STAGING SECRETS
+# Same credentials as prod except database-url (points to tailord_staging)
+# and storage-connection-string (same account, different container name handled at app level)
+# -----------------------------
+resource "azurerm_key_vault_secret" "staging_database_url" {
+  name         = "staging-database-url"
+  value        = "postgresql+psycopg://tailord:${var.db_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord_staging"
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_api_key" {
+  name         = "staging-api-key"
+  value        = var.api_key
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_storage_connection_string" {
+  name         = "staging-storage-connection-string"
+  value        = azurerm_storage_account.uploads.primary_connection_string
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_nextauth_secret" {
+  name         = "staging-nextauth-secret"
+  value        = var.nextauth_secret
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_google_client_id" {
+  name         = "staging-google-client-id"
+  value        = var.google_client_id
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_google_client_secret" {
+  name         = "staging-google-client-secret"
+  value        = var.google_client_secret
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_llm_api_key" {
+  name         = "staging-llm-api-key"
+  value        = azurerm_cognitive_account.tailord_foundry.primary_access_key
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_notion_client_id" {
+  name         = "staging-notion-client-id"
+  value        = var.notion_client_id
+  content_type = "text/plain"
+  key_vault_id = azurerm_key_vault.tailord.id
+  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "staging_notion_client_secret" {
+  name         = "staging-notion-client-secret"
   value        = var.notion_client_secret
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
