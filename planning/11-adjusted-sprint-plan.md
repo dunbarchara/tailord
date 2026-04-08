@@ -450,16 +450,24 @@ ACR (Azure Container Registry) stays private regardless — the SARIF approach s
 **Goal:** A staging environment exists with near-zero idle cost. Remaining pipeline robustness gaps are closed.
 
 #### Staging — Azure Container Apps Revisions
-- [ ] Create a `staging` revision alongside `prod` within the same Container App
+- [x] Create a `staging` revision alongside `prod` within the same Container App
   - `staging`: min replicas = 0, max = 1 — scales to zero when not in use (zero idle cost)
-  - `prod`: min replicas = 1 (always on)
-  - `staging` receives 0% external traffic but is accessible at its revision-specific URL
-- [ ] Deployment workflow update (`.github/workflows/deploy-azure.yml`):
-  - On merge to `main`: deploy image → activate `staging` revision → smoke test (`/health` 200) → promote to `prod`
-  - On manual trigger or tag: deploy directly to `prod`
-- [ ] Staging database: use same DB with clearly-labelled staging data (Option C from P3 notes) — simplest for a solo project; revisit if data bleed becomes a concern
-- [ ] Cloudflare: route `staging.tailord.app` → staging revision FQDN via proxied CNAME
-- [ ] `ENVIRONMENT=staging` env var for more verbose logging in staging
+  - `prod`: min replicas = 0 for now (flip to 1 when real users exist)
+  - `staging` receives 0% external traffic; accessible via revision label URL
+  - Both frontend and backend Container Apps switched to `Multiple` revision mode
+  - All KV secrets renamed to `prod-*`; `staging-*` counterparts added and registered on both apps
+  - Storage containers: `prod-tailord-uploads` + `staging-tailord-uploads`
+  - PostgreSQL databases: `tailord_prod` + `tailord_staging` (same server, isolated schemas)
+- [x] Deployment workflow update (`.github/workflows/deploy-azure.yml`):
+  - Pipeline: `build → deploy-staging → smoke-test-staging → deploy-prod → smoke-test-prod → purge-acr`
+  - Staging revisions use `staging-*` secrets and `ENVIRONMENT=staging`
+  - Staging frontend points at staging backend revision URL
+  - Prod promotion: reassign `prod` label, set traffic weight 100%, deactivate old revisions
+- [x] Staging database: `tailord_staging` — separate database on the same PostgreSQL Flexible Server
+- [x] Cloudflare: `staging.tailord.app` → staging frontend label URL via proxied CNAME
+- [x] `ENVIRONMENT=staging` env var set on staging revisions; `ENVIRONMENT=production` on prod
+- [x] Google OAuth: staging uses **Tailord Prod** client — `https://staging.tailord.app` added as Authorized JavaScript origin and `https://staging.tailord.app/api/auth/callback/google` added as Authorized redirect URI
+- [ ] **Deferred:** create a separate **Tailord Staging** Google OAuth client when there is a team with independently controlled staging vs prod access
 
 #### Pipeline Hardening (remaining from Day 8.5)
 - [ ] **Token budget cap:** `truncate_to_tokens(text, max_tokens)` helper (tiktoken) — apply to scraped job markdown before any LLM prompt. Prevents runaway costs and context length errors on unusually long postings.

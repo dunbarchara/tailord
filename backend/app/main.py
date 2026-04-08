@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.api import experience, notion, tailorings, users
 from app.clients.llm_client import validate_llm_config
@@ -14,6 +15,10 @@ def create_app() -> FastAPI:
         title="Tailord API",
         version="1.0.0",
     )
+
+    @app.get("/health", include_in_schema=False)
+    async def health() -> JSONResponse:
+        return JSONResponse({"status": "ok"})
 
     app.include_router(users.router)
     app.include_router(experience.router)
