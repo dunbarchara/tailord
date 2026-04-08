@@ -1,23 +1,44 @@
 version: 2
 
 updates:
+  # --- FRONTEND (npm) ---
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    groups:
+      frontend-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
+  # --- BACKEND (pip) ---
   - package-ecosystem: pip
     directory: /backend
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    groups:
+      backend-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
+  # --- GITHUB ACTIONS ---
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    groups:
+      actions-deps:
+        patterns:
+          - "*"
