@@ -17,9 +17,22 @@ variable "domain_name" {
   default = "tailord.app"
 }
 
-variable "db_password" { # Provided once at provision time
-  sensitive = true
-  type      = string
+variable "db_password" {
+  description = "PostgreSQL admin password (server creation only — app connections use db_prod_password / db_staging_password)"
+  sensitive   = true
+  type        = string
+}
+
+variable "db_prod_password" {
+  description = "Password for the tailord_prod PostgreSQL user (prod backend only)"
+  sensitive   = true
+  type        = string
+}
+
+variable "db_staging_password" {
+  description = "Password for the tailord_staging PostgreSQL user (staging backend only)"
+  sensitive   = true
+  type        = string
 }
 
 variable "api_key" { # Provided once at provision time

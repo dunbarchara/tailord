@@ -7,10 +7,11 @@ on:
 
 env:
   ACR_REGISTRY: tailord.azurecr.io
-  FRONTEND_APP: tailord-frontend
-  BACKEND_APP: tailord-backend
+  BACKEND_PROD: tailord-backend-prod
+  FRONTEND_PROD: tailord-frontend-prod
+  BACKEND_STAGING: tailord-backend-staging
+  FRONTEND_STAGING: tailord-frontend-staging
   RESOURCE_GROUP: tailord
-  CA_ENV: tailord-env
 
 jobs:
 
@@ -86,9 +87,8 @@ jobs:
       run: docker push $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
 
   # ---------------------------------------------------------------------------
-  # DEPLOY STAGING — create staging revisions for both apps
-  # Staging backend: tailord_staging DB, staging-tailord-uploads container
-  # Staging frontend: staging.tailord.app, points at staging backend revision
+  # DEPLOY STAGING — blue/green deploy to isolated staging apps
+  # Backend first (runs migrations), then frontend.
   # ---------------------------------------------------------------------------
   deploy-staging:
 
@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
 
     environment:
-      name: production-azure
+      name: staging-azure
       url: https://staging.tailord.app
 
     permissions:
@@ -105,6 +105,7 @@ jobs:
 
     env:
       TAG: ${{ needs.build.outputs.tag }}
+      SUFFIX: r${{ github.run_number }}
 
     steps:
     - name: Azure login (OIDC)
@@ -114,93 +115,98 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    - name: Get Container App environment default domain
-      id: env_domain
-      run: |
-        DOMAIN=$(az containerapp env show \
-          --name $CA_ENV \
-          --resource-group $RESOURCE_GROUP \
-          --query "properties.defaultDomain" \
-          --output tsv)
-        echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
-
-    - name: Deploy backend staging revision
+    - name: Deploy staging backend revision
       run: |
         az containerapp update \
-          --name $BACKEND_APP \
+          --name $BACKEND_STAGING \
           --resource-group $RESOURCE_GROUP \
           --image $ACR_REGISTRY/tailord-backend:$TAG \
-          --revision-suffix "r${{ github.run_number }}" \
-          --set-env-vars \
-            "DATABASE_URL=secretref:staging-database-url" \
-            "API_KEY=secretref:staging-api-key" \
-            "AZURE_STORAGE_CONNECTION_STRING=secretref:staging-storage-connection-string" \
-            "AZURE_STORAGE_CONTAINER=staging-tailord-uploads" \
-            "ENVIRONMENT=staging"
+          --revision-suffix $SUFFIX
 
-    - name: Assign staging label to backend revision
+    - name: Promote staging backend revision
       run: |
-        REVISION="${BACKEND_APP}--r${{ github.run_number }}"
-        az containerapp revision label add \
-          --name $BACKEND_APP \
+        REVISION="${BACKEND_STAGING}--${SUFFIX}"
+        for i in $(seq 1 24); do
+          STATE=$(az containerapp revision show \
+            --name $BACKEND_STAGING \
+            --resource-group $RESOURCE_GROUP \
+            --revision "$REVISION" \
+            --query "properties.runningState" \
+            --output tsv 2>/dev/null || echo "Unknown")
+          echo "  attempt $i: $STATE"
+          if [ "$STATE" = "Running" ] || [ "$STATE" = "RunningAtMaxScale" ]; then
+            break
+          fi
+          if [ "$i" = "24" ]; then
+            echo "ERROR: $BACKEND_STAGING revision did not reach Running state"
+            exit 1
+          fi
+          sleep 10
+        done
+        az containerapp ingress traffic set \
+          --name $BACKEND_STAGING \
           --resource-group $RESOURCE_GROUP \
-          --label staging \
-          --revision "$REVISION" \
-          --yes
+          --revision-weight "$REVISION=100"
+        az containerapp revision list \
+          --name $BACKEND_STAGING \
+          --resource-group $RESOURCE_GROUP \
+          --query "[?name!='$REVISION' && properties.active==\`true\`].name" \
+          --output tsv | while read -r rev; do
+            [ -z "$rev" ] && continue
+            echo "Deactivating $rev"
+            az containerapp revision deactivate \
+              --name $BACKEND_STAGING \
+              --resource-group $RESOURCE_GROUP \
+              --revision "$rev"
+          done
 
-    - name: Deploy frontend staging revision
+    - name: Deploy staging frontend revision
       run: |
-        STAGING_BACKEND_URL="https://${BACKEND_APP}---staging.internal.${{ steps.env_domain.outputs.domain }}"
         az containerapp update \
-          --name $FRONTEND_APP \
+          --name $FRONTEND_STAGING \
           --resource-group $RESOURCE_GROUP \
           --image $ACR_REGISTRY/tailord-frontend:$TAG \
-          --revision-suffix "r${{ github.run_number }}" \
-          --set-env-vars \
-            "API_KEY=secretref:staging-api-key" \
-            "NEXTAUTH_SECRET=secretref:staging-nextauth-secret" \
-            "GOOGLE_CLIENT_ID=secretref:staging-google-client-id" \
-            "GOOGLE_CLIENT_SECRET=secretref:staging-google-client-secret" \
-            "API_BASE_URL=${STAGING_BACKEND_URL}" \
-            "NEXT_PUBLIC_API_URL=${STAGING_BACKEND_URL}" \
-            "NEXTAUTH_URL=https://staging.tailord.app"
+          --revision-suffix $SUFFIX
 
-    - name: Assign staging label to frontend revision
+    - name: Promote staging frontend revision
       run: |
-        REVISION="${FRONTEND_APP}--r${{ github.run_number }}"
-        az containerapp revision label add \
-          --name $FRONTEND_APP \
-          --resource-group $RESOURCE_GROUP \
-          --label staging \
-          --revision "$REVISION" \
-          --yes
-
-    - name: Wait for staging revisions to be running
-      run: |
-        for APP in $BACKEND_APP $FRONTEND_APP; do
-          echo "Waiting for $APP staging revision..."
-          for i in $(seq 1 24); do
-            STATE=$(az containerapp revision show \
-              --name $APP \
-              --resource-group $RESOURCE_GROUP \
-              --revision "${APP}--r${{ github.run_number }}" \
-              --query "properties.runningState" \
-              --output tsv 2>/dev/null || echo "Unknown")
-            echo "  attempt $i: $STATE"
-            if [ "$STATE" = "Running" ] || [ "$STATE" = "RunningAtMaxScale" ]; then
-              echo "  $APP staging revision is running ($STATE)"
-              break
-            fi
-            if [ "$i" = "24" ]; then
-              echo "  ERROR: $APP staging revision did not reach Running state (last state: $STATE)"
-              exit 1
-            fi
-            sleep 10
-          done
+        REVISION="${FRONTEND_STAGING}--${SUFFIX}"
+        for i in $(seq 1 24); do
+          STATE=$(az containerapp revision show \
+            --name $FRONTEND_STAGING \
+            --resource-group $RESOURCE_GROUP \
+            --revision "$REVISION" \
+            --query "properties.runningState" \
+            --output tsv 2>/dev/null || echo "Unknown")
+          echo "  attempt $i: $STATE"
+          if [ "$STATE" = "Running" ] || [ "$STATE" = "RunningAtMaxScale" ]; then
+            break
+          fi
+          if [ "$i" = "24" ]; then
+            echo "ERROR: $FRONTEND_STAGING revision did not reach Running state"
+            exit 1
+          fi
+          sleep 10
         done
+        az containerapp ingress traffic set \
+          --name $FRONTEND_STAGING \
+          --resource-group $RESOURCE_GROUP \
+          --revision-weight "$REVISION=100"
+        az containerapp revision list \
+          --name $FRONTEND_STAGING \
+          --resource-group $RESOURCE_GROUP \
+          --query "[?name!='$REVISION' && properties.active==\`true\`].name" \
+          --output tsv | while read -r rev; do
+            [ -z "$rev" ] && continue
+            echo "Deactivating $rev"
+            az containerapp revision deactivate \
+              --name $FRONTEND_STAGING \
+              --resource-group $RESOURCE_GROUP \
+              --revision "$rev"
+          done
 
   # ---------------------------------------------------------------------------
-  # SMOKE TEST STAGING — verify staging is healthy before promoting
+  # SMOKE TEST STAGING — verify staging frontend is up before promoting to prod
   # ---------------------------------------------------------------------------
   smoke-test-staging:
 
@@ -208,26 +214,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Health check — staging frontend
-      run: |
-        curl \
-          --fail \
-          --silent \
-          --show-error \
-          --retry 6 \
-          --retry-delay 10 \
-          --retry-connrefused \
-          --retry-all-errors \
-          https://staging.tailord.app/api/health
-
     - name: Health check — staging homepage
       run: |
         STATUS=$(curl \
           --silent \
           --output /dev/null \
           --write-out "%{http_code}" \
-          --retry 3 \
-          --retry-delay 5 \
+          --retry 6 \
+          --retry-delay 10 \
+          --retry-connrefused \
+          --retry-all-errors \
           https://staging.tailord.app)
         echo "Staging homepage status: $STATUS"
         if [ "$STATUS" != "200" ] && [ "$STATUS" != "307" ] && [ "$STATUS" != "302" ]; then
@@ -236,11 +232,12 @@ jobs:
         fi
 
   # ---------------------------------------------------------------------------
-  # DEPLOY PROD — promote staging revisions to prod
+  # DEPLOY PROD — blue/green deploy to prod apps with the same images
+  # Backend first (runs migrations), then frontend.
   # ---------------------------------------------------------------------------
   deploy-prod:
 
-    needs: smoke-test-staging
+    needs: [build, smoke-test-staging]
     runs-on: ubuntu-latest
 
     environment:
@@ -251,6 +248,10 @@ jobs:
       id-token: write
       contents: read
 
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      SUFFIX: r${{ github.run_number }}
+
     steps:
     - name: Azure login (OIDC)
       uses: azure/login@v3
@@ -259,54 +260,98 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    - name: Promote backend revision to prod
+    - name: Deploy prod backend revision
       run: |
-        REVISION="${BACKEND_APP}--r${{ github.run_number }}"
-        az containerapp revision label add \
-          --name $BACKEND_APP \
+        az containerapp update \
+          --name $BACKEND_PROD \
           --resource-group $RESOURCE_GROUP \
-          --label prod \
-          --revision "$REVISION" \
-          --yes
-        az containerapp ingress traffic set \
-          --name $BACKEND_APP \
-          --resource-group $RESOURCE_GROUP \
-          --revision-weight "$REVISION=100"
+          --image $ACR_REGISTRY/tailord-backend:$TAG \
+          --revision-suffix $SUFFIX
 
-    - name: Promote frontend revision to prod
+    - name: Promote prod backend revision
       run: |
-        REVISION="${FRONTEND_APP}--r${{ github.run_number }}"
-        az containerapp revision label add \
-          --name $FRONTEND_APP \
-          --resource-group $RESOURCE_GROUP \
-          --label prod \
-          --revision "$REVISION" \
-          --yes
-        az containerapp ingress traffic set \
-          --name $FRONTEND_APP \
-          --resource-group $RESOURCE_GROUP \
-          --revision-weight "$REVISION=100"
-
-    - name: Deactivate previous prod revisions
-      run: |
-        for APP in $BACKEND_APP $FRONTEND_APP; do
-          CURRENT_REVISION="${APP}--r${{ github.run_number }}"
-          OLD_REVISIONS=$(az containerapp revision list \
-            --name $APP \
+        REVISION="${BACKEND_PROD}--${SUFFIX}"
+        for i in $(seq 1 24); do
+          STATE=$(az containerapp revision show \
+            --name $BACKEND_PROD \
             --resource-group $RESOURCE_GROUP \
-            --query "[?name!='$CURRENT_REVISION' && properties.active==true].name" \
-            --output tsv)
-          for REV in $OLD_REVISIONS; do
-            echo "Deactivating $REV"
-            az containerapp revision deactivate \
-              --name $APP \
-              --resource-group $RESOURCE_GROUP \
-              --revision "$REV"
-          done
+            --revision "$REVISION" \
+            --query "properties.runningState" \
+            --output tsv 2>/dev/null || echo "Unknown")
+          echo "  attempt $i: $STATE"
+          if [ "$STATE" = "Running" ] || [ "$STATE" = "RunningAtMaxScale" ]; then
+            break
+          fi
+          if [ "$i" = "24" ]; then
+            echo "ERROR: $BACKEND_PROD revision did not reach Running state"
+            exit 1
+          fi
+          sleep 10
         done
+        az containerapp ingress traffic set \
+          --name $BACKEND_PROD \
+          --resource-group $RESOURCE_GROUP \
+          --revision-weight "$REVISION=100"
+        az containerapp revision list \
+          --name $BACKEND_PROD \
+          --resource-group $RESOURCE_GROUP \
+          --query "[?name!='$REVISION' && properties.active==\`true\`].name" \
+          --output tsv | while read -r rev; do
+            [ -z "$rev" ] && continue
+            echo "Deactivating $rev"
+            az containerapp revision deactivate \
+              --name $BACKEND_PROD \
+              --resource-group $RESOURCE_GROUP \
+              --revision "$rev"
+          done
+
+    - name: Deploy prod frontend revision
+      run: |
+        az containerapp update \
+          --name $FRONTEND_PROD \
+          --resource-group $RESOURCE_GROUP \
+          --image $ACR_REGISTRY/tailord-frontend:$TAG \
+          --revision-suffix $SUFFIX
+
+    - name: Promote prod frontend revision
+      run: |
+        REVISION="${FRONTEND_PROD}--${SUFFIX}"
+        for i in $(seq 1 24); do
+          STATE=$(az containerapp revision show \
+            --name $FRONTEND_PROD \
+            --resource-group $RESOURCE_GROUP \
+            --revision "$REVISION" \
+            --query "properties.runningState" \
+            --output tsv 2>/dev/null || echo "Unknown")
+          echo "  attempt $i: $STATE"
+          if [ "$STATE" = "Running" ] || [ "$STATE" = "RunningAtMaxScale" ]; then
+            break
+          fi
+          if [ "$i" = "24" ]; then
+            echo "ERROR: $FRONTEND_PROD revision did not reach Running state"
+            exit 1
+          fi
+          sleep 10
+        done
+        az containerapp ingress traffic set \
+          --name $FRONTEND_PROD \
+          --resource-group $RESOURCE_GROUP \
+          --revision-weight "$REVISION=100"
+        az containerapp revision list \
+          --name $FRONTEND_PROD \
+          --resource-group $RESOURCE_GROUP \
+          --query "[?name!='$REVISION' && properties.active==\`true\`].name" \
+          --output tsv | while read -r rev; do
+            [ -z "$rev" ] && continue
+            echo "Deactivating $rev"
+            az containerapp revision deactivate \
+              --name $FRONTEND_PROD \
+              --resource-group $RESOURCE_GROUP \
+              --revision "$rev"
+          done
 
   # ---------------------------------------------------------------------------
-  # SMOKE TEST PROD — verify prod is healthy after promotion
+  # SMOKE TEST PROD — verify prod is healthy after deployment
   # ---------------------------------------------------------------------------
   smoke-test-prod:
 
@@ -314,7 +359,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Health check — prod
+    - name: Health check — prod backend
       run: |
         curl \
           --fail \
@@ -323,9 +368,10 @@ jobs:
           --retry 6 \
           --retry-delay 10 \
           --retry-connrefused \
+          --retry-all-errors \
           https://tailord.app/api/health
 
-    - name: Verify prod homepage
+    - name: Health check — prod homepage
       run: |
         STATUS=$(curl \
           --silent \

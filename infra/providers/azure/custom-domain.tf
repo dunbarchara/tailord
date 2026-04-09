@@ -2,55 +2,42 @@
 # CUSTOM DOMAIN + MANAGED TLS
 # -----------------------------
 # Apply 1 — creates TXT verification records alongside all other infrastructure.
-# After DNS propagates (~5 min), complete domain binding via CLI (see below).
+# After DNS propagates (~5 min), complete domain binding per environment below.
 #
-# Production (tailord.app):
+# Production (tailord.app) — CLI:
 #   az containerapp hostname add \
-#     --name tailord-frontend \
+#     --name tailord-frontend-prod \
 #     --resource-group tailord \
 #     --hostname tailord.app
 #
 #   az containerapp hostname bind \
-#     --name tailord-frontend \
+#     --name tailord-frontend-prod \
 #     --resource-group tailord \
 #     --hostname tailord.app \
-#     --environment tailord-env \
+#     --environment tailord-env-prod \
 #     --validation-method TXT
 #
-# Staging (staging.tailord.app):
-#   Prerequisite: Azure requires the staging CNAME to resolve directly to the
-#   Container App (not through Cloudflare) during validation. Before running
-#   the commands below:
+# Staging (staging.tailord.app) — Portal (azurerm provider does not support serverless cert binding):
+#   Azure requires the staging CNAME to resolve directly to the Container App
+#   (not through Cloudflare) during validation.
 #     1. In Cloudflare, set the `staging` CNAME to DNS Only (grey cloud)
-#        and point it at: tailord-frontend.{env-default-domain}
-#        (the main app FQDN, not the label URL)
+#        and point it at: tailord-frontend-staging.{env-staging-default-domain}
 #     2. Wait ~2 min for DNS to propagate
-#
-#   az containerapp hostname add \
-#     --name tailord-frontend \
-#     --resource-group tailord \
-#     --hostname staging.tailord.app
-#
-#   az containerapp hostname bind \
-#     --name tailord-frontend \
-#     --resource-group tailord \
-#     --hostname staging.tailord.app \
-#     --environment tailord-env \
-#     --validation-method TXT
+#     3. In the Azure Portal, open tailord-frontend-staging → Custom domains →
+#        add staging.tailord.app with 'Managed certificate' and wait for it to be issued.
 #
 #   After the cert is issued (Succeeded):
-#     3. Set the `staging` CNAME back to Proxied and point it at the label URL:
-#        tailord-frontend---staging.{env-default-domain}
-#     4. Set Cloudflare SSL/TLS mode back to Full (Strict)
-#
-# Each command provisions a free Azure-managed cert and binds it.
+#     4. Set the `staging` CNAME back to Proxied pointing at:
+#        tailord-frontend-staging.{env-staging-default-domain}
+#     5. Set Cloudflare SSL/TLS mode back to Full (Strict)
 
 # TXT records proving domain ownership to Azure.
-# Azure checks: asuid.{domain} = container_app_environment.custom_domain_verification_id
+# Each environment has its own verification ID — prod and staging TXT records
+# reference their respective environment.
 resource "cloudflare_dns_record" "domain_verification" {
   zone_id = var.cloudflare_zone_id
-  name    = "asuid.${var.domain_name}"
-  content = "\"${azurerm_container_app_environment.tailord.custom_domain_verification_id}\""
+  name    = "asuid"
+  content = "\"${azurerm_container_app_environment.prod.custom_domain_verification_id}\""
   type    = "TXT"
   proxied = false
   ttl     = 300
@@ -58,8 +45,8 @@ resource "cloudflare_dns_record" "domain_verification" {
 
 resource "cloudflare_dns_record" "staging_domain_verification" {
   zone_id = var.cloudflare_zone_id
-  name    = "asuid.staging.${var.domain_name}"
-  content = "\"${azurerm_container_app_environment.tailord.custom_domain_verification_id}\""
+  name    = "asuid.staging"
+  content = "\"${azurerm_container_app_environment.staging.custom_domain_verification_id}\""
   type    = "TXT"
   proxied = false
   ttl     = 300

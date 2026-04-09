@@ -7,8 +7,8 @@ data "azurerm_client_config" "current" {}
 # MANAGED IDENTITY
 # Used by Container Apps to authenticate to Key Vault
 # -----------------------------
-resource "azurerm_user_assigned_identity" "container_apps" {
-  name                = "${var.project_name}-apps-identity"
+resource "azurerm_user_assigned_identity" "apps" {
+  name                = "${var.project_name}-id"
   resource_group_name = azurerm_resource_group.tailord.name
   location            = azurerm_resource_group.tailord.location
   tags                = local.tags
@@ -40,7 +40,7 @@ resource "azurerm_role_assignment" "kv_secrets_officer" {
 resource "azurerm_role_assignment" "kv_secrets_user" {
   scope                = azurerm_key_vault.tailord.id
   role_definition_name = "Key Vault Secrets User"
-  principal_id         = azurerm_user_assigned_identity.container_apps.principal_id
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
 }
 
 # -----------------------------
@@ -49,7 +49,7 @@ resource "azurerm_role_assignment" "kv_secrets_user" {
 # -----------------------------
 resource "azurerm_key_vault_secret" "prod_database_url" {
   name         = "prod-database-url"
-  value        = "postgresql+psycopg://tailord:${var.db_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord_prod"
+  value        = "postgresql+psycopg://tailord_prod:${var.db_prod_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord_prod"
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
@@ -65,7 +65,7 @@ resource "azurerm_key_vault_secret" "prod_api_key" {
 
 resource "azurerm_key_vault_secret" "prod_storage_connection_string" {
   name         = "prod-storage-connection-string"
-  value        = azurerm_storage_account.uploads.primary_connection_string
+  value        = azurerm_storage_account.uploads_prod.primary_connection_string
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
@@ -121,12 +121,12 @@ resource "azurerm_key_vault_secret" "prod_notion_client_secret" {
 
 # -----------------------------
 # STAGING SECRETS
-# Same credentials as prod except database-url (points to tailord_staging)
-# and storage-connection-string (same account, different container name handled at app level)
+# Fully isolated from prod: separate database user (tailord_staging → tailord_staging db only),
+# separate storage account (tailordstaging), and separate Key Vault secret names (staging-*).
 # -----------------------------
 resource "azurerm_key_vault_secret" "staging_database_url" {
   name         = "staging-database-url"
-  value        = "postgresql+psycopg://tailord:${var.db_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord_staging"
+  value        = "postgresql+psycopg://tailord_staging:${var.db_staging_password}@${azurerm_postgresql_flexible_server.tailord.fqdn}/tailord_staging"
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
@@ -142,7 +142,7 @@ resource "azurerm_key_vault_secret" "staging_api_key" {
 
 resource "azurerm_key_vault_secret" "staging_storage_connection_string" {
   name         = "staging-storage-connection-string"
-  value        = azurerm_storage_account.uploads.primary_connection_string
+  value        = azurerm_storage_account.uploads_staging.primary_connection_string
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
