@@ -150,7 +150,7 @@ jobs:
 
     - name: Deploy frontend staging revision
       run: |
-        STAGING_BACKEND_URL="https://${BACKEND_APP}---staging.${{ steps.env_domain.outputs.domain }}"
+        STAGING_BACKEND_URL="https://${BACKEND_APP}---staging.internal.${{ steps.env_domain.outputs.domain }}"
         az containerapp update \
           --name $FRONTEND_APP \
           --resource-group $RESOURCE_GROUP \
