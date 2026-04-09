@@ -21,9 +21,11 @@ resource "azurerm_container_registry" "tailord" {
 
 # -----------------------------
 # STORAGE
+# Separate accounts per environment so staging cannot access prod blobs
+# even with a misconfigured connection string.
 # -----------------------------
-resource "azurerm_storage_account" "uploads" {
-  name                              = "${replace(var.project_name, "-", "")}uploads"
+resource "azurerm_storage_account" "uploads_prod" {
+  name                              = "${replace(var.project_name, "-", "")}prod"
   resource_group_name               = azurerm_resource_group.tailord.name
   location                          = azurerm_resource_group.tailord.location
   account_tier                      = "Standard"
@@ -39,6 +41,28 @@ resource "azurerm_storage_account" "uploads" {
       allowed_origins    = [
         "https://${var.domain_name}",
         "https://www.${var.domain_name}",
+      ]
+      exposed_headers    = ["*"]
+      max_age_in_seconds = 3000
+    }
+  }
+}
+
+resource "azurerm_storage_account" "uploads_staging" {
+  name                              = "${replace(var.project_name, "-", "")}staging"
+  resource_group_name               = azurerm_resource_group.tailord.name
+  location                          = azurerm_resource_group.tailord.location
+  account_tier                      = "Standard"
+  account_replication_type          = "LRS"
+  allow_nested_items_to_be_public   = false
+  min_tls_version                   = "TLS1_2"
+  tags                              = local.tags
+
+  blob_properties {
+    cors_rule {
+      allowed_headers    = ["*"]
+      allowed_methods    = ["PUT"]
+      allowed_origins    = [
         "https://staging.${var.domain_name}",
         "http://localhost:3000",
       ]
@@ -49,20 +73,20 @@ resource "azurerm_storage_account" "uploads" {
 }
 
 resource "azurerm_storage_container" "uploads_prod" {
-  name               = "prod-${var.project_name}-uploads"
-  storage_account_id = azurerm_storage_account.uploads.id
+  name               = "uploads"
+  storage_account_id = azurerm_storage_account.uploads_prod.id
 }
 
 resource "azurerm_storage_container" "uploads_staging" {
-  name               = "staging-${var.project_name}-uploads"
-  storage_account_id = azurerm_storage_account.uploads.id
+  name               = "uploads"
+  storage_account_id = azurerm_storage_account.uploads_staging.id
 }
 
 # -----------------------------
 # POSTGRESQL FLEXIBLE SERVER
 # -----------------------------
 resource "azurerm_postgresql_flexible_server" "tailord" {
-  name                   = "${var.project_name}-db"
+  name                   = "${var.project_name}-pg"
   resource_group_name    = azurerm_resource_group.tailord.name
   location               = azurerm_resource_group.tailord.location
   version                = "16"
@@ -74,6 +98,13 @@ resource "azurerm_postgresql_flexible_server" "tailord" {
   tags                   = local.tags
 }
 
+# SECURITY DEBT: The 0.0.0.0/0.0.0.0 magic range enables "Allow access to Azure services",
+# which permits any Azure-hosted service — including those in other tenants — to reach port 5432.
+# This is mitigated by strong credentials and TLS, but the proper fix is VNet integration:
+# put the PostgreSQL server on a private subnet and configure the Container App Environments
+# with a custom VNet so they reach the DB over a private endpoint (no public exposure at all).
+# VNet integration requires recreating the Container App Environments, so it is deferred.
+# Tracked in planning/15-infra-improvements.md.
 resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
   name             = "allow-azure-services"
   server_id        = azurerm_postgresql_flexible_server.tailord.id
@@ -96,10 +127,22 @@ resource "azurerm_postgresql_flexible_server_database" "staging" {
 }
 
 # -----------------------------
-# CONTAINER APP ENVIRONMENT
+# CONTAINER APP ENVIRONMENTS
+# Separate environments for prod and staging provide network-level isolation:
+# staging apps cannot reach prod internal services even if misconfigured.
+# Internal DNS routes frontend→backend within each environment.
+# Both environments share one Log Analytics workspace (filter by app name/env).
 # -----------------------------
-resource "azurerm_container_app_environment" "tailord" {
-  name                       = "${var.project_name}-env"
+resource "azurerm_container_app_environment" "prod" {
+  name                       = "${var.project_name}-env-prod"
+  resource_group_name        = azurerm_resource_group.tailord.name
+  location                   = azurerm_resource_group.tailord.location
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.tailord.id
+  tags                       = local.tags
+}
+
+resource "azurerm_container_app_environment" "staging" {
+  name                       = "${var.project_name}-env-staging"
   resource_group_name        = azurerm_resource_group.tailord.name
   location                   = azurerm_resource_group.tailord.location
   log_analytics_workspace_id = azurerm_log_analytics_workspace.tailord.id
@@ -110,16 +153,16 @@ resource "azurerm_container_app_environment" "tailord" {
 resource "azurerm_role_assignment" "acr_pull" {
   scope                = azurerm_container_registry.tailord.id
   role_definition_name = "AcrPull"
-  principal_id         = azurerm_user_assigned_identity.container_apps.principal_id
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
 }
 
 # -----------------------------
-# CONTAINER APP — BACKEND
+# CONTAINER APP — BACKEND (PROD)
 # -----------------------------
-resource "azurerm_container_app" "backend" {
-  name                         = "${var.project_name}-backend"
+resource "azurerm_container_app" "backend_prod" {
+  name                         = "${var.project_name}-backend-prod"
   resource_group_name          = azurerm_resource_group.tailord.name
-  container_app_environment_id = azurerm_container_app_environment.tailord.id
+  container_app_environment_id = azurerm_container_app_environment.prod.id
   revision_mode                = "Multiple"
   tags                         = local.tags
 
@@ -132,7 +175,7 @@ resource "azurerm_container_app" "backend" {
 
   identity {
     type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
+    identity_ids = [azurerm_user_assigned_identity.apps.id]
   }
 
   template {
@@ -145,7 +188,7 @@ resource "azurerm_container_app" "backend" {
 
     container {
       name   = "backend"
-      image  = "${azurerm_container_registry.tailord.login_server}/${var.project_name}-backend:latest"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
       cpu    = 0.5
       memory = "1Gi"
 
@@ -220,81 +263,50 @@ resource "azurerm_container_app" "backend" {
 
   registry {
     server   = azurerm_container_registry.tailord.login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
+    identity = azurerm_user_assigned_identity.apps.id
   }
 
-  # prod secrets
   secret {
     name                = "prod-database-url"
     key_vault_secret_id = azurerm_key_vault_secret.prod_database_url.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.prod_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-storage-connection-string"
     key_vault_secret_id = azurerm_key_vault_secret.prod_storage_connection_string.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-llm-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.prod_llm_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-notion-client-id"
     key_vault_secret_id = azurerm_key_vault_secret.prod_notion_client_id.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-notion-client-secret"
     key_vault_secret_id = azurerm_key_vault_secret.prod_notion_client_secret.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-
-  # staging secrets — registered at app level so CI/CD can reference them in staging revisions
-  secret {
-    name                = "staging-database-url"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_database_url.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-  secret {
-    name                = "staging-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-  secret {
-    name                = "staging-storage-connection-string"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_storage_connection_string.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-  secret {
-    name                = "staging-llm-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_llm_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-  secret {
-    name                = "staging-notion-client-id"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_id.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
-  }
-  secret {
-    name                = "staging-notion-client-secret"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_secret.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
 }
 
 # -----------------------------
-# CONTAINER APP — FRONTEND
+# CONTAINER APP — BACKEND (STAGING)
+# Separate app — always uses staging DB and staging storage.
+# Scales to 0 when idle; costs nothing between deployments.
 # -----------------------------
-resource "azurerm_container_app" "frontend" {
-  name                         = "${var.project_name}-frontend"
+resource "azurerm_container_app" "backend_staging" {
+  name                         = "${var.project_name}-backend-staging"
   resource_group_name          = azurerm_resource_group.tailord.name
-  container_app_environment_id = azurerm_container_app_environment.tailord.id
+  container_app_environment_id = azurerm_container_app_environment.staging.id
   revision_mode                = "Multiple"
   tags                         = local.tags
 
@@ -307,23 +319,165 @@ resource "azurerm_container_app" "frontend" {
 
   identity {
     type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.container_apps.id]
+    identity_ids = [azurerm_user_assigned_identity.apps.id]
+  }
+
+  template {
+    max_replicas = 1
+
+    http_scale_rule {
+      name                = "http-scaling"
+      concurrent_requests = 10
+    }
+
+    container {
+      name   = "backend"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name        = "DATABASE_URL"
+        secret_name = "database-url"
+      }
+      env {
+        name        = "API_KEY"
+        secret_name = "api-key"
+      }
+      env {
+        name  = "ENVIRONMENT"
+        value = "staging"
+      }
+      env {
+        name  = "LOG_LEVEL"
+        value = var.log_level
+      }
+      env {
+        name  = "STORAGE_PROVIDER"
+        value = "azure"
+      }
+      env {
+        name        = "AZURE_STORAGE_CONNECTION_STRING"
+        secret_name = "storage-connection-string"
+      }
+      env {
+        name  = "AZURE_STORAGE_CONTAINER"
+        value = azurerm_storage_container.uploads_staging.name
+      }
+      env {
+        name  = "LLM_BASE_URL"
+        value = "${azurerm_cognitive_account.tailord_foundry.endpoint}openai/v1/"
+      }
+      env {
+        name  = "LLM_MODEL"
+        value = var.llm_model
+      }
+      env {
+        name  = "LLM_API_VERSION"
+        value = var.llm_api_version
+      }
+      env {
+        name        = "LLM_API_KEY"
+        secret_name = "llm-api-key"
+      }
+      env {
+        name        = "NOTION_CLIENT_ID"
+        secret_name = "notion-client-id"
+      }
+      env {
+        name        = "NOTION_CLIENT_SECRET"
+        secret_name = "notion-client-secret"
+      }
+      env {
+        name  = "NOTION_REDIRECT_URI"
+        value = "https://staging.${var.domain_name}/api/auth/notion/callback"
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = false
+    target_port      = 8000
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  registry {
+    server   = azurerm_container_registry.tailord.login_server
+    identity = azurerm_user_assigned_identity.apps.id
+  }
+
+  secret {
+    name                = "database-url"
+    key_vault_secret_id = azurerm_key_vault_secret.staging_database_url.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "storage-connection-string"
+    key_vault_secret_id = azurerm_key_vault_secret.staging_storage_connection_string.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "llm-api-key"
+    key_vault_secret_id = azurerm_key_vault_secret.staging_llm_api_key.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "notion-client-id"
+    key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_id.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "notion-client-secret"
+    key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_secret.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+}
+
+# -----------------------------
+# CONTAINER APP — FRONTEND (PROD)
+# -----------------------------
+resource "azurerm_container_app" "frontend_prod" {
+  name                         = "${var.project_name}-frontend-prod"
+  resource_group_name          = azurerm_resource_group.tailord.name
+  container_app_environment_id = azurerm_container_app_environment.prod.id
+  revision_mode                = "Multiple"
+  tags                         = local.tags
+
+  lifecycle {
+    ignore_changes = [
+      template[0].container[0].image,
+      ingress[0].traffic_weight,
+    ]
+  }
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.apps.id]
   }
 
   template {
     container {
       name   = "frontend"
-      image  = "${azurerm_container_registry.tailord.login_server}/${var.project_name}-frontend:latest"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
       cpu    = 0.5
       memory = "1Gi"
 
       env {
         name  = "NEXT_PUBLIC_API_URL"
-        value = "https://${azurerm_container_app.backend.ingress[0].fqdn}"
+        value = "https://${azurerm_container_app.backend_prod.ingress[0].fqdn}"
       }
       env {
         name  = "API_BASE_URL"
-        value = "https://${azurerm_container_app.backend.ingress[0].fqdn}"
+        value = "https://${azurerm_container_app.backend_prod.ingress[0].fqdn}"
       }
       env {
         name        = "API_KEY"
@@ -369,51 +523,136 @@ resource "azurerm_container_app" "frontend" {
 
   registry {
     server   = azurerm_container_registry.tailord.login_server
-    identity = azurerm_user_assigned_identity.container_apps.id
+    identity = azurerm_user_assigned_identity.apps.id
   }
 
-  # prod secrets
   secret {
     name                = "prod-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.prod_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-nextauth-secret"
     key_vault_secret_id = azurerm_key_vault_secret.prod_nextauth_secret.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-google-client-id"
     key_vault_secret_id = azurerm_key_vault_secret.prod_google_client_id.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-google-client-secret"
     key_vault_secret_id = azurerm_key_vault_secret.prod_google_client_secret.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+}
+
+# -----------------------------
+# CONTAINER APP — FRONTEND (STAGING)
+# Separate app — always routes to the staging backend.
+# Scales to 0 when idle; costs nothing between deployments.
+# -----------------------------
+resource "azurerm_container_app" "frontend_staging" {
+  name                         = "${var.project_name}-frontend-staging"
+  resource_group_name          = azurerm_resource_group.tailord.name
+  container_app_environment_id = azurerm_container_app_environment.staging.id
+  revision_mode                = "Multiple"
+  tags                         = local.tags
+
+  lifecycle {
+    ignore_changes = [
+      template[0].container[0].image,
+      ingress[0].traffic_weight,
+    ]
   }
 
-  # staging secrets — registered at app level so CI/CD can reference them in staging revisions
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.apps.id]
+  }
+
+  template {
+    container {
+      name   = "frontend"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "NEXT_PUBLIC_API_URL"
+        value = "https://${azurerm_container_app.backend_staging.ingress[0].fqdn}"
+      }
+      env {
+        name  = "API_BASE_URL"
+        value = "https://${azurerm_container_app.backend_staging.ingress[0].fqdn}"
+      }
+      env {
+        name        = "API_KEY"
+        secret_name = "api-key"
+      }
+      env {
+        name  = "NEXTAUTH_URL"
+        value = "https://staging.${var.domain_name}"
+      }
+      env {
+        name        = "NEXTAUTH_SECRET"
+        secret_name = "nextauth-secret"
+      }
+      env {
+        name        = "GOOGLE_CLIENT_ID"
+        secret_name = "google-client-id"
+      }
+      env {
+        name        = "GOOGLE_CLIENT_SECRET"
+        secret_name = "google-client-secret"
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 3000
+
+    dynamic "ip_security_restriction" {
+      for_each = data.cloudflare_ip_ranges.cloudflare.ipv4_cidrs
+      content {
+        name             = "cloudflare-${ip_security_restriction.key}"
+        action           = "Allow"
+        ip_address_range = ip_security_restriction.value
+      }
+    }
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  registry {
+    server   = azurerm_container_registry.tailord.login_server
+    identity = azurerm_user_assigned_identity.apps.id
+  }
+
   secret {
-    name                = "staging-api-key"
+    name                = "api-key"
     key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "staging-nextauth-secret"
+    name                = "nextauth-secret"
     key_vault_secret_id = azurerm_key_vault_secret.staging_nextauth_secret.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "staging-google-client-id"
+    name                = "google-client-id"
     key_vault_secret_id = azurerm_key_vault_secret.staging_google_client_id.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "staging-google-client-secret"
+    name                = "google-client-secret"
     key_vault_secret_id = azurerm_key_vault_secret.staging_google_client_secret.versionless_id
-    identity            = azurerm_user_assigned_identity.container_apps.id
+    identity            = azurerm_user_assigned_identity.apps.id
   }
 }
 
@@ -428,7 +667,7 @@ data "cloudflare_ip_ranges" "cloudflare" {}
 resource "cloudflare_dns_record" "app" {
   zone_id = var.cloudflare_zone_id
   name    = var.domain_name
-  content = azurerm_container_app.frontend.ingress[0].fqdn
+  content = azurerm_container_app.frontend_prod.ingress[0].fqdn
   type    = "CNAME"
   proxied = true
   ttl     = 1
@@ -446,7 +685,7 @@ resource "cloudflare_dns_record" "www" {
 resource "cloudflare_dns_record" "staging" {
   zone_id = var.cloudflare_zone_id
   name    = "staging"
-  content = "${var.project_name}-frontend---staging.${azurerm_container_app_environment.tailord.default_domain}"
+  content = azurerm_container_app.frontend_staging.ingress[0].fqdn
   type    = "CNAME"
   proxied = true
   ttl     = 1

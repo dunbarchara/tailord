@@ -459,27 +459,46 @@ ACR (Azure Container Registry) stays private regardless — the SARIF approach s
 
 ### Day P3 — Staging Environment + Pipeline Hardening
 
-**Goal:** A staging environment exists with near-zero idle cost. Remaining pipeline robustness gaps are closed.
+**Goal:** A staging environment exists with near-zero idle cost, fully isolated from prod. Remaining pipeline robustness gaps are closed.
 
-#### Staging — Azure Container Apps Revisions
-- [x] Create a `staging` revision alongside `prod` within the same Container App
-  - `staging`: min replicas = 0, max = 1 — scales to zero when not in use (zero idle cost)
-  - `prod`: min replicas = 0 for now (flip to 1 when real users exist)
-  - `staging` receives 0% external traffic; accessible via revision label URL
-  - Both frontend and backend Container Apps switched to `Multiple` revision mode
-  - All KV secrets renamed to `prod-*`; `staging-*` counterparts added and registered on both apps
-  - Storage containers: `prod-tailord-uploads` + `staging-tailord-uploads`
-  - PostgreSQL databases: `tailord_prod` + `tailord_staging` (same server, isolated schemas)
-- [x] Deployment workflow update (`.github/workflows/deploy-azure.yml`):
-  - Pipeline: `build → deploy-staging → smoke-test-staging → deploy-prod → smoke-test-prod → purge-acr`
-  - Staging revisions use `staging-*` secrets and `ENVIRONMENT=staging`
-  - Staging frontend points at staging backend revision URL
-  - Prod promotion: reassign `prod` label, set traffic weight 100%, deactivate old revisions
-- [x] Staging database: `tailord_staging` — separate database on the same PostgreSQL Flexible Server
-- [x] Cloudflare: `staging.tailord.app` → staging frontend label URL via proxied CNAME
-- [x] `ENVIRONMENT=staging` env var set on staging revisions; `ENVIRONMENT=production` on prod
-- [x] Google OAuth: staging uses **Tailord Prod** client — `https://staging.tailord.app` added as Authorized JavaScript origin and `https://staging.tailord.app/api/auth/callback/google` added as Authorized redirect URI
+#### Staging — Initial approach (shared Container Apps, revisions) ✅ then superseded
+
+The original plan used a single set of Container Apps with multiple revisions — a `staging` revision alongside `prod` within the same app. This was implemented but revealed a fundamental limitation: Azure Container Apps does not support internal label-based routing (`{app}---{label}.internal.{env-domain}`) for apps with `external_enabled = false`. Staging frontend could not reach staging backend via a label URL without going through the public internet, meaning staging frontend would silently hit the prod backend. Staging data would pollute the prod database.
+
+#### Staging — Full isolation refactor ✅
+
+Replaced the shared revision approach with fully dedicated infrastructure per environment. See `planning/15-infra-improvements.md` for the complete change log.
+
+**Four dedicated Container Apps:**
+- `tailord-backend-prod`, `tailord-frontend-prod` in `tailord-env-prod`
+- `tailord-backend-staging`, `tailord-frontend-staging` in `tailord-env-staging`
+- Each environment's frontend reaches only its own backend via the environment's internal DNS — no cross-environment traffic possible at the network layer
+
+**Separate Container App Environments:** `tailord-env-prod` and `tailord-env-staging` — apps in different environments cannot reach each other's internal services.
+
+**Blue-green deployment for all four apps:**
+- All apps use `Multiple` revision mode with `lifecycle { ignore_changes }` on image and traffic weight
+- Deploy workflow: create revision → wait for `Running` → shift 100% traffic → deactivate old revisions
+- Pipeline: `build → deploy-staging → smoke-test-staging → deploy-prod → smoke-test-prod → purge-acr`
+
+**Full resource isolation:**
+- Storage: `tailordprod` and `tailordstaging` — separate accounts with CORS scoped per environment
+- PostgreSQL: shared server (`tailord-pg`), isolated databases (`tailord_prod`, `tailord_staging`), isolated users (`tailord_prod` user can only connect to `tailord_prod` DB; same for staging). Both users have DDL rights so Alembic migrations run under the same credential as the app.
+- Key Vault: one shared vault, secrets namespaced `prod-*` vs `staging-*`
+- GitHub: `production-azure` and `staging-azure` environments with independent OIDC federated credentials
+
+**Naming conventions standardised:**
+- All resources use `{project}-{component}-{env}` or `{project}-{env}` suffixes
+- PostgreSQL server renamed `tailord-db` → `tailord-pg`
+- Managed identity renamed `tailord-apps-identity` → `tailord-id`
+
+**Local dev storage:** Azurite added to `backend/docker-compose.yml` — local dev uses an isolated local storage emulator, not any cloud account.
+
+**Documentation:** `BOOTSTRAP.md` rewritten end-to-end. Infrastructure isolation reference table added. Known security debt documented (PostgreSQL public endpoint — VNet integration deferred, tracked below).
+
+- [x] Google OAuth: staging uses **Tailord Prod** client — `https://staging.tailord.app` added as Authorized JavaScript origin and redirect URI
 - [ ] **Deferred:** create a separate **Tailord Staging** Google OAuth client when there is a team with independently controlled staging vs prod access
+- [ ] **Security debt:** VNet integration for PostgreSQL — private subnet, no public endpoint. Requires recreating Container App Environments. See `planning/15-infra-improvements.md`.
 
 #### Experience Section — Known Issues (fix during GitHub processing iteration)
 - [ ] **Race condition: GitHub added while resume is processing** — if GitHub is added mid-processing, the GitHub endpoint sets `status → "ready"` prematurely (before resume extraction completes). The experience processor then finishes and overwrites `github_repos` with `None` (stale read-modify-write). Fix: (1) GitHub endpoint should not touch `status` if it is currently `"processing"`; (2) experience processor should update only its own columns (`extracted_profile`, `status`, `processed_at`) rather than saving the full record, to avoid clobbering concurrent writes.
