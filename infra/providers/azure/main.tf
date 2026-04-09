@@ -446,7 +446,7 @@ resource "cloudflare_dns_record" "www" {
 resource "cloudflare_dns_record" "staging" {
   zone_id = var.cloudflare_zone_id
   name    = "staging"
-  content = "staging---${var.project_name}-frontend.${azurerm_container_app_environment.tailord.default_domain}"
+  content = "${var.project_name}-frontend---staging.${azurerm_container_app_environment.tailord.default_domain}"
   type    = "CNAME"
   proxied = true
   ttl     = 1
