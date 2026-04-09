@@ -150,7 +150,7 @@ jobs:
 
     - name: Deploy frontend staging revision
       run: |
-        STAGING_BACKEND_URL="https://staging---${BACKEND_APP}.${{ steps.env_domain.outputs.domain }}"
+        STAGING_BACKEND_URL="https://${BACKEND_APP}---staging.${{ steps.env_domain.outputs.domain }}"
         az containerapp update \
           --name $FRONTEND_APP \
           --resource-group $RESOURCE_GROUP \
@@ -217,9 +217,10 @@ jobs:
           --retry 6 \
           --retry-delay 10 \
           --retry-connrefused \
+          --retry-all-errors \
           https://staging.tailord.app/api/health
 
-    - name: Health check — staging backend (via frontend proxy)
+    - name: Health check — staging homepage
       run: |
         STATUS=$(curl \
           --silent \

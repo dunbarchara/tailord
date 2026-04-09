@@ -7,7 +7,7 @@ output "frontend_url" {
 }
 
 output "staging_frontend_url" {
-  value = "https://staging---${var.project_name}-frontend.${azurerm_container_app_environment.tailord.default_domain}"
+  value = "https://${var.project_name}-frontend---staging.${azurerm_container_app_environment.tailord.default_domain}"
 }
 
 output "prod_db_connection_string" {
