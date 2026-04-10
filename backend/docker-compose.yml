@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   db:
     image: postgres:16
@@ -8,9 +7,31 @@ services:
       POSTGRES_DB: app
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
   storage:
     image: mcr.microsoft.com/azure-storage/azurite
-    command: azurite-blob --blobHost 0.0.0.0
+    command: azurite-blob --blobHost 0.0.0.0 --location /data --skipApiVersionCheck
     ports:
       - "10000:10000"
+    volumes:
+      - azurite_data:/data
+
+  storage-init:
+    image: mcr.microsoft.com/azure-cli
+    environment:
+      - AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://storage:10000/devstoreaccount1; # gitleaks:allow — Azurite well-known public key, not a real secret (same for all installs)
+    depends_on:
+      - storage
+    restart: "no"
+    command: >
+      bash -c "
+        sleep 5 &&
+        az storage container create --name uploads &&
+        az storage cors add --services b --methods PUT GET DELETE --origins 'http://localhost:3000' --allowed-headers '*' --exposed-headers '*' --max-age 3600
+      "
+
+volumes:
+  postgres_data:
+  azurite_data:

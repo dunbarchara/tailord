@@ -3,6 +3,7 @@ import re
 import unicodedata
 
 from fastapi import Depends, Header, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps_database import get_db
@@ -73,7 +74,13 @@ def get_current_user(
             avatar_url=x_user_image,
         )
         db.add(user)
-        db.flush()  # get id before generating slug
+        try:
+            db.flush()  # get id before generating slug
+        except IntegrityError:
+            # Another concurrent request inserted the same google_sub — re-query and continue.
+            db.rollback()
+            user = db.query(User).filter(User.google_sub == x_user_id).first()
+            return user
         display_name = x_user_name
         user.username_slug = _generate_username_slug(display_name, db)
         db.commit()

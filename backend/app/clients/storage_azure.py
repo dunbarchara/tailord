@@ -26,7 +26,13 @@ class AzureStorageClient(StorageClient):
             permission=BlobSasPermissions(write=True, create=True),
             expiry=datetime.now(timezone.utc) + timedelta(seconds=expires_in),
         )
-        url = f"https://{account_name}.blob.core.windows.net/{settings.azure_storage_container}/{key}?{sas_token}"
+        # Azurite uses a path-style URL rooted at the emulator host.
+        # Real Azure uses subdomain-style at blob.core.windows.net.
+        if service.url.startswith("http://"):
+            base = service.url.rstrip("/")  # e.g. http://127.0.0.1:10000/devstoreaccount1
+            url = f"{base}/{settings.azure_storage_container}/{key}?{sas_token}"
+        else:
+            url = f"https://{account_name}.blob.core.windows.net/{settings.azure_storage_container}/{key}?{sas_token}"
         logger.debug("SAS URL generated for key=%s", key)
         return url
 
