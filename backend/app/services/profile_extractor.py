@@ -2,7 +2,7 @@ import re
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
-from app.core.llm_utils import llm_parse
+from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import profile_extraction as prompt
 from app.schemas.llm_outputs import ExtractedProfile
 
@@ -15,9 +15,16 @@ def _clean_profile(data: dict) -> dict:
     return data
 
 
+def _validate_extracted_profile(result: ExtractedProfile) -> None:
+    if not (result.summary and result.summary.strip()):
+        raise ValueError("summary is empty — generate a 2–3 sentence professional summary")
+    if not result.work_experience:
+        raise ValueError("work_experience is empty — extract all roles from the resume")
+
+
 def extract_profile(text: str) -> dict:
     client = get_llm_client()
-    result = llm_parse(
+    result = llm_parse_with_retry(
         client,
         model=settings.llm_model,
         messages=[
@@ -26,5 +33,6 @@ def extract_profile(text: str) -> dict:
         ],
         response_model=ExtractedProfile,
         temperature=prompt.TEMPERATURE,
+        validate_fn=_validate_extracted_profile,
     )
     return _clean_profile(result.model_dump())

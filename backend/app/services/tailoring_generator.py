@@ -4,7 +4,7 @@ from datetime import date
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
-from app.core.llm_utils import llm_parse
+from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import tailoring as prompt
 from app.schemas.llm_outputs import TailoringContent
 
@@ -95,6 +95,80 @@ def _compute_profile_signals(sourced_profile: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_resume_prose(data: dict) -> str:
+    """Render an ExtractedProfile dict as compact prose — significantly fewer tokens than JSON."""
+    lines: list[str] = []
+
+    # Identity line
+    identity_parts = [p for p in [data.get("title"), data.get("location")] if p]
+    contact_parts = [p for p in [data.get("email"), data.get("linkedin")] if p]
+    if identity_parts:
+        lines.append(" | ".join(identity_parts))
+    if contact_parts:
+        lines.append("Contact: " + " | ".join(contact_parts))
+
+    if summary := (data.get("summary") or "").strip():
+        lines += ["", f"Summary: {summary}"]
+
+    skills = data.get("skills") or {}
+    if tech := skills.get("technical"):
+        lines.append("Technical skills: " + ", ".join(tech))
+    if soft := skills.get("soft"):
+        lines.append("Soft skills: " + ", ".join(soft))
+
+    if work := data.get("work_experience"):
+        lines.append("")
+        lines.append("Work Experience:")
+        for role in work:
+            header_parts = [role.get("title", "")]
+            if company := role.get("company"):
+                header_parts[0] = f"{header_parts[0]} @ {company}"
+            if loc := role.get("location"):
+                header_parts.append(loc)
+            if dur := role.get("duration"):
+                header_parts.append(f"({dur})")
+            lines.append("  " + " | ".join(p for p in header_parts if p))
+            for bullet in role.get("bullets") or []:
+                lines.append(f"  - {bullet}")
+
+    if edu := data.get("education"):
+        lines.append("")
+        lines.append("Education:")
+        for e in edu:
+            parts = [e.get("degree", ""), e.get("institution", "")]
+            if yr := e.get("year"):
+                parts.append(yr)
+            entry = ", ".join(p for p in parts if p)
+            if dist := e.get("distinction"):
+                entry += f" | {dist}"
+            lines.append(f"  {entry}")
+
+    if projects := data.get("projects"):
+        lines.append("")
+        lines.append("Projects:")
+        for p in projects:
+            tech_str = f" [{', '.join(p.get('technologies', []))}]" if p.get("technologies") else ""
+            lines.append(f"  {p.get('name', '')} — {p.get('description', '')}{tech_str}")
+
+    if certs := data.get("certifications"):
+        lines.append("Certifications: " + ", ".join(certs))
+
+    return "\n".join(lines)
+
+
+def _fmt_github_prose(data: dict) -> str:
+    """Render GitHub profile data as a compact repo list."""
+    repos = data.get("repos") or []
+    if not repos:
+        return "(No repos)"
+    lines = [f"Repos ({len(repos)}):"]
+    for r in repos:
+        lang = f" [{r['language']}]" if r.get("language") else ""
+        desc = f" — {r['description']}" if r.get("description") else ""
+        lines.append(f"  {r.get('name', '(unnamed)')}{lang}{desc}")
+    return "\n".join(lines)
+
+
 def _format_sourced_profile(
     sourced_profile: dict,
     candidate_name: str | None = None,
@@ -105,13 +179,10 @@ def _format_sourced_profile(
     Prepends a CANDIDATE block (name + pronouns) and a COMPUTED SIGNALS block
     so all LLM calls have consistent candidate context without requiring each
     service to manage it independently.
-    """
-    source_labels = {
-        "resume": "Resume",
-        "github": "GitHub",
-        "user_input": "Direct Input",
-    }
 
+    Resume and GitHub data are rendered as compact prose (not raw JSON) to
+    keep token counts manageable.
+    """
     sections = []
 
     if candidate_name or pronouns:
@@ -127,13 +198,23 @@ def _format_sourced_profile(
     signals = _compute_profile_signals(sourced_profile)
     sections.append(f"[COMPUTED SIGNALS — treat as ground truth]\n{signals}")
 
-    for key, label in source_labels.items():
-        if data := sourced_profile.get(key):
-            sections.append(f"[Source: {label}]\n{json.dumps(data, indent=2)}")
+    known_keys = {"resume", "github", "user_input"}
+
+    if resume := sourced_profile.get("resume"):
+        sections.append(f"[Source: Resume]\n{_fmt_resume_prose(resume)}")
+
+    if github := sourced_profile.get("github"):
+        sections.append(f"[Source: GitHub]\n{_fmt_github_prose(github)}")
+
+    if user_input := sourced_profile.get("user_input"):
+        body = user_input if isinstance(user_input, str) else json.dumps(user_input)
+        sections.append(f"[Source: Direct Input]\n{body}")
+
     for key, data in sourced_profile.items():
-        if key not in source_labels:
-            sections.append(f"[Source: {key}]\n{json.dumps(data, indent=2)}")
-    return "\n\n".join(sections) if sections else json.dumps(sourced_profile, indent=2)
+        if key not in known_keys:
+            sections.append(f"[Source: {key}]\n{json.dumps(data)}")
+
+    return "\n\n".join(sections) if sections else json.dumps(sourced_profile)
 
 
 def _format_ranked_matches(matches: list[dict]) -> str:
@@ -265,7 +346,14 @@ def generate_tailoring(
         ranked_matches if ranked_matches is not None else []
     )
 
-    content = llm_parse(
+    def _validate_tailoring(result: TailoringContent) -> None:
+        total = sum(len(s.body) for s in result.advocacy_statements) + len(result.closing or "")
+        if total < 200:
+            raise ValueError(
+                f"output is too short ({total} chars) — write more detailed advocacy statements"
+            )
+
+    content = llm_parse_with_retry(
         get_llm_client(),
         model=settings.llm_model,
         messages=[
@@ -285,6 +373,7 @@ def generate_tailoring(
         ],
         response_model=TailoringContent,
         temperature=prompt.TEMPERATURE,
+        validate_fn=_validate_tailoring,
     )
 
     return _render_tailoring(

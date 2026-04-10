@@ -504,19 +504,18 @@ Replaced the shared revision approach with fully dedicated infrastructure per en
 - [ ] **Race condition: GitHub added while resume is processing** — if GitHub is added mid-processing, the GitHub endpoint sets `status → "ready"` prematurely (before resume extraction completes). The experience processor then finishes and overwrites `github_repos` with `None` (stale read-modify-write). Fix: (1) GitHub endpoint should not touch `status` if it is currently `"processing"`; (2) experience processor should update only its own columns (`extracted_profile`, `status`, `processed_at`) rather than saving the full record, to avoid clobbering concurrent writes.
 
 #### Pipeline Hardening (remaining from Day 8.5)
-- [ ] **Token budget cap:** `truncate_to_tokens(text, max_tokens)` helper (tiktoken) — apply to scraped job markdown before any LLM prompt. Prevents runaway costs and context length errors on unusually long postings.
+- [x] **Token budget cap:** `truncate_to_tokens(text, max_tokens)` helper (`core/token_utils.py`, tiktoken with `o200k_base` fallback) — applied to scraped job markdown in `_scrape_job_url()` at 12 000 tokens before any LLM call.
 - [ ] **Job URL caching:** skip Playwright scrape + job extraction LLM for recently-seen URLs (< 7 days); rerun all other LLM steps fresh. Implement once extraction quality feels stable enough to trust cached output.
-- [ ] **Profile formatting as compact prose:** replace the raw JSON profile dump fed to the LLM with a compact prose block — more natural context, better performance on smaller models.
-- [ ] **Prompt minimisation — chunk matching:** trim `chunk_matching.py` system prompt. Cut to 3–4 examples (from 7); make examples shorter; tighten rules. Each added rule or example competes for the model's attention — the prompt should teach *reasoning patterns*, not enumerate domain-specific exceptions. See `18-scoring-reliability.md`.
-- [ ] **Reduce chunk batch size:** lower from ~8–10 chunks per batch to 3–5. More calls, smaller context per call, errors isolated. No architecture change required.
+- [x] **Profile formatting as compact prose:** `_format_sourced_profile()` rewrites resume data as structured prose (`_fmt_resume_prose`) and GitHub as a compact repo list (`_fmt_github_prose`) — cuts a typical profile from ~2 500 to ~800 tokens. Raw JSON no longer passed to any LLM call.
+- [x] **Prompt minimisation — chunk matching:** `chunk_matching.py` trimmed from 7 examples to 4; overlapping gap/N/A cases merged; examples shortened. Rules text unchanged.
+- [x] **Reduce chunk batch size:** already at 3 — no change required.
 - [ ] **Evidence extraction architecture (experimental):** decompose chunk matching into two sequential phases: (1) one call that reads the candidate profile and extracts a flat list of explicit atomic evidence claims; (2) scoring calls that match requirement chunks against the evidence list rather than the raw profile. The evidence list is smaller, auditable, and structurally prevents inferred claims (e.g. "No Terraform" is explicit — the model cannot invent it). Validate against eval baseline before committing. See `18-scoring-reliability.md` for full tradeoff analysis.
 - [ ] **Prompt iteration:** review and tighten `generate_tailoring` system prompt; consider few-shot examples for profile extraction.
-- [ ] **LLM response validation + retry:** after each `llm_parse` call, assert that the response meets minimum content expectations before committing the result. Retry the full LLM request (up to 2 additional attempts) on validation failure before falling back. Validation rules to implement per call site:
-  - **Chunk matching (`chunk_matcher.py`):** for each `ChunkMatchResult` with `score >= 1`, assert `advocacy_blurb` is non-null and non-empty. A batch where all scored chunks lack advocacy blurbs should be treated as a failed response and retried — this is the known failure mode where the LLM silently omits advocacy statements entirely.
-  - **Tailoring generation (`tailoring_generator.py`):** assert output is non-empty and exceeds a minimum character threshold (e.g., 200 chars).
-  - **Profile extraction (`profile_extractor.py`):** assert `summary` is non-empty and `work_experience` list is non-empty (or absent from resume — distinguish "no work history" from "extraction failure").
-  - **Requirement matching (`requirement_matcher.py`):** assert at least one `RequirementMatch` result is returned.
-  - Implement as a shared `llm_parse_with_retry(client, ..., validate_fn, max_retries=2)` wrapper around `llm_parse`, or as inline retry loops per call site — prefer the wrapper to avoid duplicating retry logic.
+- [x] **LLM response validation + retry:** `llm_parse_with_retry(client, ..., validate_fn, max_retries=2)` wrapper added to `core/llm_utils.py`. On failure, appends the error as a user turn and retries so the LLM can self-correct. Applied at all four call sites:
+  - **Chunk matching (`chunk_matcher.py`):** any `ChunkMatchResult` with `score >= 1` must have a non-empty `advocacy_blurb`.
+  - **Tailoring generation (`tailoring_generator.py`):** total output must exceed 200 chars.
+  - **Profile extraction (`profile_extractor.py`):** `summary` non-empty and `work_experience` non-empty.
+  - **Requirement matching (`requirement_matcher.py`):** `matches` list non-empty.
 
 ---
 

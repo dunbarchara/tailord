@@ -2,7 +2,7 @@ import logging
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
-from app.core.llm_utils import llm_parse
+from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import requirement_matching as prompt
 from app.schemas.matching import RequirementMatchList
 from app.services.tailoring_generator import _format_sourced_profile
@@ -32,7 +32,11 @@ def match_requirements(
 
     formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
 
-    result = llm_parse(
+    def _validate(r: RequirementMatchList) -> None:
+        if not r.matches:
+            raise ValueError("matches list is empty — score all requirements")
+
+    result = llm_parse_with_retry(
         get_llm_client(),
         model=settings.llm_model,
         messages=[
@@ -47,6 +51,7 @@ def match_requirements(
         ],
         response_model=RequirementMatchList,
         temperature=prompt.TEMPERATURE,
+        validate_fn=_validate,
     )
 
     matches = [m.model_dump() for m in result.matches if m.score >= 1]

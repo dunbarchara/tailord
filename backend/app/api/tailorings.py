@@ -19,6 +19,7 @@ from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
 from app.core.playwright_helper import get_rendered_content
+from app.core.token_utils import truncate_to_tokens
 from app.models.database import Experience, Job, JobChunk, LlmTriggerLog, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate, _validate_job_url
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
@@ -126,6 +127,9 @@ async def _scrape_job_url(url: str) -> tuple[str, str]:
     if not valid:
         logger.warning("validate_job_content failed for %s: %s", url, reason)
         raise HTTPException(status_code=422, detail=reason)
+    # Cap job markdown to prevent context-length errors on very long postings.
+    # 12 000 tokens leaves ample room for system prompt + candidate profile.
+    job_markdown = truncate_to_tokens(job_markdown, max_tokens=12_000, model=settings.llm_model)
     return html, job_markdown
 
 

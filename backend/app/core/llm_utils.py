@@ -1,5 +1,6 @@
 import logging
 import time
+from collections.abc import Callable
 from typing import Type, TypeVar
 
 from pydantic import BaseModel
@@ -190,3 +191,58 @@ def llm_generate(
         )
 
     return content
+
+
+def llm_parse_with_retry(
+    client,
+    model: str,
+    messages: list[dict],
+    response_model: Type[T],
+    temperature: float,
+    validate_fn: Callable[[T], None],
+    max_retries: int = 2,
+) -> T:
+    """
+    Like llm_parse(), but retries up to max_retries times when validate_fn raises
+    ValueError or when Pydantic validation fails.
+
+    On each failure, the error message is appended as a user turn so the LLM can
+    self-correct. After max_retries exhausted, the last exception is re-raised.
+    """
+    import pydantic
+
+    current_messages = list(messages)
+    last_exc: Exception = RuntimeError("llm_parse_with_retry: no attempts made")
+
+    for attempt in range(max_retries + 1):
+        try:
+            result = llm_parse(client, model, current_messages, response_model, temperature)
+            validate_fn(result)
+            return result
+        except (pydantic.ValidationError, ValueError) as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                logger.warning(
+                    "llm_parse_with_retry: attempt %d/%d failed schema=%s: %s — retrying",
+                    attempt + 1,
+                    max_retries + 1,
+                    response_model.__name__,
+                    exc,
+                )
+                current_messages = current_messages + [
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Your previous response was invalid: {exc}. "
+                            "Please correct it and respond again."
+                        ),
+                    }
+                ]
+            else:
+                logger.error(
+                    "llm_parse_with_retry: all %d attempts failed schema=%s",
+                    max_retries + 1,
+                    response_model.__name__,
+                )
+
+    raise last_exc

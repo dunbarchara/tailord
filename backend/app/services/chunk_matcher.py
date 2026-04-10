@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
-from app.core.llm_utils import llm_parse
+from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
 from app.services.chunk_extractor import extract_chunks
@@ -87,8 +87,18 @@ def enrich_job_chunks(
                     for idx, c in enumerate(batch, start=1)
                 )
 
+                def _validate_batch(r: ChunkMatchBatch) -> None:
+                    for i, item in enumerate(r.results):
+                        if item.score in (1, 2) and not (
+                            item.advocacy_blurb and item.advocacy_blurb.strip()
+                        ):
+                            raise ValueError(
+                                f"result[{i}] has score={item.score} but advocacy_blurb is empty"
+                                " — populate it with a 1–2 sentence third-person advocacy statement"
+                            )
+
                 try:
-                    result = llm_parse(
+                    result = llm_parse_with_retry(
                         get_llm_client(),
                         model=settings.llm_model,
                         messages=[
@@ -104,6 +114,7 @@ def enrich_job_chunks(
                         ],
                         response_model=ChunkMatchBatch,
                         temperature=prompt.TEMPERATURE,
+                        validate_fn=_validate_batch,
                     )
                     batch_results = result.results
                 except Exception:
