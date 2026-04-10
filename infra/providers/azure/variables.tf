@@ -35,9 +35,16 @@ variable "db_staging_password" {
   type        = string
 }
 
-variable "api_key" { # Provided once at provision time
-  sensitive = true
-  type      = string
+variable "api_key_prod" {
+  description = "Shared secret for frontend→backend auth in prod (X-API-Key header)"
+  sensitive   = true
+  type        = string
+}
+
+variable "api_key_staging" {
+  description = "Shared secret for frontend→backend auth in staging (X-API-Key header)"
+  sensitive   = true
+  type        = string
 }
 
 variable "llm_model" {
@@ -61,9 +68,16 @@ variable "cloudflare_zone_id" {
   type      = string
 }
 
-variable "nextauth_secret" {
-  sensitive = true
-  type      = string
+variable "nextauth_secret_prod" {
+  description = "NextAuth signing secret for prod — must differ from staging"
+  sensitive   = true
+  type        = string
+}
+
+variable "nextauth_secret_staging" {
+  description = "NextAuth signing secret for staging — must differ from prod"
+  sensitive   = true
+  type        = string
 }
 
 variable "google_client_id" {

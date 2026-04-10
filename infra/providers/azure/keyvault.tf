@@ -57,7 +57,7 @@ resource "azurerm_key_vault_secret" "prod_database_url" {
 
 resource "azurerm_key_vault_secret" "prod_api_key" {
   name         = "prod-api-key"
-  value        = var.api_key
+  value        = var.api_key_prod
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
@@ -73,7 +73,7 @@ resource "azurerm_key_vault_secret" "prod_storage_connection_string" {
 
 resource "azurerm_key_vault_secret" "prod_nextauth_secret" {
   name         = "prod-nextauth-secret"
-  value        = var.nextauth_secret
+  value        = var.nextauth_secret_prod
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
@@ -134,7 +134,7 @@ resource "azurerm_key_vault_secret" "staging_database_url" {
 
 resource "azurerm_key_vault_secret" "staging_api_key" {
   name         = "staging-api-key"
-  value        = var.api_key
+  value        = var.api_key_staging
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
@@ -150,7 +150,7 @@ resource "azurerm_key_vault_secret" "staging_storage_connection_string" {
 
 resource "azurerm_key_vault_secret" "staging_nextauth_secret" {
   name         = "staging-nextauth-secret"
-  value        = var.nextauth_secret
+  value        = var.nextauth_secret_staging
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
