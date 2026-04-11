@@ -213,12 +213,16 @@ def _finalize_tailoring(
             db.commit()
             return
 
+        now = datetime.now(timezone.utc)
         tailoring.generated_output = generated_output
         tailoring.model = settings.llm_model
         tailoring.generation_status = "ready"
         tailoring.generation_stage = None
-        tailoring.generated_at = datetime.now(timezone.utc)
+        tailoring.generated_at = now
         tailoring.enrichment_status = "pending"
+        if tailoring.generation_started_at:
+            delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
+            tailoring.generation_duration_ms = int(delta_ms)
         db.commit()
         logger.info("_finalize_tailoring: tailoring %s ready", tailoring_id)
 
@@ -563,6 +567,9 @@ def get_tailoring_debug_info(
 
     return {
         "model": tailoring.model or settings.llm_model,
+        "generation_duration_ms": tailoring.generation_duration_ms,
+        "chunk_batch_count": tailoring.chunk_batch_count,
+        "chunk_error_count": tailoring.chunk_error_count,
         "formatted_profile": formatted_profile,
         "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
         "sample_chunk_user_message": sample_user_message,

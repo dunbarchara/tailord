@@ -505,7 +505,7 @@ Replaced the shared revision approach with fully dedicated infrastructure per en
 
 #### Pipeline Hardening (remaining from Day 8.5)
 - [x] **Token budget cap:** `truncate_to_tokens(text, max_tokens)` helper (`core/token_utils.py`, tiktoken with `o200k_base` fallback) — applied to scraped job markdown in `_scrape_job_url()` at 12 000 tokens before any LLM call.
-- [ ] **Job URL caching:** skip Playwright scrape + job extraction LLM for recently-seen URLs (< 7 days); rerun all other LLM steps fresh. Implement once extraction quality feels stable enough to trust cached output.
+- [ ] **Job URL caching *(deferred indefinitely):** skip Playwright scrape + job extraction LLM for recently-seen URLs. Preconditions: (1) real multi-user traffic where shared-URL hits are likely, and (2) extraction quality stable enough to trust stale output. Neither holds yet — caching would also corrupt the eval loop where the same URLs are re-run deliberately as constants.
 - [x] **Profile formatting as compact prose:** `_format_sourced_profile()` rewrites resume data as structured prose (`_fmt_resume_prose`) and GitHub as a compact repo list (`_fmt_github_prose`) — cuts a typical profile from ~2 500 to ~800 tokens. Raw JSON no longer passed to any LLM call.
 - [x] **Prompt minimisation — chunk matching:** `chunk_matching.py` trimmed from 7 examples to 4; overlapping gap/N/A cases merged; examples shortened. Rules text unchanged.
 - [x] **Reduce chunk batch size:** already at 3 — no change required.
@@ -523,11 +523,11 @@ Replaced the shared revision approach with fully dedicated infrastructure per en
 
 The `?debug=1` tab is Level 0 — a manual, per-tailoring inspection tool. The roadmap below builds toward automated quality measurement. Not user-facing; belongs in the platform phase alongside testing and hardening.
 
-**Level 1 — Metadata fields on `Tailoring` model** *(low effort, high payoff)*
-- Add `model_name` (string), `generation_duration_ms` (int), `chunk_batch_count` (int), `chunk_error_count` (int) columns to `Tailoring`
-- Populate during `_finalize_tailoring`: record the model used, wall-clock time from `generation_started_at` to complete, number of LLM batches dispatched, and how many resulted in parse errors
-- Surface in the Debug tab's model badge row (timing + batch stats) — no new UI needed beyond what the tab already shows
-- These fields make it possible to correlate model version, generation time, and error rate across tailorings without pulling log files
+**Level 1 — Metadata fields on `Tailoring` model** *(done)*
+- ~~Add `model_name` (string),~~ `model` already existed; added `generation_duration_ms`, `chunk_batch_count`, `chunk_error_count` (all nullable integers) to `Tailoring` — migration `bf025e128dff`
+- `generation_duration_ms` computed in `_finalize_tailoring` from `generation_started_at` → completion time; overwrites on regen
+- `chunk_batch_count` / `chunk_error_count` tracked in `enrich_job_chunks` loop, written to the tailoring row alongside `enrichment_status = "complete"`
+- Debug tab meta row updated: Model · Generation · Batches · Batch errors pills; error count pill turns red when non-zero
 
 **Level 2 — Profile snapshot on `Tailoring`** *(medium effort)*
 - Store a `profile_snapshot` JSON column on `Tailoring` at generation time: the exact `formatted_profile` string (or structured dict) sent to the LLM

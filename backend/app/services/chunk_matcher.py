@@ -58,12 +58,15 @@ def enrich_job_chunks(
 
         # Map chunk position → match result for final assembly
         result_map: dict[int, ChunkMatchResult] = {}
+        batch_count = 0
+        error_count = 0
 
         for section, section_chunks in section_map.items():
             last_paragraph: str | None = None  # most recent paragraph seen in this section
 
             for batch_start in range(0, len(section_chunks), BATCH_SIZE):
                 batch = section_chunks[batch_start : batch_start + BATCH_SIZE]
+                batch_count += 1
 
                 # Always carry the most recent paragraph-type chunk seen before
                 # this batch as preceding context. Paragraphs establish the frame
@@ -124,6 +127,7 @@ def enrich_job_chunks(
                         section,
                         batch_start,
                     )
+                    error_count += 1
                     batch_results = []
 
                 # Pad results if LLM returned fewer than chunks sent
@@ -168,9 +172,21 @@ def enrich_job_chunks(
             )
             db.add(job_chunk)
 
-        _set_enrichment_status(db, Tailoring, job_id, "complete")
+        db.query(Tailoring).filter(Tailoring.job_id == job_id).update(
+            {
+                "enrichment_status": "complete",
+                "chunk_batch_count": batch_count,
+                "chunk_error_count": error_count,
+            }
+        )
         db.commit()
-        logger.info("enrich_job_chunks complete: job_id=%s chunks=%d", job_id, len(chunks))
+        logger.info(
+            "enrich_job_chunks complete: job_id=%s chunks=%d batches=%d errors=%d",
+            job_id,
+            len(chunks),
+            batch_count,
+            error_count,
+        )
 
     except Exception:
         logger.exception("enrich_job_chunks failed for job_id=%s", job_id)
