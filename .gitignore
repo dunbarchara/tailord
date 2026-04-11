@@ -102,7 +102,7 @@ Thumbs.db
 !*.terraform.lock.hcl
 
 ############################################
-# Planning
+# Misc
 ############################################
 
-planning/reference/
+misc/
