@@ -338,11 +338,11 @@ resource "azurerm_container_app" "backend_staging" {
 
       env {
         name        = "DATABASE_URL"
-        secret_name = "database-url"
+        secret_name = "staging-database-url"
       }
       env {
         name        = "API_KEY"
-        secret_name = "api-key"
+        secret_name = "staging-api-key"
       }
       env {
         name  = "ENVIRONMENT"
@@ -358,7 +358,7 @@ resource "azurerm_container_app" "backend_staging" {
       }
       env {
         name        = "AZURE_STORAGE_CONNECTION_STRING"
-        secret_name = "storage-connection-string"
+        secret_name = "staging-storage-connection-string"
       }
       env {
         name  = "AZURE_STORAGE_CONTAINER"
@@ -378,15 +378,15 @@ resource "azurerm_container_app" "backend_staging" {
       }
       env {
         name        = "LLM_API_KEY"
-        secret_name = "llm-api-key"
+        secret_name = "staging-llm-api-key"
       }
       env {
         name        = "NOTION_CLIENT_ID"
-        secret_name = "notion-client-id"
+        secret_name = "staging-notion-client-id"
       }
       env {
         name        = "NOTION_CLIENT_SECRET"
-        secret_name = "notion-client-secret"
+        secret_name = "staging-notion-client-secret"
       }
       env {
         name  = "NOTION_REDIRECT_URI"
@@ -411,32 +411,32 @@ resource "azurerm_container_app" "backend_staging" {
   }
 
   secret {
-    name                = "database-url"
+    name                = "staging-database-url"
     key_vault_secret_id = azurerm_key_vault_secret.staging_database_url.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "api-key"
+    name                = "staging-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "storage-connection-string"
+    name                = "staging-storage-connection-string"
     key_vault_secret_id = azurerm_key_vault_secret.staging_storage_connection_string.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "llm-api-key"
+    name                = "staging-llm-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.staging_llm_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "notion-client-id"
+    name                = "staging-notion-client-id"
     key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_id.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "notion-client-secret"
+    name                = "staging-notion-client-secret"
     key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
@@ -589,7 +589,7 @@ resource "azurerm_container_app" "frontend_staging" {
       }
       env {
         name        = "API_KEY"
-        secret_name = "api-key"
+        secret_name = "staging-api-key"
       }
       env {
         name  = "NEXTAUTH_URL"
@@ -597,15 +597,15 @@ resource "azurerm_container_app" "frontend_staging" {
       }
       env {
         name        = "NEXTAUTH_SECRET"
-        secret_name = "nextauth-secret"
+        secret_name = "staging-nextauth-secret"
       }
       env {
         name        = "GOOGLE_CLIENT_ID"
-        secret_name = "google-client-id"
+        secret_name = "staging-google-client-id"
       }
       env {
         name        = "GOOGLE_CLIENT_SECRET"
-        secret_name = "google-client-secret"
+        secret_name = "staging-google-client-secret"
       }
     }
   }
@@ -635,22 +635,22 @@ resource "azurerm_container_app" "frontend_staging" {
   }
 
   secret {
-    name                = "api-key"
+    name                = "staging-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "nextauth-secret"
+    name                = "staging-nextauth-secret"
     key_vault_secret_id = azurerm_key_vault_secret.staging_nextauth_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "google-client-id"
+    name                = "staging-google-client-id"
     key_vault_secret_id = azurerm_key_vault_secret.staging_google_client_id.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
-    name                = "google-client-secret"
+    name                = "staging-google-client-secret"
     key_vault_secret_id = azurerm_key_vault_secret.staging_google_client_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }

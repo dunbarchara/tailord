@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
-from app.core.llm_utils import llm_parse
+from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
 from app.services.chunk_extractor import extract_chunks
@@ -58,12 +58,15 @@ def enrich_job_chunks(
 
         # Map chunk position → match result for final assembly
         result_map: dict[int, ChunkMatchResult] = {}
+        batch_count = 0
+        error_count = 0
 
         for section, section_chunks in section_map.items():
             last_paragraph: str | None = None  # most recent paragraph seen in this section
 
             for batch_start in range(0, len(section_chunks), BATCH_SIZE):
                 batch = section_chunks[batch_start : batch_start + BATCH_SIZE]
+                batch_count += 1
 
                 # Always carry the most recent paragraph-type chunk seen before
                 # this batch as preceding context. Paragraphs establish the frame
@@ -87,8 +90,18 @@ def enrich_job_chunks(
                     for idx, c in enumerate(batch, start=1)
                 )
 
+                def _validate_batch(r: ChunkMatchBatch) -> None:
+                    for i, item in enumerate(r.results):
+                        if item.score in (1, 2) and not (
+                            item.advocacy_blurb and item.advocacy_blurb.strip()
+                        ):
+                            raise ValueError(
+                                f"result[{i}] has score={item.score} but advocacy_blurb is empty"
+                                " — populate it with a 1–2 sentence third-person advocacy statement"
+                            )
+
                 try:
-                    result = llm_parse(
+                    result = llm_parse_with_retry(
                         get_llm_client(),
                         model=settings.llm_model,
                         messages=[
@@ -104,6 +117,7 @@ def enrich_job_chunks(
                         ],
                         response_model=ChunkMatchBatch,
                         temperature=prompt.TEMPERATURE,
+                        validate_fn=_validate_batch,
                     )
                     batch_results = result.results
                 except Exception:
@@ -113,6 +127,7 @@ def enrich_job_chunks(
                         section,
                         batch_start,
                     )
+                    error_count += 1
                     batch_results = []
 
                 # Pad results if LLM returned fewer than chunks sent
@@ -157,9 +172,21 @@ def enrich_job_chunks(
             )
             db.add(job_chunk)
 
-        _set_enrichment_status(db, Tailoring, job_id, "complete")
+        db.query(Tailoring).filter(Tailoring.job_id == job_id).update(
+            {
+                "enrichment_status": "complete",
+                "chunk_batch_count": batch_count,
+                "chunk_error_count": error_count,
+            }
+        )
         db.commit()
-        logger.info("enrich_job_chunks complete: job_id=%s chunks=%d", job_id, len(chunks))
+        logger.info(
+            "enrich_job_chunks complete: job_id=%s chunks=%d batches=%d errors=%d",
+            job_id,
+            len(chunks),
+            batch_count,
+            error_count,
+        )
 
     except Exception:
         logger.exception("enrich_job_chunks failed for job_id=%s", job_id)

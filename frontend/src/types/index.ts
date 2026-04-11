@@ -17,6 +17,9 @@ export interface Tailoring {
   author_username_slug: string | null
   notion_page_url: string | null
   notion_posting_page_url: string | null
+  generation_duration_ms: number | null
+  chunk_batch_count: number | null
+  chunk_error_count: number | null
   created_at: string
 }
 

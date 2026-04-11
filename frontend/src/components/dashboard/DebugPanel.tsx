@@ -9,6 +9,9 @@ import type { ChunksResponse } from '@/types';
 
 interface DebugInfo {
   model: string | null;
+  generation_duration_ms: number | null;
+  chunk_batch_count: number | null;
+  chunk_error_count: number | null;
   formatted_profile: string;
   chunk_matching_system_prompt: string;
   sample_chunk_user_message: string;
@@ -130,12 +133,46 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
     <div className="max-w-4xl mx-auto px-6 py-8">
 
       {/* Meta */}
-      {debugInfo?.model && (
-        <div className="mb-8 flex items-center gap-2">
-          <span className="text-xs text-text-tertiary">Model</span>
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium bg-surface-overlay border border-border-subtle text-text-secondary">
-            {debugInfo.model}
-          </span>
+      {debugInfo && (
+        <div className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {debugInfo.model && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-text-tertiary">Model</span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium bg-surface-overlay border border-border-subtle text-text-secondary">
+                {debugInfo.model}
+              </span>
+            </div>
+          )}
+          {debugInfo.generation_duration_ms != null && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-text-tertiary">Generation</span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium bg-surface-overlay border border-border-subtle text-text-secondary">
+                {debugInfo.generation_duration_ms >= 1000
+                  ? `${(debugInfo.generation_duration_ms / 1000).toFixed(1)}s`
+                  : `${debugInfo.generation_duration_ms}ms`}
+              </span>
+            </div>
+          )}
+          {debugInfo.chunk_batch_count != null && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-text-tertiary">Batches</span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium bg-surface-overlay border border-border-subtle text-text-secondary">
+                {debugInfo.chunk_batch_count}
+              </span>
+            </div>
+          )}
+          {debugInfo.chunk_error_count != null && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-text-tertiary">Batch errors</span>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium border ${
+                debugInfo.chunk_error_count > 0
+                  ? 'bg-error-bg border-error text-error'
+                  : 'bg-surface-overlay border-border-subtle text-text-secondary'
+              }`}>
+                {debugInfo.chunk_error_count}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

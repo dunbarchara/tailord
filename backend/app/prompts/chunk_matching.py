@@ -59,45 +59,35 @@ Chunk: 1. [BULLET] 3+ years of professional software engineering experience
 Correct output:
 {"results": [{"score": 2, "rationale": "Pre-computed total of 5.2 years exceeds the 3+ year requirement.", "advocacy_blurb": "[FIRST_NAME] brings over five years of professional software engineering experience across two roles, exceeding this requirement with a track record of progressively senior work.", "experience_source": "resume"}]}
 
-EXAMPLE 2 (Partial — adjacent skill, not exact match; advocacy reflects proximity honestly, does not overclaim):
+EXAMPLE 2 (Partial — adjacent skill; advocacy reflects proximity honestly, does not overclaim):
 Profile excerpt:
   [Source: Resume]
-  skills.technical: ["TypeScript", "Node.js", "React", "PostgreSQL"]
-  work_experience bullets: ["Built REST APIs in Node.js", "Maintained a React dashboard for internal tooling"]
+  Technical skills: TypeScript, Node.js, React, PostgreSQL
+  Software Engineer @ Acme (01/2021 - 03/2024)
+  - Built REST APIs in Node.js
+  - Maintained a React dashboard for internal tooling
 Section: Requirements
 Chunk: 1. [BULLET] Expertise in Vue.js or React for frontend development
 Correct output:
-{"results": [{"score": 1, "rationale": "React is listed in technical skills and used in a prior role for internal tooling, but the profile shows limited React depth — no production-scale or customer-facing React work documented.", "advocacy_blurb": "[FIRST_NAME] has built with React in a professional context — maintaining an internal tooling dashboard — and brings a strong TypeScript foundation. The depth of React-specific experience is limited to internal tooling rather than customer-facing work.", "experience_source": "resume"}]}
+{"results": [{"score": 1, "rationale": "React listed in skills and used at Acme for internal tooling, but no production-scale or customer-facing React work documented.", "advocacy_blurb": "[FIRST_NAME] has built with React professionally — maintaining an internal dashboard at Acme — and brings a strong TypeScript foundation. The React experience is scoped to internal tooling rather than customer-facing work.", "experience_source": "resume"}]}
 
-EXAMPLE 3 (Gap — real requirement, no evidence):
+EXAMPLE 3 (Mixed batch — qualification, perk, legal boilerplate, compensation):
 Profile excerpt:
+  [COMPUTED SIGNALS]
+  Total professional experience: 4.1 years
   [Source: Resume]
-  skills.technical: ["Python", "Django", "PostgreSQL"]
-  work_experience bullets: ["Built REST APIs", "Managed PostgreSQL databases"]
-Section: Requirements
-Chunk: 1. [BULLET] Experience with Kubernetes or container orchestration
-Correct output:
-{"results": [{"score": 0, "rationale": "No mention of Kubernetes, Docker, or container orchestration in skills, work experience, or projects. The candidate's stack is backend Python with no infrastructure tooling.", "advocacy_blurb": null, "experience_source": null}]}
-
-EXAMPLE 4 (N/A — company perk, nothing for a candidate to have or lack):
-Profile excerpt: [any profile]
-Section: What We Offer
-Chunk: 1. [BULLET] Competitive equity and compensation package
-Correct output:
-{"results": [{"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null, "should_render": true}]}
-
-EXAMPLE 6 (EEO, legal boilerplate, and compensation — mixed should_render):
-Profile excerpt: [any profile]
-Section: Our Perks
+  Education: Bachelor of Science in Computer Science, State University (2020)
+  Technical skills: Go, gRPC, Kubernetes, Terraform
+Section: Qualifications
 Chunks:
-1. [PARAGRAPH] It's our policy to provide equal employment opportunity for all applicants. We do not unlawfully discriminate on the basis of race, color, religion, sex...
-2. [PARAGRAPH] Per the Los Angeles County Fair Chance Ordinance, the following core duties may create a basis for disqualifying candidates with relevant criminal histories:
-3. [BULLET] Safeguarding confidential and sensitive Company data
+1. [BULLET] BS/MS in Computer Science or related field
+2. [BULLET] Generous PTO and flexible hours
+3. [PARAGRAPH] It's our policy to provide equal employment opportunity for all applicants...
 4. [BULLET] Base salary range between $161,500 - $227,000 USD + equity + 401K with company match
 Correct output:
-{"results": [{"score": -1, "rationale": "EEO statement, not job content.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Legal compliance boilerplate, not job content.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Legal compliance boilerplate duty listed under Fair Chance Ordinance notice.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Compensation information — candidates need this to evaluate the role.", "experience_source": null, "should_render": true}]}
+{"results": [{"score": 2, "rationale": "Bachelor of Science in Computer Science confirmed in education.", "advocacy_blurb": "[FIRST_NAME] holds a Bachelor of Science in Computer Science from State University, directly satisfying this requirement.", "experience_source": "resume"}, {"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null, "should_render": true}, {"score": -1, "rationale": "EEO statement, not job content.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Compensation information — candidates need this to evaluate the role.", "experience_source": null, "should_render": true}]}
 
-EXAMPLE 7 (sign-up CTAs and job board chrome — should_render false):
+EXAMPLE 4 (Job board chrome — should_render false):
 Profile excerpt: [any profile]
 Section: null
 Chunks:
@@ -105,21 +95,6 @@ Chunks:
 2. [PARAGRAPH] [Create job alert](https://jobs.acme.com/alert)
 Correct output:
 {"results": [{"score": -1, "rationale": "Sign-up CTA, not job content.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Job alert link, not job content.", "experience_source": null, "should_render": false}]}
-
-EXAMPLE 5 (mixed batch — each chunk scored independently):
-Profile excerpt:
-  [COMPUTED SIGNALS]
-  Total professional experience: 4.1 years
-  [Source: Resume]
-  education: [{"degree": "Bachelor of Science in Computer Science", "institution": "State University", "year": "2020"}]
-  skills.technical: ["Go", "gRPC", "Kubernetes", "Terraform"]
-Section: Qualifications
-Chunks:
-1. [BULLET] BS/MS in Computer Science or related field
-2. [BULLET] Familiarity with infrastructure as code (Terraform, Pulumi)
-3. [BULLET] Generous PTO and flexible hours
-Correct output:
-{"results": [{"score": 2, "rationale": "Bachelor of Science in Computer Science confirmed in education array.", "experience_source": "resume"}, {"score": 2, "rationale": "Terraform is explicitly listed in technical skills.", "experience_source": "resume"}, {"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null}]}
 """
 
 USER_TEMPLATE = """

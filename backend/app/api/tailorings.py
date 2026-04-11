@@ -19,6 +19,7 @@ from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
 from app.core.playwright_helper import get_rendered_content
+from app.core.token_utils import truncate_to_tokens
 from app.models.database import Experience, Job, JobChunk, LlmTriggerLog, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate, _validate_job_url
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
@@ -126,6 +127,9 @@ async def _scrape_job_url(url: str) -> tuple[str, str]:
     if not valid:
         logger.warning("validate_job_content failed for %s: %s", url, reason)
         raise HTTPException(status_code=422, detail=reason)
+    # Cap job markdown to prevent context-length errors on very long postings.
+    # 12 000 tokens leaves ample room for system prompt + candidate profile.
+    job_markdown = truncate_to_tokens(job_markdown, max_tokens=12_000, model=settings.llm_model)
     return html, job_markdown
 
 
@@ -209,12 +213,16 @@ def _finalize_tailoring(
             db.commit()
             return
 
+        now = datetime.now(timezone.utc)
         tailoring.generated_output = generated_output
         tailoring.model = settings.llm_model
         tailoring.generation_status = "ready"
         tailoring.generation_stage = None
-        tailoring.generated_at = datetime.now(timezone.utc)
+        tailoring.generated_at = now
         tailoring.enrichment_status = "pending"
+        if tailoring.generation_started_at:
+            delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
+            tailoring.generation_duration_ms = int(delta_ms)
         db.commit()
         logger.info("_finalize_tailoring: tailoring %s ready", tailoring_id)
 
@@ -559,6 +567,9 @@ def get_tailoring_debug_info(
 
     return {
         "model": tailoring.model or settings.llm_model,
+        "generation_duration_ms": tailoring.generation_duration_ms,
+        "chunk_batch_count": tailoring.chunk_batch_count,
+        "chunk_error_count": tailoring.chunk_error_count,
         "formatted_profile": formatted_profile,
         "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
         "sample_chunk_user_message": sample_user_message,

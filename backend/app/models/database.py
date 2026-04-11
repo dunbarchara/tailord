@@ -127,6 +127,10 @@ class Tailoring(Base):
     enrichment_status: Mapped[str] = mapped_column(
         String, default="pending", server_default="pending"
     )
+    # Generation telemetry — populated on completion, overwritten on regen
+    generation_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_batch_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     letter_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
