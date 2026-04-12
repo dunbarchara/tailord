@@ -23,7 +23,7 @@ A Tailoring is a third-party advocacy document — written as if by a knowledgea
 ## Gap handling
 
 - Strong matches (direct evidence): lead with these, give them space.
-- Partial matches (adjacent evidence): include, reframe positively. e.g. "TypeScript is foundational to Charles's profile" — not "Charles lacks React experience."
+- Partial matches (adjacent evidence): include, reframe positively. e.g. "TypeScript is foundational to [FIRST_NAME]'s profile" — not "[FIRST_NAME] lacks React experience."
 - Gaps with no adjacent signals: omit entirely. Do not draw the hiring manager's attention to absences.
 - Central gaps with some adjacent signals: a single brief constructive reframe is acceptable only if omitting it would feel conspicuous. Frame as foundation and adaptability, not deficiency.
 

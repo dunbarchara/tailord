@@ -11,6 +11,9 @@ import { ParsedProfile } from '@/components/dashboard/ParsedProfile';
 import { EditableResumeProfile } from '@/components/dashboard/EditableResumeProfile';
 import type { ExperienceRecord, ExtractedProfile } from '@/types';
 import { IconCheck } from '@/components/ui/icons';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -23,6 +26,31 @@ type UploadPhase =
 
 type GithubState = 'idle' | 'saving' | 'saved' | 'removing' | 'error';
 type SaveState = 'idle' | 'saving' | 'saved';
+
+const CONFIRM_CONFIGS = {
+  'resume-remove': {
+    title: 'Remove resume',
+    description: 'Your resume and extracted profile data will be permanently deleted. This cannot be undone.',
+    confirm: 'Remove',
+  },
+  'resume-replace': {
+    title: 'Replace resume',
+    description: 'Your current resume and extracted profile data will be replaced. The previous data will be permanently deleted. This cannot be undone.',
+    confirm: 'Replace',
+  },
+  'github-remove': {
+    title: 'Remove GitHub',
+    description: 'Your GitHub profile and imported repository data will be permanently deleted. This cannot be undone.',
+    confirm: 'Remove',
+  },
+  'github-change': {
+    title: 'Change GitHub profile',
+    description: 'Your existing GitHub profile and imported repository data will be replaced with the new username. The previous data will be permanently deleted. This cannot be undone.',
+    confirm: 'Change',
+  },
+} as const;
+
+type ConfirmAction = keyof typeof CONFIRM_CONFIGS;
 
 const PROCESS_STAGE_LABELS: Record<string, string> = {
   extracting: 'Extracting text',
@@ -171,6 +199,7 @@ export function ExperienceManager() {
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmAction | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -316,7 +345,12 @@ export function ExperienceManager() {
 
   const handleRemove = async () => {
     stopPolling();
-    await fetch('/api/experience', { method: 'DELETE' }).catch(() => {});
+    const res = await fetch('/api/experience', { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toastError(err.detail ?? `Failed to remove (${res.status})`);
+      return;
+    }
     setUploadState({ phase: 'idle' });
     setProcessingStage(null);
     setStageStartedAt({});
@@ -325,15 +359,21 @@ export function ExperienceManager() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleConfirmAction = async () => {
+    const action = confirmDialog;
+    setConfirmDialog(null);
+    if (action === 'resume-remove') await handleRemove();
+    else if (action === 'resume-replace') fileInputRef.current?.click();
+    else if (action === 'github-remove') await handleGithubRemove();
+    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl));
+  };
+
   function parseGithubUsername(input: string): string {
     const match = input.match(/github\.com\/([^/]+)/);
     return match ? match[1] : input.trim();
   }
 
-  const handleGithubSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const username = parseGithubUsername(githubUrl);
-    if (!username) return;
+  const doGithubSave = async (username: string) => {
     setGithubState('saving');
     setGithubError(null);
     const res = await fetch('/api/experience/github', {
@@ -354,6 +394,17 @@ export function ExperienceManager() {
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
+  const handleGithubSave = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const username = parseGithubUsername(githubUrl);
+    if (!username) return;
+    if (githubEditing) {
+      setConfirmDialog('github-change');
+      return;
+    }
+    await doGithubSave(username);
+  };
+
   const handleGithubRemove = async () => {
     setGithubState('removing');
     const res = await fetch('/api/experience/github', { method: 'DELETE' });
@@ -371,7 +422,7 @@ export function ExperienceManager() {
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
-  const handleDirectSave = async (e: React.FormEvent) => {
+  const handleDirectSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!directText.trim()) return;
     setDirectState('saving');
@@ -527,14 +578,14 @@ export function ExperienceManager() {
                 <>
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => setConfirmDialog('resume-replace')}
                     className={outlineBtnCls}
                   >
                     Replace
                   </button>
                   <button
                     type="button"
-                    onClick={handleRemove}
+                    onClick={() => setConfirmDialog('resume-remove')}
                     className="h-8 w-8 inline-flex items-center justify-center rounded-[10px] text-text-tertiary hover:text-error hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
                     title="Remove"
                   >
@@ -602,7 +653,7 @@ export function ExperienceManager() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleGithubRemove}
+                  onClick={() => setConfirmDialog('github-remove')}
                   disabled={githubState === 'removing'}
                   className="h-8 w-8 inline-flex items-center justify-center rounded-[10px] text-text-tertiary hover:text-error hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors disabled:opacity-50"
                   title="Remove"
@@ -789,6 +840,36 @@ export function ExperienceManager() {
 
         </div>
       </div>
+
+      {/* Confirm dialog */}
+      <Dialog open={confirmDialog !== null} onOpenChange={(o) => !o && setConfirmDialog(null)}>
+        <DialogContent className="max-w-sm bg-surface-elevated border-border-subtle rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-medium text-text-primary">
+              {confirmDialog && CONFIRM_CONFIGS[confirmDialog].title}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-text-secondary">
+              {confirmDialog && CONFIRM_CONFIGS[confirmDialog].description}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-row justify-end gap-2 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDialog(null)}
+              className={outlineBtnCls}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmAction}
+              className="inline-flex items-center justify-center h-9 px-3 rounded-[10px] text-sm font-normal bg-red-600 text-white hover:bg-red-700 transition-colors"
+            >
+              {confirmDialog && CONFIRM_CONFIGS[confirmDialog].confirm}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

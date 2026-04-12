@@ -52,7 +52,6 @@ def _clear_resume_fields(e: Experience) -> None:
     e.filename = None
     e.raw_resume_text = None
     e.error_message = None
-    e.uploaded_at = None
     e.processed_at = None
     e.extracted_profile = {
         k: v for k, v in (e.extracted_profile or {}).items() if k != "resume"
