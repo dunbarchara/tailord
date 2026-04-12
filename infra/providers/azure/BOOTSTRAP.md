@@ -247,20 +247,32 @@ On an existing database it is a no-op.
 
 ---
 
-## 7. Approve initial users
+## 7. Bootstrap admin accounts (run once after first deploy)
 
-After the first deploy, all new sign-ins land on `/pending` by default.
-Approve dev/admin accounts via `backend/dev_approve.py` (local only, gitignored):
+After the first deploy, all new sign-ins land on `/pending` by default and no accounts have
+admin access. Bootstrap founder accounts by signing in once (to create the user row), then
+setting `is_admin = true` directly via psql.
+
+Add a temporary firewall rule for your IP (see step 4 pattern), then:
 
 ```bash
-cd backend && uv run python dev_approve.py your@email.com
+psql "host=tailord-pg.postgres.database.azure.com port=5432 dbname=tailord_prod \
+  user=tailord password=<admin-password> sslmode=require"
 ```
-
-Or directly via psql with a temporary firewall rule (see step 4 pattern):
 
 ```sql
-UPDATE users SET status = 'approved' WHERE email = 'your@email.com';
+-- Grant admin access and approve in one step
+UPDATE users SET is_admin = true, status = 'approved' WHERE email = 'your@email.com';
 ```
+
+Repeat for each founder account. Remove the temporary firewall rule when done.
+
+This is the **only** time direct DB access is needed for user management. All subsequent
+approvals and revocations are handled via the `/admin` page, which requires `is_admin = true`
+on the authenticated user's DB record and is protected by Google OAuth (including MFA).
+
+Note: `dev_approve.py` (local only, gitignored) can still be used to approve accounts in
+local development where the admin page is not needed.
 
 ---
 

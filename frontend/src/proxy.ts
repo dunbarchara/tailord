@@ -20,6 +20,11 @@ export default withAuth(
     if (pathname.startsWith("/dashboard") && status !== "approved") {
       return NextResponse.redirect(new URL("/pending", req.url))
     }
+
+    // Non-admins cannot access the admin section
+    if (pathname.startsWith("/admin") && !req.nextauth.token?.isAdmin) {
+      return NextResponse.redirect(new URL("/dashboard", req.url))
+    }
   },
   {
     pages: {
@@ -33,5 +38,5 @@ export default withAuth(
 )
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/pending", "/checking"],
+  matcher: ["/dashboard/:path*", "/pending", "/checking", "/admin/:path*", "/admin"],
 }

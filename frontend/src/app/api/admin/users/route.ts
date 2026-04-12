@@ -1,0 +1,16 @@
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { proxyToBackendWithUser } from "@/lib/proxy"
+
+export async function GET() {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.isAdmin) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
+  }
+
+  return proxyToBackendWithUser("admin/users", {
+    userId: session.user.id,
+    userEmail: session.user.email ?? "",
+    userName: session.user.name,
+  }, { method: "GET" })
+}

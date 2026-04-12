@@ -7,6 +7,7 @@ import { Moon, Sun, LogOut, Copy, CheckCircle2, Loader2, TriangleAlert } from 'l
 import { FiGithub } from 'react-icons/fi';
 import { SiNotion } from 'react-icons/si';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { IconCheck } from '@/components/ui/icons';
 import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
@@ -105,9 +106,7 @@ function CardBox({ children, className }: { children: React.ReactNode; className
 function ConnectedBadge() {
   return (
     <span className="inline-flex items-center gap-[3px] py-0.5 pl-1.5 pr-1.5 text-xs font-medium rounded-md bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">
-      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 18 18" fill="currentColor" stroke="none" aria-hidden="true">
-        <path d="M9 1C4.589 1 1 4.589 1 9C1 13.411 4.589 17 9 17C13.411 17 17 13.411 17 9C17 4.589 13.411 1 9 1ZM12.843 6.708L8.593 12.208C8.457 12.384 8.25 12.491 8.028 12.499C8.018 12.499 8.009 12.499 8 12.499C7.788 12.499 7.585 12.409 7.442 12.251L5.192 9.751C4.915 9.443 4.94 8.969 5.248 8.691C5.557 8.415 6.029 8.439 6.308 8.747L7.956 10.579L11.657 5.79C11.91 5.462 12.382 5.402 12.709 5.655C13.037 5.908 13.097 6.379 12.844 6.707L12.843 6.708Z" />
-      </svg>
+      <IconCheck size={12} />
       Connected
     </span>
   );

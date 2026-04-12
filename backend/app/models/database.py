@@ -45,6 +45,9 @@ class User(Base):
     )
     # status: pending | approved
     status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     experience: Mapped["Experience | None"] = relationship(

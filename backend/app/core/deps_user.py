@@ -89,6 +89,18 @@ def get_current_user(
     return user
 
 
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """
+    Extends get_current_user with an admin gate.
+    Raises 403 if the user does not have is_admin=True in the DB.
+    Always reads from the DB — never trusts client-supplied claims.
+    """
+    if not user.is_admin:
+        logger.warning("require_admin: rejected user_id=%s email=%s", user.id, user.email)
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 def require_approved_user(user: User = Depends(get_current_user)) -> User:
     """
     Extends get_current_user with an approval gate.

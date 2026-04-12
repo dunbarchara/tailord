@@ -55,6 +55,7 @@ def _user_response(user: User) -> dict:
         "pronouns": user.pronouns,
         "profile_public": user.profile_public,
         "status": user.status,
+        "is_admin": user.is_admin,
         "notion_workspace_name": user.notion_workspace_name,
     }
 
