@@ -42,6 +42,7 @@ export const authOptions: NextAuthOptions = {
           if (res.ok) {
             const data = await res.json()
             token.status = data.status
+            token.isAdmin = data.is_admin === true
           }
         } catch {
           // Backend unreachable (e.g. cold start) — mark as checking so the
@@ -56,6 +57,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user && token.sub) {
         session.user.id = token.sub
         session.user.status = (token.status as string) ?? "pending"
+        session.user.isAdmin = token.isAdmin === true
       }
       return session
     },

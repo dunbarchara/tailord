@@ -162,6 +162,11 @@ def _finalize_tailoring(
 
         tailoring.generation_started_at = datetime.now(timezone.utc)
         tailoring.generation_stage = "extracting"
+        # Snapshot the exact formatted profile passed to the LLM so the debug panel
+        # always shows what the model actually saw, regardless of later experience edits.
+        tailoring.profile_snapshot = _format_sourced_profile(
+            extracted_profile, candidate_name=candidate_name, pronouns=pronouns
+        )
         db.commit()
 
         # Step 1: Extract structured job data from scraped markdown
@@ -535,13 +540,18 @@ def get_tailoring_debug_info(
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    extracted_profile = experience.extracted_profile if experience else {}
-    formatted_profile = _format_sourced_profile(
-        extracted_profile,
-        candidate_name=user.name,
-        pronouns=user.pronouns if hasattr(user, "pronouns") else None,
-    )
+    if tailoring.profile_snapshot is not None:
+        formatted_profile = tailoring.profile_snapshot
+        profile_snapshot_source = "snapshot"
+    else:
+        experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+        extracted_profile = (experience.extracted_profile if experience else None) or {}
+        formatted_profile = _format_sourced_profile(
+            extracted_profile,
+            candidate_name=user.name,
+            pronouns=user.pronouns if hasattr(user, "pronouns") else None,
+        )
+        profile_snapshot_source = "reconstructed"
 
     # Build a sample chunk-matching user message from the first real batch
     chunks = (
@@ -571,6 +581,7 @@ def get_tailoring_debug_info(
         "chunk_batch_count": tailoring.chunk_batch_count,
         "chunk_error_count": tailoring.chunk_error_count,
         "formatted_profile": formatted_profile,
+        "profile_snapshot_source": profile_snapshot_source,
         "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
         "sample_chunk_user_message": sample_user_message,
         "tailoring_system_prompt": tailoring_prompt.SYSTEM

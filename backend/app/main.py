@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from app.api import experience, notion, tailorings, users
+from app.api import admin, experience, notion, tailorings, users
 from app.clients.llm_client import validate_llm_config
 from app.logging import setup_logging
 
@@ -21,6 +21,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"status": "ok"})
 
     app.include_router(users.router)
+    app.include_router(admin.router)
     app.include_router(experience.router)
     app.include_router(tailorings.router)
     app.include_router(notion.router)

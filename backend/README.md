@@ -17,6 +17,7 @@ Postgres Docker container for DB
 1. /backend - `uv run uvicorn app.main:app --port 8000` (start fastapi backend)
 
 
+psql postgresql://app:app@localhost:5432/app
 
 docker exec -it <postgresContainer> sh
 psql app -U app

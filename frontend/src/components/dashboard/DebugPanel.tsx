@@ -13,6 +13,7 @@ interface DebugInfo {
   chunk_batch_count: number | null;
   chunk_error_count: number | null;
   formatted_profile: string;
+  profile_snapshot_source: 'snapshot' | 'reconstructed';
   chunk_matching_system_prompt: string;
   sample_chunk_user_message: string;
   tailoring_system_prompt: string | null;
@@ -60,17 +61,22 @@ function CopyButton({ getText }: { getText: () => string }) {
 
 function DebugSection({
   label,
+  badge,
   children,
   onCopy,
 }: {
   label: string;
+  badge?: React.ReactNode;
   children: React.ReactNode;
   onCopy: () => string;
 }) {
   return (
     <section className="mb-10">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xs font-medium uppercase tracking-widest text-text-tertiary">{label}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-text-tertiary">{label}</h2>
+          {badge}
+        </div>
         <CopyButton getText={onCopy} />
       </div>
       {children}
@@ -188,6 +194,11 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
       {debugInfo && (
         <DebugSection
           label="Formatted Profile"
+          badge={
+            debugInfo.profile_snapshot_source === 'snapshot'
+              ? <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">Snapshot from generation</span>
+              : <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">Reconstructed — experience may have changed</span>
+          }
           onCopy={() => debugInfo.formatted_profile}
         >
           <CodeBlock text={debugInfo.formatted_profile} />

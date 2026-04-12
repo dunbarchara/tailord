@@ -29,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${gfsDidot.variable} ${inter.variable}`}>
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth" className={`${gfsDidot.variable} ${inter.variable}`}>
       <head>
         <script
           dangerouslySetInnerHTML={{
