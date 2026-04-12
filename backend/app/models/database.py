@@ -132,6 +132,9 @@ class Tailoring(Base):
     generation_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chunk_batch_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chunk_error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Profile snapshot — exact formatted_profile string passed to the LLM at generation time.
+    # Populated on generation/regen; null for tailorings created before this column was added.
+    profile_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     letter_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
@@ -178,6 +181,27 @@ class LlmTriggerLog(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TailoringDebugLog(Base):
+    """
+    One row per notable generation event. Level 3 scaffolding — table exists, nothing writes yet.
+
+    Intended use: per-batch chunk matching results, token counts, latency per pipeline step,
+    validation retry counts. Provides the raw signal the eval pipeline will aggregate.
+
+    event_type values (planned): 'chunk_batch' | 'generation_complete' | 'validation_retry' | 'error'
+    """
+
+    __tablename__ = "tailoring_debug_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tailoring_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tailorings.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
