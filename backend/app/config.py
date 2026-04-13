@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     storage_provider: str = "azure"
 
     # Azure Blob Storage (active in staging and prod)
-    # Use Azurite's well-known connection string for local development.
+    # Production: set AZURE_STORAGE_ACCOUNT_NAME — Managed Identity handles auth.
+    # Local dev: set AZURE_STORAGE_CONNECTION_STRING (Azurite) — takes priority over MI.
+    azure_storage_account_name: str | None = None
     azure_storage_connection_string: str | None = None
     azure_storage_container: str = "uploads"
 

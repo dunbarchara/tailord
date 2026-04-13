@@ -1,4 +1,5 @@
 import { NextAuthOptions } from "next-auth"
+import { decode, encode } from "next-auth/jwt"
 import GoogleProvider from "next-auth/providers/google"
 
 export const authOptions: NextAuthOptions = {
@@ -15,6 +16,31 @@ export const authOptions: NextAuthOptions = {
 
   session: {
     strategy: "jwt",
+  },
+
+  // Graceful secret rotation: new sessions are always signed with NEXTAUTH_SECRET.
+  // During a rotation window, set NEXTAUTH_SECRET_PREVIOUS to the old value so
+  // existing sessions remain valid. Remove it once session maxAge has elapsed.
+  jwt: {
+    async encode(params) {
+      return encode({ ...params, secret: process.env.NEXTAUTH_SECRET! })
+    },
+    async decode(params) {
+      const secrets = [
+        process.env.NEXTAUTH_SECRET!,
+        process.env.NEXTAUTH_SECRET_PREVIOUS,
+      ].filter(Boolean) as string[]
+
+      for (const secret of secrets) {
+        try {
+          const decoded = await decode({ ...params, secret })
+          if (decoded) return decoded
+        } catch {
+          // Secret did not match — try the next one.
+        }
+      }
+      return null
+    },
   },
 
   callbacks: {

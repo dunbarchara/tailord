@@ -213,8 +213,8 @@ resource "azurerm_container_app" "backend_prod" {
         value = "azure"
       }
       env {
-        name        = "AZURE_STORAGE_CONNECTION_STRING"
-        secret_name = "prod-storage-connection-string"
+        name  = "AZURE_STORAGE_ACCOUNT_NAME"
+        value = azurerm_storage_account.uploads_prod.name
       }
       env {
         name  = "AZURE_STORAGE_CONTAINER"
@@ -231,10 +231,6 @@ resource "azurerm_container_app" "backend_prod" {
       env {
         name  = "LLM_API_VERSION"
         value = var.llm_api_version
-      }
-      env {
-        name        = "LLM_API_KEY"
-        secret_name = "prod-llm-api-key"
       }
       env {
         name        = "NOTION_CLIENT_ID"
@@ -274,16 +270,6 @@ resource "azurerm_container_app" "backend_prod" {
   secret {
     name                = "prod-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.prod_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.apps.id
-  }
-  secret {
-    name                = "prod-storage-connection-string"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_storage_connection_string.versionless_id
-    identity            = azurerm_user_assigned_identity.apps.id
-  }
-  secret {
-    name                = "prod-llm-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_llm_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
@@ -357,8 +343,8 @@ resource "azurerm_container_app" "backend_staging" {
         value = "azure"
       }
       env {
-        name        = "AZURE_STORAGE_CONNECTION_STRING"
-        secret_name = "staging-storage-connection-string"
+        name  = "AZURE_STORAGE_ACCOUNT_NAME"
+        value = azurerm_storage_account.uploads_staging.name
       }
       env {
         name  = "AZURE_STORAGE_CONTAINER"
@@ -375,10 +361,6 @@ resource "azurerm_container_app" "backend_staging" {
       env {
         name  = "LLM_API_VERSION"
         value = var.llm_api_version
-      }
-      env {
-        name        = "LLM_API_KEY"
-        secret_name = "staging-llm-api-key"
       }
       env {
         name        = "NOTION_CLIENT_ID"
@@ -418,16 +400,6 @@ resource "azurerm_container_app" "backend_staging" {
   secret {
     name                = "staging-api-key"
     key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
-    identity            = azurerm_user_assigned_identity.apps.id
-  }
-  secret {
-    name                = "staging-storage-connection-string"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_storage_connection_string.versionless_id
-    identity            = azurerm_user_assigned_identity.apps.id
-  }
-  secret {
-    name                = "staging-llm-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_llm_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
