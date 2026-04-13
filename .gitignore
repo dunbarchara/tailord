@@ -121,3 +121,6 @@ Thumbs.db
 ############################################
 
 misc/
+
+# Private planning notes (real user feedback, pricing, internal URLs — never public)
+planning/private/
