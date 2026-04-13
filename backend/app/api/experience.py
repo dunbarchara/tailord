@@ -150,7 +150,17 @@ def get_upload_url(
     db.commit()
     db.refresh(experience)
 
-    upload_url = get_storage_client().generate_upload_url(storage_key)
+    try:
+        upload_url = get_storage_client().generate_upload_url(storage_key)
+    except Exception as exc:
+        logger.exception("generate_upload_url failed for experience_id=%s", experience.id)
+        experience.status = "error"
+        experience.error_message = "Failed to prepare upload. Please try again."
+        db.commit()
+        raise HTTPException(
+            status_code=500, detail="Failed to prepare upload. Please try again."
+        ) from exc
+
     logger.info("get_upload_url complete: experience_id=%s", experience.id)
 
     return {

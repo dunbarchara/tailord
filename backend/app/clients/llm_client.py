@@ -37,8 +37,8 @@ def get_llm_client() -> OpenAI:
     Returns an OpenAI-compatible client. Three modes:
 
     1. Azure AI Foundry + Managed Identity (no API key):
-       LLM_BASE_URL + LLM_API_VERSION set, LLM_API_KEY absent.
-       Uses DefaultAzureCredential — token rotated automatically by the SDK.
+       LLM_BASE_URL set, LLM_API_KEY absent, staging/production environment.
+       Uses DefaultAzureCredential with the ai.azure.com scope — no api_version needed.
 
     2. OpenAI / Azure AI Foundry with explicit key:
        LLM_API_KEY set. Standard OpenAI client with configurable base_url.
@@ -49,23 +49,20 @@ def get_llm_client() -> OpenAI:
     """
     if _use_managed_identity():
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-        from openai import AzureOpenAI
 
         token_provider = get_bearer_token_provider(
             DefaultAzureCredential(),
-            "https://cognitiveservices.azure.com/.default",
+            "https://ai.azure.com/.default",
         )
         logger.debug(
-            "get_llm_client: Azure AI Foundry + Managed Identity base_url=%s model=%s api_version=%s timeout=%ss",
+            "get_llm_client: Azure AI Foundry + Managed Identity base_url=%s model=%s timeout=%ss",
             settings.llm_base_url,
             settings.llm_model,
-            settings.llm_api_version,
             LLM_TIMEOUT_SECONDS,
         )
-        return AzureOpenAI(
-            azure_endpoint=settings.llm_base_url,
-            azure_ad_token_provider=token_provider,
-            api_version=settings.llm_api_version or None,
+        return OpenAI(
+            api_key=token_provider,
+            base_url=settings.llm_base_url,
             timeout=LLM_TIMEOUT_SECONDS,
         )
 

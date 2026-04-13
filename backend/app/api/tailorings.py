@@ -267,6 +267,7 @@ async def _stream_tailoring(
     Stage events: scraping → extracting → ready
     Error events: on any failure before the background task is scheduled.
     """
+    tailoring: Tailoring | None = None
     try:
         experience = (
             db.query(Experience)
@@ -359,6 +360,15 @@ async def _stream_tailoring(
 
     except Exception:
         logger.exception("Unexpected error in _stream_tailoring")
+        if tailoring is not None and tailoring.generation_status == "generating":
+            try:
+                tailoring.generation_status = "error"
+                tailoring.generation_error = "An unexpected error occurred."
+                db.commit()
+            except Exception:
+                logger.exception(
+                    "Failed to mark tailoring %s as error after unexpected failure", tailoring.id
+                )
         yield _sse(
             "error", json.dumps({"detail": "An unexpected error occurred. Please try again."})
         )
