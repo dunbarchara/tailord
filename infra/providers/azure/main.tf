@@ -213,6 +213,10 @@ resource "azurerm_container_app" "backend_prod" {
         value = "azure"
       }
       env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.apps.client_id
+      }
+      env {
         name  = "AZURE_STORAGE_ACCOUNT_NAME"
         value = azurerm_storage_account.uploads_prod.name
       }
@@ -341,6 +345,10 @@ resource "azurerm_container_app" "backend_staging" {
       env {
         name  = "STORAGE_PROVIDER"
         value = "azure"
+      }
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.apps.client_id
       }
       env {
         name  = "AZURE_STORAGE_ACCOUNT_NAME"
