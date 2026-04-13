@@ -83,7 +83,46 @@ terraform init
 terraform apply
 ```
 
-Required variables (pass via `-var` flags or a `terraform.tfvars` file — never commit the latter):
+### Supplying variables
+
+Variables are sensitive and must never be committed. The current approach is a local `.env` file
+with `TF_VAR_*`-prefixed variables, sourced before running Terraform:
+
+```bash
+# .env (gitignored via .env.* pattern — never commit)
+export TF_VAR_subscription_id="..."
+export TF_VAR_db_password="..."
+export TF_VAR_db_prod_password="..."
+# ... etc
+
+source .env && terraform apply
+```
+
+**Intended upgrade path — 1Password CLI:**
+When a second person needs Terraform access, migrate to `op run` so secrets leave disk entirely.
+Store each `TF_VAR_*` value as a 1Password item, then create an `.env.1p` file (safe to commit —
+contains references, not secrets):
+
+```bash
+# .env.1p (can be committed — no secrets, only 1Password references)
+TF_VAR_subscription_id=op://tailord/terraform/subscription_id
+TF_VAR_db_password=op://tailord/terraform/db_password
+# ... etc
+```
+
+Run Terraform via:
+
+```bash
+op run --env-file=.env.1p -- terraform apply
+```
+
+1Password requires biometric/MFA per session. Secrets are never written to disk.
+
+**Long-term: GitHub Actions**
+PR-level `terraform plan` output, approval gates before apply, and full audit trail.
+Worth adopting once there are users depending on the infrastructure — premature before then.
+
+Required variables:
 
 | Variable | Notes |
 |----------|-------|
