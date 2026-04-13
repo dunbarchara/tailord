@@ -1,5 +1,6 @@
 variable "subscription_id" {
-  type = string
+  sensitive = true
+  type      = string
 }
 
 variable "location" {
@@ -92,6 +93,7 @@ variable "google_client_secret" {
 
 variable "github_actions_sp_object_id" {
   description = "Object ID of the GitHub Actions service principal (az ad sp show --id <client-id> --query id -o tsv)"
+  sensitive   = true
   type        = string
 }
 
