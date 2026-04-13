@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Combined limit: tailoring creates + regens share one pool per user per hour.
 # Each trigger costs ~4 LLM calls (job extraction, req matching, generation, chunk scoring).
-# TODO: consider a softer approach — warn at 8, block at 10.
+# Hard block at 10; soft warning at 8 is planned.
 _TAILORING_HOURLY_LIMIT = 10
 
 
