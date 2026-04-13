@@ -102,6 +102,21 @@ Thumbs.db
 !*.terraform.lock.hcl
 
 ############################################
+# Claude Code
+############################################
+
+# Local machine settings (hooks, local tool paths) — never commit
+# .claude/settings.json and .claude/rules/ and .claude/skills/ are intentionally tracked
+.claude/settings.local.json
+
+############################################
+# Certificates & keys
+############################################
+
+*.pem
+*.key
+
+############################################
 # Misc
 ############################################
 
