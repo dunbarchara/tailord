@@ -63,14 +63,6 @@ resource "azurerm_key_vault_secret" "prod_api_key" {
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "prod_storage_connection_string" {
-  name         = "prod-storage-connection-string"
-  value        = azurerm_storage_account.uploads_prod.primary_connection_string
-  content_type = "text/plain"
-  key_vault_id = azurerm_key_vault.tailord.id
-  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
-}
-
 resource "azurerm_key_vault_secret" "prod_nextauth_secret" {
   name         = "prod-nextauth-secret"
   value        = var.nextauth_secret_prod
@@ -90,14 +82,6 @@ resource "azurerm_key_vault_secret" "prod_google_client_id" {
 resource "azurerm_key_vault_secret" "prod_google_client_secret" {
   name         = "prod-google-client-secret"
   value        = var.google_client_secret
-  content_type = "text/plain"
-  key_vault_id = azurerm_key_vault.tailord.id
-  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
-}
-
-resource "azurerm_key_vault_secret" "prod_llm_api_key" {
-  name         = "prod-llm-api-key"
-  value        = azurerm_cognitive_account.tailord_foundry.primary_access_key
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
@@ -140,14 +124,6 @@ resource "azurerm_key_vault_secret" "staging_api_key" {
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]
 }
 
-resource "azurerm_key_vault_secret" "staging_storage_connection_string" {
-  name         = "staging-storage-connection-string"
-  value        = azurerm_storage_account.uploads_staging.primary_connection_string
-  content_type = "text/plain"
-  key_vault_id = azurerm_key_vault.tailord.id
-  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
-}
-
 resource "azurerm_key_vault_secret" "staging_nextauth_secret" {
   name         = "staging-nextauth-secret"
   value        = var.nextauth_secret_staging
@@ -167,14 +143,6 @@ resource "azurerm_key_vault_secret" "staging_google_client_id" {
 resource "azurerm_key_vault_secret" "staging_google_client_secret" {
   name         = "staging-google-client-secret"
   value        = var.google_client_secret
-  content_type = "text/plain"
-  key_vault_id = azurerm_key_vault.tailord.id
-  depends_on   = [azurerm_role_assignment.kv_secrets_officer]
-}
-
-resource "azurerm_key_vault_secret" "staging_llm_api_key" {
-  name         = "staging-llm-api-key"
-  value        = azurerm_cognitive_account.tailord_foundry.primary_access_key
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
   depends_on   = [azurerm_role_assignment.kv_secrets_officer]

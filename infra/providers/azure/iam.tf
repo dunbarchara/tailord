@@ -25,3 +25,44 @@ resource "azurerm_role_assignment" "gha_rg_contributor" {
   role_definition_name = "Contributor"
   principal_id         = var.github_actions_sp_object_id
 }
+
+# -----------------------------
+# MANAGED IDENTITY — APP SERVICES
+# Role assignments for the user-assigned identity attached to all Container Apps.
+# -----------------------------
+
+# Blob Storage — prod
+# Storage Blob Data Contributor: read/write/delete blobs
+# Storage Blob Delegator:        sign User Delegation SAS tokens (no account key needed)
+resource "azurerm_role_assignment" "app_storage_contributor_prod" {
+  scope                = azurerm_storage_account.uploads_prod.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
+}
+
+resource "azurerm_role_assignment" "app_storage_delegator_prod" {
+  scope                = azurerm_storage_account.uploads_prod.id
+  role_definition_name = "Storage Blob Delegator"
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
+}
+
+# Blob Storage — staging
+resource "azurerm_role_assignment" "app_storage_contributor_staging" {
+  scope                = azurerm_storage_account.uploads_staging.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
+}
+
+resource "azurerm_role_assignment" "app_storage_delegator_staging" {
+  scope                = azurerm_storage_account.uploads_staging.id
+  role_definition_name = "Storage Blob Delegator"
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
+}
+
+# Azure AI Foundry — Managed Identity replaces the static LLM_API_KEY.
+# Cognitive Services OpenAI User: call inference endpoints; cannot manage the account.
+resource "azurerm_role_assignment" "app_llm_user" {
+  scope                = azurerm_cognitive_account.tailord_foundry.id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
+}
