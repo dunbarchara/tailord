@@ -28,7 +28,17 @@ npm run lint
 
 **Backend** (from `backend/`):
 ```
+docker compose up -d                   # PostgreSQL :5432 + Azurite blob storage :10000 (required before anything else)
+uv run alembic upgrade head            # apply pending migrations
 uv run uvicorn app.main:app --reload   # FastAPI dev server on :8000
+```
+
+**Quality checks** (from repo root — mirrors CI):
+```
+make check             # all checks
+make check-backend     # ruff → bandit → pip-audit → pytest
+make check-frontend    # eslint → build → jest → npm audit
+make check-infra       # checkov on Terraform
 ```
 
 ---
@@ -68,12 +78,16 @@ frontend/src/app/
 │   ├── settings/                  # Account settings (username slug, profile visibility)
 │   ├── tailorings/new/            # New tailoring form (SSE stream)
 │   └── tailorings/[tailoringId]/  # Tailoring detail (generation polling, sharing, Notion)
+├── admin/                         # Admin panel — server component, isAdmin gate, user management
 ├── u/[slug]/                      # Public profile page (server component, OG meta)
 ├── t/[slug]/                      # Public tailoring page (shared link)
 └── api/                           # Next.js API routes — thin proxies to FastAPI backend
     ├── auth/[...nextauth]/        # NextAuth Google OAuth
     ├── auth/notion/               # Notion OAuth initiation
     ├── auth/notion/callback/      # Notion OAuth callback
+    ├── admin/users/               # → GET /admin/users
+    ├── admin/users/[id]/approve/  # → POST /admin/users/{id}/approve
+    ├── admin/users/[id]/revoke/   # → POST /admin/users/{id}/revoke
     ├── experience/                # → GET/DELETE /experience, PATCH /experience/profile
     ├── experience/upload-url/     # → POST /experience/upload-url
     ├── experience/process/        # → POST /experience/process (SSE)
@@ -90,7 +104,7 @@ frontend/src/app/
     └── notion/                    # → DELETE /notion/disconnect
 ```
 
-`middleware.ts` protects `/dashboard/*` via NextAuth `withAuth`. All backend routes require `X-API-Key`.
+`middleware.ts` protects `/dashboard/*` and `/admin/*` via NextAuth `withAuth`. All backend routes require `X-API-Key`.
 
 ---
 
@@ -109,25 +123,37 @@ frontend/src/app/
 | `backend/app/config.py` | Pydantic Settings (env vars) |
 | `backend/app/clients/llm_client.py` | OpenAI SDK wrapper (configurable `LLM_BASE_URL`) |
 | `backend/app/clients/storage_client.py` | Storage abstraction — `AzureStorageClient` / `S3StorageClient` |
-| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `Experience`, `Job`, `Tailoring` |
+| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `Experience`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
 | `backend/app/api/experience.py` | Experience CRUD, GitHub enrichment, SSE processing stream |
 | `backend/app/api/tailorings.py` | Tailoring CRUD, SSE generation stream, sharing, Notion export |
+| `backend/app/api/admin.py` | Admin user management — `require_admin()` dependency, approve/revoke |
 | `backend/app/services/experience_processor.py` | Text extraction (PDF/DOCX/TXT) + background processing |
+| `backend/app/services/tailoring_generator.py` | LLM tailoring generation — profile formatting, ranked match rendering |
+| `backend/app/services/requirement_matcher.py` | Scores job requirements against candidate experience (STRONG/PARTIAL) |
 | `backend/app/services/profile_extractor.py` | LLM profile extraction, bullet post-processing |
 | `backend/app/prompts/profile_extraction.py` | Profile extraction prompt + temperature |
 | `backend/app/core/scraper.py` | Playwright job page extraction |
+| `backend/app/core/deps_user.py` | `get_current_user` FastAPI dep — upserts User from X-User-* headers |
 
 ---
 
 ## Data Models
 
 **SQLAlchemy ORM (`backend/app/models/database.py`):**
-- `User` — `id` (UUID), `google_sub` (unique), `email`, `name`, `avatar_url`, `username_slug`, `profile_public`, `created_at`
-- `Experience` — `id`, `user_id` (FK, 1:1), `s3_key`, `filename`, `status` (pending/processing/ready/error), `extracted_profile` (JSON — keyed by source: `"resume"`, `"github_repos"`, etc.), `raw_resume_text`, `github_username`, `github_repos`, `user_input_text`, `error_message`, `uploaded_at`, `processed_at`
-- `Job` — `id`, `user_id` (FK), `job_url`, `extracted_job` (JSON), `created_at`
-- `Tailoring` — `id`, `user_id` (FK), `job_id` (FK), `generated_output`, `generation_status`, `generation_stage`, `generation_error`, `generation_started_at`, `public_slug`, `letter_public`, `posting_public`, `created_at`
 
-**Relationships:** `User` → one `Experience`, many `Tailorings`; `Tailoring` → one `Job`
+- `User` — `id` (UUID), `google_sub` (unique, indexed), `email`, `name`, `preferred_first_name`, `preferred_last_name`, `pronouns`, `avatar_url`, `username_slug` (unique, nullable), `profile_public`, `status` (pending/approved), `is_admin`, Notion OAuth fields (`notion_access_token`, `notion_bot_id`, `notion_workspace_*`, `notion_parent_page_id`), `created_at`
+
+- `Experience` — `id`, `user_id` (FK, 1:1), `storage_key` (blob key, nullable), `filename` (nullable), `status` (pending/processing/ready/error), `extracted_profile` (JSON — keyed by source: `"resume"`, `"github"`, `"user_input"`, etc.), `raw_resume_text`, `github_username`, `github_repos` (JSON), `user_input_text`, `error_message`, `uploaded_at`, `processed_at`, `last_process_requested_at`
+
+- `Job` — `id`, `user_id` (FK), `job_url`, `extracted_job` (JSON), `created_at`; one-to-many with `JobChunk`
+
+- `Tailoring` — `id`, `user_id` (FK), `job_id` (FK), `model` (LLM model name), `generated_output` (markdown), `generation_status` (pending/generating/ready/error), `generation_stage`, `generation_error`, `generation_started_at`, `generated_at`, `last_regenerated_at`, `enrichment_status` (pending/complete), `profile_snapshot` (formatted profile string passed to LLM — for debug), telemetry (`generation_duration_ms`, `chunk_batch_count`, `chunk_error_count`), sharing (`letter_public`, `posting_public`, `public_slug`), Notion export fields, `created_at`
+
+- `LlmTriggerLog` — tracks LLM events per user for rate limiting; `event_type` (`tailoring_create`, `tailoring_regen`), `user_id`, `created_at`
+
+- `TailoringDebugLog` — schema-only scaffold for future LLM telemetry (Level 3); no data written yet
+
+**Relationships:** `User` → one `Experience`, many `Tailorings`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
 
 ---
 

@@ -17,7 +17,7 @@ Tailord generates structured, role-specific **Tailorings** — AI-produced docum
 | Resource | Detail |
 |---|---|
 | Compute | Azure Container Apps — `tailord-frontend`, `tailord-backend` |
-| Container registry | ACR (`tailordregistry`) |
+| Container registry | ACR (`tailord`) |
 | Database | PostgreSQL Flexible Server (`tailord-db`, v16, B_Standard_B1ms) |
 | Storage | Azure Blob Storage (`tailorduploads`) |
 | Secrets | Azure Key Vault (`tailord-kv`), managed identity (no credentials in env) |
