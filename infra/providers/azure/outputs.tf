@@ -21,6 +21,6 @@ output "staging_db_connection_string" {
 }
 
 output "llm_base_url" {
-  description = "Foundry endpoint"
-  value       = azurerm_cognitive_account.tailord_foundry.endpoint
+  description = "Foundry OpenAI endpoint (custom subdomain, required for Entra ID auth)"
+  value       = "${local.openai_endpoint}openai/v1/"
 }

@@ -226,7 +226,7 @@ resource "azurerm_container_app" "backend_prod" {
       }
       env {
         name  = "LLM_BASE_URL"
-        value = "${azurerm_cognitive_account.tailord_foundry.endpoint}openai/v1/"
+        value = "${local.openai_endpoint}openai/v1/"
       }
       env {
         name  = "LLM_MODEL"
@@ -360,7 +360,7 @@ resource "azurerm_container_app" "backend_staging" {
       }
       env {
         name  = "LLM_BASE_URL"
-        value = "${azurerm_cognitive_account.tailord_foundry.endpoint}openai/v1/"
+        value = "${local.openai_endpoint}openai/v1/"
       }
       env {
         name  = "LLM_MODEL"
