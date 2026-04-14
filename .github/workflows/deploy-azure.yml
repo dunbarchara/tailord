@@ -213,6 +213,9 @@ jobs:
     needs: deploy-staging
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
     - name: Health check — staging homepage
       run: |
@@ -357,6 +360,9 @@ jobs:
 
     needs: deploy-prod
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     steps:
     - name: Health check — prod backend
