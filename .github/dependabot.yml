@@ -22,8 +22,8 @@ updates:
       - dependency-name: "eslint"
         versions: ["10.x"]
 
-  # --- BACKEND (pip) ---
-  - package-ecosystem: pip
+  # --- BACKEND (uv) ---
+  - package-ecosystem: uv
     directory: /backend
     schedule:
       interval: weekly
