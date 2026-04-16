@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Upload, FileText, Loader2, CheckCircle, AlertCircle, Pencil, X,
+  Upload, FileText, Loader2, CheckCircle, AlertCircle, Pencil, X, RefreshCw,
 } from 'lucide-react';
 import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
@@ -192,6 +192,7 @@ export function ExperienceManager() {
   const [githubEditing, setGithubEditing] = useState(false);
   const [previewRepos, setPreviewRepos] = useState<GitHubRepo[] | null>(null);
   const [selectedRepoNames, setSelectedRepoNames] = useState<Set<string>>(new Set());
+  const [acknowledged, setAcknowledged] = useState(false);
   const [directText, setDirectText] = useState('');
   const [directState, setDirectState] = useState<SaveState>('idle');
 
@@ -378,6 +379,7 @@ export function ExperienceManager() {
   const resetGithubPreview = () => {
     setPreviewRepos(null);
     setSelectedRepoNames(new Set());
+    setAcknowledged(false);
   };
 
   const doGithubSave = async (username: string, repoNames: string[]) => {
@@ -439,6 +441,13 @@ export function ExperienceManager() {
       else next.add(name);
       return next;
     });
+  };
+
+  const handleGithubRescan = async () => {
+    if (uploadState.phase !== 'ready' || !uploadState.record.github_username) return;
+    const username = uploadState.record.github_username;
+    const repoNames = (uploadState.record.github_repos ?? []).map((r) => r.name);
+    await doGithubSave(username, repoNames);
   };
 
   const handleGithubRemove = async () => {
@@ -684,6 +693,18 @@ export function ExperienceManager() {
               <>
                 <button
                   type="button"
+                  onClick={handleGithubRescan}
+                  disabled={githubState === 'saving' || githubState === 'removing'}
+                  className={outlineBtnCls}
+                  title="Re-scan repos"
+                >
+                  {githubState === 'saving'
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <RefreshCw className="h-3.5 w-3.5" />}
+                  Re-scan
+                </button>
+                <button
+                  type="button"
                   onClick={() => { setGithubEditing(true); setGithubState('idle'); setGithubError(null); resetGithubPreview(); }}
                   className={outlineBtnCls}
                 >
@@ -769,11 +790,25 @@ export function ExperienceManager() {
               <p className="text-xs text-error">{githubError}</p>
             )}
 
+            {previewRepos !== null && previewRepos.length > 0 && (
+              <label className="flex items-start gap-2.5 pt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(e) => setAcknowledged(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-brand-primary"
+                />
+                <span className="text-xs text-text-secondary leading-relaxed">
+                  I confirm the selected repositories are representative of my engineering work. For repos with multiple contributors, Tailord treats the codebase as indicative of my experience.
+                </span>
+              </label>
+            )}
+
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
                 onClick={handleGithubConnect}
-                disabled={selectedRepoNames.size === 0 || githubState === 'saving' || githubState === 'fetching'}
+                disabled={selectedRepoNames.size === 0 || !acknowledged || githubState === 'saving' || githubState === 'fetching'}
                 className={saveBtnCls}
               >
                 {githubState === 'saving'

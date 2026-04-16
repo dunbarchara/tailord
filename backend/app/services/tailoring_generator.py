@@ -157,15 +157,40 @@ def _fmt_resume_prose(data: dict) -> str:
 
 
 def _fmt_github_prose(data: dict) -> str:
-    """Render GitHub profile data as a compact repo list."""
+    """Render GitHub profile data as a compact repo list.
+
+    Renders enriched fields (readme_summary, detected_stack, project_domain)
+    when present; falls back to basic metadata otherwise.
+    """
     repos = data.get("repos") or []
     if not repos:
         return "(No repos)"
     lines = [f"Repos ({len(repos)}):"]
     for r in repos:
-        lang = f" [{r['language']}]" if r.get("language") else ""
-        desc = f" — {r['description']}" if r.get("description") else ""
-        lines.append(f"  {r.get('name', '(unnamed)')}{lang}{desc}")
+        name = r.get("name", "(unnamed)")
+        url = r.get("url", "")
+        ref = f"{name} ({url})" if url else name
+
+        # Enriched path
+        if r.get("readme_summary"):
+            stack = ", ".join(r.get("detected_stack") or [])
+            domain = r.get("project_domain") or ""
+            confidence = r.get("confidence") or ""
+            header = ref
+            if domain:
+                header += f" [{domain}]"
+            lines.append(f"  {header}")
+            lines.append(f"    Summary: {r['readme_summary']}")
+            if stack:
+                lines.append(f"    Stack: {stack}")
+            if confidence:
+                lines.append(f"    Confidence: {confidence}")
+        else:
+            # Basic fallback
+            lang = f" [{r['language']}]" if r.get("language") else ""
+            desc = f" — {r['description']}" if r.get("description") else ""
+            lines.append(f"  {ref}{lang}{desc}")
+
     return "\n".join(lines)
 
 

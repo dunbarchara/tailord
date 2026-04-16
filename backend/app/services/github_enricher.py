@@ -156,6 +156,24 @@ def enrich_github_repos(
             "request_count": github.request_count,
             "error_count": errors,
         }
+
+        # Merge enriched fields into extracted_profile["github"]["repos"] so the
+        # tailoring generator and requirement matcher see the enriched data.
+        enriched_by_name = {r["name"]: r for r in enriched}
+        existing_profile = experience.extracted_profile or {}
+        github_profile = existing_profile.get("github") or {}
+        merged_repos = []
+        for repo in github_profile.get("repos") or []:
+            name = repo.get("name")
+            if name and name in enriched_by_name:
+                merged_repos.append({**repo, **enriched_by_name[name]})
+            else:
+                merged_repos.append(repo)
+        experience.extracted_profile = {
+            **existing_profile,
+            "github": {**github_profile, "repos": merged_repos},
+        }
+
         db.commit()
         logger.info(
             "github_enricher: complete experience=%s repos=%d errors=%d requests=%d",
