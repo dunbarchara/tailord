@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { cn, toastError, formatElapsed } from '@/lib/utils';
 import { ParsedProfile } from '@/components/dashboard/ParsedProfile';
 import { EditableResumeProfile } from '@/components/dashboard/EditableResumeProfile';
-import type { ExperienceRecord, ExtractedProfile } from '@/types';
+import type { ExperienceRecord, ExtractedProfile, GitHubRepo } from '@/types';
 import { IconCheck } from '@/components/ui/icons';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -24,7 +24,7 @@ type UploadPhase =
   | { phase: 'ready'; record: ExperienceRecord }
   | { phase: 'error'; message: string };
 
-type GithubState = 'idle' | 'saving' | 'saved' | 'removing' | 'error';
+type GithubState = 'idle' | 'fetching' | 'saving' | 'saved' | 'removing' | 'error';
 type SaveState = 'idle' | 'saving' | 'saved';
 
 const CONFIRM_CONFIGS = {
@@ -190,6 +190,8 @@ export function ExperienceManager() {
   const [githubState, setGithubState] = useState<GithubState>('idle');
   const [githubError, setGithubError] = useState<string | null>(null);
   const [githubEditing, setGithubEditing] = useState(false);
+  const [previewRepos, setPreviewRepos] = useState<GitHubRepo[] | null>(null);
+  const [selectedRepoNames, setSelectedRepoNames] = useState<Set<string>>(new Set());
   const [directText, setDirectText] = useState('');
   const [directState, setDirectState] = useState<SaveState>('idle');
 
@@ -365,7 +367,7 @@ export function ExperienceManager() {
     if (action === 'resume-remove') await handleRemove();
     else if (action === 'resume-replace') fileInputRef.current?.click();
     else if (action === 'github-remove') await handleGithubRemove();
-    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl));
+    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
   };
 
   function parseGithubUsername(input: string): string {
@@ -373,13 +375,18 @@ export function ExperienceManager() {
     return match ? match[1] : input.trim();
   }
 
-  const doGithubSave = async (username: string) => {
+  const resetGithubPreview = () => {
+    setPreviewRepos(null);
+    setSelectedRepoNames(new Set());
+  };
+
+  const doGithubSave = async (username: string, repoNames: string[]) => {
     setGithubState('saving');
     setGithubError(null);
     const res = await fetch('/api/experience/github', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ github_username: username }),
+      body: JSON.stringify({ github_username: username, selected_repo_names: repoNames }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -389,20 +396,49 @@ export function ExperienceManager() {
     }
     setGithubState('saved');
     setGithubEditing(false);
-    toast.success('GitHub profile added');
+    resetGithubPreview();
+    toast.success('GitHub profile connected');
     const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
   };
 
-  const handleGithubSave = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleGithubFetch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const username = parseGithubUsername(githubUrl);
     if (!username) return;
+    setGithubState('fetching');
+    setGithubError(null);
+    const res = await fetch(`/api/experience/github/${encodeURIComponent(username)}/repos`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setGithubError(err.detail ?? 'Could not fetch repos. Check the username and try again.');
+      setGithubState('error');
+      return;
+    }
+    const data = await res.json();
+    const repos: GitHubRepo[] = data.repos ?? [];
+    setPreviewRepos(repos);
+    setSelectedRepoNames(new Set(repos.map((r) => r.name)));
+    setGithubState('idle');
+  };
+
+  const handleGithubConnect = async () => {
+    const username = parseGithubUsername(githubUrl);
+    if (!username || selectedRepoNames.size === 0) return;
     if (githubEditing) {
       setConfirmDialog('github-change');
       return;
     }
-    await doGithubSave(username);
+    await doGithubSave(username, [...selectedRepoNames]);
+  };
+
+  const toggleRepo = (name: string) => {
+    setSelectedRepoNames((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   };
 
   const handleGithubRemove = async () => {
@@ -417,6 +453,7 @@ export function ExperienceManager() {
     setGithubUrl('');
     setGithubState('idle');
     setGithubEditing(false);
+    resetGithubPreview();
     toast.success('GitHub profile removed');
     const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) setUploadState({ phase: 'ready', record: updated });
@@ -634,6 +671,7 @@ export function ExperienceManager() {
     uploadState.phase === 'ready' && !!uploadState.record.github_username;
 
   const renderGithubContent = () => {
+    // ── Connected state ──────────────────────────────────────────────────────
     if (githubConnected && !githubEditing && uploadState.phase === 'ready') {
       return (
         <CardBox>
@@ -641,12 +679,12 @@ export function ExperienceManager() {
             icon={<LuGithub className="h-4 w-4 text-text-secondary" />}
             name={uploadState.record.github_username!}
             badge={<StatusBadge label="Connected" variant="green" />}
-            description={`${uploadState.record.github_repos?.length ?? 0} repos imported`}
+            description={`${uploadState.record.github_repos?.length ?? 0} repos selected`}
             action={
               <>
                 <button
                   type="button"
-                  onClick={() => { setGithubEditing(true); setGithubState('idle'); setGithubError(null); }}
+                  onClick={() => { setGithubEditing(true); setGithubState('idle'); setGithubError(null); resetGithubPreview(); }}
                   className={outlineBtnCls}
                 >
                   Change
@@ -669,9 +707,102 @@ export function ExperienceManager() {
       );
     }
 
+    // ── Step 2: repo selection ───────────────────────────────────────────────
+    if (previewRepos !== null || githubState === 'fetching') {
+      return (
+        <CardBox>
+          <div className="space-y-3">
+            {/* Username header */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-text-secondary font-mono">
+                @{parseGithubUsername(githubUrl)}
+              </span>
+              <button
+                type="button"
+                onClick={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); }}
+                className="text-xs text-text-tertiary hover:text-text-secondary"
+              >
+                Change username
+              </button>
+            </div>
+
+            {githubState === 'fetching' ? (
+              <div className="flex items-center gap-2 py-4 justify-center text-xs text-text-tertiary">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Fetching repos…
+              </div>
+            ) : previewRepos!.length === 0 ? (
+              <p className="text-xs text-text-disabled italic py-2">No public repos found.</p>
+            ) : (
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {previewRepos!.map((repo) => (
+                  <label
+                    key={repo.name}
+                    className="flex items-start gap-2.5 px-2 py-1.5 rounded-lg hover:bg-surface-sunken cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedRepoNames.has(repo.name)}
+                      onChange={() => toggleRepo(repo.name)}
+                      className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-brand-primary"
+                    />
+                    <div className="min-w-0">
+                      <span className="text-xs font-medium text-text-primary font-mono">{repo.name}</span>
+                      {repo.language && (
+                        <span className="text-xs text-text-tertiary ml-2">{repo.language}</span>
+                      )}
+                      {repo.description && (
+                        <p className="text-xs text-text-tertiary truncate mt-0.5">{repo.description}</p>
+                      )}
+                    </div>
+                    {repo.pushed_at && (
+                      <span className="text-xs text-text-disabled ml-auto flex-shrink-0">
+                        {new Date(repo.pushed_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {githubState === 'error' && githubError && (
+              <p className="text-xs text-error">{githubError}</p>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleGithubConnect}
+                disabled={selectedRepoNames.size === 0 || githubState === 'saving' || githubState === 'fetching'}
+                className={saveBtnCls}
+              >
+                {githubState === 'saving'
+                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Connecting…</>
+                  : `Connect (${selectedRepoNames.size} repo${selectedRepoNames.size !== 1 ? 's' : ''})`
+                }
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetGithubPreview();
+                  setGithubState('idle');
+                  setGithubError(null);
+                  if (githubEditing) setGithubEditing(false);
+                }}
+                className={outlineBtnCls}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </CardBox>
+      );
+    }
+
+    // ── Step 1: username input ───────────────────────────────────────────────
     return (
       <CardBox>
-        <form onSubmit={handleGithubSave} className="space-y-3">
+        <form onSubmit={handleGithubFetch} className="space-y-3">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <LuGithub className="h-4 w-4 text-text-tertiary" />
@@ -690,17 +821,15 @@ export function ExperienceManager() {
           <div className="flex items-center gap-2">
             <button
               type="submit"
-              disabled={!githubUrl.trim() || githubState === 'saving'}
+              disabled={!githubUrl.trim()}
               className={saveBtnCls}
             >
-              {githubState === 'saving' ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
-              ) : 'Connect GitHub'}
+              Fetch Repos
             </button>
             {githubEditing && (
               <button
                 type="button"
-                onClick={() => { setGithubEditing(false); setGithubState('idle'); setGithubError(null); }}
+                onClick={() => { setGithubEditing(false); setGithubState('idle'); setGithubError(null); resetGithubPreview(); }}
                 className={outlineBtnCls}
               >
                 Cancel
@@ -833,6 +962,7 @@ export function ExperienceManager() {
                 <ParsedProfile
                   profile={uploadState.record.extracted_profile!}
                   rawResumeText={uploadState.record.raw_resume_text}
+                  repoDetails={uploadState.record.github_repo_details}
                 />
               )}
             </div>

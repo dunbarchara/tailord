@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import anyio
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -69,6 +69,7 @@ class ProcessRequest(BaseModel):
 
 class GitHubRequest(BaseModel):
     github_username: str
+    selected_repo_names: list[str] | None = None
 
 
 class UserInputRequest(BaseModel):
@@ -100,6 +101,7 @@ def _experience_response(e: Experience) -> dict:
         "error_message": e.error_message,
         "github_username": e.github_username,
         "github_repos": e.github_repos,
+        "github_repo_details": e.github_repo_details,
         "user_input_text": e.user_input_text,
         "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None,
         "processed_at": e.processed_at.isoformat() if e.processed_at else None,
@@ -339,29 +341,64 @@ def get_github_repos(
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
 ):
-    from app.core.mvp_github import fetch_repos
+    from app.clients.github_client import get_github_client
 
-    return {"username": username, "repos": fetch_repos(username)}
+    client = get_github_client()
+    try:
+        raw_repos = client.get_user_repos(username)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    repos = [
+        {
+            "name": r["name"],
+            "description": r.get("description"),
+            "language": r.get("language"),
+            "star_count": r.get("stargazers_count", 0),
+            "pushed_at": r.get("pushed_at"),
+        }
+        for r in raw_repos
+    ]
+    return {"username": username, "repos": repos}
 
 
 @router.post("/experience/github")
 def set_github(
     body: GitHubRequest,
+    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    from app.core.mvp_github import fetch_repos
+    from app.clients.github_client import get_github_client
+    from app.services.github_enricher import enrich_github_repos
 
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    client = get_github_client()
     try:
-        repos = fetch_repos(body.github_username)
+        raw_repos = client.get_user_repos(body.github_username)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    repos = [
+        {
+            "name": r["name"],
+            "description": r.get("description"),
+            "language": r.get("language"),
+            "star_count": r.get("stargazers_count", 0),
+            "pushed_at": r.get("pushed_at"),
+        }
+        for r in raw_repos
+    ]
+
+    if body.selected_repo_names is not None:
+        selected = set(body.selected_repo_names)
+        repos = [r for r in repos if r["name"] in selected]
 
     if experience:
         experience.github_username = body.github_username
         experience.github_repos = repos
+        experience.github_repo_details = None  # clear stale enrichment on username change
         profile = experience.extracted_profile or {}
         experience.extracted_profile = {**profile, "github": {"repos": repos}}
         experience.processed_at = datetime.now(timezone.utc)
@@ -382,6 +419,17 @@ def set_github(
 
     db.commit()
     db.refresh(experience)
+
+    background_tasks.add_task(
+        enrich_github_repos,
+        github_username=body.github_username,
+        experience_id=experience.id,
+        repo_names=body.selected_repo_names,
+    )
+    logger.info(
+        "set_github: queued enrichment for user=%s username=%s", user.id, body.github_username
+    )
+
     return {
         "experience_id": str(experience.id),
         "status": experience.status,
@@ -401,6 +449,7 @@ def remove_github(
 
     experience.github_username = None
     experience.github_repos = None
+    experience.github_repo_details = None
     if experience.extracted_profile and "github" in experience.extracted_profile:
         experience.extracted_profile = {
             k: v for k, v in experience.extracted_profile.items() if k != "github"
