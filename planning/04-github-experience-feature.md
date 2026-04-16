@@ -1,6 +1,6 @@
 # GitHub Experience Feature
 
-*Planning document for the GitHub Experience epic. Covers philosophy, design decisions, and the phased implementation roadmap. Last updated: 2026-04-14.*
+*Planning document for the GitHub Experience epic. Covers philosophy, design decisions, and the phased implementation roadmap. Last updated: 2026-04-16.*
 
 ---
 
@@ -212,12 +212,13 @@ Deep Scan is a paid feature in the product model — it requires more API calls,
 - [x] `GitHubEnrichedRepo`, `GitHubRepoDetails` types added to `frontend/src/types/index.ts`
 - [x] Verified end-to-end with local LLM: single-repo selection → enrichment → enriched data visible in profile tab
 
-### Day 7 — Race Condition Fix + Homepage
+### Day 7 — GitHub Experience Completion ✅
 
-- [ ] Race condition fix: `POST /experience/github` must not overwrite `status = processing`
-- [ ] `experience_processor.py` — targeted column updates to avoid clobbering concurrent GitHub writes
-- [ ] Homepage `ProductPreview` — replace mockup with real screenshot
-- [ ] "Re-scan GitHub" button for stale `github_repo_details`
+- [x] Race condition fix: `db.refresh(experience)` in `experience_processor.py` before final write picks up concurrent GitHub data; `POST /experience/github` already guarded against overwriting `status = "processing"`
+- [x] Enriched data merged into `extracted_profile["github"]["repos"]` after enrichment; `_fmt_github_prose` renders enriched fields (summary, stack, domain) when present
+- [x] "Re-scan" button in connected state — re-triggers enrichment with current username + repos
+- [x] Multi-contributor acknowledgement checkbox in step 2 of the connect flow; Connect button gated on it
+- [ ] Homepage `ProductPreview` — deferred indefinitely
 
 ---
 
@@ -236,7 +237,7 @@ Deep Scan is a paid feature in the product model — it requires more API calls,
 
 ## Open Questions
 
-1. **Acknowledgement UX for multi-contributor repos:** How explicit should this be? A checkbox per repo, or a single acknowledgement at the start of the scan flow?
+1. ~~**Acknowledgement UX for multi-contributor repos:** How explicit should this be? A checkbox per repo, or a single acknowledgement at the start of the scan flow?~~ **Resolved (Day 7):** Single acknowledgement checkbox at the bottom of the repo selection list. User selects any repos they want, then confirms with a single statement before connecting.
 
 2. **Confidence threshold:** Should we exclude "low confidence" repos from tailoring generation automatically, or let the user decide?
 
