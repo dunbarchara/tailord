@@ -73,6 +73,9 @@ class Experience(Base):
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
     github_username: Mapped[str | None] = mapped_column(String, nullable=True)
     github_repos: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Enriched per-repo signals from the GitHub App crawl (README, manifests, LLM summary).
+    # Null until enrichment completes. Additive — does not replace github_repos.
+    github_repo_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     user_input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

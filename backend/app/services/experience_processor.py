@@ -147,6 +147,9 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
 
             profile = extract_profile(normalized)
 
+            # Refresh to pick up any concurrent writes (e.g. GitHub enrichment
+            # data written while the LLM was running) before merging.
+            db.refresh(experience)
             experience.raw_resume_text = normalized
             experience.extracted_profile = {
                 **(experience.extracted_profile or {}),

@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { SourcedProfile, ExtractedProfile, GitHubRepo } from '@/types';
+import type { SourcedProfile, ExtractedProfile, GitHubRepo, GitHubRepoDetails, GitHubEnrichedRepo } from '@/types';
 
 interface ParsedProfileProps {
   profile: SourcedProfile;
   rawResumeText?: string | null;
+  repoDetails?: GitHubRepoDetails | null;
 }
 
 // ─── Sub-renderers ────────────────────────────────────────────────────────────
@@ -179,29 +180,109 @@ function ResumeTab({ resume }: { resume: ExtractedProfile }) {
   );
 }
 
-function GitHubTab({ repos }: { repos: GitHubRepo[] }) {
+function Label({ children }: { children: React.ReactNode }) {
+  return <span className="text-text-tertiary w-24 flex-shrink-0 inline-block">{children}</span>;
+}
+
+function EnrichedRepoCard({ repo }: { repo: GitHubEnrichedRepo }) {
+  const languageEntries = Object.entries(repo.language_breakdown ?? {})
+    .sort(([, a], [, b]) => b - a);
+
+  return (
+    <div className="border border-border-subtle rounded px-3 py-2.5 bg-surface-elevated space-y-1.5">
+      <div className="flex items-center gap-2">
+        <a href={repo.url} target="_blank" rel="noopener noreferrer"
+          className="font-medium text-text-primary font-mono hover:underline">
+          {repo.name}
+        </a>
+        <span className="text-text-disabled ml-auto">{repo.confidence} confidence</span>
+      </div>
+
+      {repo.readme_summary && (
+        <div className="flex gap-2">
+          <Label>Summary</Label>
+          <span className="text-text-secondary">{repo.readme_summary}</span>
+        </div>
+      )}
+
+      {repo.detected_stack?.length > 0 && (
+        <div className="flex gap-2">
+          <Label>Stack</Label>
+          <span className="text-text-secondary">{repo.detected_stack.join(', ')}</span>
+        </div>
+      )}
+
+      {repo.project_domain && (
+        <div className="flex gap-2">
+          <Label>Domain</Label>
+          <span className="text-text-secondary">{repo.project_domain}</span>
+        </div>
+      )}
+
+      {languageEntries.length > 0 && (
+        <div className="flex gap-2">
+          <Label>Languages</Label>
+          <span className="text-text-secondary">
+            {languageEntries.map(([lang, pct]) => `${lang} ${(pct * 100).toFixed(0)}%`).join(', ')}
+          </span>
+        </div>
+      )}
+
+      {repo.topics?.length > 0 && (
+        <div className="flex gap-2">
+          <Label>Topics</Label>
+          <span className="text-text-secondary">{repo.topics.join(', ')}</span>
+        </div>
+      )}
+
+      {repo.last_pushed_at && (
+        <div className="flex gap-2">
+          <Label>Last pushed</Label>
+          <span className="text-text-secondary">
+            {new Date(repo.last_pushed_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GitHubTab({ repos, repoDetails }: { repos: GitHubRepo[]; repoDetails?: GitHubRepoDetails | null }) {
+  if (repoDetails) {
+    const { repos: enriched, enriched_at, request_count, error_count } = repoDetails;
+    return (
+      <div className="text-xs space-y-4">
+        <div className="flex gap-4 text-text-disabled">
+          <span>Enriched {new Date(enriched_at).toLocaleString()}</span>
+          <span>{request_count} API requests</span>
+          {error_count > 0 && <span className="text-warning">{error_count} errors</span>}
+        </div>
+        {enriched.length === 0
+          ? <EmptyField label="No repos enriched" />
+          : <div className="space-y-3">{enriched.map(r => <EnrichedRepoCard key={r.name} repo={r} />)}</div>
+        }
+      </div>
+    );
+  }
+
+  // Enrichment not yet complete — fall back to basic repo list
   if (repos.length === 0) return <EmptyField label="No repos imported" />;
   return (
     <div className="space-y-3 text-xs">
+      <p className="text-text-disabled italic">Enrichment pending…</p>
       {repos.map((repo) => (
         <div key={repo.name} className="border border-border-subtle rounded px-3 py-2 bg-surface-elevated">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-text-primary font-mono">{repo.name}</span>
-            {repo.language && (
-              <span className="text-text-tertiary">{repo.language}</span>
-            )}
-            {repo.star_count > 0 && (
-              <span className="text-text-tertiary">★ {repo.star_count}</span>
-            )}
+            {repo.language && <span className="text-text-tertiary">{repo.language}</span>}
+            {repo.star_count > 0 && <span className="text-text-tertiary">★ {repo.star_count}</span>}
             {repo.pushed_at && (
               <span className="text-text-disabled ml-auto">
                 {new Date(repo.pushed_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}
               </span>
             )}
           </div>
-          {repo.description && (
-            <p className="text-text-secondary mt-1">{repo.description}</p>
-          )}
+          {repo.description && <p className="text-text-secondary mt-1">{repo.description}</p>}
         </div>
       ))}
     </div>
@@ -220,7 +301,7 @@ function DirectInputTab({ text }: { text: string }) {
 
 type SourceTab = 'resume' | 'github' | 'user_input' | 'raw';
 
-export function ParsedProfile({ profile, rawResumeText }: ParsedProfileProps) {
+export function ParsedProfile({ profile, rawResumeText, repoDetails }: ParsedProfileProps) {
   const available: SourceTab[] = (
     ['resume', 'github', 'user_input', 'raw'] as SourceTab[]
   ).filter(s => {
@@ -269,7 +350,7 @@ export function ParsedProfile({ profile, rawResumeText }: ParsedProfileProps) {
         <ResumeTab resume={profile.resume} />
       )}
       {activeTab === 'github' && profile.github && (
-        <GitHubTab repos={profile.github.repos} />
+        <GitHubTab repos={profile.github.repos} repoDetails={repoDetails} />
       )}
       {activeTab === 'user_input' && profile.user_input && (
         <DirectInputTab text={profile.user_input.text} />

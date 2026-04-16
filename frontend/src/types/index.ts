@@ -73,6 +73,28 @@ export interface GitHubRepo {
   pushed_at: string | null
 }
 
+export interface GitHubEnrichedRepo {
+  name: string
+  owner: string
+  url: string
+  description: string | null
+  readme_summary: string | null
+  detected_stack: string[]
+  project_domain: string | null
+  confidence: 'high' | 'medium' | 'low'
+  language_breakdown: Record<string, number>
+  topics: string[]
+  stars: number
+  last_pushed_at: string | null
+}
+
+export interface GitHubRepoDetails {
+  enriched_at: string
+  repos: GitHubEnrichedRepo[]
+  request_count: number
+  error_count: number
+}
+
 export interface SourcedProfile {
   resume?: ExtractedProfile
   github?: { repos: GitHubRepo[] }
@@ -144,6 +166,7 @@ export interface ExperienceRecord {
   error_message: string | null
   github_username: string | null
   github_repos: GitHubRepo[] | null
+  github_repo_details: GitHubRepoDetails | null
   user_input_text: string | null
   uploaded_at: string | null
   processed_at: string | null
