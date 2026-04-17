@@ -19,31 +19,7 @@ variable "domain_name" {
 }
 
 variable "db_password" {
-  description = "PostgreSQL admin password (server creation only — app connections use db_prod_password / db_staging_password)"
-  sensitive   = true
-  type        = string
-}
-
-variable "db_prod_password" {
-  description = "Password for the tailord_prod PostgreSQL user (prod backend only)"
-  sensitive   = true
-  type        = string
-}
-
-variable "db_staging_password" {
-  description = "Password for the tailord_staging PostgreSQL user (staging backend only)"
-  sensitive   = true
-  type        = string
-}
-
-variable "api_key_prod" {
-  description = "Shared secret for frontend→backend auth in prod (X-API-Key header)"
-  sensitive   = true
-  type        = string
-}
-
-variable "api_key_staging" {
-  description = "Shared secret for frontend→backend auth in staging (X-API-Key header)"
+  description = "PostgreSQL admin password — server creation / disaster recovery only. App connections use the per-user accounts in Key Vault. Source from 1Password; not needed for routine applies."
   sensitive   = true
   type        = string
 }
@@ -69,42 +45,33 @@ variable "cloudflare_zone_id" {
   type      = string
 }
 
-variable "nextauth_secret_prod" {
-  description = "NextAuth signing secret for prod — must differ from staging"
-  sensitive   = true
-  type        = string
-}
-
-variable "nextauth_secret_staging" {
-  description = "NextAuth signing secret for staging — must differ from prod"
-  sensitive   = true
-  type        = string
-}
-
-variable "google_client_id" {
-  sensitive = true
-  type      = string
-}
-
-variable "google_client_secret" {
-  sensitive = true
-  type      = string
-}
-
 variable "github_actions_sp_object_id" {
   description = "Object ID of the GitHub Actions service principal (az ad sp show --id <client-id> --query id -o tsv)"
   sensitive   = true
   type        = string
 }
 
-variable "notion_client_id" {
-  description = "Notion OAuth client ID"
-  sensitive   = true
+# ── GitHub App ────────────────────────────────────────────────────────────────
+# App IDs and Installation IDs are non-sensitive identifiers.
+# Private keys are stored in Key Vault directly (see keyvault.tf) — never passed
+# as Terraform variables.
+
+variable "github_app_id_prod" {
+  description = "GitHub App ID for the Tailord prod app"
   type        = string
 }
 
-variable "notion_client_secret" {
-  description = "Notion OAuth client secret"
-  sensitive   = true
+variable "github_app_installation_id_prod" {
+  description = "Installation ID for the Tailord prod GitHub App (installed on the owner account)"
+  type        = string
+}
+
+variable "github_app_id_staging" {
+  description = "GitHub App ID for the Tailord staging app"
+  type        = string
+}
+
+variable "github_app_installation_id_staging" {
+  description = "Installation ID for the Tailord staging GitHub App"
   type        = string
 }
