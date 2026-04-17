@@ -21,8 +21,11 @@ export default function PendingPage() {
 
   async function handleCheckStatus() {
     setChecking(true)
-    await update()
+    const updated = await update()
     setChecking(false)
+    if (updated?.user?.status === "approved") {
+      router.replace("/dashboard")
+    }
   }
 
   return (
@@ -40,7 +43,7 @@ export default function PendingPage() {
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold text-primary">Access pending</h1>
           <p className="text-primary">
-            Your account{session?.user.email ? ` (${session.user.email})` : ""} is
+            Your account{session?.user.email ? ` (${session.user.email}) ` : ""} is
             awaiting approval. You&apos;ll have full access once an admin reviews your request.
           </p>
         </div>
