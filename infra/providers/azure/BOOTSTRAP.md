@@ -76,72 +76,131 @@ and swap to separate SPs in the future without changing the workflow.
 
 ## 3. Terraform apply
 
-From `infra/providers/azure/`, run:
+### Secret architecture
+
+Application secrets (NextAuth, Google OAuth, Notion, API keys, database URLs, GitHub App private
+keys) live in Azure Key Vault and are **never passed as Terraform variables**. Terraform reads
+them via `data "azurerm_key_vault_secret"` blocks — it wires the KV secret URIs into Container
+Apps but never holds the values itself.
+
+This means the bootstrap sequence for a fresh environment is two passes:
+
+**Pass 1 — create infrastructure including the vault:**
 
 ```bash
 terraform init
+terraform apply \
+  -target=azurerm_key_vault.tailord \
+  -target=azurerm_role_assignment.kv_secrets_officer \
+  -target=azurerm_role_assignment.kv_secrets_user
+```
+
+**Manually upload all secrets to Key Vault** (see step 3a below).
+
+**Pass 2 — full apply:**
+
+```bash
 terraform apply
 ```
 
-### Supplying variables
+All data sources now resolve. Container Apps are created referencing the pre-populated secrets.
 
-Variables are sensitive and must never be committed. The current approach is a local `.env` file
-with `TF_VAR_*`-prefixed variables, sourced before running Terraform:
+### Variables required at apply time
+
+Only non-secret identifiers and bootstrap credentials are passed as Terraform variables:
+
+| Variable | Type | Notes |
+|----------|------|-------|
+| `subscription_id` | Identifier | Azure subscription ID |
+| `github_actions_sp_object_id` | Identifier | Object ID from step 2 |
+| `log_level` | Config | Default: `INFO` |
+| `cloudflare_zone_id` | Identifier | Cloudflare zone ID for tailord.app |
+| `github_app_id_prod` | Identifier | GitHub App ID for the prod Tailord app |
+| `github_app_installation_id_prod` | Identifier | Installation ID for the prod GitHub App |
+| `github_app_id_staging` | Identifier | GitHub App ID for the staging Tailord app |
+| `github_app_installation_id_staging` | Identifier | Installation ID for the staging GitHub App |
+| `db_password` | Bootstrap only | PostgreSQL **admin** password — used once at server creation. Ignored by Terraform on subsequent applies (`lifecycle.ignore_changes`). Source from 1Password; omit for routine applies. |
+
+These live in a local `.env` file (gitignored):
 
 ```bash
-# .env (gitignored via .env.* pattern — never commit)
 export TF_VAR_subscription_id="..."
-export TF_VAR_db_password="..."
-export TF_VAR_db_prod_password="..."
-# ... etc
+export TF_VAR_github_actions_sp_object_id="..."
+export TF_VAR_log_level="INFO"
+export TF_VAR_cloudflare_zone_id="..."
+export TF_VAR_github_app_id_prod="..."
+export TF_VAR_github_app_installation_id_prod="..."
+export TF_VAR_github_app_id_staging="..."
+export TF_VAR_github_app_installation_id_staging="..."
+export TF_VAR_db_password="..."          # only needed when creating/recreating the PG server
+export CLOUDFLARE_API_TOKEN="..."        # Cloudflare provider credential — not a TF_VAR
 
 source .env && terraform apply
 ```
 
 **Intended upgrade path — 1Password CLI:**
-When a second person needs Terraform access, migrate to `op run` so secrets leave disk entirely.
-Store each `TF_VAR_*` value as a 1Password item, then create an `.env.1p` file (safe to commit —
-contains references, not secrets):
+Store the above values as 1Password items, then replace the `.env` file with a `.env.1p`
+reference file (safe to commit — contains references, not secrets):
 
 ```bash
-# .env.1p (can be committed — no secrets, only 1Password references)
+# .env.1p (committable — no secrets)
 TF_VAR_subscription_id=op://tailord/terraform/subscription_id
-TF_VAR_db_password=op://tailord/terraform/db_password
+CLOUDFLARE_API_TOKEN=op://tailord/terraform/cloudflare_api_token
 # ... etc
-```
 
-Run Terraform via:
-
-```bash
 op run --env-file=.env.1p -- terraform apply
 ```
 
-1Password requires biometric/MFA per session. Secrets are never written to disk.
-
 **Long-term: GitHub Actions**
 PR-level `terraform plan` output, approval gates before apply, and full audit trail.
-Worth adopting once there are users depending on the infrastructure — premature before then.
-
-Required variables:
-
-| Variable | Notes |
-|----------|-------|
-| `subscription_id` | Azure subscription ID |
-| `github_actions_sp_object_id` | Object ID from step 2 |
-| `db_password` | PostgreSQL admin password (server creation only) |
-| `db_prod_password` | Password for the `tailord_prod` PostgreSQL user (see step 4) |
-| `db_staging_password` | Password for the `tailord_staging` PostgreSQL user (see step 4) |
-| `api_key` | Backend X-API-Key |
-| `nextauth_secret` | NextAuth secret (`openssl rand -base64 32`) |
-| `google_client_id` | Google OAuth client ID |
-| `google_client_secret` | Google OAuth client secret |
-| `cloudflare_zone_id` | Cloudflare zone ID for tailord.app |
-| `notion_client_id` | Notion OAuth client ID |
-| `notion_client_secret` | Notion OAuth client secret |
-| `llm_model` | Model deployment name (default: `phi-4-mini`, must match the deployment created in step 3a) |
+Worth adopting once there are users depending on the infrastructure.
 
 Note: `llm_api_key` and `llm_base_url` are not input variables — Terraform derives them
 directly from the AI Foundry account it creates (`primary_access_key` and `endpoint`).
+
+### Step 3a — Upload secrets to Key Vault
+
+After Pass 1 creates the vault, upload all application secrets before running Pass 2.
+Values come from your password manager (1Password). Never store them on disk.
+
+```bash
+# Get the PostgreSQL FQDN (needed to construct DATABASE_URLs)
+PGFQDN=$(az postgres flexible-server show \
+  --resource-group tailord --name tailord-pg \
+  --query fullyQualifiedDomainName -o tsv)
+
+# Application secrets
+az keyvault secret set --vault-name tailord-kv --name prod-nextauth-secret      --value "<openssl rand -base64 32>"
+az keyvault secret set --vault-name tailord-kv --name staging-nextauth-secret   --value "<openssl rand -base64 32>"
+az keyvault secret set --vault-name tailord-kv --name prod-api-key              --value "<openssl rand -hex 32>"
+az keyvault secret set --vault-name tailord-kv --name staging-api-key           --value "<openssl rand -hex 32>"
+az keyvault secret set --vault-name tailord-kv --name prod-google-client-id     --value "<from Google Cloud Console>"
+az keyvault secret set --vault-name tailord-kv --name staging-google-client-id  --value "<from Google Cloud Console>"
+az keyvault secret set --vault-name tailord-kv --name prod-google-client-secret --value "<from Google Cloud Console>"
+az keyvault secret set --vault-name tailord-kv --name staging-google-client-secret --value "<from Google Cloud Console>"
+az keyvault secret set --vault-name tailord-kv --name prod-notion-client-id     --value "<from Notion developer dashboard>"
+az keyvault secret set --vault-name tailord-kv --name staging-notion-client-id  --value "<from Notion developer dashboard>"
+az keyvault secret set --vault-name tailord-kv --name prod-notion-client-secret --value "<from Notion developer dashboard>"
+az keyvault secret set --vault-name tailord-kv --name staging-notion-client-secret --value "<from Notion developer dashboard>"
+
+# Database connection strings (use the app user passwords chosen in step 4)
+az keyvault secret set --vault-name tailord-kv --name prod-database-url \
+  --value "postgresql+psycopg://tailord_prod:<prod_app_password>@${PGFQDN}/tailord_prod"
+az keyvault secret set --vault-name tailord-kv --name staging-database-url \
+  --value "postgresql+psycopg://tailord_staging:<staging_app_password>@${PGFQDN}/tailord_staging"
+
+# GitHub App private keys (PEM content)
+az keyvault secret set --vault-name tailord-kv --name prod-github-app-private-key    --file /path/to/prod.pem
+az keyvault secret set --vault-name tailord-kv --name staging-github-app-private-key --file /path/to/staging.pem
+```
+
+After uploading, the `.pem` files can be deleted — Key Vault is the source of truth.
+
+To update a secret after initial bootstrap (e.g. rotating a credential):
+```bash
+az keyvault secret set --vault-name tailord-kv --name <secret-name> --value "<new-value>"
+# Then restart the affected Container App revision to pick up the new value
+```
 
 ### Step 3a: Deploy Phi-4-mini in AI Foundry (manual — model deployments not in Terraform provider)
 
@@ -173,10 +232,9 @@ The PostgreSQL server is created with a single admin user (`tailord`). App conne
 dedicated limited users — `tailord_prod` can only access `tailord_prod`, and `tailord_staging`
 can only access `tailord_staging`. Neither can access the other's database.
 
-**Choose passwords** for `tailord_prod` and `tailord_staging` before running `terraform apply`
-(they are Terraform input variables: `db_prod_password` and `db_staging_password`). The
-connection strings in Key Vault are generated from these variables, so the passwords must
-be set before apply and before running the SQL below.
+**Choose passwords** for `tailord_prod` and `tailord_staging` before running step 3a — you
+will need them to construct the `prod-database-url` and `staging-database-url` Key Vault
+secrets. Store the passwords in 1Password; they are not Terraform variables.
 
 **Add a temporary firewall rule for your IP:**
 

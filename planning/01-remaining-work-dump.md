@@ -6,6 +6,15 @@
 
 ---
 
+## Infra
+
+**type:** Infra
+**title:** Cloudflare API token — 1Password CLI injection
+**description:** `CLOUDFLARE_API_TOKEN` is a Terraform provider credential (not an app secret) and cannot come from Azure Key Vault — Terraform needs it before it can authenticate to any Azure resource. The right approach is 1Password CLI injection at apply time: store the token in 1Password and use `op run -- terraform apply` to inject it. Same pattern applies to `TF_VAR_db_password` (server admin, disaster-recovery only) and any future execution-time credentials. When CI/CD moves to GitHub Actions, use 1Password's GitHub Actions integration or a dedicated GH Actions secret. No urgency while running from local machine.
+**source:** Planning conversation 2026-04-17
+
+---
+
 ## Tech Debt / Cleanup
 
 **type:** Tech Debt

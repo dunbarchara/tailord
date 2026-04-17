@@ -96,6 +96,14 @@ resource "azurerm_postgresql_flexible_server" "tailord" {
   storage_mb             = 32768
   zone                   = "1"
   tags                   = local.tags
+
+  # db_password is a bootstrap/disaster-recovery credential only — it is set once
+  # at server creation and never updated via Terraform. Source from 1Password when
+  # recreating the server; for all routine applies this variable is unused and can
+  # be omitted or left as a placeholder.
+  lifecycle {
+    ignore_changes = [administrator_password]
+  }
 }
 
 # SECURITY DEBT: The 0.0.0.0/0.0.0.0 magic range enables "Allow access to Azure services",
@@ -248,6 +256,18 @@ resource "azurerm_container_app" "backend_prod" {
         name  = "NOTION_REDIRECT_URI"
         value = "https://${var.domain_name}/api/auth/notion/callback"
       }
+      env {
+        name  = "GITHUB_APP_ID"
+        value = var.github_app_id_prod
+      }
+      env {
+        name  = "GITHUB_APP_INSTALLATION_ID"
+        value = var.github_app_installation_id_prod
+      }
+      env {
+        name        = "GITHUB_APP_PRIVATE_KEY"
+        secret_name = "prod-github-app-private-key"
+      }
     }
   }
 
@@ -268,22 +288,27 @@ resource "azurerm_container_app" "backend_prod" {
 
   secret {
     name                = "prod-database-url"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_database_url.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_database_url.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_api_key.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-notion-client-id"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_notion_client_id.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_notion_client_id.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-notion-client-secret"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_notion_client_secret.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_notion_client_secret.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "prod-github-app-private-key"
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_github_app_private_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
 }
@@ -382,6 +407,18 @@ resource "azurerm_container_app" "backend_staging" {
         name  = "NOTION_REDIRECT_URI"
         value = "https://staging.${var.domain_name}/api/auth/notion/callback"
       }
+      env {
+        name  = "GITHUB_APP_ID"
+        value = var.github_app_id_staging
+      }
+      env {
+        name  = "GITHUB_APP_INSTALLATION_ID"
+        value = var.github_app_installation_id_staging
+      }
+      env {
+        name        = "GITHUB_APP_PRIVATE_KEY"
+        secret_name = "staging-github-app-private-key"
+      }
     }
   }
 
@@ -402,22 +439,27 @@ resource "azurerm_container_app" "backend_staging" {
 
   secret {
     name                = "staging-database-url"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_database_url.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_database_url.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "staging-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "staging-notion-client-id"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_id.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_notion_client_id.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "staging-notion-client-secret"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_notion_client_secret.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_notion_client_secret.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "staging-github-app-private-key"
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_github_app_private_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
 }
@@ -508,22 +550,22 @@ resource "azurerm_container_app" "frontend_prod" {
 
   secret {
     name                = "prod-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_api_key.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-nextauth-secret"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_nextauth_secret.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_nextauth_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-google-client-id"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_google_client_id.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_google_client_id.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "prod-google-client-secret"
-    key_vault_secret_id = azurerm_key_vault_secret.prod_google_client_secret.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_google_client_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
 }
@@ -616,22 +658,22 @@ resource "azurerm_container_app" "frontend_staging" {
 
   secret {
     name                = "staging-api-key"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_api_key.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_api_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "staging-nextauth-secret"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_nextauth_secret.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_nextauth_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "staging-google-client-id"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_google_client_id.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_google_client_id.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
     name                = "staging-google-client-secret"
-    key_vault_secret_id = azurerm_key_vault_secret.staging_google_client_secret.versionless_id
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_google_client_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
 }
