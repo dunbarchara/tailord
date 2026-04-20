@@ -291,7 +291,6 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     interval = setInterval(pollGapStatus, POLL_INTERVAL);
     return () => { if (interval) clearInterval(interval); };
     // Intentional: restart only when enrichment or gap settlement status changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tailoringId, chunksData?.enrichment_status, gapAnalysisSettled]);
 
   async function handleRegenerate() {
