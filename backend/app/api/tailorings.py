@@ -23,7 +23,8 @@ from app.core.token_utils import truncate_to_tokens
 from app.models.database import Experience, Job, JobChunk, LlmTriggerLog, Tailoring, User
 from app.models.mvp_schemas import TailoringCreate, _validate_job_url
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
-from app.services.chunk_matcher import enrich_job_chunks
+from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
+from app.services.gap_analyzer import run_gap_analysis
 from app.services.job_extractor import extract_job
 from app.services.requirement_matcher import match_requirements
 from app.services.tailoring_generator import _format_sourced_profile, generate_tailoring
@@ -251,6 +252,13 @@ def _finalize_tailoring(
     except Exception:
         logger.exception("Chunk enrichment failed for job %s", job_id)
 
+    # Gap analysis runs after chunk enrichment so chunk_ids are resolvable.
+    # Non-fatal: a failure here must never affect the tailoring itself.
+    try:
+        run_gap_analysis(tailoring_id)
+    except Exception:
+        logger.exception("Gap analysis failed for tailoring %s — non-fatal", tailoring_id)
+
 
 async def _stream_tailoring(
     job_url: str,
@@ -325,6 +333,7 @@ async def _stream_tailoring(
             tailoring.generation_stage = "extracting"
             tailoring.generation_error = None
             tailoring.enrichment_status = "pending"
+            tailoring.gap_analysis_status = "pending"
             db.commit()
             job_record = db.get(Job, existing_job_id)
         else:
@@ -500,6 +509,8 @@ def get_tailoring(
         "author_username_slug": tailoring.user.username_slug if tailoring.user else None,
         "notion_page_url": tailoring.notion_page_url,
         "notion_posting_page_url": tailoring.notion_posting_page_url,
+        "gap_analysis": tailoring.gap_analysis,
+        "gap_analysis_status": tailoring.gap_analysis_status,
         "created_at": tailoring.created_at.isoformat(),
     }
 
@@ -529,6 +540,85 @@ def get_tailoring_chunks(
     return {
         "enrichment_status": tailoring.enrichment_status,
         "chunks": [_serialize_chunk(c) for c in chunks],
+    }
+
+
+class GapAnswerRequest(BaseModel):
+    gap_index: int
+    answer: str
+
+
+@router.post("/tailorings/{tailoring_id}/gap-answer")
+def submit_gap_answer(
+    tailoring_id: str,
+    body: GapAnswerRequest,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Accept an answer to a gap question.
+    Appends the answer to experience.user_input_text, then re-scores only the
+    specific JobChunk linked to that gap — the full tailoring is not regenerated.
+    """
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    gap_analysis = tailoring.gap_analysis
+    if not gap_analysis or not gap_analysis.get("gaps"):
+        raise HTTPException(status_code=404, detail="No gap analysis found for this tailoring")
+
+    gaps = gap_analysis["gaps"]
+    if body.gap_index < 0 or body.gap_index >= len(gaps):
+        raise HTTPException(
+            status_code=422,
+            detail=f"gap_index {body.gap_index} is out of range (0–{len(gaps) - 1})",
+        )
+
+    gap = gaps[body.gap_index]
+    chunk_id: str | None = gap.get("chunk_id")
+
+    # Load the user's experience record
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
+        raise HTTPException(status_code=404, detail="Experience not found")
+
+    # Append the answer to user_input_text with a labeled prefix so it reads clearly
+    # in the profile formatter and is distinguishable from freeform notes.
+    requirement_label = gap.get("job_requirement", "")[:60]
+    answer_entry = f"[Gap answer — {requirement_label}]: {body.answer.strip()}"
+    existing = experience.user_input_text or ""
+    new_user_input_text = (existing + "\n\n" + answer_entry).strip()
+    experience.user_input_text = new_user_input_text
+
+    # Keep extracted_profile["user_input"] in sync with user_input_text so the
+    # profile formatter always renders the latest direct-input text.
+    base_profile = experience.extracted_profile or {}
+    updated_profile = {**base_profile, "user_input": {"text": new_user_input_text}}
+    experience.extracted_profile = updated_profile
+    db.commit()
+
+    # Re-score the specific chunk in the background using the updated profile.
+    # If chunk_id is None (no match found during gap analysis), skip re-enrichment.
+    chunk_reenrichment_queued = False
+    if chunk_id:
+        background_tasks.add_task(
+            re_enrich_single_chunk,
+            chunk_id,
+            updated_profile,
+            user.pronouns,
+        )
+        chunk_reenrichment_queued = True
+
+    return {
+        "status": "saved",
+        "chunk_reenrichment_queued": chunk_reenrichment_queued,
     }
 
 
@@ -585,6 +675,8 @@ def get_tailoring_debug_info(
         else "(No chunks available)"
     )
 
+    from app.prompts import gap_analysis as gap_prompt
+
     return {
         "model": tailoring.model or settings.llm_model,
         "generation_duration_ms": tailoring.generation_duration_ms,
@@ -597,6 +689,8 @@ def get_tailoring_debug_info(
         "tailoring_system_prompt": tailoring_prompt.SYSTEM
         if hasattr(tailoring_prompt, "SYSTEM")
         else None,
+        "gap_analysis": tailoring.gap_analysis,
+        "gap_analysis_system_prompt": gap_prompt.SYSTEM,
     }
 
 

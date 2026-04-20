@@ -8,10 +8,11 @@ interface GenerationViewProps {
   tailoring: Tailoring;
   regenSsePhase: string | null;
   enrichmentSettled: boolean;
+  gapAnalysisSettled: boolean;
   elapsed: number;
 }
 
-export function GenerationView({ tailoring, regenSsePhase, enrichmentSettled, elapsed }: GenerationViewProps) {
+export function GenerationView({ tailoring, regenSsePhase, enrichmentSettled, gapAnalysisSettled, elapsed }: GenerationViewProps) {
   const stage = tailoring.generation_stage;
   const generationComplete = tailoring.generation_status === 'ready';
 
@@ -42,6 +43,12 @@ export function GenerationView({ tailoring, regenSsePhase, enrichmentSettled, el
       label: 'Scoring requirements',
       done: enrichmentSettled,
       running: generationComplete && !enrichmentSettled,
+    },
+    {
+      key: 'gap-analysis',
+      label: 'Analyzing gaps',
+      done: gapAnalysisSettled,
+      running: enrichmentSettled && !gapAnalysisSettled,
     },
   ];
 
