@@ -202,6 +202,89 @@ def enrich_job_chunks(
         logger.debug("enrich_job_chunks: DB session closed for job_id=%s", job_id)
 
 
+def re_enrich_single_chunk(
+    chunk_id: str, extracted_profile: dict, pronouns: str | None = None
+) -> None:
+    """
+    Re-score one JobChunk against an updated profile.
+
+    Used when a gap answer is submitted — avoids re-processing the entire job.
+    Runs the same chunk-matching LLM as enrich_job_chunks, but for a single chunk.
+    Creates its own DB session — do not pass a session across thread boundaries.
+    """
+    from app.clients.database import SessionLocal
+    from app.models.database import JobChunk
+
+    logger.info("re_enrich_single_chunk: start chunk_id=%s", chunk_id)
+
+    db = SessionLocal()
+    try:
+        chunk = db.get(JobChunk, chunk_id)
+        if not chunk:
+            logger.warning("re_enrich_single_chunk: chunk %s not found", chunk_id)
+            return
+
+        formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
+
+        section = chunk.section or "General"
+        chunks_block = f"1. [{chunk.chunk_type.upper()}] {chunk.content}"
+
+        def _validate_single(r: ChunkMatchBatch) -> None:
+            if not r.results:
+                raise ValueError("results list is empty — score the chunk")
+            item = r.results[0]
+            if item.score in (1, 2) and not (item.advocacy_blurb and item.advocacy_blurb.strip()):
+                raise ValueError(
+                    f"score={item.score} but advocacy_blurb is empty"
+                    " — populate it with a 1–2 sentence third-person advocacy statement"
+                )
+
+        result = llm_parse_with_retry(
+            get_llm_client(),
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": prompt.SYSTEM},
+                {
+                    "role": "user",
+                    "content": prompt.USER_TEMPLATE.format(
+                        extracted_profile=formatted_profile,
+                        section=section,
+                        chunks_block=chunks_block,
+                    ),
+                },
+            ],
+            response_model=ChunkMatchBatch,
+            temperature=prompt.TEMPERATURE,
+            validate_fn=_validate_single,
+        )
+
+        match = (
+            result.results[0]
+            if result.results
+            else ChunkMatchResult(score=-1, rationale="Not evaluated (re-enrichment failed)")
+        )
+
+        now = datetime.now(timezone.utc)
+        chunk.match_score = match.score
+        chunk.match_rationale = match.rationale
+        chunk.advocacy_blurb = match.advocacy_blurb
+        chunk.experience_source = match.experience_source
+        chunk.should_render = match.should_render
+        chunk.enriched_at = now
+        db.commit()
+
+        logger.info(
+            "re_enrich_single_chunk: complete chunk_id=%s new_score=%d",
+            chunk_id,
+            match.score,
+        )
+
+    except Exception:
+        logger.exception("re_enrich_single_chunk failed for chunk_id=%s", chunk_id)
+    finally:
+        db.close()
+
+
 def _set_enrichment_status(db, tailoring_model, job_id: uuid.UUID, status: str) -> None:
     db.query(tailoring_model).filter(tailoring_model.job_id == job_id).update(
         {"enrichment_status": status}

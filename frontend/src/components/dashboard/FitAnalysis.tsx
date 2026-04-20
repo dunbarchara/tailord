@@ -71,7 +71,7 @@ export function fitAnalysisToText(
     '',
   ].join('\n');
 
-  const scored = data.chunks.filter(c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1);
+  const scored = data.chunks.filter(c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1 && c.should_render !== false);
 
   const lines: string[] = [];
   for (const c of scored) {
@@ -160,7 +160,7 @@ function MatchCard({ chunk }: { chunk: JobChunk }) {
 
 export function FitAnalysis({ data, error, title, company, jobUrl, authorName }: FitAnalysisProps) {
   const scored = data
-    ? data.chunks.filter(c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1)
+    ? data.chunks.filter(c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1 && c.should_render !== false)
     : [];
   const strong = scored.filter(c => c.match_score === 2);
   const partial = scored.filter(c => c.match_score === 1);

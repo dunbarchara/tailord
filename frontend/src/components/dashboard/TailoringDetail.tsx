@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FitAnalysis, fitAnalysisToText } from '@/components/dashboard/FitAnalysis';
+import { GapQuestions } from '@/components/dashboard/GapQuestions';
 import { JobPosting } from '@/components/dashboard/JobPosting';
 import { DebugPanel } from '@/components/dashboard/DebugPanel';
 import { AdvocacyLetter } from '@/components/dashboard/AdvocacyLetter';
@@ -137,6 +138,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   // Track enrichment status transitions so we can call router.refresh() exactly once
   // when enrichment settles, keeping the sidebar spinner alive through the enrichment phase.
   const prevEnrichmentStatusRef = useRef<string | null | undefined>(undefined);
+  const [gapAnalysisSettled, setGapAnalysisSettled] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -155,6 +157,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           userRes.ok ? userRes.json() : null,
         ]);
         setTailoring(tailoringData);
+        if (tailoringData.gap_analysis_status === 'complete') {
+          setGapAnalysisSettled(true);
+        }
         if (tailoringData.generation_status === 'error') {
           router.refresh();
         }
@@ -255,6 +260,39 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tailoringId, tailoring?.generation_status]);
 
+  // Poll for gap_analysis_status after enrichment completes.
+  // Gap analysis runs after chunk enrichment — we must not reveal the full UI until it finishes.
+  useEffect(() => {
+    if (gapAnalysisSettled) return;
+    const enrichmentComplete = chunksData?.enrichment_status === 'complete' || chunksData?.enrichment_status === 'error';
+    if (!enrichmentComplete) return;
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+    async function pollGapStatus() {
+      try {
+        const res = await fetch(`/api/tailorings/${tailoringId}`);
+        if (!res.ok) {
+          setGapAnalysisSettled(true); // don't block forever on error
+          if (interval) clearInterval(interval);
+          return;
+        }
+        const data = await res.json();
+        setTailoring(data);
+        if (data.gap_analysis_status === 'complete') {
+          setGapAnalysisSettled(true);
+          if (interval) clearInterval(interval);
+        }
+      } catch {
+        setGapAnalysisSettled(true); // don't block forever on network error
+        if (interval) clearInterval(interval);
+      }
+    }
+    pollGapStatus();
+    interval = setInterval(pollGapStatus, POLL_INTERVAL);
+    return () => { if (interval) clearInterval(interval); };
+    // Intentional: restart only when enrichment or gap settlement status changes.
+  }, [tailoringId, chunksData?.enrichment_status, gapAnalysisSettled]);
+
   async function handleRegenerate() {
     setShowRegenConfirm(false);
     setRegenerating(true);
@@ -291,6 +329,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             setRegenSsePhase(data);
           } else if (event === 'ready') {
             setRegenSsePhase(null);
+            setGapAnalysisSettled(false);
             setTailoring(prev => prev ? {
               ...prev,
               generated_output: null,
@@ -438,10 +477,10 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const enrichmentComplete = chunksData?.enrichment_status === 'complete';
   // Enrichment is settled once it's complete, errored, or the chunks API itself failed
   const enrichmentSettled = enrichmentComplete || chunksData?.enrichment_status === 'error' || !!chunksError;
-  // Show the generation view (hiding tabs) while generation or enrichment is still running
+  // Show the generation view (hiding tabs) while generation, enrichment, or gap analysis is running
   const showGenerationView = !generationFailed && (
     tailoring.generation_status === 'generating' ||
-    (tailoring.generation_status === 'ready' && !enrichmentSettled)
+    (tailoring.generation_status === 'ready' && (!enrichmentSettled || !gapAnalysisSettled))
   );
   const effectiveChunksError = chunksError ?? (
     generationFailed && !enrichmentComplete
@@ -772,6 +811,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
             tailoring={tailoring}
             regenSsePhase={regenSsePhase}
             enrichmentSettled={enrichmentSettled}
+            gapAnalysisSettled={gapAnalysisSettled}
             elapsed={elapsed}
           />
         )}
@@ -805,14 +845,50 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               />
             )}
             {activeTab === 'analysis' && (
-              <FitAnalysis
-                data={chunksData}
-                error={effectiveChunksError}
-                title={tailoring.title}
-                company={tailoring.company}
-                jobUrl={tailoring.job_url}
-                authorName={userName}
-              />
+              <>
+                <FitAnalysis
+                  data={chunksData}
+                  error={effectiveChunksError}
+                  title={tailoring.title}
+                  company={tailoring.company}
+                  jobUrl={tailoring.job_url}
+                  authorName={userName}
+                />
+                {tailoring.gap_analysis && tailoring.gap_analysis.gaps.length > 0 && (
+                  <div className="px-4 pb-6 pt-2">
+                    <details className="group">
+                      <summary className="flex items-center justify-between cursor-pointer list-none select-none py-3 border-t border-border-subtle">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">
+                            Strengthen your profile
+                          </span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
+                            {tailoring.gap_analysis.gaps.length} {tailoring.gap_analysis.gaps.length === 1 ? 'gap' : 'gaps'}
+                          </span>
+                        </div>
+                        <svg
+                          className="h-4 w-4 text-text-tertiary transition-transform group-open:rotate-180"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </summary>
+                      <div className="pt-1 pb-2">
+                        <p className="text-xs text-text-tertiary mb-3 leading-relaxed">
+                          These requirements weren&apos;t found in your profile. Answer the questions below to add context — each answer updates your experience and re-scores the relevant requirement.
+                        </p>
+                        <GapQuestions
+                          tailoringId={tailoring.id}
+                          gaps={tailoring.gap_analysis.gaps}
+                        />
+                      </div>
+                    </details>
+                  </div>
+                )}
+              </>
             )}
             {activeTab === 'debug' && (
               <DebugPanel

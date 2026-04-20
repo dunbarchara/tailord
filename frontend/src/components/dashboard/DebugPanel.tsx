@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Copy, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { ChunkAnalysis, chunksToMarkdown } from '@/components/dashboard/ChunkAnalysis';
-import type { ChunksResponse } from '@/types';
+import type { ChunksResponse, GapAnalysis } from '@/types';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
@@ -17,6 +17,8 @@ interface DebugInfo {
   chunk_matching_system_prompt: string;
   sample_chunk_user_message: string;
   tailoring_system_prompt: string | null;
+  gap_analysis: GapAnalysis | null;
+  gap_analysis_system_prompt: string | null;
 }
 
 interface DebugPanelProps {
@@ -179,6 +181,22 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
               </span>
             </div>
           )}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-text-tertiary">Gap analysis</span>
+            {debugInfo.gap_analysis === null ? (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium bg-error-bg border border-error text-error">
+                null
+              </span>
+            ) : (
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium border ${
+                debugInfo.gap_analysis.gaps.length > 0
+                  ? 'bg-amber-100 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/40 text-amber-700 dark:text-amber-400'
+                  : 'bg-surface-overlay border-border-subtle text-text-secondary'
+              }`}>
+                {debugInfo.gap_analysis.gaps.length} gaps
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -231,6 +249,56 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
             </DebugSection>
           )}
 
+          {debugInfo.gap_analysis_system_prompt && (
+            <DebugSection
+              label="Gap Analysis — System Prompt"
+              onCopy={() => debugInfo.gap_analysis_system_prompt!}
+            >
+              <CodeBlock text={debugInfo.gap_analysis_system_prompt} />
+            </DebugSection>
+          )}
+
+          <DebugSection
+            label="Gap Analysis — Result"
+            onCopy={() => debugInfo.gap_analysis ? JSON.stringify(debugInfo.gap_analysis, null, 2) : 'null'}
+          >
+            {debugInfo.gap_analysis === null ? (
+              <div className="flex items-center gap-2 p-4 rounded-xl border border-error bg-error-bg text-sm text-error">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>gap_analysis is null</strong> — gap analysis did not run or failed silently.
+                  Restart the backend server, then regenerate this tailoring to trigger a fresh run.
+                </span>
+              </div>
+            ) : debugInfo.gap_analysis.gaps.length === 0 ? (
+              <div className="p-4 rounded-xl border border-border-default bg-surface-base text-sm text-text-secondary">
+                No gaps found — the LLM considered all requirements sufficiently evidenced.
+                sourced: {debugInfo.gap_analysis.sourced_claim_count} / unsourced: {debugInfo.gap_analysis.unsourced_claim_count}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-text-tertiary">
+                  {debugInfo.gap_analysis.gaps.length} gap{debugInfo.gap_analysis.gaps.length !== 1 ? 's' : ''} found
+                  · sourced: {debugInfo.gap_analysis.sourced_claim_count}
+                  · unsourced: {debugInfo.gap_analysis.unsourced_claim_count}
+                </p>
+                {debugInfo.gap_analysis.gaps.map((gap, i) => (
+                  <div key={i} className="rounded-xl border border-border-default bg-surface-base p-3 text-xs space-y-1.5">
+                    <p className="font-medium text-text-primary">{gap.job_requirement}</p>
+                    <p className="text-text-secondary">{gap.question_for_candidate}</p>
+                    <p className="text-text-tertiary">{gap.context}</p>
+                    <p className="text-text-disabled">
+                      chunk_id: {gap.chunk_id
+                        ? <span className="font-mono">{gap.chunk_id}</span>
+                        : <span className="text-amber-600 dark:text-amber-400">unresolved</span>}
+                      · searched: {gap.source_searched}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DebugSection>
+
           <DebugSection
             label="Full Debug Dump"
             onCopy={() => [
@@ -248,6 +316,9 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
               '',
               '## Chunk Analysis',
               chunksData ? chunksToMarkdown(chunksData, title, company) : '(no chunk data)',
+              '',
+              '## Gap Analysis',
+              debugInfo.gap_analysis ? JSON.stringify(debugInfo.gap_analysis, null, 2) : 'null',
             ].join('\n')}
           >
             <p className="text-xs text-text-tertiary">

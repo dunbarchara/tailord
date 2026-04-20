@@ -138,6 +138,15 @@ class Tailoring(Base):
     # Profile snapshot — exact formatted_profile string passed to the LLM at generation time.
     # Populated on generation/regen; null for tailorings created before this column was added.
     profile_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Gap analysis — stored as JSON after generation completes. Null until gap analysis runs
+    # or if gap analysis fails (non-fatal). Contains ProfileGapWithChunk[] with chunk_id refs.
+    gap_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # gap_analysis_status: pending | complete
+    # "complete" is set by run_gap_analysis regardless of success/failure — signals the
+    # frontend that gap analysis has finished and the tailoring is fully ready to display.
+    gap_analysis_status: Mapped[str] = mapped_column(
+        String, default="pending", server_default="pending"
+    )
     letter_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )

@@ -1,5 +1,19 @@
 export type GenerationStatus = 'pending' | 'generating' | 'ready' | 'error'
 
+export interface ProfileGap {
+  job_requirement: string
+  question_for_candidate: string
+  context: string
+  source_searched: string
+  chunk_id: string | null
+}
+
+export interface GapAnalysis {
+  gaps: ProfileGap[]
+  sourced_claim_count: number
+  unsourced_claim_count: number
+}
+
 export interface Tailoring {
   id: string
   title: string | null
@@ -20,6 +34,8 @@ export interface Tailoring {
   generation_duration_ms: number | null
   chunk_batch_count: number | null
   chunk_error_count: number | null
+  gap_analysis?: GapAnalysis | null
+  gap_analysis_status?: 'pending' | 'complete'
   created_at: string
 }
 
