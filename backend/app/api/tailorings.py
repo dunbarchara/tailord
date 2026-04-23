@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 
 # Combined limit: tailoring creates + regens share one pool per user per hour.
 # Each trigger costs ~4 LLM calls (job extraction, req matching, generation, chunk scoring).
-# Hard block at 10; soft warning at 8 is planned.
 _TAILORING_HOURLY_LIMIT = 10
+_TAILORING_WARN_THRESHOLD = 8
 
 
-def _check_tailoring_rate_limit(user_id, db: Session) -> None:
-    """Raise 429 if the user has hit the combined create+regen limit in the last hour."""
+def _get_tailoring_trigger_count(user_id, db: Session) -> int:
+    """Return the number of tailoring LLM triggers in the last hour for a user."""
     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
-    count = (
+    return (
         db.query(LlmTriggerLog)
         .filter(
             LlmTriggerLog.user_id == user_id,
@@ -50,6 +50,11 @@ def _check_tailoring_rate_limit(user_id, db: Session) -> None:
         )
         .count()
     )
+
+
+def _check_tailoring_rate_limit(user_id, db: Session) -> None:
+    """Raise 429 if the user has hit the combined create+regen limit in the last hour."""
+    count = _get_tailoring_trigger_count(user_id, db)
     if count >= _TAILORING_HOURLY_LIMIT:
         logger.warning("Rate limit hit: user=%s tailoring triggers in last hour=%d", user_id, count)
         raise HTTPException(
@@ -827,20 +832,32 @@ def list_tailorings(
         .all()
     )
 
-    return [
-        {
-            "id": str(t.id),
-            "title": t.job.extracted_job.get("title") if t.job and t.job.extracted_job else None,
-            "company": t.job.extracted_job.get("company")
-            if t.job and t.job.extracted_job
-            else None,
-            "job_url": t.job.job_url if t.job else None,
-            "generation_status": t.generation_status,
-            "letter_public": t.letter_public,
-            "posting_public": t.posting_public,
-            "is_public": t.is_public,
-            "public_slug": t.public_slug,
-            "created_at": t.created_at.isoformat(),
-        }
-        for t in tailorings
-    ]
+    trigger_count = _get_tailoring_trigger_count(user.id, db)
+    rate_limit_warning = (
+        {"triggers_used": trigger_count, "limit": _TAILORING_HOURLY_LIMIT}
+        if trigger_count >= _TAILORING_WARN_THRESHOLD
+        else None
+    )
+
+    return {
+        "tailorings": [
+            {
+                "id": str(t.id),
+                "title": t.job.extracted_job.get("title")
+                if t.job and t.job.extracted_job
+                else None,
+                "company": t.job.extracted_job.get("company")
+                if t.job and t.job.extracted_job
+                else None,
+                "job_url": t.job.job_url if t.job else None,
+                "generation_status": t.generation_status,
+                "letter_public": t.letter_public,
+                "posting_public": t.posting_public,
+                "is_public": t.is_public,
+                "public_slug": t.public_slug,
+                "created_at": t.created_at.isoformat(),
+            }
+            for t in tailorings
+        ],
+        "rate_limit_warning": rate_limit_warning,
+    }

@@ -45,7 +45,7 @@ make check-infra       # checkov on Terraform
 Post-edit hooks run `tsc --noEmit` after frontend edits and `ruff check` after backend edits.
 Script: `.claude/hooks/post-edit.py`. Hook config to add to `settings.local.json`:
 ```json
-"hooks": { "PostToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "python3 .claude/hooks/post-edit.py" }] }] }
+"hooks": { "PostToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "bash -c 'python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/post-edit.py\"'" }] }] }
 ```
 
 ---

@@ -60,6 +60,7 @@ backend/.pytest_cache/
 
 # Coverage
 backend/.coverage
+backend/coverage.json
 backend/htmlcov/
 
 ############################################

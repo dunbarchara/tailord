@@ -43,6 +43,7 @@ dev = [
   "ruff",
   "bandit[toml]",
   "pip-audit",
+  "responses>=0.26.0",
 ]
 
 [tool.pytest.ini_options]

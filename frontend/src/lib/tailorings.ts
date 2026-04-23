@@ -48,7 +48,8 @@ export async function fetchTailorings(
       cache: 'no-store',
     })
     if (!res.ok) return []
-    return await res.json()
+    const data = await res.json()
+    return data.tailorings ?? []
   } catch {
     return []
   }
