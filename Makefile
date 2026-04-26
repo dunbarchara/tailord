@@ -65,7 +65,7 @@ check-backend:
 	cd backend && uv run bandit -r app/ -ll -q
 	@echo ""
 	@echo "── pip-audit (CVE scan) ─────────────────────────────────────────"
-	cd backend && uv run pip-audit
+	cd backend && uv run pip-audit --ignore-vuln CVE-2026-3219  # pip 26.1 not yet released; tar+ZIP interpretation conflict, no exploit path via uv.lock
 	@echo ""
 	@echo "── pytest ───────────────────────────────────────────────────────"
 	cd backend && uv run pytest
