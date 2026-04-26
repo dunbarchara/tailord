@@ -11,7 +11,7 @@ import { IconCheck, IconWorkflows } from '@/components/ui/icons';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
-function getGreeting(displayName: string | null): string {
+function buildGreeting(displayName: string | null): string {
   const hour = new Date().getHours();
   const period = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   const firstName = displayName?.split(' ')[0] ?? null;
@@ -101,6 +101,11 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
   const router = useRouter();
   const isEmpty = tailorings.length === 0;
   const [displayName, setDisplayName] = useState<string | null>(name);
+  const [greeting, setGreeting] = useState('');
+
+  useEffect(() => {
+    setGreeting(buildGreeting(displayName));
+  }, [displayName]);
 
   useEffect(() => {
     function onNameChanged(e: Event) {
@@ -123,7 +128,7 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
               suppressHydrationWarning
               className="text-lg font-medium text-text-primary tracking-[-0.2px]"
             >
-              {getGreeting(displayName)}
+              {greeting}
             </h2>
             <p className="text-sm text-text-secondary">Welcome back to Tailord</p>
           </div>

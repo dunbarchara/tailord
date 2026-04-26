@@ -2,14 +2,13 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Upload, FileText, Loader2, CheckCircle, AlertCircle, Pencil, X, RefreshCw,
+  Upload, FileText, Loader2, CheckCircle, AlertCircle, X, RefreshCw,
 } from 'lucide-react';
 import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
 import { cn, toastError, formatElapsed } from '@/lib/utils';
-import { ParsedProfile } from '@/components/dashboard/ParsedProfile';
-import { EditableResumeProfile } from '@/components/dashboard/EditableResumeProfile';
-import type { ExperienceRecord, ExtractedProfile, GitHubRepo } from '@/types';
+import { ChunkedProfile } from '@/components/dashboard/ChunkedProfile';
+import type { ExperienceRecord, GitHubRepo } from '@/types';
 import { IconCheck } from '@/components/ui/icons';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -200,8 +199,7 @@ export function ExperienceManager() {
   const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
   const [, setTick] = useState(0);
 
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [profileSaved, setProfileSaved] = useState(false);
+  const [chunksRefreshKey, setChunksRefreshKey] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmAction | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -328,6 +326,7 @@ export function ExperienceManager() {
               const record = JSON.parse(data) as ExperienceRecord;
               setUploadState({ phase: 'ready', record });
               setProcessingStage(null);
+              setChunksRefreshKey((k) => k + 1);
               if (record.github_username) setGithubUrl(record.github_username);
               if (record.user_input_text) setDirectText(record.user_input_text);
             } else if (currentEvent === 'error') {
@@ -357,8 +356,7 @@ export function ExperienceManager() {
     setUploadState({ phase: 'idle' });
     setProcessingStage(null);
     setStageStartedAt({});
-    setEditingProfile(false);
-    setProfileSaved(false);
+    setChunksRefreshKey((k) => k + 1);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -401,7 +399,10 @@ export function ExperienceManager() {
     resetGithubPreview();
     toast.success('GitHub profile connected');
     const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) setUploadState({ phase: 'ready', record: updated });
+    if (updated) {
+      setUploadState({ phase: 'ready', record: updated });
+      setChunksRefreshKey((k) => k + 1);
+    }
   };
 
   const handleGithubFetch = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -465,7 +466,10 @@ export function ExperienceManager() {
     resetGithubPreview();
     toast.success('GitHub profile removed');
     const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) setUploadState({ phase: 'ready', record: updated });
+    if (updated) {
+      setUploadState({ phase: 'ready', record: updated });
+      setChunksRefreshKey((k) => k + 1);
+    }
   };
 
   const handleDirectSave = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -486,25 +490,10 @@ export function ExperienceManager() {
     setDirectState('saved');
     toast.success('Additional context saved');
     const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) setUploadState({ phase: 'ready', record: updated });
-  };
-
-  const handleSaveProfile = async (profile: ExtractedProfile) => {
-    const res = await fetch('/api/experience', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(profile),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? 'Failed to save profile');
-      throw new Error('save failed');
+    if (updated) {
+      setUploadState({ phase: 'ready', record: updated });
+      setChunksRefreshKey((k) => k + 1);
     }
-    const updated: ExperienceRecord = await res.json();
-    setUploadState({ phase: 'ready', record: updated });
-    setEditingProfile(false);
-    setProfileSaved(true);
-    toast.success('Profile updated');
   };
 
   /* ─── Resume right-col content ─────────────────────────────────────────── */
@@ -878,7 +867,7 @@ export function ExperienceManager() {
 
   /* ─── Render ─────────────────────────────────────────────────────────────── */
 
-  const hasProfile = uploadState.phase === 'ready' && !!uploadState.record.extracted_profile;
+  const hasExperience = uploadState.phase === 'ready';
 
   return (
     <div className="h-full flex flex-col bg-surface-elevated">
@@ -951,55 +940,15 @@ export function ExperienceManager() {
           </div>
 
           {/* Parsed profile — full-width section below the input rows */}
-          {hasProfile && uploadState.phase === 'ready' && (
+          {hasExperience && (
             <div className="mt-8 pt-8 border-t border-zinc-950/5 dark:border-white/5">
-
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
-                  <p className="text-sm text-text-secondary mt-0.5">
-                    Extracted from your sources — used to generate every tailoring.
-                  </p>
-                </div>
-                {!editingProfile && uploadState.record.extracted_profile?.resume && (
-                  <button
-                    type="button"
-                    onClick={() => { setEditingProfile(true); setProfileSaved(false); }}
-                    className={outlineBtnCls}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </button>
-                )}
+              <div className="mb-6">
+                <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
+                <p className="text-sm text-text-secondary mt-0.5">
+                  Extracted from your sources — hover any item to edit it inline.
+                </p>
               </div>
-
-              {profileSaved && (
-                <div className="flex items-center justify-between px-4 py-3 mb-6 rounded-xl bg-surface-base border border-border-subtle text-xs">
-                  <span className="text-text-secondary">
-                    Profile updated — you may want to regenerate tailorings for active applications.
-                  </span>
-                  <a
-                    href="/dashboard"
-                    className="text-text-link hover:underline shrink-0 ml-3 whitespace-nowrap"
-                  >
-                    View tailorings →
-                  </a>
-                </div>
-              )}
-
-              {editingProfile && uploadState.record.extracted_profile?.resume ? (
-                <EditableResumeProfile
-                  profile={uploadState.record.extracted_profile.resume}
-                  onSave={handleSaveProfile}
-                  onCancel={() => setEditingProfile(false)}
-                />
-              ) : (
-                <ParsedProfile
-                  profile={uploadState.record.extracted_profile!}
-                  rawResumeText={uploadState.record.raw_resume_text}
-                  repoDetails={uploadState.record.github_repo_details}
-                />
-              )}
+              <ChunkedProfile refreshKey={chunksRefreshKey} />
             </div>
           )}
 
