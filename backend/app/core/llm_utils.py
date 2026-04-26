@@ -199,7 +199,7 @@ def llm_parse_with_retry(
     messages: list[dict],
     response_model: Type[T],
     temperature: float,
-    validate_fn: Callable[[T], None],
+    validate_fn: Callable[[T], None] | None = None,
     max_retries: int = 2,
 ) -> T:
     """
@@ -217,7 +217,8 @@ def llm_parse_with_retry(
     for attempt in range(max_retries + 1):
         try:
             result = llm_parse(client, model, current_messages, response_model, temperature)
-            validate_fn(result)
+            if validate_fn is not None:
+                validate_fn(result)
             return result
         except (pydantic.ValidationError, ValueError) as exc:
             last_exc = exc

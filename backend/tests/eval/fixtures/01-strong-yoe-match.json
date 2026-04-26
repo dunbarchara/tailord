@@ -1,0 +1,21 @@
+{
+  "id": "01-strong-yoe-match",
+  "description": "Requirements the candidate clearly meets: YOE threshold and core stack. Expect all STRONG (2).",
+  "profile": "alex-chen-backend-engineer",
+  "section": "Requirements",
+  "chunks": [
+    {
+      "chunk_type": "bullet",
+      "content": "5+ years of professional software engineering experience"
+    },
+    {
+      "chunk_type": "bullet",
+      "content": "Strong proficiency in Python for backend development"
+    },
+    {
+      "chunk_type": "bullet",
+      "content": "Experience designing and building REST APIs in a production environment"
+    }
+  ],
+  "expected_scores": [2, 2, 2]
+}

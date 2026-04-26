@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WorkExperience(BaseModel):
@@ -43,6 +43,17 @@ class ExtractedProfile(BaseModel):
     education: list[Education] = []
     projects: list[Project] = []
     certifications: list[str] = []
+
+
+class GitHubRepoEnrichment(BaseModel):
+    """LLM output for a single GitHub repo enrichment call (github_enricher.py)."""
+
+    readme_summary: str = Field(default="", description="2–3 sentence project summary")
+    detected_stack: list[str] = Field(
+        default_factory=list, description="Specific frameworks, libraries, tools"
+    )
+    project_domain: str = Field(default="unknown", description="Concise domain phrase")
+    confidence: Literal["high", "medium", "low"] = "low"
 
 
 class JobRequirements(BaseModel):

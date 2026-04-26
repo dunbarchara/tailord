@@ -1,0 +1,25 @@
+{
+  "id": "04-non-evaluable",
+  "description": "Chunks that are not candidate requirements at all: legal boilerplate, EEO statement, job title header, compensation line. Expect N/A (-1) for all.",
+  "profile": "alex-chen-backend-engineer",
+  "section": "General",
+  "chunks": [
+    {
+      "chunk_type": "paragraph",
+      "content": "Must be authorized to work in the United States. We are unable to sponsor or take over sponsorship of an employment Visa at this time."
+    },
+    {
+      "chunk_type": "paragraph",
+      "content": "Acme Corp is an equal opportunity employer. We celebrate diversity and are committed to creating an inclusive environment for all employees."
+    },
+    {
+      "chunk_type": "bullet",
+      "content": "Comprehensive health, dental, and vision insurance from day one"
+    },
+    {
+      "chunk_type": "bullet",
+      "content": "Base salary $160,000 – $210,000 USD + equity + 401(k) with 4% company match"
+    }
+  ],
+  "expected_scores": [-1, -1, -1, -1]
+}

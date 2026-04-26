@@ -30,6 +30,15 @@ repos:
         files: ^frontend/.*\.(ts|tsx|js|jsx|mjs)$
         pass_filenames: false
 
+  # Blocks PII-like content in tracked planning/ files (complements gitleaks).
+  - repo: local
+    hooks:
+      - id: planning-content-scan
+        name: Planning content scan
+        language: system
+        entry: python3 .claude/hooks/planning-scan.py
+        pass_filenames: false
+
   # Standard hygiene hooks.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

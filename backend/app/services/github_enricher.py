@@ -1,4 +1,3 @@
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -6,7 +5,9 @@ from datetime import datetime, timezone
 from app.clients.github_client import GitHubClient
 from app.clients.llm_client import get_llm_client
 from app.config import settings
+from app.core.llm_utils import llm_parse_with_retry
 from app.prompts.github_enrichment import SYSTEM, TEMPERATURE, USER_TEMPLATE
+from app.schemas.llm_outputs import GitHubRepoEnrichment
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,7 @@ def _llm_enrich_repo(
     topics: list[str],
     readme: str | None,
     manifests: dict[str, str],
-) -> dict:
-    client = get_llm_client()
+) -> GitHubRepoEnrichment:
     user_prompt = USER_TEMPLATE.format(
         owner=owner,
         repo_name=repo_name,
@@ -47,27 +47,16 @@ def _llm_enrich_repo(
         readme=readme or "No README found.",
         manifests=_format_manifests(manifests),
     )
-    response = client.chat.completions.create(
+    return llm_parse_with_retry(
+        get_llm_client(),
         model=settings.llm_model,
-        temperature=TEMPERATURE,
         messages=[
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": user_prompt},
         ],
+        response_model=GitHubRepoEnrichment,
+        temperature=TEMPERATURE,
     )
-    raw = (response.choices[0].message.content or "").strip()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning(
-            "github_enricher: LLM returned non-JSON for %s/%s — using fallback", owner, repo_name
-        )
-        return {
-            "readme_summary": (readme or "")[:200] or "Unable to summarize.",
-            "detected_stack": list(languages.keys())[:5],
-            "project_domain": "unknown",
-            "confidence": "low",
-        }
 
 
 def enrich_github_repos(
@@ -128,10 +117,10 @@ def enrich_github_repos(
                         "owner": github_username,
                         "url": f"https://github.com/{github_username}/{name}",
                         "description": repo.get("description"),
-                        "readme_summary": llm_result.get("readme_summary"),
-                        "detected_stack": llm_result.get("detected_stack", []),
-                        "project_domain": llm_result.get("project_domain"),
-                        "confidence": llm_result.get("confidence", "low"),
+                        "readme_summary": llm_result.readme_summary,
+                        "detected_stack": llm_result.detected_stack,
+                        "project_domain": llm_result.project_domain,
+                        "confidence": llm_result.confidence,
                         "language_breakdown": {
                             lang: round(count / total_bytes, 3) for lang, count in languages.items()
                         },

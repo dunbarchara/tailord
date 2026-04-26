@@ -41,6 +41,13 @@ make check-frontend    # eslint → build → jest → npm audit
 make check-infra       # checkov on Terraform
 ```
 
+**Local Claude Code hooks** (`.claude/settings.local.json` — gitignored, one-time setup):
+Post-edit hooks run `tsc --noEmit` after frontend edits and `ruff check` after backend edits.
+Script: `.claude/hooks/post-edit.py`. Hook config to add to `settings.local.json`:
+```json
+"hooks": { "PostToolUse": [{ "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "bash -c 'python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/post-edit.py\"'" }] }] }
+```
+
 ---
 
 ## Stack
