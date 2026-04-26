@@ -14,6 +14,12 @@ from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.models.database import Experience, LlmTriggerLog, User
+from app.services.experience_chunker import (
+    chunk_resume,
+    chunk_user_input,
+    delete_github_chunks,
+    delete_resume_chunks,
+)
 from app.services.experience_processor import (
     _friendly_processing_error,
     _normalize_resume_text,
@@ -46,8 +52,11 @@ def _has_non_resume_sources(e: Experience) -> bool:
     return False
 
 
-def _clear_resume_fields(e: Experience) -> None:
-    """Remove all file-upload data from the experience row, preserving other sources."""
+def _clear_resume_fields(e: Experience, db: Session) -> None:
+    """Remove all file-upload data from the experience row, preserving other sources.
+
+    Also deletes associated resume ExperienceChunk rows. Does not commit.
+    """
     e.s3_key = None
     e.filename = None
     e.raw_resume_text = None
@@ -56,6 +65,7 @@ def _clear_resume_fields(e: Experience) -> None:
     e.extracted_profile = {
         k: v for k, v in (e.extracted_profile or {}).items() if k != "resume"
     } or None
+    delete_resume_chunks(db, e.id)
 
 
 class UploadUrlRequest(BaseModel):
@@ -135,7 +145,7 @@ def get_upload_url(
                 get_storage_client().delete_object(existing.s3_key)
             except Exception:
                 logger.warning("Storage cleanup failed for key=%s — continuing", existing.s3_key)
-        _clear_resume_fields(existing)
+        _clear_resume_fields(existing, db)
         existing.s3_key = storage_key
         existing.filename = body.filename
         existing.status = "pending"
@@ -247,7 +257,13 @@ async def trigger_process(
             db.commit()
             db.refresh(experience)
 
-            logger.info("trigger_process SSE complete: experience_id=%s", experience.id)
+            chunk_count = chunk_resume(db, experience)
+            db.commit()
+            logger.info(
+                "trigger_process SSE complete: experience_id=%s chunks=%d",
+                experience.id,
+                chunk_count,
+            )
             yield f"event: ready\ndata: {json.dumps(_experience_response(experience))}\n\n"
 
         except Exception as exc:
@@ -297,7 +313,7 @@ def delete_experience(
 
     if _has_non_resume_sources(e):
         # Other sources exist — clear only the file upload fields
-        _clear_resume_fields(e)
+        _clear_resume_fields(e, db)
         e.status = "ready"
     else:
         db.delete(e)
@@ -454,6 +470,7 @@ def remove_github(
         experience.extracted_profile = {
             k: v for k, v in experience.extracted_profile.items() if k != "github"
         } or None
+    delete_github_chunks(db, experience.id)
     db.commit()
 
 
@@ -487,4 +504,8 @@ def set_user_input(
 
     db.commit()
     db.refresh(experience)
+
+    chunk_user_input(db, experience)
+    db.commit()
+
     return {"experience_id": str(experience.id), "status": experience.status}
