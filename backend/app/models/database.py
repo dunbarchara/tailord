@@ -86,6 +86,9 @@ class Experience(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="experience")
+    chunks: Mapped[list["ExperienceChunk"]] = relationship(
+        "ExperienceChunk", back_populates="experience", cascade="all, delete-orphan"
+    )
 
 
 class Job(Base):
@@ -215,6 +218,49 @@ class TailoringDebugLog(Base):
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExperienceChunk(Base):
+    """
+    Atomic, source-traceable claim derived from extracted_profile.
+    One row per bullet / skill / project / education entry.
+
+    source_type: resume | github | user_input
+    source_ref:  null for resume/user_input; repo name for github
+    claim_type:  work_experience | skill | project | education | other
+
+    Embedding column (Vector 1536) is added in Day 13 when pgvector is configured.
+    """
+
+    __tablename__ = "experience_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experience_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experiences.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    claim_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Grouping key for rendering hierarchy. Examples:
+    #   work_experience → "ACME Corp | Software Engineer"
+    #   project         → "MyApp"
+    #   education       → "BSc Computer Science | MIT"
+    #   github chunks   → repo name (mirrors source_ref)
+    #   skill / other   → null (flat, no parent group)
+    group_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    date_range: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    technologies: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    experience: Mapped["Experience"] = relationship("Experience", back_populates="chunks")
 
 
 class JobChunk(Base):

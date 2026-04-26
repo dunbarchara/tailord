@@ -173,6 +173,53 @@ export interface ChunksResponse {
   chunks: JobChunk[]
 }
 
+export interface ExperienceChunk {
+  id: string
+  source_type: 'resume' | 'github' | 'user_input'
+  source_ref: string | null
+  claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
+  content: string
+  group_key: string | null
+  date_range: string | null
+  technologies: string[] | null
+  position: number
+  updated_at: string | null
+}
+
+export interface WorkExperienceGroup {
+  group_key: string | null
+  date_range: string | null
+  chunks: ExperienceChunk[]
+}
+
+export interface ProjectGroup {
+  group_key: string | null
+  chunks: ExperienceChunk[]
+}
+
+export interface GitHubRepoGroup {
+  group_key: string | null
+  chunks: ExperienceChunk[]
+}
+
+export interface ResumeChunksSection {
+  work_experience: WorkExperienceGroup[]
+  skills: ExperienceChunk[]
+  projects: ProjectGroup[]
+  education: ExperienceChunk[]
+  other: ExperienceChunk[]
+}
+
+export interface GitHubChunksSection {
+  repos: GitHubRepoGroup[]
+}
+
+export interface ExperienceChunksResponse {
+  resume: ResumeChunksSection | null
+  github: GitHubChunksSection | null
+  user_input: ExperienceChunk | null
+}
+
 export interface ExperienceRecord {
   id: string
   filename: string | null
