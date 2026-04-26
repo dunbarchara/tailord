@@ -76,7 +76,7 @@ jobs:
 
       - name: pip-audit (dependency CVE scan)
         working-directory: ./backend
-        run: uv run pip-audit
+        run: uv run pip-audit --ignore-vuln CVE-2026-3219  # pip 26.1 not yet released; tar+ZIP interpretation conflict, no exploit path via uv.lock
 
       - name: pytest
         working-directory: ./backend

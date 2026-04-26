@@ -1,5 +1,7 @@
 """Integration tests for Notion OAuth and export endpoints."""
 
+from urllib.parse import urlparse
+
 import responses as rsps_lib
 
 from tests.conftest import AUTH_HEADERS, make_job, make_tailoring, make_user
@@ -36,7 +38,7 @@ def test_notion_auth_url_returns_url(client, db):
     # Both are valid in the test environment depending on local .env presence.
     assert response.status_code in (200, 503)
     if response.status_code == 200:
-        assert "api.notion.com" in response.json()["url"]
+        assert urlparse(response.json()["url"]).hostname == "api.notion.com"
 
 
 # ---------------------------------------------------------------------------
