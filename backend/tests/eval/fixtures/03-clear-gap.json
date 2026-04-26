@@ -1,0 +1,17 @@
+{
+  "id": "03-clear-gap",
+  "description": "Requirements the candidate genuinely lacks — no CRM background, no ML/data science. Expect GAP (0).",
+  "profile": "alex-chen-backend-engineer",
+  "section": "Requirements",
+  "chunks": [
+    {
+      "chunk_type": "bullet",
+      "content": "3+ years of Salesforce CRM administration, development, or integration experience"
+    },
+    {
+      "chunk_type": "bullet",
+      "content": "Experience training or fine-tuning machine learning models (PyTorch or TensorFlow)"
+    }
+  ],
+  "expected_scores": [0, 0]
+}

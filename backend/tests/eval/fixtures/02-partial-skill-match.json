@@ -1,0 +1,17 @@
+{
+  "id": "02-partial-skill-match",
+  "description": "Requirements where the candidate has adjacent but not exact experience. Docker present, Kubernetes absent. Expect PARTIAL (1).",
+  "profile": "alex-chen-backend-engineer",
+  "section": "Requirements",
+  "chunks": [
+    {
+      "chunk_type": "bullet",
+      "content": "Experience with Kubernetes for container orchestration at production scale"
+    },
+    {
+      "chunk_type": "bullet",
+      "content": "Familiarity with Infrastructure-as-Code tools such as Terraform or Pulumi"
+    }
+  ],
+  "expected_scores": [1, 1]
+}

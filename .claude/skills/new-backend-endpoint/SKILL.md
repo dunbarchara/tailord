@@ -1,3 +1,8 @@
+---
+name: new-backend-endpoint
+description: Add a new FastAPI endpoint to the Tailord backend.
+---
+
 Add a new FastAPI endpoint to the Tailord backend.
 
 Steps:

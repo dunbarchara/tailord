@@ -1,0 +1,89 @@
+{
+  "candidate_name": "Alex Chen",
+  "pronouns": "they/them",
+  "description": "Senior backend engineer, 7 years Python/FastAPI. Strong in databases and cloud infrastructure. No Kubernetes, no Salesforce/CRM, no ML/data science background.",
+  "extracted_profile": {
+    "resume": {
+      "title": "Senior Software Engineer",
+      "location": "San Francisco, CA",
+      "summary": "Backend engineer with 7 years building production APIs, data pipelines, and internal tooling. Strong in Python and PostgreSQL. Comfortable with cloud infrastructure on AWS. Enjoys mentoring junior engineers and improving developer experience.",
+      "skills": {
+        "technical": ["Python", "FastAPI", "Flask", "PostgreSQL", "Redis", "SQLAlchemy", "Docker", "AWS (S3, Lambda, SQS)", "REST APIs", "Celery", "Git", "Linux"],
+        "soft": ["technical mentorship", "cross-functional collaboration", "incident response"]
+      },
+      "work_experience": [
+        {
+          "title": "Senior Software Engineer",
+          "company": "Acme Corp",
+          "location": "San Francisco, CA",
+          "duration": "01/2021 - present",
+          "bullets": [
+            "Led backend rewrite of the core API from Django to FastAPI, reducing p99 latency by 40%",
+            "Designed and implemented a multi-tenant job queue using Redis and Celery, processing 500k tasks/day",
+            "Mentored 3 junior engineers through structured code reviews and weekly 1:1s",
+            "Migrated 8 PostgreSQL tables to partitioned schemas, cutting slow-query incidents by 70%",
+            "Drove adoption of Docker Compose for local development across a team of 12 engineers",
+            "Collaborated with product and design to ship self-serve onboarding, reducing support tickets by 30%"
+          ]
+        },
+        {
+          "title": "Software Engineer",
+          "company": "Beta Technologies",
+          "location": "Remote",
+          "duration": "06/2018 - 12/2020",
+          "bullets": [
+            "Built ETL pipelines in Python to ingest data from 6 third-party APIs into a central PostgreSQL warehouse",
+            "Developed internal REST APIs consumed by 3 product teams",
+            "Introduced automated integration tests that caught 4 regressions before production deploys",
+            "Maintained AWS Lambda functions for async event processing"
+          ]
+        },
+        {
+          "title": "Junior Software Engineer",
+          "company": "Gamma Startup",
+          "location": "Austin, TX",
+          "duration": "01/2018 - 05/2018",
+          "bullets": [
+            "Built CRUD endpoints in Flask for an early-stage B2B SaaS product",
+            "Fixed bugs and wrote unit tests for a payment integration"
+          ]
+        }
+      ],
+      "education": [
+        {
+          "degree": "Bachelor of Science in Computer Science",
+          "institution": "University of Texas at Austin",
+          "year": "2017"
+        }
+      ]
+    },
+    "github": {
+      "repos": [
+        {
+          "name": "fastapi-template",
+          "url": "https://github.com/mock-user/fastapi-template",
+          "readme_summary": "A production-ready FastAPI starter with JWT auth, SQLAlchemy models, Alembic migrations, and pytest fixtures. Used by 3 teams internally before being open-sourced.",
+          "detected_stack": ["Python", "FastAPI", "SQLAlchemy", "PostgreSQL", "Docker"],
+          "project_domain": "Developer tooling / API framework",
+          "confidence": "high"
+        },
+        {
+          "name": "pg-query-log",
+          "url": "https://github.com/mock-user/pg-query-log",
+          "readme_summary": "CLI tool for parsing and summarizing PostgreSQL slow-query logs. Outputs a ranked table of slow queries with avg/p95/p99 latency and suggested index candidates.",
+          "detected_stack": ["Python", "PostgreSQL", "Click"],
+          "project_domain": "Database observability",
+          "confidence": "high"
+        },
+        {
+          "name": "csv-to-api",
+          "url": "https://github.com/mock-user/csv-to-api",
+          "readme_summary": "Weekend project: reads a CSV file and auto-generates a REST API with filtering and pagination. Thin wrapper around FastAPI and pandas.",
+          "detected_stack": ["Python", "FastAPI", "pandas"],
+          "project_domain": "Rapid prototyping",
+          "confidence": "medium"
+        }
+      ]
+    }
+  }
+}

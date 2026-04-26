@@ -1,3 +1,8 @@
+---
+name: commit-message
+description: Generate a commit message for the current staged changes.
+---
+
 Generate a commit message for the current staged changes.
 
 1. Run `git diff --cached --stat` and `git log -5 --oneline` to understand scope and follow existing style

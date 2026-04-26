@@ -1,3 +1,8 @@
+---
+name: new-api-route
+description: Create a new Next.js API route at `frontend/src/app/api/<path>/route.ts`.
+---
+
 Create a new Next.js API route at `frontend/src/app/api/<path>/route.ts`.
 
 Pattern:

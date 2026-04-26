@@ -1,0 +1,17 @@
+{
+  "id": "05-multi-source",
+  "description": "Requirements best evidenced by combining resume and GitHub data. The resume shows internal tooling work; GitHub shows open-source output. Combined, they support a STRONG (2) score.",
+  "profile": "alex-chen-backend-engineer",
+  "section": "Preferred Qualifications",
+  "chunks": [
+    {
+      "chunk_type": "bullet",
+      "content": "History of building and maintaining internal developer tooling or shared engineering infrastructure"
+    },
+    {
+      "chunk_type": "bullet",
+      "content": "Open source contributions or public GitHub projects demonstrating production-quality engineering"
+    }
+  ],
+  "expected_scores": [2, 2]
+}
