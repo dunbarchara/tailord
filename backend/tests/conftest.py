@@ -16,8 +16,10 @@ os.environ.setdefault("DATABASE_URL", _TEST_DB_URL)
 
 from app.config import settings  # noqa: E402
 
-# Inject test API key into the settings singleton
+# Inject test secrets into the settings singleton
 settings.api_key = "test-key"
+settings.notion_client_id = "test-notion-client-id"
+settings.notion_client_secret = "test-notion-client-secret"
 
 # ---------------------------------------------------------------------------
 # Auth header constants (used by both unit and integration tests)
