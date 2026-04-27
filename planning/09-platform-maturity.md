@@ -75,23 +75,50 @@ Job Chunks (text)
 Chunk Embeddings (pgvector)
       │
       ▼ [cosine similarity — deterministic, instant]
-Ranked candidate experience chunks
+Top-K ranked ExperienceChunks per JobChunk  ← context reducer, not scorer
       │
-      ▼ [LLM — generation only]
-Advocacy blurbs + tailored output
+      ▼ [LLM — scoring + generation]
+STRONG / PARTIAL / GAP score + advocacy blurb
+(LLM sees: job requirement + top-K relevant chunks only — not the full profile)
 ```
 
-Key insight: move all **matching** to vectors (deterministic, measurable, fast), keep LLM for
-**generation** (advocacy blurbs, gap questions, tailored letter). This minimises the LLM's exposure
-to decisions it tends to make inconsistently.
+Key insight: cosine similarity is a **retrieval mechanism, not a reasoning mechanism**. Use it to
+reduce the LLM's context from "full profile" to "the most semantically relevant experience chunks
+for this requirement." The LLM still assigns STRONG/PARTIAL/GAP — it reasons about temporal
+constraints ("5+ years"), contextual relevance, and partial matches in ways that threshold math
+cannot. What changes is the *input* to the LLM scoring call, not the presence of the LLM itself.
+
+Keep LLM for: scoring (on pre-selected context), advocacy blurbs, gap questions, tailored letter.
+
+### Context-attached retrieval: preserving reasoning quality
+
+Embeddings and LLM prompts have opposing context needs:
+- **Best embedding:** claim content only — "Developed backend microservices in TypeScript." Company
+  name, job title, and dates are noise that distorts cosine similarity. The vector should represent
+  *what was done*, not *where*.
+- **Best LLM reasoning:** full provenance — the LLM needs to know the company, role, and years to
+  write "In your role as Software Engineer at ACME (2020–2025)..." and to reason about "5+ years."
+
+The resolution: **embed claim content only; attach context at retrieval time.**
+
+`ExperienceChunk` already stores `group_key`, `date_range`, `source_ref`, `technologies`. When
+building the LLM scoring call, annotate each top-K chunk with these fields and group chunks from
+the same position together. The LLM receives structured, position-grouped context rather than a
+flat list of 8 unrelated bullets. This mirrors the full profile format — scoped to relevant chunks.
+
+Do NOT enrich chunk content with position context at write time. Baking "Software Engineer at ACME
+2020–2025:" into the chunk text dilutes the semantic signal for embeddings, causes data duplication
+(every bullet repeats the same position header), and locks prompt formatting to write time instead
+of retrieval time.
 
 ### What changes with embeddings
 
 | Today | With embeddings |
 |-------|----------------|
-| LLM scores each job requirement against full profile | Cosine similarity ranks experience chunks against requirement vector |
-| Scoring varies run-to-run (temperature > 0) | Matching is deterministic |
-| Hard to measure "did this change make matching better?" | Directly measurable: recall@k, MRR |
+| LLM scores requirement against full formatted profile | LLM scores requirement against top-K most similar ExperienceChunks |
+| High LLM context = noisy, unfocused reasoning | Smaller, targeted context = sharper LLM reasoning |
+| Scoring varies run-to-run (temperature > 0) | Pre-selection is deterministic; scoring still LLM-driven |
+| Hard to measure "did this change make matching better?" | Directly measurable: recall@k, precision of pre-selection |
 | LLM re-derives scores on every regen | Cache embeddings; only re-embed on profile change |
 
 ---
@@ -121,8 +148,9 @@ This is the data model prerequisite for vector matching.
 - Add `pgvector` extension to PostgreSQL
 - Add `embedding` column to `ExperienceChunk` and `JobChunk`
 - Embed on write (background task); re-embed on profile update
-- Scoring: cosine similarity replaces LLM scoring call
-- Keep LLM for: advocacy blurb generation, gap question generation, tailored letter
+- Pre-selection: cosine similarity retrieves top-K ExperienceChunks per JobChunk
+- Scoring: LLM still assigns STRONG/PARTIAL/GAP, but against top-K chunks instead of full profile
+- Keep LLM for: scoring (focused context), advocacy blurb generation, gap question generation, tailored letter
 
 ### 6. Eval integration
 - Re-run eval harness against vector-matched results
