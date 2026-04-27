@@ -47,6 +47,11 @@ const CONFIRM_CONFIGS = {
     description: 'Your existing GitHub profile and imported repository data will be replaced with the new username. The previous data will be permanently deleted. This cannot be undone.',
     confirm: 'Change',
   },
+  'user-input-clear': {
+    title: 'Remove additional context',
+    description: 'Your additional context and any extracted data will be permanently deleted. This cannot be undone.',
+    confirm: 'Remove',
+  },
 } as const;
 
 type ConfirmAction = keyof typeof CONFIRM_CONFIGS;
@@ -360,6 +365,23 @@ export function ExperienceManager() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleUserInputRemove = async () => {
+    const res = await fetch('/api/experience/user-input', { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toastError(err.detail ?? `Failed to remove (${res.status})`);
+      return;
+    }
+    setDirectText('');
+    setDirectState('idle');
+    toast.success('Additional context removed');
+    const updated = await fetch('/api/experience').then((r) => r.json());
+    if (updated) {
+      setUploadState({ phase: 'ready', record: updated });
+      setChunksRefreshKey((k) => k + 1);
+    }
+  };
+
   const handleConfirmAction = async () => {
     const action = confirmDialog;
     setConfirmDialog(null);
@@ -367,6 +389,7 @@ export function ExperienceManager() {
     else if (action === 'resume-replace') fileInputRef.current?.click();
     else if (action === 'github-remove') await handleGithubRemove();
     else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
+    else if (action === 'user-input-clear') await handleUserInputRemove();
   };
 
   function parseGithubUsername(input: string): string {
@@ -920,19 +943,30 @@ export function ExperienceManager() {
                   rows={6}
                   className={textareaCls}
                 />
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
                   {directState === 'saved' && (
                     <span className="text-sm text-success">Saved</span>
                   )}
-                  <button
-                    type="submit"
-                    disabled={!directText.trim() || directState === 'saving'}
-                    className={cn(saveBtnCls, 'ml-auto')}
-                  >
-                    {directState === 'saving' ? (
-                      <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
-                    ) : 'Save'}
-                  </button>
+                  <div className="flex items-center gap-2 ml-auto">
+                    {uploadState.phase === 'ready' && !!uploadState.record.user_input_text && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDialog('user-input-clear')}
+                        className={outlineBtnCls}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={!directText.trim() || directState === 'saving'}
+                      className={saveBtnCls}
+                    >
+                      {directState === 'saving' ? (
+                        <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
+                      ) : 'Save'}
+                    </button>
+                  </div>
                 </div>
               </form>
             </SettingRow>

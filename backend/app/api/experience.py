@@ -19,6 +19,12 @@ from app.services.experience_chunker import (
     chunk_user_input,
     delete_github_chunks,
     delete_resume_chunks,
+    delete_user_input_chunks,
+)
+from app.services.experience_embedder import (
+    embed_experience_chunks,
+    embed_experience_chunks_task,
+    re_embed_chunk,
 )
 from app.services.experience_processor import (
     _friendly_processing_error,
@@ -62,6 +68,7 @@ def _clear_resume_fields(e: Experience, db: Session) -> None:
     e.raw_resume_text = None
     e.error_message = None
     e.processed_at = None
+    e.last_process_requested_at = None
     e.extracted_profile = {
         k: v for k, v in (e.extracted_profile or {}).items() if k != "resume"
     } or None
@@ -259,6 +266,7 @@ async def trigger_process(
 
             chunk_count = chunk_resume(db, experience)
             db.commit()
+            embed_experience_chunks(experience.id, db)
             logger.info(
                 "trigger_process SSE complete: experience_id=%s chunks=%d",
                 experience.id,
@@ -474,9 +482,30 @@ def remove_github(
     db.commit()
 
 
+@router.delete("/experience/user-input", status_code=204)
+def remove_user_input(
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience or not experience.user_input_text:
+        raise HTTPException(status_code=404, detail="No additional context found")
+
+    experience.user_input_text = None
+    if experience.extracted_profile and "user_input" in experience.extracted_profile:
+        experience.extracted_profile = {
+            k: v for k, v in experience.extracted_profile.items() if k != "user_input"
+        } or None
+    delete_user_input_chunks(db, experience.id)
+    db.commit()
+    logger.info("remove_user_input: complete for user=%s", user.id)
+
+
 @router.post("/experience/user-input")
 def set_user_input(
     body: UserInputRequest,
+    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -507,6 +536,7 @@ def set_user_input(
 
     chunk_user_input(db, experience)
     db.commit()
+    background_tasks.add_task(embed_experience_chunks_task, experience.id)
 
     return {"experience_id": str(experience.id), "status": experience.status}
 
@@ -637,6 +667,7 @@ class ChunkContentUpdate(BaseModel):
 def update_experience_chunk(
     chunk_id: str,
     body: ChunkContentUpdate,
+    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -691,5 +722,7 @@ def update_experience_chunk(
 
     db.commit()
     db.refresh(chunk)
+    if body.content is not None:
+        background_tasks.add_task(re_embed_chunk, chunk.id)
     logger.info("update_experience_chunk: chunk=%s user=%s", chunk.id, user.id)
     return _serialize_exp_chunk(chunk)

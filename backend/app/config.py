@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_api_version: str | None = None
 
+    # ── Embeddings ────────────────────────────────────────────────────────────
+    # embedding_base_url: falls back to llm_base_url if unset, then OpenAI default.
+    # Allows embeddings and chat to hit different endpoints (e.g. real OpenAI
+    # for embeddings, local model for chat).
+    # embedding_api_key: deliberately NOT falling back to llm_api_key. Keeping
+    # these keys separate ensures the LLM key is never sent to an embedding
+    # endpoint (or vice versa). In staging/production managed identity is used
+    # and neither key is set. Locally, set this to a personal OpenAI key.
+    embedding_model: str = "text-embedding-3-small"
+    embedding_base_url: str | None = None
+    embedding_api_key: str | None = None
+
     # ── Storage ───────────────────────────────────────────────────────────────
     # Switch providers by setting STORAGE_PROVIDER to "azure" or "aws".
     storage_provider: str = "azure"

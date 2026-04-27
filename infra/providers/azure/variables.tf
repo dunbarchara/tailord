@@ -29,6 +29,12 @@ variable "llm_model" {
   default = "gpt-5.4-mini"
 }
 
+variable "embedding_model" {
+  description = "Azure AI Foundry deployment name for embeddings. Must be deployed in the same resource as llm_model."
+  type        = string
+  default     = "text-embedding-3-small"
+}
+
 variable "log_level" {
   type    = string
   default = "INFO"

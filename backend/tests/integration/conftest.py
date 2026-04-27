@@ -9,7 +9,7 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 import app.models.database  # noqa: F401 — registers all ORM classes with Base
@@ -34,6 +34,9 @@ _TestSession = sessionmaker(bind=_engine)
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_schema():
+    with _engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
     Base.metadata.create_all(_engine)
     yield
     Base.metadata.drop_all(_engine)

@@ -414,3 +414,10 @@ database only (`tailord_prod` cannot access `tailord_staging` and vice versa).
 the Container App Environments with a custom VNet so they reach the DB over a private endpoint
 with no public exposure. This requires recreating the Container App Environments (destructive)
 and is deferred. Tracked in `planning/15-infra-improvements.md`.
+
+---
+
+### Useful commands
+
+Export .env.azure variables before running terraform apply
+`export $(grep -vE '^(#|$)' .env.azure | xargs)`

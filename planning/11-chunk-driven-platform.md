@@ -115,7 +115,7 @@ to the frontend after this day. The API contracts use chunked structures only.
 | Day | Dependency on Day 12.5 |
 |-----|----------------------|
 | Day 13 — pgvector + embeddings | Embeds `ExperienceChunk.content` on write. Schema is already correct. `GET /experience/chunks` is how future UI will show embedding status. |
-| Day 14 — vector matching | `ExperienceChunk` rows are the input to cosine similarity ranking. Chunk edit (`PATCH`) invalidates embeddings → triggers re-embed. |
+| Day 14 — vector-assisted matching | Cosine similarity pre-selects top-K `ExperienceChunk` rows per `JobChunk`. LLM scores that focused set (STRONG/PARTIAL/GAP) instead of the full profile. Chunk edit (`PATCH`) invalidates embeddings → triggers re-embed. |
 | Conversational enrichment | Gap question answers → new `user_input` chunks → `PATCH` or new chunk insert → re-embed → re-match without full regen. The chunk edit endpoint is the entry point for this flow. |
 
 ---
