@@ -59,7 +59,7 @@ jobs:
       run: docker build -t $ACR_REGISTRY/tailord-frontend:${{ steps.generate_tag.outputs.tag_name }} .
 
     - name: Trivy scan — frontend
-      uses: aquasecurity/trivy-action@v0.35.0
+      uses: aquasecurity/trivy-action@v0.36.0
       with:
         image-ref: ${{ env.ACR_REGISTRY }}/tailord-frontend:${{ steps.generate_tag.outputs.tag_name }}
         format: table
@@ -75,7 +75,7 @@ jobs:
       run: docker build -t $ACR_REGISTRY/tailord-backend:${{ steps.generate_tag.outputs.tag_name }} .
 
     - name: Trivy scan — backend
-      uses: aquasecurity/trivy-action@v0.35.0
+      uses: aquasecurity/trivy-action@v0.36.0
       with:
         image-ref: ${{ env.ACR_REGISTRY }}/tailord-backend:${{ steps.generate_tag.outputs.tag_name }}
         format: table
