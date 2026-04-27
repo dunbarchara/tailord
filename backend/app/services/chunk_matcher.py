@@ -180,6 +180,11 @@ def enrich_job_chunks(
             }
         )
         db.commit()
+
+        from app.services.experience_embedder import embed_job_chunks
+
+        embed_job_chunks(job_id, db)
+
         logger.info(
             "enrich_job_chunks complete: job_id=%s chunks=%d batches=%d errors=%d",
             job_id,

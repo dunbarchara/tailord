@@ -166,11 +166,13 @@ def enrich_github_repos(
         db.commit()
 
         from app.services.experience_chunker import chunk_github_repo
+        from app.services.experience_embedder import embed_experience_chunks
 
         total_chunks = 0
         for repo_data in enriched:
             total_chunks += chunk_github_repo(db, experience, repo_data["name"])
         db.commit()
+        embed_experience_chunks(experience.id, db)
 
         logger.info(
             "github_enricher: complete experience=%s repos=%d errors=%d requests=%d chunks=%d",

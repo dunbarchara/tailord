@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -255,6 +256,10 @@ class ExperienceChunk(Base):
     date_range: Mapped[str | None] = mapped_column(String(100), nullable=True)
     technologies: Mapped[list | None] = mapped_column(JSON, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Populated by experience_embedder.py after chunking. Null until first embed run.
+    # Not exposed in API responses — internal to the matching pipeline.
+    embedding = mapped_column(Vector(1536), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -282,5 +287,8 @@ class JobChunk(Base):
         Boolean, nullable=False, default=True, server_default="true"
     )
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Populated by experience_embedder.py after job chunk extraction.
+    embedding = mapped_column(Vector(1536), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     job: Mapped["Job"] = relationship("Job", back_populates="chunks")

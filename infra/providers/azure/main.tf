@@ -241,6 +241,10 @@ resource "azurerm_container_app" "backend_prod" {
         value = var.llm_model
       }
       env {
+        name  = "EMBEDDING_MODEL"
+        value = var.embedding_model
+      }
+      env {
         name  = "LLM_API_VERSION"
         value = var.llm_api_version
       }
@@ -390,6 +394,10 @@ resource "azurerm_container_app" "backend_staging" {
       env {
         name  = "LLM_MODEL"
         value = var.llm_model
+      }
+      env {
+        name  = "EMBEDDING_MODEL"
+        value = var.embedding_model
       }
       env {
         name  = "LLM_API_VERSION"
