@@ -9,6 +9,7 @@ import type { ChunksResponse, GapAnalysis } from '@/types';
 
 interface DebugInfo {
   model: string | null;
+  matching_mode: 'vector' | 'llm' | null;
   generation_duration_ms: number | null;
   chunk_batch_count: number | null;
   chunk_error_count: number | null;
@@ -151,6 +152,18 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
               </span>
             </div>
           )}
+          {debugInfo.matching_mode && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-text-tertiary">Matching</span>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium border ${
+                debugInfo.matching_mode === 'vector'
+                  ? 'bg-blue-100 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/40 text-blue-700 dark:text-blue-400'
+                  : 'bg-surface-overlay border-border-subtle text-text-secondary'
+              }`}>
+                {debugInfo.matching_mode}
+              </span>
+            </div>
+          )}
           {debugInfo.generation_duration_ms != null && (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-text-tertiary">Generation</span>
@@ -234,7 +247,11 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
           </DebugSection>
 
           <DebugSection
-            label="Chunk Matching — Sample User Message (first batch)"
+            label={
+              debugInfo.matching_mode === 'vector'
+                ? 'Chunk Matching — Sample User Message (vector mode, 1 call per chunk)'
+                : 'Chunk Matching — Sample User Message (llm mode, batched)'
+            }
             onCopy={() => debugInfo.sample_chunk_user_message}
           >
             <CodeBlock text={debugInfo.sample_chunk_user_message} />

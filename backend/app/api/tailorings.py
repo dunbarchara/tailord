@@ -3,6 +3,7 @@ import logging
 import random
 import re
 import string
+import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
@@ -148,6 +149,7 @@ def _finalize_tailoring(
     candidate_name: str,
     job_url: str,
     pronouns: str | None = None,
+    experience_id: uuid.UUID | None = None,
 ) -> None:
     """
     Background task: extract the job, run requirement matching + tailoring generation,
@@ -253,7 +255,14 @@ def _finalize_tailoring(
 
     # Chunk enrichment runs after generation succeeds
     try:
-        enrich_job_chunks(job_id, job_markdown, extracted_profile, pronouns=pronouns)
+        enrich_job_chunks(
+            job_id,
+            job_markdown,
+            extracted_profile,
+            pronouns=pronouns,
+            experience_id=experience_id,
+            candidate_name=candidate_name,
+        )
     except Exception:
         logger.exception("Chunk enrichment failed for job %s", job_id)
 
@@ -310,6 +319,7 @@ async def _stream_tailoring(
         # db.commit() closes the implicit read transaction so the connection doesn't
         # sit idle-in-transaction for the entire scraping duration (5–15s).
         extracted_profile = experience.extracted_profile
+        experience_id = experience.id
         preferred = " ".join(
             filter(None, [user.preferred_first_name, user.preferred_last_name])
         ).strip()
@@ -368,6 +378,7 @@ async def _stream_tailoring(
             candidate_name,
             job_url,
             candidate_pronouns,
+            experience_id,
         )
 
         yield _sse("ready", json.dumps({"id": str(tailoring.id)}))
@@ -613,11 +624,17 @@ def submit_gap_answer(
     # If chunk_id is None (no match found during gap analysis), skip re-enrichment.
     chunk_reenrichment_queued = False
     if chunk_id:
+        preferred = " ".join(
+            filter(None, [user.preferred_first_name, user.preferred_last_name])
+        ).strip()
+        gap_candidate_name = preferred or user.name or user.email
         background_tasks.add_task(
             re_enrich_single_chunk,
             chunk_id,
             updated_profile,
             user.pronouns,
+            experience.id,
+            gap_candidate_name,
         )
         chunk_reenrichment_queued = True
 
@@ -658,27 +675,58 @@ def get_tailoring_debug_info(
         )
         profile_snapshot_source = "reconstructed"
 
-    # Build a sample chunk-matching user message from the first real batch
+    # Build a sample chunk-matching user message.
+    # Mode is detected from stored rationale prefix so historical tailorings
+    # reflect the mode that actually ran, regardless of current settings.
     chunks = (
         db.query(JobChunk)
         .filter(JobChunk.job_id == tailoring.job_id)
         .order_by(JobChunk.position)
-        .limit(3)
         .all()
     )
-    sample_chunks_block = "\n".join(
-        f"{i}. [{c.chunk_type.upper()}] {c.content}" for i, c in enumerate(chunks, start=1)
+    scored_chunks = [c for c in chunks if c.chunk_type != "header" and c.match_score is not None]
+    used_vector = any(
+        c.match_rationale and c.match_rationale.startswith("[vector") for c in scored_chunks
     )
-    first_section = chunks[0].section or "General" if chunks else "General"
-    sample_user_message = (
-        chunk_prompt.USER_TEMPLATE.format(
+
+    if used_vector and scored_chunks:
+        from app.services.chunk_matcher import _build_candidate_header
+
+        first = scored_chunks[0]
+        # Extract candidate_name from profile_snapshot or user record
+        _cname = (
+            " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
+            or user.name
+            or user.email
+        )
+        candidate_header = _build_candidate_header(
+            _cname, user.pronouns if hasattr(user, "pronouns") else None
+        )
+        sample_user_message = chunk_prompt.USER_TEMPLATE_VECTOR.format(
+            candidate_header=candidate_header,
+            job_requirement=f"[{first.chunk_type.upper()}] {first.content}",
+            grouped_context=(
+                "(top-8 ExperienceChunks retrieved by cosine similarity at scoring time —\n"
+                " content varies per job chunk; not stored)"
+            ),
+            k=settings.vector_top_k,
+        )
+        matching_mode = "vector"
+    elif chunks:
+        batch = chunks[:3]
+        sample_chunks_block = "\n".join(
+            f"{i}. [{c.chunk_type.upper()}] {c.content}" for i, c in enumerate(batch, start=1)
+        )
+        first_section = batch[0].section or "General"
+        sample_user_message = chunk_prompt.USER_TEMPLATE.format(
             extracted_profile=formatted_profile,
             section=first_section,
             chunks_block=sample_chunks_block,
         )
-        if chunks
-        else "(No chunks available)"
-    )
+        matching_mode = "llm"
+    else:
+        sample_user_message = "(No chunks available)"
+        matching_mode = settings.matching_mode
 
     from app.prompts import gap_analysis as gap_prompt
 
@@ -689,6 +737,7 @@ def get_tailoring_debug_info(
         "chunk_error_count": tailoring.chunk_error_count,
         "formatted_profile": formatted_profile,
         "profile_snapshot_source": profile_snapshot_source,
+        "matching_mode": matching_mode,
         "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
         "sample_chunk_user_message": sample_user_message,
         "tailoring_system_prompt": tailoring_prompt.SYSTEM
