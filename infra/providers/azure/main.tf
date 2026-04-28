@@ -134,6 +134,14 @@ resource "azurerm_postgresql_flexible_server_database" "staging" {
   collation = "en_US.utf8"
 }
 
+# Allow the pgvector extension — Azure PostgreSQL requires extensions to be
+# explicitly allow-listed before CREATE EXTENSION can run.
+resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.tailord.id
+  value     = "VECTOR"
+}
+
 # -----------------------------
 # CONTAINER APP ENVIRONMENTS
 # Separate environments for prod and staging provide network-level isolation:
