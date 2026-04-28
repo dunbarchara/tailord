@@ -69,25 +69,21 @@ The single-blob user_input model is replaced with a multi-chunk flow.
 ## Part 3 — Backend: gap_response Wiring
 
 ### Gap response creation endpoint
-- [ ] `POST /experience/gap-response` — accepts `{job_chunk_id: str, tailoring_id: str, question: str, answer: str}`
-  - Creates one `gap_response` ExperienceChunk:
-    - `content = answer`
-    - `source_type = "gap_response"`
-    - `claim_type = "other"`
-    - `metadata = {question, job_chunk_id, tailoring_id}`
-  - Embeds the chunk immediately (not background — user is waiting for re-match result)
-  - Calls `re_enrich_single_chunk(job_chunk_id, experience_id, candidate_name)` to re-score the requirement
-  - Returns `{chunk_id, updated_score, updated_rationale}` so the frontend can update the badge inline
-  - Frontend API route: `POST /api/experience/gap-response`
+- [x] `POST /experience/gap-response` — accepts `{job_chunk_id: str, tailoring_id: str, question: str, answer: str}`
+  - Creates one `gap_response` ExperienceChunk with `chunk_metadata={question, job_chunk_id, tailoring_id}`
+  - Ownership validated: tailoring must belong to user; job_chunk must belong to tailoring's job
+  - Embeds synchronously via `embed_experience_chunks(experience.id, db)` before re-enrich
+  - Calls `re_enrich_single_chunk(...)` synchronously — user is waiting
+  - Re-queries JobChunk after re_enrich (separate session committed) for fresh score
+  - Returns `{chunk_id, updated_score, updated_rationale}`
+  - Frontend API route: `POST /api/experience/gap-response/route.ts` (new)
 
 ### gap_response lifecycle verification
-- [ ] Confirm `delete_resume_chunks`, `delete_github_chunks`, `delete_user_input_chunks` do NOT
-  touch `gap_response` chunks (they filter by source_type — should already be safe; add a test)
+- [x] Confirmed: all three delete functions delegate to `_delete_chunks` with their specific `source_type` — gap_response is never passed; lifecycle tests verify this
 
 ### Tests
-- [ ] `tests/services/test_chunk_lifecycle.py` (new) — assert gap_response chunks survive resume delete,
-  github disconnect, and user_input clear; assert they ARE deleted on Experience delete (cascade)
-- [ ] Update existing `test_experience_chunker.py` for the removed `chunk_user_input` function
+- [x] `tests/services/test_chunk_lifecycle.py` (new, 9 tests) — asserts source_type isolation for all three delete functions; asserts `Experience.chunks` cascade config includes `delete` + `delete-orphan`
+- [x] Updated `test_experience_chunker.py` for the removed `chunk_user_input` (done in Part 2)
 
 ---
 

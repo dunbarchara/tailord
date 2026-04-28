@@ -18,9 +18,17 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.llm_utils import llm_parse_with_retry
-from app.models.database import Experience, ExperienceChunk, LlmTriggerLog, User
+from app.models.database import (
+    Experience,
+    ExperienceChunk,
+    JobChunk,
+    LlmTriggerLog,
+    Tailoring,
+    User,
+)
 from app.prompts import user_input_parse as parse_prompt
 from app.schemas.llm_outputs import ParsedClaims
+from app.services.chunk_matcher import re_enrich_single_chunk
 from app.services.experience_chunker import (
     chunk_resume,
     delete_github_chunks,
@@ -101,6 +109,13 @@ class UserInputRequest(BaseModel):
 
 class UserInputChunksRequest(BaseModel):
     chunks: list[str]
+
+
+class GapResponseRequest(BaseModel):
+    job_chunk_id: str
+    tailoring_id: str
+    question: str
+    answer: str
 
 
 class ProfileUpdate(BaseModel):
@@ -859,3 +874,114 @@ def delete_experience_chunk(
     db.delete(chunk)
     db.commit()
     logger.info("delete_experience_chunk: chunk=%s user=%s", chunk_uuid, user.id)
+
+
+# ---------------------------------------------------------------------------
+# gap_response — creation + inline re-scoring
+# ---------------------------------------------------------------------------
+
+
+@router.post("/experience/gap-response")
+def create_gap_response(
+    body: GapResponseRequest,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Record a user's answer to a gap question.
+
+    Creates a gap_response ExperienceChunk, embeds it synchronously, then re-scores
+    the specific JobChunk that triggered the gap question. Returns the new score inline
+    so the UI can update the requirement badge without a full page reload.
+    """
+    answer = body.answer.strip()
+    question = body.question.strip()
+    if not answer:
+        raise HTTPException(status_code=422, detail="answer cannot be empty")
+
+    # Verify the tailoring belongs to this user
+    try:
+        tailoring_uuid = uuid.UUID(body.tailoring_id)
+        job_chunk_uuid = uuid.UUID(body.job_chunk_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid tailoring_id or job_chunk_id")
+
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_uuid, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    # Verify the job chunk belongs to that tailoring's job
+    job_chunk = (
+        db.query(JobChunk)
+        .filter(JobChunk.id == job_chunk_uuid, JobChunk.job_id == tailoring.job_id)
+        .first()
+    )
+    if not job_chunk:
+        raise HTTPException(status_code=404, detail="Job chunk not found")
+
+    experience = _ensure_experience(user, db)
+
+    max_pos = (
+        db.query(func.max(ExperienceChunk.position))
+        .filter(ExperienceChunk.experience_id == experience.id)
+        .scalar()
+    )
+    next_pos = (max_pos if max_pos is not None else -1) + 1
+
+    now = datetime.now(timezone.utc)
+    gap_chunk = ExperienceChunk(
+        experience_id=experience.id,
+        source_type="gap_response",
+        source_ref=None,
+        claim_type="other",
+        content=answer,
+        group_key=None,
+        date_range=None,
+        technologies=None,
+        chunk_metadata={
+            "question": question,
+            "job_chunk_id": body.job_chunk_id,
+            "tailoring_id": body.tailoring_id,
+        },
+        position=next_pos,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(gap_chunk)
+    db.commit()
+
+    # Embed synchronously — must complete before re_enrich so the new vector is retrievable
+    embed_experience_chunks(experience.id, db)
+
+    # Re-score the requirement synchronously — user is waiting for the result
+    preferred = " ".join(
+        filter(None, [user.preferred_first_name, user.preferred_last_name])
+    ).strip()
+    candidate_name = preferred or user.name or user.email
+    re_enrich_single_chunk(
+        str(job_chunk_uuid),
+        experience.extracted_profile or {},
+        user.pronouns,
+        experience.id,
+        candidate_name,
+    )
+
+    # re_enrich_single_chunk committed via its own session — re-query for updated score
+    updated_chunk = db.query(JobChunk).filter(JobChunk.id == job_chunk_uuid).first()
+
+    logger.info(
+        "create_gap_response: chunk=%s user=%s new_score=%s",
+        gap_chunk.id,
+        user.id,
+        updated_chunk.match_score if updated_chunk else None,
+    )
+    return {
+        "chunk_id": str(gap_chunk.id),
+        "updated_score": updated_chunk.match_score if updated_chunk else None,
+        "updated_rationale": updated_chunk.match_rationale if updated_chunk else None,
+    }
