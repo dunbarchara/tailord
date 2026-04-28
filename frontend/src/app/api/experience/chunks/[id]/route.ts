@@ -24,3 +24,14 @@ export async function PATCH(
   const body = await req.text()
   return proxyToBackendWithUser(`experience/chunks/${id}`, user, { method: 'PATCH', body })
 }
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getUserContext()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  return proxyToBackendWithUser(`experience/chunks/${id}`, user, { method: 'DELETE' })
+}

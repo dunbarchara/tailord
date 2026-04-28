@@ -32,32 +32,37 @@ A user should be able to:
 The single-blob user_input model is replaced with a multi-chunk flow.
 
 ### LLM parse endpoint
-- [ ] `POST /experience/user-input/parse` — accepts `{text: str}`, returns `{chunks: [str]}`
+- [x] `POST /experience/user-input/parse` — accepts `{text: str}`, returns `{chunks: [str]}`
   - Short input heuristic (≤ 200 chars or single sentence): return `[text]` immediately, no LLM call
   - Longer input: LLM extracts atomic claims, returns list for client preview
   - Does NOT write to DB — preview only
   - New prompt in `app/prompts/user_input_parse.py`; single-responsibility: "extract atomic claims, do not invent"
+  - Heuristic: `_is_short_input` checks len ≤ 200 or no `[.!?]+\s+[A-Z]` pattern; fallback to `[text]` if LLM returns empty
+  - Frontend API route: `POST /api/experience/user-input/parse/route.ts` (new)
 
 ### Persist endpoint
-- [ ] `POST /experience/user-input/chunks` — accepts `{chunks: [str]}`, creates N `user_input` ExperienceChunks
+- [x] `POST /experience/user-input/chunks` — accepts `{chunks: [str]}`, creates N `user_input` ExperienceChunks
   - Replaces `set_user_input` (which created one blob chunk)
   - Each chunk: `source_type="user_input"`, `claim_type="other"`, `group_key=null`, `metadata=null`
   - Embeds each chunk (background task, same pattern as existing embed-after-chunk)
   - Does NOT replace existing user_input chunks — additive; user manages deletions individually
   - Returns created chunk IDs for the frontend to display
+  - Position: `max(position across all source_types) + 1` — appends correctly
+  - IDs collected before commit (SQLAlchemy `default=uuid.uuid4` generates in Python)
+  - Frontend API route: `POST /api/experience/user-input/chunks/route.ts` (new)
+  - `_ensure_experience` helper creates Experience row if not yet exists
 
 ### Individual chunk deletion
-- [ ] `DELETE /experience/chunks/{chunk_id}` — deletes a single ExperienceChunk by ID
+- [x] `DELETE /experience/chunks/{chunk_id}` — deletes a single ExperienceChunk by ID
   - Validates ownership (chunk must belong to the authenticated user's experience)
   - Works for any `source_type` — the endpoint is general-purpose
-  - Frontend API route: `DELETE /api/experience/chunks/[id]`
+  - Frontend API route: `DELETE /api/experience/chunks/[id]` — added DELETE handler to existing route.ts
   - Note: existing `delete_*_chunks` bulk functions are unchanged (used for source-level cleanup)
 
 ### Remove legacy user_input blob behavior
-- [ ] Remove `set_user_input` or reduce it to a thin wrapper that calls the new endpoint logic
-- [ ] Remove the existing `chunk_user_input` function (replaced by the new persist endpoint)
-- [ ] Remove `DELETE /experience/user-input` (the "clear all at once" endpoint) — or repurpose it
-  to delete all `user_input` chunks for the user's experience rather than clearing a text field
+- [x] Remove `set_user_input` — removed from `experience.py`; old `POST /experience/user-input` route deleted
+- [x] Remove the existing `chunk_user_input` function (replaced by the new persist endpoint) — removed from `experience_chunker.py`; 3 tests removed from `test_experience_chunker.py`
+- [x] Repurposed `DELETE /experience/user-input` to delete all `user_input` chunks (clears `user_input_text` field too for legacy compat); no longer checks `user_input_text` presence before deleting
 
 ---
 
@@ -181,9 +186,7 @@ These are smaller items that would be easy to overlook but matter for correctnes
   gap_response chunk will be in that pool (after embedding). No code change needed — the
   architecture already handles this correctly.
 
-- [ ] **`metadata` column in API responses**: the `/api/experience/chunks` GET response currently
-  serializes ExperienceChunk rows via `_serialize_exp_chunk`. Add `metadata` to the serialized
-  output so the frontend can read `question` and `tailoring_id` for gap_response rendering.
+- [x] **`chunk_metadata` in API responses**: added `chunk_metadata` to `_serialize_exp_chunk` in `experience.py`; `_group_experience_chunks` now also collects `gap_response` chunks into a dedicated `gap_response` list in the response; GET `/experience/chunks` returns `{resume, github, user_input, gap_response}` shape
 
 ---
 

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -7,16 +8,21 @@ import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
+from app.clients.llm_client import get_llm_client
 from app.clients.storage_client import get_storage_client
+from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
+from app.core.llm_utils import llm_parse_with_retry
 from app.models.database import Experience, ExperienceChunk, LlmTriggerLog, User
+from app.prompts import user_input_parse as parse_prompt
+from app.schemas.llm_outputs import ParsedClaims
 from app.services.experience_chunker import (
     chunk_resume,
-    chunk_user_input,
     delete_github_chunks,
     delete_resume_chunks,
     delete_user_input_chunks,
@@ -91,6 +97,10 @@ class GitHubRequest(BaseModel):
 
 class UserInputRequest(BaseModel):
     text: str
+
+
+class UserInputChunksRequest(BaseModel):
+    chunks: list[str]
 
 
 class ProfileUpdate(BaseModel):
@@ -488,57 +498,142 @@ def remove_user_input(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    """Delete all user_input chunks for the experience."""
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience or not experience.user_input_text:
-        raise HTTPException(status_code=404, detail="No additional context found")
+    if not experience:
+        raise HTTPException(status_code=404, detail="No experience found")
 
     experience.user_input_text = None
     if experience.extracted_profile and "user_input" in experience.extracted_profile:
         experience.extracted_profile = {
             k: v for k, v in experience.extracted_profile.items() if k != "user_input"
         } or None
-    delete_user_input_chunks(db, experience.id)
+    deleted = delete_user_input_chunks(db, experience.id)
     db.commit()
-    logger.info("remove_user_input: complete for user=%s", user.id)
+    logger.info("remove_user_input: deleted %d chunks for user=%s", deleted, user.id)
 
 
-@router.post("/experience/user-input")
-def set_user_input(
+# ---------------------------------------------------------------------------
+# Short-input heuristic — no LLM needed for obvious single claims
+# ---------------------------------------------------------------------------
+
+_SENTENCE_SPLIT = re.compile(r"[.!?]+\s+[A-Z]")
+
+
+def _is_short_input(text: str) -> bool:
+    """Return True if the text is short enough to skip LLM parsing."""
+    stripped = text.strip()
+    if len(stripped) <= 200:
+        return True
+    # More than one sentence detected → needs LLM parse
+    if _SENTENCE_SPLIT.search(stripped):
+        return False
+    return True
+
+
+@router.post("/experience/user-input/parse")
+def parse_user_input(
     body: UserInputRequest,
-    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
-    db: Session = Depends(get_db),
 ):
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    """Parse free-form text into a list of atomic claims. Preview only — no DB write."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="text cannot be empty")
 
-    if experience:
-        experience.user_input_text = body.text
-        profile = experience.extracted_profile or {}
-        experience.extracted_profile = {**profile, "user_input": {"text": body.text}}
-        experience.processed_at = datetime.now(timezone.utc)
-        if experience.status not in ("ready", "processing"):
-            experience.status = "ready"
-    else:
+    if _is_short_input(text):
+        return {"chunks": [text]}
+
+    result = llm_parse_with_retry(
+        get_llm_client(),
+        model=settings.llm_model,
+        messages=[
+            {"role": "system", "content": parse_prompt.SYSTEM},
+            {"role": "user", "content": parse_prompt.USER_TEMPLATE.format(text=text)},
+        ],
+        response_model=ParsedClaims,
+        temperature=parse_prompt.TEMPERATURE,
+    )
+    claims = [c.strip() for c in result.claims if c.strip()]
+    if not claims:
+        claims = [text]
+    return {"chunks": claims}
+
+
+def _ensure_experience(user: User, db: Session) -> Experience:
+    """Return the user's Experience row, creating one if it doesn't exist."""
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
         experience = Experience(
             user_id=user.id,
             s3_key=None,
             filename=None,
             status="ready",
-            user_input_text=body.text,
-            extracted_profile={"user_input": {"text": body.text}},
             processed_at=datetime.now(timezone.utc),
         )
         db.add(experience)
+        db.flush()
+    return experience
 
-    db.commit()
-    db.refresh(experience)
 
-    chunk_user_input(db, experience)
+@router.post("/experience/user-input/chunks")
+def persist_user_input_chunks(
+    body: UserInputChunksRequest,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Persist a list of user_input claim strings as individual ExperienceChunks.
+
+    Additive — does not replace existing user_input chunks.
+    Each chunk is embedded in a background task.
+    """
+    chunks_text = [c.strip() for c in body.chunks if c.strip()]
+    if not chunks_text:
+        raise HTTPException(status_code=422, detail="chunks cannot be empty")
+
+    experience = _ensure_experience(user, db)
+
+    # Append after the highest existing position across all source types
+    max_pos = (
+        db.query(func.max(ExperienceChunk.position))
+        .filter(ExperienceChunk.experience_id == experience.id)
+        .scalar()
+    )
+    next_pos = (max_pos if max_pos is not None else -1) + 1
+
+    now = datetime.now(timezone.utc)
+    created_ids: list[str] = []
+    for text in chunks_text:
+        chunk = ExperienceChunk(
+            experience_id=experience.id,
+            source_type="user_input",
+            source_ref=None,
+            claim_type="other",
+            content=text,
+            group_key=None,
+            date_range=None,
+            technologies=None,
+            chunk_metadata=None,
+            position=next_pos,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(chunk)
+        created_ids.append(str(chunk.id))
+        next_pos += 1
+
+    if experience.status not in ("ready", "processing"):
+        experience.status = "ready"
+
     db.commit()
     background_tasks.add_task(embed_experience_chunks_task, experience.id)
-
-    return {"experience_id": str(experience.id), "status": experience.status}
+    logger.info(
+        "persist_user_input_chunks: created %d chunks for user=%s", len(chunks_text), user.id
+    )
+    return {"experience_id": str(experience.id), "chunk_ids": created_ids}
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +651,7 @@ def _serialize_exp_chunk(c: ExperienceChunk) -> dict:
         "group_key": c.group_key,
         "date_range": c.date_range,
         "technologies": c.technologies,
+        "chunk_metadata": c.chunk_metadata,
         "position": c.position,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
     }
@@ -576,7 +672,8 @@ def _group_experience_chunks(chunks: list) -> dict:
     resume_other: list = []
     github_keys: list = []
     github_groups: dict = {}
-    user_input_chunk = None
+    user_input_chunks: list = []
+    gap_response_chunks: list = []
 
     for c in chunks:
         s = _serialize_exp_chunk(c)
@@ -610,7 +707,9 @@ def _group_experience_chunks(chunks: list) -> dict:
                 github_groups[key] = {"group_key": c.source_ref, "chunks": []}
             github_groups[key]["chunks"].append(s)
         elif c.source_type == "user_input":
-            user_input_chunk = s
+            user_input_chunks.append(s)
+        elif c.source_type == "gap_response":
+            gap_response_chunks.append(s)
 
     has_resume = bool(
         work_exp_keys or resume_skills or project_keys or resume_education or resume_other
@@ -628,7 +727,8 @@ def _group_experience_chunks(chunks: list) -> dict:
         if has_resume
         else None,
         "github": {"repos": [github_groups[k] for k in github_keys]} if has_github else None,
-        "user_input": user_input_chunk,
+        "user_input": user_input_chunks if user_input_chunks else None,
+        "gap_response": gap_response_chunks if gap_response_chunks else None,
     }
 
 
@@ -640,7 +740,7 @@ def get_experience_chunks(
 ):
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
     if not experience:
-        return {"resume": None, "github": None, "user_input": None}
+        return {"resume": None, "github": None, "user_input": None, "gap_response": None}
 
     chunks = (
         db.query(ExperienceChunk)
@@ -726,3 +826,36 @@ def update_experience_chunk(
         background_tasks.add_task(re_embed_chunk, chunk.id)
     logger.info("update_experience_chunk: chunk=%s user=%s", chunk.id, user.id)
     return _serialize_exp_chunk(chunk)
+
+
+@router.delete("/experience/chunks/{chunk_id}", status_code=204)
+def delete_experience_chunk(
+    chunk_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a single ExperienceChunk by ID. Works for any source_type."""
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
+        raise HTTPException(status_code=404, detail="No experience found")
+
+    try:
+        chunk_uuid = uuid.UUID(chunk_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chunk ID")
+
+    chunk = (
+        db.query(ExperienceChunk)
+        .filter(
+            ExperienceChunk.id == chunk_uuid,
+            ExperienceChunk.experience_id == experience.id,
+        )
+        .first()
+    )
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    db.delete(chunk)
+    db.commit()
+    logger.info("delete_experience_chunk: chunk=%s user=%s", chunk_uuid, user.id)
