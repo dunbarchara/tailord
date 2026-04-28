@@ -365,6 +365,8 @@ az postgres flexible-server execute \
   --querytext "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
+Can also connect to the databases and run the queries directly via Azure Cloud Shell.
+
 This is a **one-time step** per environment. Once the extension exists it never needs
 creating again — Alembic migrations run as the app user and do not attempt to create it.
 
