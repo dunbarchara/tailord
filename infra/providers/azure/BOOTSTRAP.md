@@ -338,6 +338,38 @@ custom domains. See `custom-domain.tf` for the exact CLI commands. The process f
 
 ## 6. Database bootstrap (first deploy only)
 
+### 6a. Enable pgvector extension
+
+The `pgvector` extension must be created by an admin user before the first deploy.
+Azure PostgreSQL treats it as an "untrusted" extension — the app DB users (`tailord_prod`,
+`tailord_staging`) lack the `azure_pg_admin` privilege required to create it.
+
+The extension is already **allow-listed** via Terraform (`azure.extensions = VECTOR`). You
+just need to create it once in each database while connected as the admin user (`tailord`).
+
+Add a temporary firewall rule for your IP (same pattern as step 4), then run:
+
+```bash
+az postgres flexible-server execute \
+  --name tailord-pg \
+  --admin-user tailord \
+  --admin-password <admin-password> \
+  --database-name tailord_staging \
+  --querytext "CREATE EXTENSION IF NOT EXISTS vector;"
+
+az postgres flexible-server execute \
+  --name tailord-pg \
+  --admin-user tailord \
+  --admin-password <admin-password> \
+  --database-name tailord_prod \
+  --querytext "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+This is a **one-time step** per environment. Once the extension exists it never needs
+creating again — Alembic migrations run as the app user and do not attempt to create it.
+
+### 6b. Run migrations
+
 No manual steps required. The entrypoint runs `alembic upgrade head` on every container
 startup. On a fresh database this creates all tables from the single initial migration.
 On an existing database it is a no-op.
