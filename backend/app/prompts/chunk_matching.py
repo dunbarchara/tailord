@@ -109,3 +109,19 @@ CHUNKS:
 Score each chunk. Return a JSON object with exactly as many results as chunks:
 {{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|null, "should_render": true|false}}]}}
 """
+
+# Used by the vector matching path (MATCHING_MODE=vector).
+# Each call scores exactly one job chunk against a focused, pre-selected context
+# block (top-K experience chunks by cosine similarity) rather than the full profile.
+USER_TEMPLATE_VECTOR = """
+{candidate_header}
+
+JOB REQUIREMENT:
+{job_requirement}
+
+RELEVANT EXPERIENCE (top-{k} results by semantic similarity):
+{grouped_context}
+
+Score this single requirement. Return a JSON object with exactly one result:
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|null, "should_render": true|false}}]}}
+"""

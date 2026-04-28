@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-2"
     s3_uploads_bucket: str = "uploads"
 
+    # ── Matching ──────────────────────────────────────────────────────────────
+    # matching_mode: "vector" = cosine pre-selection → focused grouped context → LLM scores (default)
+    #                "llm"    = full formatted profile passed to LLM scorer (legacy fallback)
+    # vector_top_k: number of ExperienceChunk rows retrieved per JobChunk in vector mode.
+    matching_mode: str = "vector"
+    vector_top_k: int = 8
+
     # ── GitHub App ────────────────────────────────────────────────────────────
     # Authentication uses Installation Access Tokens — not personal PATs.
     # Provide PEM content directly (staging/prod via Key Vault) or a file path (local dev).
