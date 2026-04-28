@@ -5,8 +5,14 @@ Revises: b3c4d5e6f7a8
 Create Date: 2026-04-27 00:00:00.000000
 
 Adds vector embedding columns to experience_chunks and job_chunks.
-Enables the pgvector extension (idempotent — safe if already enabled by the
-postgres-init SQL script that runs on first container start).
+
+The pgvector extension must be created before this migration runs. On Azure
+PostgreSQL Flexible Server, creating untrusted extensions requires azure_pg_admin
+privilege — the app DB user does not have this. Extension creation is handled as a
+pre-deploy step in the CI/CD workflow using admin credentials.
+
+Locally the extension is created automatically via
+postgres-init/01-enable-pgvector.sql on first docker compose up.
 
 Dimensions: 1536 — matches text-embedding-3-small (OpenAI default).
 Changing to a model with different dimensions requires a new migration.
@@ -23,7 +29,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.add_column("experience_chunks", sa.Column("embedding", Vector(1536), nullable=True))
     op.add_column(
         "experience_chunks", sa.Column("embedding_model", sa.String(length=100), nullable=True)
