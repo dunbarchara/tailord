@@ -34,7 +34,8 @@
 #   make install-frontend       npm install
 
 .PHONY: check check-backend check-frontend check-infra check-pre-commit \
-        install install-backend install-frontend
+        install install-backend install-frontend \
+        eval-offline eval-record eval-live
 
 # ─── Install ───────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,23 @@ check-infra:
 		--compact \
 		--quiet \
 		--config-file infra/providers/azure/.checkov.yaml
+
+# ─── Eval ──────────────────────────────────────────────────────────────────────
+
+# Offline gate: compare committed cache against expected labels (no API calls).
+# Mirrors the CI eval-offline job. Run this before pushing matching-pipeline changes.
+eval-offline:
+	cd backend && uv run python tests/eval/eval_runner.py --offline --mode vector --threshold 0.70
+
+# Live run + cache update: call real LLM + embedding APIs, write scores.json + RESULTS.md.
+# Run this after any prompt, retrieval, or fixture change. Commit the updated cache.
+# Requires: EMBEDDING_API_KEY (or EMBEDDING_BASE_URL for Foundry), LLM_BASE_URL, LLM_API_KEY.
+eval-record:
+	cd backend && uv run python tests/eval/eval_runner.py --record
+
+# Live run without cache write: quick quality check against real APIs. No files modified.
+eval-live:
+	cd backend && uv run python tests/eval/eval_runner.py
 
 # ─── Run everything ────────────────────────────────────────────────────────────
 

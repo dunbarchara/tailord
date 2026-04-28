@@ -21,7 +21,15 @@ from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
 from app.core.playwright_helper import get_rendered_content
 from app.core.token_utils import truncate_to_tokens
-from app.models.database import Experience, Job, JobChunk, LlmTriggerLog, Tailoring, User
+from app.models.database import (
+    Experience,
+    Job,
+    JobChunk,
+    LlmTriggerLog,
+    Tailoring,
+    TailoringDebugLog,
+    User,
+)
 from app.models.mvp_schemas import TailoringCreate, _validate_job_url
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
@@ -238,6 +246,22 @@ def _finalize_tailoring(
             tailoring.generation_duration_ms = int(delta_ms)
         db.commit()
         logger.info("_finalize_tailoring: tailoring %s ready", tailoring_id)
+
+        try:
+            debug_log = TailoringDebugLog(
+                tailoring_id=tailoring.id,
+                event_type="generation_complete",
+                payload={
+                    "matching_mode": settings.matching_mode,
+                    "embedding_model": settings.embedding_model,
+                    "llm_model": settings.llm_model,
+                    "generation_duration_ms": tailoring.generation_duration_ms,
+                },
+            )
+            db.add(debug_log)
+            db.commit()
+        except Exception:
+            logger.warning("Failed to write TailoringDebugLog for tailoring %s", tailoring_id)
 
     except Exception:
         logger.exception("Unexpected error in _finalize_tailoring for tailoring %s", tailoring_id)

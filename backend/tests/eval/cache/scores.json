@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "recorded_at": "2026-04-28",
+  "llm_model": "gpt-5.4-mini",
+  "embedding_model": "text-embedding-3-small",
+  "k": 8,
+  "pipeline_hash": "fdb8ef6d2a9a156f",
+  "scores": {
+    "01-strong-yoe-match": {
+      "llm": [
+        2,
+        2,
+        2
+      ],
+      "vector": [
+        2,
+        2,
+        2
+      ]
+    },
+    "02-partial-skill-match": {
+      "llm": [
+        0,
+        0
+      ],
+      "vector": [
+        0,
+        0
+      ]
+    },
+    "03-clear-gap": {
+      "llm": [
+        0,
+        0
+      ],
+      "vector": [
+        0,
+        0
+      ]
+    },
+    "04-non-evaluable": {
+      "llm": [
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "vector": [
+        0,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    "05-multi-source": {
+      "llm": [
+        2,
+        2
+      ],
+      "vector": [
+        2,
+        2
+      ]
+    }
+  }
+}
