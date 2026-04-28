@@ -19,6 +19,7 @@ Exit codes:
     1 — runner could not start (bad config, no fixtures, import error)
 """
 
+import hashlib
 import json
 import math
 import sys
@@ -44,6 +45,8 @@ _EVAL_DIR = Path(__file__).parent
 _PROFILES_DIR = _EVAL_DIR / "profiles"
 _FIXTURES_DIR = _EVAL_DIR / "fixtures"
 _RESULTS_FILE = _EVAL_DIR / "RESULTS.md"
+_CACHE_DIR = _EVAL_DIR / "cache"
+_CACHE_FILE = _CACHE_DIR / "scores.json"
 
 _SCORE_LABELS = {2: "STRONG", 1: "PARTIAL", 0: "GAP", -1: "N/A"}
 
@@ -68,6 +71,187 @@ def _load_fixtures() -> list[dict]:
         with open(path) as f:
             fixtures.append(json.load(f))
     return fixtures
+
+
+# ---------------------------------------------------------------------------
+# Cache (offline / record modes)
+# ---------------------------------------------------------------------------
+
+
+def _compute_pipeline_hash() -> str:
+    """
+    Fingerprint of everything that affects what the LLM sees during eval:
+    prompt templates, retrieval config, fixture inputs, and candidate profiles.
+
+    Excludes expected_scores (calibration labels) and description fields —
+    those can change without invalidating the cached LLM outputs.
+
+    A hash mismatch in --offline mode means the cache is stale and --record
+    must be run before the gate result is meaningful.
+    """
+    h = hashlib.sha256()
+
+    # Prompt file — the most common source of pipeline changes
+    prompt_path = _BACKEND_DIR / "app" / "prompts" / "chunk_matching.py"
+    h.update(prompt_path.read_bytes())
+
+    # Retrieval config
+    h.update(f"k={settings.vector_top_k}".encode())
+
+    # Fixture inputs: id, section, profile reference, and chunk content/type.
+    # expected_scores and description are intentionally excluded.
+    for fixture_path in sorted(_FIXTURES_DIR.glob("*.json")):
+        fixture = json.loads(fixture_path.read_text())
+        h.update(fixture["id"].encode())
+        h.update(fixture.get("section", "").encode())
+        h.update(fixture.get("profile", "").encode())
+        for chunk in fixture.get("chunks", []):
+            h.update(chunk.get("chunk_type", "").encode())
+            h.update(chunk.get("content", "").encode())
+
+    # Candidate profiles
+    for profile_path in sorted(_PROFILES_DIR.glob("*.json")):
+        h.update(profile_path.read_bytes())
+
+    return h.hexdigest()[:16]
+
+
+def _load_score_cache() -> dict | None:
+    if not _CACHE_FILE.exists():
+        return None
+    with open(_CACHE_FILE) as f:
+        return json.load(f)
+
+
+def _save_score_cache(
+    run_date: date,
+    llm_model: str,
+    embedding_model: str,
+    k: int,
+    llm_results: "dict[str, list[int] | Exception]",
+    vec_results: "dict[str, list[int] | Exception]",
+) -> None:
+    _CACHE_DIR.mkdir(exist_ok=True)
+    existing = _load_score_cache()
+
+    scores: dict[str, dict] = {}
+    for fid, lr in llm_results.items():
+        if isinstance(lr, list):
+            scores.setdefault(fid, {})["llm"] = lr
+    for fid, vr in vec_results.items():
+        if isinstance(vr, list):
+            scores.setdefault(fid, {})["vector"] = vr
+
+    # Warn about any fixture whose scores changed relative to the previous cache.
+    # Oscillating scores on a fixture signal it's on the model's decision boundary —
+    # worth re-running before committing.
+    if existing:
+        changed: list[str] = []
+        for fid, new_modes in scores.items():
+            old_modes = existing.get("scores", {}).get(fid, {})
+            for m, new_vals in new_modes.items():
+                old_vals = old_modes.get(m)
+                if old_vals is not None and old_vals != new_vals:
+                    changed.append(
+                        f"  ! {fid} [{m}]  was {_fmt_scores(old_vals)}  →  now {_fmt_scores(new_vals)}"
+                    )
+        if changed:
+            print(
+                "\nWarning: the following fixture scores changed from the previous cache.\n"
+                "This may be LLM variability on a borderline case — consider re-running\n"
+                "before committing to confirm the new result is stable:\n" + "\n".join(changed)
+            )
+
+    data = {
+        "version": 1,
+        "recorded_at": str(run_date),
+        "llm_model": llm_model,
+        "embedding_model": embedding_model,
+        "k": k,
+        "pipeline_hash": _compute_pipeline_hash(),
+        "scores": scores,
+    }
+    with open(_CACHE_FILE, "w") as f:
+        f.write(json.dumps(data, indent=2) + "\n")
+    print(f"\nCache written to {_CACHE_FILE.relative_to(_BACKEND_DIR)}")
+
+
+def _run_offline(fixtures: list[dict], cache: dict, mode: str, threshold: float) -> None:
+    """
+    Offline gate: compare cached scores against fixture expected_scores.
+    mode: "vector" | "llm" | "both"
+    Exits 0 if all checked modes meet threshold, 1 otherwise.
+    """
+    cached_scores = cache.get("scores", {})
+    modes_to_check = ["llm", "vector"] if mode == "both" else [mode]
+    k = cache.get("k", "?")
+
+    print(
+        f"\nOffline eval gate — recorded {cache.get('recorded_at', '?')}"
+        f"  |  model: {cache.get('llm_model', '?')}"
+        f"  |  embedding: {cache.get('embedding_model', '?')}"
+        f"  |  K={k}"
+    )
+
+    # Pipeline hash check — detects stale cache without requiring developer memory.
+    # If prompts, fixture inputs, retrieval config, or profiles have changed since
+    # --record was last run, the cached scores no longer reflect current behaviour.
+    current_hash = _compute_pipeline_hash()
+    cached_hash = cache.get("pipeline_hash")
+    if cached_hash is None:
+        print(
+            "\n  Warning: cache has no pipeline_hash (recorded before this feature).\n"
+            "  Run: make eval-record  to add staleness detection to this cache."
+        )
+    elif current_hash != cached_hash:
+        print(
+            f"\n✗ Pipeline inputs have changed since cache was recorded.\n"
+            f"  Cached hash : {cached_hash}\n"
+            f"  Current hash: {current_hash}\n"
+            f"\n  The cached scores may no longer reflect current pipeline behaviour.\n"
+            f"  Run: make eval-record  to update the cache, then re-run this gate.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    any_failed = False
+
+    for m in modes_to_check:
+        print(f"\n[{m} mode]")
+        total = 0
+        matched = 0
+        cache_miss = False
+
+        for fx in fixtures:
+            fid = fx["id"]
+            expected = fx["expected_scores"]
+            cached = cached_scores.get(fid, {}).get(m)
+
+            if cached is None:
+                print(f"  ✗ {fid:<34}  CACHE MISS — run: make eval-record")
+                cache_miss = True
+                continue
+
+            n = len(expected)
+            hits = sum(1 for e, c in zip(expected, cached) if e == c)
+            total += n
+            matched += hits
+            mark = "✓" if hits == n else "✗"
+            print(
+                f"  {mark} {fid:<34}  got {_fmt_scores(cached):<28}  "
+                f"expected {_fmt_scores(expected)}"
+            )
+
+        if cache_miss:
+            any_failed = True
+        elif total:
+            rate = matched / total
+            status = "PASS" if rate >= threshold else "FAIL"
+            print(f"\n  [{m}] {status}: {matched}/{total} ({rate:.0%}) — threshold {threshold:.0%}")
+            if rate < threshold:
+                any_failed = True
+
+    sys.exit(1 if any_failed else 0)
 
 
 # ---------------------------------------------------------------------------
@@ -370,15 +554,57 @@ def _write_results_md(
 
 
 def main() -> None:
-    profiles = _load_profiles()
-    fixtures = _load_fixtures()
+    import argparse
 
+    parser = argparse.ArgumentParser(description="Eval runner for chunk-matching quality")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--offline",
+        action="store_true",
+        help="Check cached scores against expected_scores (no API calls). Exit 1 if below threshold.",
+    )
+    group.add_argument(
+        "--record",
+        action="store_true",
+        help="Run live eval and write scores to cache (seeds/updates the offline gate).",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["both", "vector", "llm"],
+        default="both",
+        help="Modes to run or check. Default: both.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.70,
+        help="Minimum agreement rate for offline gate. Default: 0.70.",
+    )
+    args = parser.parse_args()
+
+    fixtures = _load_fixtures()
     if not fixtures:
         print(f"No fixtures found in {_FIXTURES_DIR}", file=sys.stderr)
         sys.exit(1)
 
+    # ── Offline gate — no API calls ──────────────────────────────────────────
+    if args.offline:
+        cache = _load_score_cache()
+        if not cache:
+            print(
+                f"No cache at {_CACHE_FILE} — run: make eval-record",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        _run_offline(fixtures, cache, args.mode, args.threshold)
+        return  # _run_offline calls sys.exit
+
+    # ── Live run ─────────────────────────────────────────────────────────────
+    profiles = _load_profiles()
     k = settings.vector_top_k
     run_date = date.today()
+    run_llm = args.mode in ("both", "llm")
+    run_vec = args.mode in ("both", "vector")
 
     col_id = 28
     col_exp = 26
@@ -411,34 +637,48 @@ def main() -> None:
         expected = fixture["expected_scores"]
         n = len(expected)
 
-        # LLM mode
-        try:
-            llm_scores = _run_fixture_llm(fixture, profiles)
-            llm_results[fid] = llm_scores
-        except Exception as exc:
-            llm_results[fid] = exc
+        if run_llm:
+            try:
+                llm_scores = _run_fixture_llm(fixture, profiles)
+                llm_results[fid] = llm_scores
+            except Exception as exc:
+                llm_results[fid] = exc
+                llm_scores = []
+        else:
             llm_scores = []
 
-        # Vector mode
-        try:
-            vec_scores = _run_fixture_vector(fixture, profiles, k)
-            vec_results[fid] = vec_scores
-        except Exception as exc:
-            vec_results[fid] = exc
+        if run_vec:
+            try:
+                vec_scores = _run_fixture_vector(fixture, profiles, k)
+                vec_results[fid] = vec_scores
+            except Exception as exc:
+                vec_results[fid] = exc
+                vec_scores = []
+        else:
             vec_scores = []
 
         total_chunks += n
-        llm_matched += sum(
-            1 for i in range(n) if i < len(llm_scores) and expected[i] == llm_scores[i]
-        )
-        vec_matched += sum(
-            1 for i in range(n) if i < len(vec_scores) and expected[i] == vec_scores[i]
-        )
+        if run_llm:
+            llm_matched += sum(
+                1 for i in range(n) if i < len(llm_scores) and expected[i] == llm_scores[i]
+            )
+        if run_vec:
+            vec_matched += sum(
+                1 for i in range(n) if i < len(vec_scores) and expected[i] == vec_scores[i]
+            )
 
-        llm_str = _fmt_scores(llm_scores) if isinstance(llm_results[fid], list) else "ERROR"
-        vec_str = _fmt_scores(vec_scores) if isinstance(vec_results[fid], list) else "ERROR"
-        llm_mark = _match_mark(expected, llm_scores) if llm_scores else "✗"
-        vec_mark = _match_mark(expected, vec_scores) if vec_scores else "✗"
+        llm_str = (
+            _fmt_scores(llm_scores)
+            if isinstance(llm_results.get(fid), list)
+            else ("—" if not run_llm else "ERROR")
+        )
+        vec_str = (
+            _fmt_scores(vec_scores)
+            if isinstance(vec_results.get(fid), list)
+            else ("—" if not run_vec else "ERROR")
+        )
+        llm_mark = _match_mark(expected, llm_scores) if run_llm and llm_scores else "—"
+        vec_mark = _match_mark(expected, vec_scores) if run_vec and vec_scores else "—"
 
         print(
             f"{fid:<{col_id}}  {_fmt_scores(expected):<{col_exp}}  "
@@ -448,20 +688,33 @@ def main() -> None:
     print("-" * width)
 
     if total_chunks:
-        llm_rate = llm_matched / total_chunks
-        vec_rate = vec_matched / total_chunks
-        print(f"\nAgreement — LLM: {llm_matched}/{total_chunks} ({llm_rate:.0%})", end="")
-        print(f"  |  Vector: {vec_matched}/{total_chunks} ({vec_rate:.0%})")
+        parts = []
+        if run_llm:
+            parts.append(f"LLM: {llm_matched}/{total_chunks} ({llm_matched / total_chunks:.0%})")
+        if run_vec:
+            parts.append(f"Vector: {vec_matched}/{total_chunks} ({vec_matched / total_chunks:.0%})")
+        print(f"\nAgreement — {'  |  '.join(parts)}")
 
-    _write_results_md(
-        run_date,
-        settings.llm_model,
-        settings.embedding_model,
-        fixtures,
-        llm_results,
-        vec_results,
-        k,
-    )
+    if run_llm and run_vec:
+        _write_results_md(
+            run_date,
+            settings.llm_model,
+            settings.embedding_model,
+            fixtures,
+            llm_results,
+            vec_results,
+            k,
+        )
+
+    if args.record:
+        _save_score_cache(
+            run_date,
+            settings.llm_model,
+            settings.embedding_model,
+            k,
+            llm_results,
+            vec_results,
+        )
 
 
 if __name__ == "__main__":

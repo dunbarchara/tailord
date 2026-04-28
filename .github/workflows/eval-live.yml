@@ -1,0 +1,52 @@
+name: Eval (live shadow)
+
+# Runs weekly against real APIs to track model drift over time.
+# Results are uploaded as an artifact — this job does NOT block deploys.
+#
+# Required repository secrets:
+#   EVAL_LLM_BASE_URL       — Azure AI Foundry endpoint (e.g. https://...openai.azure.com/v1)
+#   EVAL_LLM_API_KEY        — Foundry API key
+#   EVAL_LLM_MODEL          — model name (e.g. gpt-5.4-mini)
+#   EVAL_EMBEDDING_BASE_URL — embedding endpoint (omit to use OpenAI default)
+#   EVAL_EMBEDDING_API_KEY  — embedding API key
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"  # Mondays at 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval-live:
+    name: eval (live shadow)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: uv sync --dev
+
+      - name: Run live eval (both modes)
+        working-directory: ./backend
+        env:
+          LLM_BASE_URL: ${{ secrets.EVAL_LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.EVAL_LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.EVAL_LLM_MODEL }}
+          EMBEDDING_BASE_URL: ${{ secrets.EVAL_EMBEDDING_BASE_URL }}
+          EMBEDDING_API_KEY: ${{ secrets.EVAL_EMBEDDING_API_KEY }}
+        run: uv run python tests/eval/eval_runner.py --mode both
+
+      - name: Upload RESULTS.md
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results-${{ github.run_id }}
+          path: backend/tests/eval/RESULTS.md
+          retention-days: 90

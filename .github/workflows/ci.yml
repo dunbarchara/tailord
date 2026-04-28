@@ -132,6 +132,29 @@ jobs:
         working-directory: ./frontend
         run: npm audit --audit-level=high --omit=dev
 
+  # ─── eval (offline gate) ───────────────────────────────────────────────────
+  # Compares committed cache/scores.json against fixture expected_scores.
+  # No DB, no API keys — tests code logic (retrieval, prompt construction, parsing),
+  # not model behaviour. Update the cache by running: make eval-record
+  eval-offline:
+    name: eval (offline gate)
+    needs: [backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: uv sync --dev
+
+      - name: Offline eval gate (vector mode, ≥70% agreement)
+        working-directory: ./backend
+        run: uv run python tests/eval/eval_runner.py --offline --mode vector --threshold 0.70
+
   # ─── infra ─────────────────────────────────────────────────────────────────
   # Only runs when infra/** files change. Scans Terraform for misconfigurations.
   # GitHub Actions doesn't support job-level path filtering — we use a separate
