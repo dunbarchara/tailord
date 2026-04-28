@@ -23,10 +23,7 @@ A user should be able to:
 ## Part 1 — Schema Foundation
 
 ### Alembic migration: `metadata` column
-- [ ] Add `metadata JSON NULL` to `experience_chunks` — one column, one migration, no FK
-  - This is the prerequisite for gap_response provenance and future annotation support
-  - No impact on existing chunks (null by default)
-  - Migration ID chains from current head
+- [x] Add `chunk_metadata JSON NULL` to `experience_chunks` — migration `d5e6f7a8b9c0`; column and Python attribute both named `chunk_metadata` (avoids SQLAlchemy reserved `metadata`); chains from `c4d5e6f7a8b9`; applied and verified
 
 ---
 
