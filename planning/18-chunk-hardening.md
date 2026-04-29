@@ -89,36 +89,59 @@ The single-blob user_input model is replaced with a multi-chunk flow.
 
 ## Part 4 — Frontend: My Experience UI Overhaul
 
-The My Experience view needs to reflect the new chunk model: individual claims, clear
-source grouping, and gap responses as a first-class section.
+Design reference: `planning/19-experience-ui-design.md` — read before implementing.
 
-### user_input section — replaced
-- [ ] Remove the single text area + Save button flow
-- [ ] New "Add Experience" section:
-  - Text area (placeholder: "Describe experience, projects, or skills not captured above")
-  - "Parse & Add" button → calls `/api/experience/user-input/parse`
-  - Short input: add one chunk immediately (skip preview)
-  - Longer input: show parsed chunk list with checkboxes — user can deselect unwanted claims
-  - "Confirm" → calls `/api/experience/user-input/chunks` to persist selected chunks
-  - Each persisted chunk renders inline with edit (pencil, existing `EditableChunk`) and delete (×) controls
+**Core direction:** single scrollable page (no tabs), all chunks editable + deletable
+regardless of source, user is the author and owner of everything.
 
-### gap_response section — new
-- [ ] Add "Your Gap Responses" section below the existing experience sections
-  - Only shown if ≥ 1 gap_response chunk exists
-  - Each response rendered with:
-    - The question as muted context: *"Asked when applying to [Company] — [question text]"*
-    - The answer as the main content (editable via existing `EditableChunk` PATCH)
-    - Delete (×) — calls `DELETE /api/experience/chunks/[id]`
-  - Empty state: section hidden (not "no responses yet")
+### Step 1 — TypeScript types (`frontend/src/types/index.ts`)
+- [x] Add `'gap_response'` to `ExperienceChunk.source_type` union
+- [x] Add `chunk_metadata: Record<string, string> | null` to `ExperienceChunk`
+- [x] Change `ExperienceChunksResponse.user_input` from `ExperienceChunk | null`
+  to `ExperienceChunk[] | null`
+- [x] Add `gap_response: ExperienceChunk[] | null` to `ExperienceChunksResponse`
 
-### Chunk deletion (cross-section)
-- [ ] Wire delete (×) button to `DELETE /api/experience/chunks/[id]` for user_input and gap_response chunks
-  - Optimistic removal from local state on success
-  - Resume and GitHub chunks are managed at source level (remove resume / disconnect repo) — do not add per-bullet delete for those
+### Step 2 — Extend `EditableChunk` with delete support
+- [x] Add `onDelete?: (id: string) => Promise<void>` prop to `EditableChunk`
+- [x] In view state: render × button alongside pencil, both in `opacity-0 group-hover:opacity-100`
+- [x] × calls `onDelete(chunk.id)` — no confirmation (individual chunks are small, re-addable)
+- [x] For skill pills: × appears inside the pill on hover (not a separate trailing icon) — implemented as `SkillPill` component with inline × in `ChunkedProfile`
 
-### Empty state handling
-- [ ] `hasExperience` check should include `user_input` and `gap_response` chunks
-  — a user with only gap_response chunks should see their experience view, not the empty upload prompt
+### Step 3 — Rewrite `ChunkedProfile` → sectioned single-scroll view
+- [x] Remove tabs entirely (`SourceTab`, tab bar, tab content switch) — full rewrite of `ChunkedProfile.tsx`
+- [x] Render all sections in one scroll: Resume → GitHub → Additional Experience → Gap Responses
+- [x] Each section only rendered if it has data (same as before, just no tabs)
+- [x] Add `onDelete` handler: calls `DELETE /api/experience/chunks/[id]`, then
+  removes chunk from local state optimistically via `removeChunkFromResponse`
+- [x] Update `patchChunkInResponse` helper to handle array `user_input` and `gap_response`; added `removeChunkFromResponse` for delete
+- [x] Wire delete to all chunk types: resume bullets, resume skills, resume education/certs,
+  GitHub project summaries, GitHub skill tags, user_input claims, gap_response answers
+- [x] `hasData` check: include `user_input?.length > 0` and `gap_response?.length > 0`
+
+### Step 4 — `GapResponseSection` component (new, inside `ChunkedProfile`)
+- [x] Only rendered if `data.gap_response?.length > 0`
+- [x] Each chunk shows question context line above answer:
+  format `"Asked when applying to [Company] — [question]"` (or just question if no company)
+  — read from `chunk.chunk_metadata.question`; company resolution deferred (use question only for now)
+- [x] Answer rendered via `EditableChunk` with delete
+
+### Step 5 — `AddExperienceForm` component (new, inside `ChunkedProfile` or `ExperienceManager`)
+- [x] Textarea (placeholder: "Describe experience, projects, or skills not captured above")
+- [x] "Parse & Add" button
+- [x] On submit:
+  - Call `POST /api/experience/user-input/parse` with `{text}`
+  - If response has 1 chunk OR input is short: skip preview, persist immediately
+  - If response has 2+ chunks: show preview list with checkboxes (all checked by default)
+  - "Confirm" → `POST /api/experience/user-input/chunks` with selected chunks
+  - On success: prepend/append new chunks to `data.user_input` in local state; clear textarea
+- [x] Loading and error states on both parse and persist calls
+
+### Step 6 — `ExperienceManager` cleanup
+- [x] Remove the "Additional Context" `SettingRow` (textarea + Save button + Remove button)
+- [x] Remove `directText` / `directState` state and `handleDirectSave` / `handleUserInputRemove`
+- [x] Remove `'user-input-clear'` from `CONFIRM_CONFIGS` and `handleConfirmAction`
+- [x] Update `hasExperience` — kept as `uploadState.phase === 'ready'`; `ChunkedProfile` handles its own empty state; `textareaCls` also removed (no longer used)
+- [x] Keep `chunksRefreshKey` pattern — still needed after resume/GitHub changes
 
 ---
 

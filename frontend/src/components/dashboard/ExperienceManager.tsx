@@ -24,7 +24,6 @@ type UploadPhase =
   | { phase: 'error'; message: string };
 
 type GithubState = 'idle' | 'fetching' | 'saving' | 'saved' | 'removing' | 'error';
-type SaveState = 'idle' | 'saving' | 'saved';
 
 const CONFIRM_CONFIGS = {
   'resume-remove': {
@@ -47,11 +46,6 @@ const CONFIRM_CONFIGS = {
     description: 'Your existing GitHub profile and imported repository data will be replaced with the new username. The previous data will be permanently deleted. This cannot be undone.',
     confirm: 'Change',
   },
-  'user-input-clear': {
-    title: 'Remove additional context',
-    description: 'Your additional context and any extracted data will be permanently deleted. This cannot be undone.',
-    confirm: 'Remove',
-  },
 } as const;
 
 type ConfirmAction = keyof typeof CONFIRM_CONFIGS;
@@ -70,13 +64,6 @@ const inputCls =
   'hover:border-border-strong hover:bg-surface-base ' +
   'focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] ' +
   'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] disabled:opacity-50 disabled:cursor-not-allowed';
-
-const textareaCls =
-  'w-full rounded-xl border border-border-default bg-surface-elevated px-3 py-2.5 text-sm text-text-primary ' +
-  'placeholder:text-text-disabled outline-none transition-colors duration-100 resize-none ' +
-  'hover:border-border-strong hover:bg-surface-base ' +
-  'focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] ' +
-  'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)]';
 
 const saveBtnCls =
   'inline-flex items-center gap-1.5 justify-center h-9 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] ' +
@@ -197,8 +184,6 @@ export function ExperienceManager() {
   const [previewRepos, setPreviewRepos] = useState<GitHubRepo[] | null>(null);
   const [selectedRepoNames, setSelectedRepoNames] = useState<Set<string>>(new Set());
   const [acknowledged, setAcknowledged] = useState(false);
-  const [directText, setDirectText] = useState('');
-  const [directState, setDirectState] = useState<SaveState>('idle');
 
   const [processingStage, setProcessingStage] = useState<string | null>(null);
   const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
@@ -209,6 +194,7 @@ export function ExperienceManager() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
 
   useEffect(() => {
     if (uploadState.phase !== 'processing') return;
@@ -253,7 +239,6 @@ export function ExperienceManager() {
         if (record.status === 'ready') {
           setUploadState({ phase: 'ready', record });
           if (record.github_username) setGithubUrl(record.github_username);
-          if (record.user_input_text) setDirectText(record.user_input_text);
         } else if (record.status === 'processing' || record.status === 'pending') {
           setUploadState({ phase: 'processing', filename: record.filename ?? '', experienceId: record.id });
           startPolling();
@@ -333,7 +318,6 @@ export function ExperienceManager() {
               setProcessingStage(null);
               setChunksRefreshKey((k) => k + 1);
               if (record.github_username) setGithubUrl(record.github_username);
-              if (record.user_input_text) setDirectText(record.user_input_text);
             } else if (currentEvent === 'error') {
               const { message } = JSON.parse(data);
               setUploadState({ phase: 'error', message });
@@ -365,23 +349,6 @@ export function ExperienceManager() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleUserInputRemove = async () => {
-    const res = await fetch('/api/experience/user-input', { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? `Failed to remove (${res.status})`);
-      return;
-    }
-    setDirectText('');
-    setDirectState('idle');
-    toast.success('Additional context removed');
-    const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) {
-      setUploadState({ phase: 'ready', record: updated });
-      setChunksRefreshKey((k) => k + 1);
-    }
-  };
-
   const handleConfirmAction = async () => {
     const action = confirmDialog;
     setConfirmDialog(null);
@@ -389,7 +356,6 @@ export function ExperienceManager() {
     else if (action === 'resume-replace') fileInputRef.current?.click();
     else if (action === 'github-remove') await handleGithubRemove();
     else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
-    else if (action === 'user-input-clear') await handleUserInputRemove();
   };
 
   function parseGithubUsername(input: string): string {
@@ -488,30 +454,6 @@ export function ExperienceManager() {
     setGithubEditing(false);
     resetGithubPreview();
     toast.success('GitHub profile removed');
-    const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) {
-      setUploadState({ phase: 'ready', record: updated });
-      setChunksRefreshKey((k) => k + 1);
-    }
-  };
-
-  const handleDirectSave = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!directText.trim()) return;
-    setDirectState('saving');
-    const res = await fetch('/api/experience/user-input', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: directText }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? `Failed to save (${res.status})`);
-      setDirectState('idle');
-      return;
-    }
-    setDirectState('saved');
-    toast.success('Additional context saved');
     const updated = await fetch('/api/experience').then((r) => r.json());
     if (updated) {
       setUploadState({ phase: 'ready', record: updated });
@@ -928,47 +870,6 @@ export function ExperienceManager() {
               description="Import your public repos to enrich your profile with real project context."
             >
               {renderGithubContent()}
-            </SettingRow>
-
-            {/* Additional Context */}
-            <SettingRow
-              title="Additional Context"
-              description="Skills, projects, or achievements not captured in your resume."
-            >
-              <form onSubmit={handleDirectSave} className="space-y-3">
-                <textarea
-                  value={directText}
-                  onChange={(e) => { setDirectText(e.target.value); setDirectState('idle'); }}
-                  placeholder="Describe your skills, projects, or achievements not captured in your resume…"
-                  rows={6}
-                  className={textareaCls}
-                />
-                <div className="flex items-center gap-2">
-                  {directState === 'saved' && (
-                    <span className="text-sm text-success">Saved</span>
-                  )}
-                  <div className="flex items-center gap-2 ml-auto">
-                    {uploadState.phase === 'ready' && !!uploadState.record.user_input_text && (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDialog('user-input-clear')}
-                        className={outlineBtnCls}
-                      >
-                        Remove
-                      </button>
-                    )}
-                    <button
-                      type="submit"
-                      disabled={!directText.trim() || directState === 'saving'}
-                      className={saveBtnCls}
-                    >
-                      {directState === 'saving' ? (
-                        <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
-                      ) : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              </form>
             </SettingRow>
 
           </div>

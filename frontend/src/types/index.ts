@@ -175,13 +175,14 @@ export interface ChunksResponse {
 
 export interface ExperienceChunk {
   id: string
-  source_type: 'resume' | 'github' | 'user_input'
+  source_type: 'resume' | 'github' | 'user_input' | 'gap_response'
   source_ref: string | null
   claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
   content: string
   group_key: string | null
   date_range: string | null
   technologies: string[] | null
+  chunk_metadata: Record<string, string> | null
   position: number
   updated_at: string | null
 }
@@ -217,7 +218,8 @@ export interface GitHubChunksSection {
 export interface ExperienceChunksResponse {
   resume: ResumeChunksSection | null
   github: GitHubChunksSection | null
-  user_input: ExperienceChunk | null
+  user_input: ExperienceChunk[] | null
+  gap_response: ExperienceChunk[] | null
 }
 
 export interface ExperienceRecord {
