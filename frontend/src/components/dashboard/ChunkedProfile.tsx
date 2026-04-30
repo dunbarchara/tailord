@@ -31,201 +31,341 @@ const deleteBtnCls =
   'text-text-tertiary hover:text-error hover:bg-red-50 dark:hover:bg-red-950/20 ' +
   'transition-colors disabled:opacity-40';
 
-/* ─── Table group type ───────────────────────────────────────────────────── */
+/* ─── TableRow ───────────────────────────────────────────────────────────── */
+/*                                                                            */
+/* The shared primitive for every interactive row inside a table.            */
+/* - isExpanded is lifted to the parent (one-open-at-a-time per table).      */
+/* - editing is local state; entering edit mode switches the header from a   */
+/*   <button> to a <div> so the in-place <textarea> is valid HTML.           */
+/* - Collapsing externally (isExpanded → false) resets editing + value.      */
 
-interface TableGroup {
-  key: string | null;
-  chunks: ExperienceChunk[];
+interface TableRowProps {
+  content: string;
+  isGroupHeader?: boolean; // smaller label styling for group-key rows
   bullet?: boolean;
-  context?: (chunk: ExperienceChunk) => string | undefined;
+  context?: string;        // optional label above content (e.g. gap question)
+  isExpanded: boolean;
+  onExpand: () => void;
+  onSave: (newContent: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+  isLast?: boolean;
 }
 
-/* ─── Chunk row ─────────────────────────────────────────────────────────── */
-
-function ChunkRow({
-  chunk,
-  bullet,
+function TableRow({
+  content,
+  isGroupHeader = false,
+  bullet = false,
   context,
+  isExpanded,
+  onExpand,
   onSave,
   onDelete,
-  isLast,
-}: {
-  chunk: ExperienceChunk;
-  bullet?: boolean;
-  context?: string;
-  onSave: (id: string, content: string) => Promise<void>;
-  onDelete?: (id: string) => Promise<void>;
-  isLast?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
+  isLast = false,
+}: TableRowProps) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(chunk.content);
+  const [value, setValue] = useState(content);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => { if (!editing) setValue(chunk.content); }, [chunk.content, editing]);
+  // Keep value in sync when content prop changes (e.g. after a save)
+  useEffect(() => {
+    if (!editing) setValue(content);
+  }, [content, editing]);
 
+  // Auto-size textarea and focus when entering edit mode
   useEffect(() => {
     if (editing && textareaRef.current) {
       const el = textareaRef.current;
       el.style.height = '0px';
       el.style.height = `${el.scrollHeight}px`;
+      el.focus();
     }
   }, [editing]);
 
+  // When collapsed externally, exit editing and reset
+  useEffect(() => {
+    if (!isExpanded) {
+      setEditing(false);
+      setValue(content);
+    }
+    // intentionally omit `content` — we only want to react to expansion changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExpanded]);
+
   const handleSave = async () => {
     const trimmed = value.trim();
-    if (!trimmed || trimmed === chunk.content) { setEditing(false); return; }
+    if (!trimmed || trimmed === content) { setEditing(false); return; }
     setSaving(true);
-    try { await onSave(chunk.id, trimmed); setEditing(false); } finally { setSaving(false); }
+    try { await onSave(trimmed); setEditing(false); } finally { setSaving(false); }
   };
 
   const handleDelete = async () => {
-    if (!onDelete) return;
     setDeleting(true);
-    try { await onDelete(chunk.id); } finally { setDeleting(false); }
+    try { await onDelete(); } finally { setDeleting(false); }
   };
 
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setValue(e.target.value);
+    e.target.style.height = '0px';
+    e.target.style.height = `${e.target.scrollHeight}px`;
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { setValue(content); setEditing(false); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
+  };
+
+  const headerBase = 'w-full flex items-start gap-3 px-4 py-3 text-left transition-colors duration-100';
+  const headerExpanded = isExpanded ? 'bg-surface-base border-b border-border-subtle' : '';
+
   return (
-    <div className={cn('px-4 py-3', !isLast && 'border-b border-border-subtle')}>
-      {context && (
-        <p className="text-xs text-text-disabled italic mb-1.5 leading-relaxed">{context}</p>
+    <div className={cn(!isLast && 'border-b border-border-subtle')}>
+
+      {/* ── Header: button when idle, div when editing (textarea inside) ── */}
+      {editing ? (
+        <div className={cn(headerBase, 'bg-surface-base border-b border-border-subtle')}>
+          <div className="flex-1 min-w-0 flex gap-2">
+            {bullet && (
+              <span className="text-text-tertiary flex-shrink-0 mt-0.5 text-sm select-none">·</span>
+            )}
+            <textarea
+              ref={textareaRef}
+              value={value}
+              rows={1}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              className={cn(
+                'flex-1 bg-transparent resize-none overflow-hidden outline-none p-0 leading-relaxed',
+                isGroupHeader
+                  ? 'text-xs font-medium text-text-primary tracking-wide'
+                  : 'text-sm text-text-primary',
+              )}
+            />
+          </div>
+          {/* Chevron kept visible but static while editing */}
+          <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0 mt-0.5 rotate-180" />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onExpand}
+          className={cn(
+            headerBase,
+            'cursor-pointer hover:bg-surface-base',
+            headerExpanded,
+          )}
+        >
+          <div className="flex-1 min-w-0">
+            {context && (
+              <p className="text-xs text-text-disabled italic mb-1 leading-relaxed">{context}</p>
+            )}
+            {isGroupHeader ? (
+              <p className="text-xs font-medium text-text-tertiary tracking-wide">{content}</p>
+            ) : (
+              <p className="text-sm text-text-secondary leading-relaxed line-clamp-2">
+                {bullet && <span className="text-text-tertiary mr-1.5">·</span>}
+                {content}
+              </p>
+            )}
+          </div>
+          <ChevronDown
+            className={cn(
+              'h-3.5 w-3.5 text-text-disabled flex-shrink-0 mt-0.5 transition-transform duration-150',
+              isExpanded && 'rotate-180',
+            )}
+          />
+        </button>
       )}
 
-      {editing ? (
-        <>
-          {bullet
-            ? (
-              <div className="flex gap-2 text-sm leading-relaxed">
-                <span className="text-text-tertiary flex-shrink-0 mt-0.5">·</span>
-                <textarea
-                  ref={textareaRef}
-                  value={value}
-                  rows={1}
-                  onChange={(e) => { setValue(e.target.value); e.target.style.height = '0px'; e.target.style.height = `${e.target.scrollHeight}px`; }}
-                  className="flex-1 bg-transparent resize-none overflow-hidden outline-none p-0 text-sm text-text-primary leading-relaxed"
-                  autoFocus
-                  onKeyDown={(e) => { if (e.key === 'Escape') { setValue(chunk.content); setEditing(false); } if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); }}
-                />
-              </div>
-            )
-            : (
-              <textarea
-                ref={textareaRef}
-                value={value}
-                rows={1}
-                onChange={(e) => { setValue(e.target.value); e.target.style.height = '0px'; e.target.style.height = `${e.target.scrollHeight}px`; }}
-                className="w-full bg-transparent resize-none overflow-hidden outline-none p-0 text-sm text-text-primary leading-relaxed"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === 'Escape') { setValue(chunk.content); setEditing(false); } if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); }}
-              />
-            )
-          }
-          <div className="flex items-center gap-1.5 mt-2">
-            <button type="button" onClick={handleSave} disabled={saving || !value.trim()} className={saveBtnCls}>
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-              Save
-            </button>
-            <button type="button" onClick={() => { setValue(chunk.content); setEditing(false); }} className={cancelBtnCls}>
-              <X className="h-3 w-3" />
-              Cancel
-            </button>
-            <span className="text-xs text-text-disabled ml-1">⌘↵</span>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="flex items-start gap-3">
-            <p className="flex-1 text-sm text-text-secondary leading-relaxed">
-              {bullet && <span className="text-text-tertiary mr-1.5">·</span>}
-              {chunk.content}
-            </p>
-            <button
-              type="button"
-              onClick={() => setExpanded((o) => !o)}
-              className="shrink-0 mt-0.5 rounded-md p-0.5 text-text-disabled hover:text-text-secondary hover:bg-surface-sunken transition-colors"
-            >
-              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-150', expanded && 'rotate-180')} />
-            </button>
-          </div>
-
-          {/* Expanded controls */}
-          <div className={cn('grid transition-all duration-150', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
-            <div className="overflow-hidden">
-              <div className="flex items-center gap-0.5 mt-2">
-                <button type="button" onClick={() => { setExpanded(false); setEditing(true); }} className={actionBtnCls}>
+      {/* ── Controls: animates open/closed based on isExpanded ── */}
+      <div className={cn('grid transition-all duration-150', isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="overflow-hidden">
+          <div className="px-4 py-2.5 flex items-center gap-0.5">
+            {editing ? (
+              <>
+                <button type="button" onClick={handleSave} disabled={saving || !value.trim()} className={saveBtnCls}>
+                  {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                  Save
+                </button>
+                <button type="button" onClick={() => { setValue(content); setEditing(false); }} className={cancelBtnCls}>
+                  <X className="h-3 w-3" />
+                  Cancel
+                </button>
+                <span className="text-xs text-text-disabled ml-1">⌘↵</span>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => setEditing(true)} className={actionBtnCls}>
                   <Pencil className="h-3 w-3" />
                   Edit
                 </button>
-                {onDelete && (
-                  <button type="button" onClick={handleDelete} disabled={deleting} className={deleteBtnCls}>
-                    {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                    Delete
-                  </button>
-                )}
-              </div>
-            </div>
+                <button type="button" onClick={handleDelete} disabled={deleting} className={deleteBtnCls}>
+                  {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                  Delete
+                </button>
+              </>
+            )}
           </div>
-        </>
-      )}
+        </div>
+      </div>
+
     </div>
   );
 }
 
-/* ─── Experience table ───────────────────────────────────────────────────── */
+/* ─── ExperienceTable ────────────────────────────────────────────────────── */
+/*                                                                            */
+/* One bordered container. Manages expandedId so only one row is open at a   */
+/* time. Optionally renders a group-key header row before the chunk rows.    */
+
+const GROUP_KEY_ID = '__group__';
 
 function ExperienceTable({
-  groups,
+  groupLabel,
+  groupChunkIds,
+  chunks,
+  bullet = false,
+  context,
   onSave,
+  onSaveGroupKey,
   onDelete,
+  onDeleteGroup,
 }: {
-  groups: TableGroup[];
+  groupLabel?: string;
+  groupChunkIds?: string[];
+  chunks: ExperienceChunk[];
+  bullet?: boolean;
+  context?: (chunk: ExperienceChunk) => string | undefined;
   onSave: (id: string, content: string) => Promise<void>;
+  onSaveGroupKey?: (chunkIds: string[], newLabel: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onDeleteGroup?: (chunkIds: string[]) => Promise<void>;
 }) {
-  const allChunks = groups.flatMap((g) => g.chunks);
-  if (allChunks.length === 0) return null;
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const toggle = (id: string) =>
+    setExpandedId((prev) => (prev === id ? null : id));
+
+  if (!groupLabel && chunks.length === 0) return null;
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-border-subtle">
-      {groups.map((group, gi) => {
-        if (group.chunks.length === 0) return null;
-        const isLastGroup = gi === groups.length - 1 || groups.slice(gi + 1).every(g => g.chunks.length === 0);
-        return (
-          <div key={gi}>
-            {group.key !== null && (
-              <div className={cn(
-                'flex items-center px-4 h-9 bg-surface-base text-xs font-medium text-text-tertiary tracking-wide',
-                'border-b border-border-subtle',
-                gi > 0 && groups.slice(0, gi).some(g => g.chunks.length > 0) && 'border-t border-border-subtle',
-              )}>
-                {group.key || ''}
-              </div>
-            )}
-            {group.chunks.map((chunk, ci) => {
-              const isLastInGroup = ci === group.chunks.length - 1;
-              const isVeryLast = isLastGroup && isLastInGroup;
-              return (
-                <ChunkRow
-                  key={chunk.id}
-                  chunk={chunk}
-                  bullet={group.bullet}
-                  context={group.context?.(chunk)}
-                  onSave={onSave}
-                  onDelete={onDelete}
-                  isLast={isVeryLast}
-                />
-              );
-            })}
-          </div>
-        );
-      })}
+    <div className="rounded-2xl border border-border-subtle overflow-hidden">
+
+      {/* Optional group-key header row */}
+      {groupLabel && groupChunkIds && onSaveGroupKey && onDeleteGroup && (
+        <TableRow
+          content={groupLabel}
+          isGroupHeader
+          isExpanded={expandedId === GROUP_KEY_ID}
+          onExpand={() => toggle(GROUP_KEY_ID)}
+          onSave={(newLabel) => onSaveGroupKey(groupChunkIds, newLabel)}
+          onDelete={() => onDeleteGroup(groupChunkIds)}
+          isLast={chunks.length === 0}
+        />
+      )}
+
+      {/* Chunk rows */}
+      {chunks.map((chunk, i) => (
+        <TableRow
+          key={chunk.id}
+          content={chunk.content}
+          bullet={bullet}
+          context={context?.(chunk)}
+          isExpanded={expandedId === chunk.id}
+          onExpand={() => toggle(chunk.id)}
+          onSave={(newContent) => onSave(chunk.id, newContent)}
+          onDelete={() => onDelete(chunk.id)}
+          isLast={i === chunks.length - 1}
+        />
+      ))}
+
     </div>
   );
 }
 
-/* ─── Activity section ───────────────────────────────────────────────────── */
+/* ─── SkillsTable ────────────────────────────────────────────────────────── */
+/*                                                                            */
+/* One bordered container with a static "Skills" label row (non-interactive) */
+/* and a single aggregate row that expands to individual deletable pills.    */
+
+function SkillsTable({
+  chunks,
+  onDelete,
+}: {
+  chunks: ExperienceChunk[];
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  if (chunks.length === 0) return null;
+
+  const preview = chunks.map((c) => c.content).join(' · ');
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try { await onDelete(id); } finally { setDeletingId(null); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-border-subtle overflow-hidden">
+
+      {/* Static header — not interactive */}
+      <div className="flex items-center px-4 h-9 bg-surface-base border-b border-border-subtle">
+        <span className="text-xs font-medium text-text-tertiary tracking-wide">Skills</span>
+      </div>
+
+      {/* Aggregate row */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setExpanded((o) => !o)}
+          className={cn(
+            'w-full flex items-start gap-3 px-4 py-3 text-left cursor-pointer transition-colors duration-100',
+            expanded ? 'bg-surface-base border-b border-border-subtle' : 'hover:bg-surface-base',
+          )}
+        >
+          <p className="flex-1 text-sm text-text-secondary leading-relaxed truncate">{preview}</p>
+          <ChevronDown
+            className={cn(
+              'h-3.5 w-3.5 text-text-disabled flex-shrink-0 mt-0.5 transition-transform duration-150',
+              expanded && 'rotate-180',
+            )}
+          />
+        </button>
+
+        <div className={cn('grid transition-all duration-150', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+          <div className="overflow-hidden">
+            <div className="px-4 py-3 flex flex-wrap gap-1.5">
+              {chunks.map((chunk) => (
+                <span
+                  key={chunk.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-overlay text-text-secondary border border-border-subtle"
+                >
+                  {chunk.content}
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(chunk.id)}
+                    disabled={deletingId === chunk.id}
+                    className="text-text-disabled hover:text-error transition-colors ml-0.5 flex-shrink-0"
+                  >
+                    {deletingId === chunk.id
+                      ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      : <X className="h-2.5 w-2.5" />}
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+/* ─── ActivitySection ────────────────────────────────────────────────────── */
 
 function ActivitySection({
   title,
@@ -249,7 +389,7 @@ function ActivitySection({
   );
 }
 
-/* ─── Add Experience form ───────────────────────────────────────────────── */
+/* ─── AddExperienceForm ──────────────────────────────────────────────────── */
 
 function AddExperienceForm({ onAdded }: { onAdded: (chunks: ExperienceChunk[]) => void }) {
   const [text, setText] = useState('');
@@ -386,7 +526,7 @@ function AddExperienceForm({ onAdded }: { onAdded: (chunks: ExperienceChunk[]) =
   );
 }
 
-/* ─── Group-key helpers ─────────────────────────────────────────────────── */
+/* ─── Group-key helpers ──────────────────────────────────────────────────── */
 
 function formatWorkGroupKey(group: WorkExperienceGroup): string {
   const parts = (group.group_key ?? '').split(' | ').filter(Boolean);
@@ -395,7 +535,7 @@ function formatWorkGroupKey(group: WorkExperienceGroup): string {
   return label || 'Unknown role';
 }
 
-/* ─── Main component ────────────────────────────────────────────────────── */
+/* ─── ChunkedProfile ─────────────────────────────────────────────────────── */
 
 export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
   const [data, setData] = useState<ExperienceChunksResponse | null>(null);
@@ -439,6 +579,37 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
     setData((prev) => prev ? removeChunkFromResponse(prev, id) : prev);
   };
 
+  /** Rename a group key across all its chunks, then refetch. */
+  const handleSaveGroupKey = async (chunkIds: string[], newLabel: string) => {
+    const results = await Promise.all(
+      chunkIds.map((id) =>
+        fetch(`/api/experience/chunks/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group_key: newLabel }),
+        }),
+      ),
+    );
+    if (results.some((r) => !r.ok)) {
+      toastError('Failed to rename group');
+      return;
+    }
+    await fetchChunks();
+  };
+
+  /** Delete every chunk in a group. */
+  const handleDeleteGroup = async (chunkIds: string[]) => {
+    const results = await Promise.all(
+      chunkIds.map((id) => fetch(`/api/experience/chunks/${id}`, { method: 'DELETE' })),
+    );
+    if (results.some((r) => !r.ok)) {
+      toastError('Some items could not be deleted');
+    }
+    setData((prev) =>
+      prev ? chunkIds.reduce((acc, id) => removeChunkFromResponse(acc, id), prev) : prev,
+    );
+  };
+
   const handleAdded = (newChunks: ExperienceChunk[]) => {
     setData((prev) => {
       if (!prev) return prev;
@@ -455,77 +626,145 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
     );
   }
 
-  /* ── Build table groups ─────────────────────────────────────────────── */
-
-  const resumeGroups: TableGroup[] = [];
-  if (data?.resume) {
-    if (data.resume.other[0]) {
-      resumeGroups.push({ key: null, chunks: [data.resume.other[0]] });
-    }
-    data.resume.work_experience.forEach((g) => {
-      resumeGroups.push({ key: formatWorkGroupKey(g), chunks: g.chunks, bullet: true });
-    });
-    if (data.resume.skills.length > 0) {
-      resumeGroups.push({ key: 'Skills', chunks: data.resume.skills });
-    }
-    data.resume.projects.forEach((p) => {
-      resumeGroups.push({ key: p.group_key ?? 'Project', chunks: p.chunks });
-    });
-    if (data.resume.education.length > 0) {
-      resumeGroups.push({ key: 'Education', chunks: data.resume.education });
-    }
-    const certs = data.resume.other.slice(1);
-    if (certs.length > 0) {
-      resumeGroups.push({ key: 'Certifications', chunks: certs });
-    }
-  }
-
-  const githubGroups: TableGroup[] = (data?.github?.repos ?? []).map((repo) => ({
-    key: repo.group_key ?? 'Unknown repo',
-    chunks: repo.chunks,
-  }));
-
-  const userInputGroups: TableGroup[] = data?.user_input?.length
-    ? [{ key: null, chunks: data.user_input }]
-    : [];
-
-  const gapGroups: TableGroup[] = data?.gap_response?.length
-    ? [{
-        key: null,
-        chunks: data.gap_response,
-        context: (chunk) => chunk.chunk_metadata?.question,
-      }]
-    : [];
-
-  const hasResume = resumeGroups.some((g) => g.chunks.length > 0);
-  const hasGithub = githubGroups.some((g) => g.chunks.length > 0);
-  const hasGapResponse = gapGroups.some((g) => g.chunks.length > 0);
+  const resume = data?.resume ?? null;
+  const hasResume = !!(
+    resume &&
+    (resume.other.length > 0 ||
+      resume.work_experience.length > 0 ||
+      resume.skills.length > 0 ||
+      resume.projects.length > 0 ||
+      resume.education.length > 0)
+  );
+  const hasGithub = !!(data?.github?.repos?.some((r) => r.chunks.length > 0));
+  const hasGapResponse = !!(data?.gap_response?.length);
 
   return (
     <div className="space-y-10">
 
+      {/* ── Resume ── */}
       {hasResume && (
         <ActivitySection title="Resume" description="Extracted from your uploaded resume">
-          <ExperienceTable groups={resumeGroups} onSave={handleSave} onDelete={handleDelete} />
+          <div className="space-y-2">
+
+            {/* Summary — standalone single-row table */}
+            {resume!.other[0] && (
+              <ExperienceTable
+                chunks={[resume!.other[0]]}
+                onSave={handleSave}
+                onDelete={handleDelete}
+              />
+            )}
+
+            {/* Work experience — one table per position */}
+            {resume!.work_experience.map((g, i) => (
+              <ExperienceTable
+                key={i}
+                groupLabel={formatWorkGroupKey(g)}
+                groupChunkIds={g.chunks.map((c) => c.id)}
+                chunks={g.chunks}
+                bullet
+                onSave={handleSave}
+                onSaveGroupKey={handleSaveGroupKey}
+                onDelete={handleDelete}
+                onDeleteGroup={handleDeleteGroup}
+              />
+            ))}
+
+            {/* Skills — single aggregate table */}
+            {resume!.skills.length > 0 && (
+              <SkillsTable
+                chunks={resume!.skills}
+                onDelete={handleDelete}
+              />
+            )}
+
+            {/* Projects — one table per project */}
+            {resume!.projects.map((p, i) => (
+              <ExperienceTable
+                key={i}
+                groupLabel={p.group_key ?? 'Project'}
+                groupChunkIds={p.chunks.map((c) => c.id)}
+                chunks={p.chunks}
+                onSave={handleSave}
+                onSaveGroupKey={handleSaveGroupKey}
+                onDelete={handleDelete}
+                onDeleteGroup={handleDeleteGroup}
+              />
+            ))}
+
+            {/* Education — one table for all entries */}
+            {resume!.education.length > 0 && (
+              <ExperienceTable
+                chunks={resume!.education}
+                onSave={handleSave}
+                onDelete={handleDelete}
+              />
+            )}
+
+            {/* Certifications — one table for remaining "other" chunks */}
+            {resume!.other.slice(1).length > 0 && (
+              <ExperienceTable
+                chunks={resume!.other.slice(1)}
+                onSave={handleSave}
+                onDelete={handleDelete}
+              />
+            )}
+
+          </div>
         </ActivitySection>
       )}
 
+      {/* ── GitHub ── */}
       {hasGithub && (
         <ActivitySection title="GitHub" description="Enriched from your linked repositories">
-          <ExperienceTable groups={githubGroups} onSave={handleSave} onDelete={handleDelete} />
+          <div className="space-y-2">
+            {data!.github!.repos.map((repo, i) => (
+              <ExperienceTable
+                key={i}
+                groupLabel={repo.group_key ?? 'Unknown repo'}
+                groupChunkIds={repo.chunks.map((c) => c.id)}
+                chunks={repo.chunks}
+                onSave={handleSave}
+                onSaveGroupKey={handleSaveGroupKey}
+                onDelete={handleDelete}
+                onDeleteGroup={handleDeleteGroup}
+              />
+            ))}
+          </div>
         </ActivitySection>
       )}
 
+      {/* ── Additional Experience ── */}
       <ActivitySection title="Additional Experience" description="Manually added experience and context">
         <AddExperienceForm onAdded={handleAdded} />
-        {userInputGroups.length > 0 && (
-          <ExperienceTable groups={userInputGroups} onSave={handleSave} onDelete={handleDelete} />
-        )}
+        {data?.user_input?.length ? (
+          <div className="space-y-2">
+            {data.user_input.map((chunk) => (
+              <ExperienceTable
+                key={chunk.id}
+                chunks={[chunk]}
+                onSave={handleSave}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        ) : null}
       </ActivitySection>
 
+      {/* ── Gap Responses ── */}
       {hasGapResponse && (
         <ActivitySection title="Gap Responses" description="Answers to gap questions from your tailorings">
-          <ExperienceTable groups={gapGroups} onSave={handleSave} onDelete={handleDelete} />
+          <div className="space-y-2">
+            {data!.gap_response!.map((chunk) => (
+              <ExperienceTable
+                key={chunk.id}
+                chunks={[chunk]}
+                context={(c) => c.chunk_metadata?.question}
+                onSave={handleSave}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
         </ActivitySection>
       )}
 
@@ -533,11 +772,11 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
   );
 }
 
-/* ─── Response helpers ───────────────────────────────────────────────────── */
+/* ─── Response patch helpers ─────────────────────────────────────────────── */
 
 function patchChunkInResponse(
   prev: ExperienceChunksResponse,
-  updated: ExperienceChunk
+  updated: ExperienceChunk,
 ): ExperienceChunksResponse {
   const replaceIn = (chunks: ExperienceChunk[]) =>
     chunks.map((c) => (c.id === updated.id ? updated : c));
@@ -564,7 +803,7 @@ function patchChunkInResponse(
 
 function removeChunkFromResponse(
   prev: ExperienceChunksResponse,
-  id: string
+  id: string,
 ): ExperienceChunksResponse {
   const filterOut = (chunks: ExperienceChunk[]) => chunks.filter((c) => c.id !== id);
 
@@ -591,18 +830,13 @@ function removeChunkFromResponse(
     newResume.education.length === 0 &&
     newResume.other.length === 0;
 
-  const newGithub = prev.github
-    ? { repos: prev.github.repos.map((r) => ({ ...r, chunks: filterOut(r.chunks) })) }
-    : null;
-
-  const newUserInput = prev.user_input ? filterOut(prev.user_input) : null;
-  const newGapResponse = prev.gap_response ? filterOut(prev.gap_response) : null;
-
   return {
     ...prev,
     resume: resumeEmpty ? null : newResume,
-    github: newGithub,
-    user_input: newUserInput?.length ? newUserInput : null,
-    gap_response: newGapResponse?.length ? newGapResponse : null,
+    github: prev.github
+      ? { repos: prev.github.repos.map((r) => ({ ...r, chunks: filterOut(r.chunks) })) }
+      : null,
+    user_input: prev.user_input ? filterOut(prev.user_input) : null,
+    gap_response: prev.gap_response ? filterOut(prev.gap_response) : null,
   };
 }

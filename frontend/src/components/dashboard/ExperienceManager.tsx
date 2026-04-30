@@ -806,22 +806,27 @@ export function ExperienceManager() {
       {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.txt" className="hidden" onChange={handleFileChange} />
 
+      {/* Topbar */}
+      <div className="shrink-0 flex items-center h-12 px-6 bg-surface-elevated">
+        <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">My Experience</span>
+      </div>
+
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="mx-auto px-6 lg:px-16 pt-12 pb-24 max-w-6xl">
+        <div className="mx-auto px-6 lg:px-16 pt-8 pb-24 max-w-6xl">
 
           {/* Greeting */}
           <div className="flex flex-col gap-1 pb-4">
             <h2 suppressHydrationWarning className="text-lg font-medium text-text-primary tracking-[-0.2px]">
 
-              Ready to build your profile?
+              Build your profile
             </h2>
 
             <p className="text-sm text-text-secondary">Add your experience here and review it below</p>
           </div>
 
           {/* Source sections — two-column grid */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-12">
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-12 pb-6 border-b border-zinc-950/5 dark:border-white/5">
             {/* Resume */}
             <div className="flex flex-col gap-5">
               {/* 1. Header */}
@@ -865,7 +870,7 @@ export function ExperienceManager() {
           </div>
 
           {/* Parsed experience */}
-          <div className="mt-10">
+          <div className="mt-8">
             <ChunkedProfile refreshKey={chunksRefreshKey} />
           </div>
 
