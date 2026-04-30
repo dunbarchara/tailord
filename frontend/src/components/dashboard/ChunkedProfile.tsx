@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Pencil, Trash2, Check, Loader2, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pencil, Trash2, Check, Loader2, Plus, X, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import type {
@@ -119,7 +119,7 @@ function TableRow({
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
   };
 
-  const headerBase = 'w-full flex items-start gap-3 px-4 py-3 text-left transition-colors duration-100';
+  const headerBase = 'w-full flex items-start gap-3 px-2 py-1 text-left transition-colors duration-100';
   const headerExpanded = isExpanded ? 'bg-surface-base border-b ' : '';
 
   return (
@@ -136,10 +136,7 @@ function TableRow({
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               className={cn(
-                'flex-1 bg-transparent resize-none overflow-hidden outline-none p-0 leading-relaxed',
-                isGroupHeader
-                  ? 'text-xs font-medium text-text-primary tracking-wide'
-                  : 'text-sm text-text-primary',
+                'flex-1 bg-transparent resize-none overflow-hidden outline-none p-0 leading-relaxed text-sm text-text-primary'
               )}
             />
           </div>
@@ -160,13 +157,9 @@ function TableRow({
             {context && (
               <p className="text-xs text-text-disabled italic mb-1 leading-relaxed">{context}</p>
             )}
-            {isGroupHeader ? (
-              <p className="text-xs font-medium text-text-tertiary tracking-wide">{normalizeContent(content)}</p>
-            ) : (
-              <p className="text-sm text-text-secondary leading-relaxed line-clamp-2">
+            <p className="text-sm text-text-secondary leading-relaxed line-clamp-2">
                 {normalizeContent(content)}
               </p>
-            )}
           </div>
           <ChevronDown
             className={cn(
@@ -180,7 +173,7 @@ function TableRow({
       {/* ── Controls: animates open/closed based on isExpanded ── */}
       <div className={cn('grid transition-all duration-150', isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="overflow-hidden">
-          <div className="px-4 py-2.5 flex items-center gap-0.5">
+          <div className="px-2 py-1 flex items-center gap-0.5">
             {editing ? (
               <>
                 <button type="button" onClick={handleSave} disabled={saving || !value.trim()} className={saveBtnCls}>
@@ -253,7 +246,7 @@ function ExperienceTable({
     return (
       <div>
         {/* Group-key header — bottom-right corner open, flowing into indented rows */}
-        <div className="rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl border  overflow-hidden">
+        <div className="rounded-tl-md rounded-tr-md rounded-bl-md border  overflow-hidden">
           <TableRow
             content={groupLabel!}
             isGroupHeader
@@ -267,12 +260,12 @@ function ExperienceTable({
 
         {/* Indented rows — collapsed shows count card, expanded shows rows + collapse card */}
         {chunks.length > 0 && (
-          <div className="ml-6 border border-t-0  rounded-b-2xl overflow-hidden">
+          <div className="ml-6 border border-t-0  rounded-b-md overflow-hidden">
             {!tableExpanded ? (
               <button
                 type="button"
                 onClick={() => setTableExpanded(true)}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-base transition-colors duration-100"
+                className="w-full flex items-center gap-3 px-2 py-1 text-left hover:bg-surface-base transition-colors duration-100"
               >
                 <span className="flex-1 text-sm text-text-tertiary">
                   {chunks.length} {chunks.length === 1 ? 'item' : 'items'}
@@ -296,7 +289,7 @@ function ExperienceTable({
                 <button
                   type="button"
                   onClick={() => { setTableExpanded(false); setExpandedId(null); }}
-                  className="w-full flex items-center justify-center py-2 border-t  hover:bg-surface-base transition-colors duration-100"
+                  className="w-full flex items-center justify-center py-1 border-t  hover:bg-surface-base transition-colors duration-100"
                 >
                   <ChevronUp className="h-3.5 w-3.5 text-text-disabled" />
                 </button>
@@ -309,7 +302,7 @@ function ExperienceTable({
   }
 
   return (
-    <div className="rounded-2xl border  overflow-hidden">
+    <div className="rounded-md border  overflow-hidden">
       {chunks.map((chunk, i) => (
         <TableRow
           key={chunk.id}
@@ -351,12 +344,10 @@ function SkillsTable({
   };
 
   return (
-    <div className="rounded-2xl border overflow-hidden">
+    <>
 
-      {/* Static header — not interactive */}
-      <div className="flex items-center px-4 h-9 bg-surface-base border-b">
-        <span className="text-xs font-medium text-text-tertiary tracking-wide">Skills</span>
-      </div>
+
+    <div className="rounded-md border overflow-hidden">
 
       {/* Aggregate row */}
       <div>
@@ -364,7 +355,7 @@ function SkillsTable({
           type="button"
           onClick={() => setExpanded((o) => !o)}
           className={cn(
-            'w-full flex items-start gap-3 px-4 py-3 text-left cursor-pointer transition-colors duration-100',
+            'w-full flex items-start gap-3 px-2 py-1 text-left cursor-pointer transition-colors duration-100',
             expanded ? 'bg-surface-base border-b' : 'hover:bg-surface-base',
           )}
         >
@@ -379,11 +370,11 @@ function SkillsTable({
 
         <div className={cn('grid transition-all duration-150', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
           <div className="overflow-hidden">
-            <div className="px-4 py-3 flex flex-wrap gap-1.5">
+            <div className="px-2 py-1 flex flex-wrap gap-1.5">
               {chunks.map((chunk) => (
                 <span
                   key={chunk.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-overlay text-text-secondary border "
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
                 >
                   {chunk.content}
                   <button
@@ -404,6 +395,7 @@ function SkillsTable({
       </div>
 
     </div>
+    </>
   );
 }
 
@@ -436,7 +428,7 @@ function InlineSkillsRow({
         type="button"
         onClick={() => setExpanded((o) => !o)}
         className={cn(
-          'w-full flex items-start gap-3 px-4 py-3 text-left cursor-pointer transition-colors duration-100',
+          'w-full flex items-start gap-3 px-2 py-1 text-left cursor-pointer transition-colors duration-100',
           expanded ? 'bg-surface-base border-b ' : 'hover:bg-surface-base',
         )}
       >
@@ -450,11 +442,11 @@ function InlineSkillsRow({
       </button>
       <div className={cn('grid transition-all duration-150', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="overflow-hidden">
-          <div className="px-4 py-3 flex flex-wrap gap-1.5">
+          <div className="px-2 py-1 flex flex-wrap gap-1.5">
             {chunks.map((chunk) => (
               <span
                 key={chunk.id}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-overlay text-text-secondary border "
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
               >
                 {chunk.content}
                 <button
@@ -507,20 +499,21 @@ function RepoTable({
   return (
     <div>
       {/* Repo name header — non-editable, static label */}
-      <div className="rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl border  overflow-hidden">
-        <div className="flex items-center px-4 py-3">
-          <p className="flex-1 text-xs font-medium text-text-tertiary tracking-wide">{repoName}</p>
+      <div className="rounded-bl-md border-b  overflow-hidden">
+        <div className="flex items-center px-2 py-1 gap-1">
+                  <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
+          <p className="flex-1 text-sm text-text-tertiary">{repoName}</p>
         </div>
       </div>
 
       {/* Indented rows */}
       {itemCount > 0 && (
-        <div className="ml-6 border border-t-0  rounded-b-2xl overflow-hidden">
+        <div className="ml-6 border border-t-0  rounded-b-md overflow-hidden">
           {!tableExpanded ? (
             <button
               type="button"
               onClick={() => setTableExpanded(true)}
-              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-base transition-colors duration-100"
+              className="w-full flex items-center gap-3 px-2 py-1 text-left hover:bg-surface-base transition-colors duration-100"
             >
               <span className="flex-1 text-sm text-text-tertiary">
                 {itemCount} {itemCount === 1 ? 'item' : 'items'}
@@ -546,7 +539,7 @@ function RepoTable({
               <button
                 type="button"
                 onClick={() => { setTableExpanded(false); setExpandedId(null); }}
-                className="w-full flex items-center justify-center py-2 border-t  hover:bg-surface-base transition-colors duration-100"
+                className="w-full flex items-center justify-center py-1 border-t  hover:bg-surface-base transition-colors duration-100"
               >
                 <ChevronUp className="h-3.5 w-3.5 text-text-disabled" />
               </button>
@@ -671,7 +664,7 @@ function AddExperienceForm({ onAdded }: { onAdded: (chunks: ExperienceChunk[]) =
   };
 
   const textareaCls =
-    'w-full rounded-xl border border-border-default bg-surface-elevated px-3 py-2.5 text-sm text-text-primary ' +
+    'w-full rounded-md border border-border-default bg-surface-elevated px-3 py-2.5 text-sm text-text-primary ' +
     'placeholder:text-text-disabled outline-none transition-colors duration-100 resize-none ' +
     'focus:border-text-primary focus:shadow-[0_0_0_2px_rgba(0,0,0,0.06)] ' +
     'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.06)]';
@@ -683,8 +676,8 @@ function AddExperienceForm({ onAdded }: { onAdded: (chunks: ExperienceChunk[]) =
           <p className="text-sm text-text-secondary">Select the claims you want to add:</p>
           <div className="space-y-0.5">
             {preview.map((claim, i) => (
-              <label key={i} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-sunken cursor-pointer">
-                <input type="checkbox" checked={selected.has(i)} onChange={() => toggleSelect(i)} className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-brand-primary" />
+              <label key={i} className="flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-surface-sunken cursor-pointer">
+                <input type="checkbox" checked={selected.has(i)} onChange={() => toggleSelect(i)} className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-brand-primary cursor-pointer" />
                 <span className="text-sm text-text-secondary">{claim}</span>
               </label>
             ))}
