@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Pencil, Trash2, Check, Loader2, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pencil, Trash2, Check, Loader2, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import type {
@@ -9,6 +9,11 @@ import type {
   ExperienceChunksResponse,
   WorkExperienceGroup,
 } from '@/types';
+
+/* ─── Content normalizer ─────────────────────────────────────────────────── */
+
+/** PDF extraction often injects mid-sentence line breaks — strip them. */
+const normalizeContent = (s: string) => s.replace(/\s*\n\s*/g, ' ').replace(/  +/g, ' ').trim();
 
 /* ─── Shared button styles ──────────────────────────────────────────────── */
 
@@ -42,7 +47,6 @@ const deleteBtnCls =
 interface TableRowProps {
   content: string;
   isGroupHeader?: boolean; // smaller label styling for group-key rows
-  bullet?: boolean;
   context?: string;        // optional label above content (e.g. gap question)
   isExpanded: boolean;
   onExpand: () => void;
@@ -54,7 +58,6 @@ interface TableRowProps {
 function TableRow({
   content,
   isGroupHeader = false,
-  bullet = false,
   context,
   isExpanded,
   onExpand,
@@ -63,14 +66,14 @@ function TableRow({
   isLast = false,
 }: TableRowProps) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(content);
+  const [value, setValue] = useState(() => normalizeContent(content));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Keep value in sync when content prop changes (e.g. after a save)
   useEffect(() => {
-    if (!editing) setValue(content);
+    if (!editing) setValue(normalizeContent(content));
   }, [content, editing]);
 
   // Auto-size textarea and focus when entering edit mode
@@ -87,7 +90,7 @@ function TableRow({
   useEffect(() => {
     if (!isExpanded) {
       setEditing(false);
-      setValue(content);
+      setValue(normalizeContent(content));
     }
     // intentionally omit `content` — we only want to react to expansion changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,18 +120,15 @@ function TableRow({
   };
 
   const headerBase = 'w-full flex items-start gap-3 px-4 py-3 text-left transition-colors duration-100';
-  const headerExpanded = isExpanded ? 'bg-surface-base border-b border-border-subtle' : '';
+  const headerExpanded = isExpanded ? 'bg-surface-base border-b ' : '';
 
   return (
-    <div className={cn(!isLast && 'border-b border-border-subtle')}>
+    <div className={cn(!isLast && 'border-b ')}>
 
       {/* ── Header: button when idle, div when editing (textarea inside) ── */}
       {editing ? (
-        <div className={cn(headerBase, 'bg-surface-base border-b border-border-subtle')}>
+        <div className={cn(headerBase, 'bg-surface-base border-b ')}>
           <div className="flex-1 min-w-0 flex gap-2">
-            {bullet && (
-              <span className="text-text-tertiary flex-shrink-0 mt-0.5 text-sm select-none">·</span>
-            )}
             <textarea
               ref={textareaRef}
               value={value}
@@ -161,11 +161,10 @@ function TableRow({
               <p className="text-xs text-text-disabled italic mb-1 leading-relaxed">{context}</p>
             )}
             {isGroupHeader ? (
-              <p className="text-xs font-medium text-text-tertiary tracking-wide">{content}</p>
+              <p className="text-xs font-medium text-text-tertiary tracking-wide">{normalizeContent(content)}</p>
             ) : (
               <p className="text-sm text-text-secondary leading-relaxed line-clamp-2">
-                {bullet && <span className="text-text-tertiary mr-1.5">·</span>}
-                {content}
+                {normalizeContent(content)}
               </p>
             )}
           </div>
@@ -225,7 +224,6 @@ function ExperienceTable({
   groupLabel,
   groupChunkIds,
   chunks,
-  bullet = false,
   context,
   onSave,
   onSaveGroupKey,
@@ -235,7 +233,6 @@ function ExperienceTable({
   groupLabel?: string;
   groupChunkIds?: string[];
   chunks: ExperienceChunk[];
-  bullet?: boolean;
   context?: (chunk: ExperienceChunk) => string | undefined;
   onSave: (id: string, content: string) => Promise<void>;
   onSaveGroupKey?: (chunkIds: string[], newLabel: string) => Promise<void>;
@@ -243,34 +240,80 @@ function ExperienceTable({
   onDeleteGroup?: (chunkIds: string[]) => Promise<void>;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [tableExpanded, setTableExpanded] = useState(false);
 
   const toggle = (id: string) =>
     setExpandedId((prev) => (prev === id ? null : id));
 
   if (!groupLabel && chunks.length === 0) return null;
 
+  const isGrouped = !!(groupLabel && groupChunkIds && onSaveGroupKey && onDeleteGroup);
+
+  if (isGrouped) {
+    return (
+      <div>
+        {/* Group-key header — bottom-right corner open, flowing into indented rows */}
+        <div className="rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl border  overflow-hidden">
+          <TableRow
+            content={groupLabel!}
+            isGroupHeader
+            isExpanded={expandedId === GROUP_KEY_ID}
+            onExpand={() => toggle(GROUP_KEY_ID)}
+            onSave={(newLabel) => onSaveGroupKey!(groupChunkIds!, newLabel)}
+            onDelete={() => onDeleteGroup!(groupChunkIds!)}
+            isLast
+          />
+        </div>
+
+        {/* Indented rows — collapsed shows count card, expanded shows rows + collapse card */}
+        {chunks.length > 0 && (
+          <div className="ml-6 border border-t-0  rounded-b-2xl overflow-hidden">
+            {!tableExpanded ? (
+              <button
+                type="button"
+                onClick={() => setTableExpanded(true)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-base transition-colors duration-100"
+              >
+                <span className="flex-1 text-sm text-text-tertiary">
+                  {chunks.length} {chunks.length === 1 ? 'item' : 'items'}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />
+              </button>
+            ) : (
+              <>
+                {chunks.map((chunk, i) => (
+                  <TableRow
+                    key={chunk.id}
+                    content={chunk.content}
+                    context={context?.(chunk)}
+                    isExpanded={expandedId === chunk.id}
+                    onExpand={() => toggle(chunk.id)}
+                    onSave={(newContent) => onSave(chunk.id, newContent)}
+                    onDelete={() => onDelete(chunk.id)}
+                    isLast={i === chunks.length - 1}
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={() => { setTableExpanded(false); setExpandedId(null); }}
+                  className="w-full flex items-center justify-center py-2 border-t  hover:bg-surface-base transition-colors duration-100"
+                >
+                  <ChevronUp className="h-3.5 w-3.5 text-text-disabled" />
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-2xl border border-border-subtle overflow-hidden">
-
-      {/* Optional group-key header row */}
-      {groupLabel && groupChunkIds && onSaveGroupKey && onDeleteGroup && (
-        <TableRow
-          content={groupLabel}
-          isGroupHeader
-          isExpanded={expandedId === GROUP_KEY_ID}
-          onExpand={() => toggle(GROUP_KEY_ID)}
-          onSave={(newLabel) => onSaveGroupKey(groupChunkIds, newLabel)}
-          onDelete={() => onDeleteGroup(groupChunkIds)}
-          isLast={chunks.length === 0}
-        />
-      )}
-
-      {/* Chunk rows */}
+    <div className="rounded-2xl border  overflow-hidden">
       {chunks.map((chunk, i) => (
         <TableRow
           key={chunk.id}
           content={chunk.content}
-          bullet={bullet}
           context={context?.(chunk)}
           isExpanded={expandedId === chunk.id}
           onExpand={() => toggle(chunk.id)}
@@ -279,7 +322,6 @@ function ExperienceTable({
           isLast={i === chunks.length - 1}
         />
       ))}
-
     </div>
   );
 }
@@ -309,10 +351,10 @@ function SkillsTable({
   };
 
   return (
-    <div className="rounded-2xl border border-border-subtle overflow-hidden">
+    <div className="rounded-2xl border overflow-hidden">
 
       {/* Static header — not interactive */}
-      <div className="flex items-center px-4 h-9 bg-surface-base border-b border-border-subtle">
+      <div className="flex items-center px-4 h-9 bg-surface-base border-b">
         <span className="text-xs font-medium text-text-tertiary tracking-wide">Skills</span>
       </div>
 
@@ -323,7 +365,7 @@ function SkillsTable({
           onClick={() => setExpanded((o) => !o)}
           className={cn(
             'w-full flex items-start gap-3 px-4 py-3 text-left cursor-pointer transition-colors duration-100',
-            expanded ? 'bg-surface-base border-b border-border-subtle' : 'hover:bg-surface-base',
+            expanded ? 'bg-surface-base border-b' : 'hover:bg-surface-base',
           )}
         >
           <p className="flex-1 text-sm text-text-secondary leading-relaxed truncate">{preview}</p>
@@ -341,7 +383,7 @@ function SkillsTable({
               {chunks.map((chunk) => (
                 <span
                   key={chunk.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-overlay text-text-secondary border border-border-subtle"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-overlay text-text-secondary border "
                 >
                   {chunk.content}
                   <button
@@ -361,6 +403,157 @@ function SkillsTable({
         </div>
       </div>
 
+    </div>
+  );
+}
+
+/* ─── InlineSkillsRow ────────────────────────────────────────────────────── */
+/*                                                                            */
+/* Aggregate pill row for skills nested inside a repo table. No header label.*/
+
+function InlineSkillsRow({
+  chunks,
+  onDelete,
+}: {
+  chunks: ExperienceChunk[];
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  if (chunks.length === 0) return null;
+
+  const preview = chunks.map((c) => c.content).join(' · ');
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try { await onDelete(id); } finally { setDeletingId(null); }
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((o) => !o)}
+        className={cn(
+          'w-full flex items-start gap-3 px-4 py-3 text-left cursor-pointer transition-colors duration-100',
+          expanded ? 'bg-surface-base border-b ' : 'hover:bg-surface-base',
+        )}
+      >
+        <p className="flex-1 text-sm text-text-secondary leading-relaxed truncate">{preview}</p>
+        <ChevronDown
+          className={cn(
+            'h-3.5 w-3.5 text-text-disabled flex-shrink-0 mt-0.5 transition-transform duration-150',
+            expanded && 'rotate-180',
+          )}
+        />
+      </button>
+      <div className={cn('grid transition-all duration-150', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="overflow-hidden">
+          <div className="px-4 py-3 flex flex-wrap gap-1.5">
+            {chunks.map((chunk) => (
+              <span
+                key={chunk.id}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-surface-overlay text-text-secondary border "
+              >
+                {chunk.content}
+                <button
+                  type="button"
+                  onClick={() => handleDelete(chunk.id)}
+                  disabled={deletingId === chunk.id}
+                  className="text-text-disabled hover:text-error transition-colors ml-0.5 flex-shrink-0"
+                >
+                  {deletingId === chunk.id
+                    ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    : <X className="h-2.5 w-2.5" />}
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── RepoTable ──────────────────────────────────────────────────────────── */
+/*                                                                            */
+/* GitHub repo variant: non-editable header, skill chunks as pill row,       */
+/* non-skill chunks as TableRows. Collapsible via count card / collapse card.*/
+
+function RepoTable({
+  repoName,
+  chunks,
+  onSave,
+  onDelete,
+}: {
+  repoName: string;
+  chunks: ExperienceChunk[];
+  onSave: (id: string, content: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [tableExpanded, setTableExpanded] = useState(false);
+
+  const toggle = (id: string) =>
+    setExpandedId((prev) => (prev === id ? null : id));
+
+  const skillChunks = chunks.filter((c) => c.claim_type === 'skill');
+  const contentChunks = chunks.filter((c) => c.claim_type !== 'skill');
+  const itemCount = contentChunks.length + (skillChunks.length > 0 ? 1 : 0);
+
+  if (chunks.length === 0) return null;
+
+  return (
+    <div>
+      {/* Repo name header — non-editable, static label */}
+      <div className="rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl border  overflow-hidden">
+        <div className="flex items-center px-4 py-3">
+          <p className="flex-1 text-xs font-medium text-text-tertiary tracking-wide">{repoName}</p>
+        </div>
+      </div>
+
+      {/* Indented rows */}
+      {itemCount > 0 && (
+        <div className="ml-6 border border-t-0  rounded-b-2xl overflow-hidden">
+          {!tableExpanded ? (
+            <button
+              type="button"
+              onClick={() => setTableExpanded(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-base transition-colors duration-100"
+            >
+              <span className="flex-1 text-sm text-text-tertiary">
+                {itemCount} {itemCount === 1 ? 'item' : 'items'}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />
+            </button>
+          ) : (
+            <>
+              {contentChunks.map((chunk, i) => (
+                <TableRow
+                  key={chunk.id}
+                  content={chunk.content}
+                  isExpanded={expandedId === chunk.id}
+                  onExpand={() => toggle(chunk.id)}
+                  onSave={(newContent) => onSave(chunk.id, newContent)}
+                  onDelete={() => onDelete(chunk.id)}
+                  isLast={skillChunks.length === 0 && i === contentChunks.length - 1}
+                />
+              ))}
+              {skillChunks.length > 0 && (
+                <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} />
+              )}
+              <button
+                type="button"
+                onClick={() => { setTableExpanded(false); setExpandedId(null); }}
+                className="w-full flex items-center justify-center py-2 border-t  hover:bg-surface-base transition-colors duration-100"
+              >
+                <ChevronUp className="h-3.5 w-3.5 text-text-disabled" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -662,7 +855,6 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 groupLabel={formatWorkGroupKey(g)}
                 groupChunkIds={g.chunks.map((c) => c.id)}
                 chunks={g.chunks}
-                bullet
                 onSave={handleSave}
                 onSaveGroupKey={handleSaveGroupKey}
                 onDelete={handleDelete}
@@ -719,15 +911,12 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
         <ActivitySection title="GitHub" description="Enriched from your linked repositories">
           <div className="space-y-2">
             {data!.github!.repos.map((repo, i) => (
-              <ExperienceTable
+              <RepoTable
                 key={i}
-                groupLabel={repo.group_key ?? 'Unknown repo'}
-                groupChunkIds={repo.chunks.map((c) => c.id)}
+                repoName={repo.group_key ?? 'Unknown repo'}
                 chunks={repo.chunks}
                 onSave={handleSave}
-                onSaveGroupKey={handleSaveGroupKey}
                 onDelete={handleDelete}
-                onDeleteGroup={handleDeleteGroup}
               />
             ))}
           </div>
@@ -738,16 +927,11 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
       <ActivitySection title="Additional Experience" description="Manually added experience and context">
         <AddExperienceForm onAdded={handleAdded} />
         {data?.user_input?.length ? (
-          <div className="space-y-2">
-            {data.user_input.map((chunk) => (
-              <ExperienceTable
-                key={chunk.id}
-                chunks={[chunk]}
-                onSave={handleSave}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
+          <ExperienceTable
+            chunks={data.user_input}
+            onSave={handleSave}
+            onDelete={handleDelete}
+          />
         ) : null}
       </ActivitySection>
 
