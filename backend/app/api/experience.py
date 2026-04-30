@@ -101,6 +101,8 @@ class ProcessRequest(BaseModel):
 class GitHubRequest(BaseModel):
     github_username: str
     selected_repo_names: list[str] | None = None
+    rescan_repo_names: list[str] | None = None
+    enrich_only_repo_names: list[str] | None = None
 
 
 class UserInputRequest(BaseModel):
@@ -423,6 +425,29 @@ def set_github(
     from app.services.github_enricher import enrich_github_repos
 
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+
+    # Rescan path: re-enrich specific repos without touching the connected repos list.
+    if body.rescan_repo_names is not None:
+        if not experience or not experience.github_username:
+            raise HTTPException(status_code=404, detail="No GitHub connection found")
+        background_tasks.add_task(
+            enrich_github_repos,
+            github_username=body.github_username,
+            experience_id=experience.id,
+            repo_names=body.rescan_repo_names,
+            merge_with_existing=True,
+        )
+        logger.info(
+            "set_github: queued rescan for user=%s repos=%s",
+            user.id,
+            body.rescan_repo_names,
+        )
+        return {
+            "experience_id": str(experience.id),
+            "status": experience.status,
+            "github_username": experience.github_username,
+        }
+
     client = get_github_client()
     try:
         raw_repos = client.get_user_repos(body.github_username)
@@ -444,10 +469,15 @@ def set_github(
         selected = set(body.selected_repo_names)
         repos = [r for r in repos if r["name"] in selected]
 
+    # When enrich_only_repo_names is set (additions-only modify), preserve existing
+    # enrichment and merge new repos in. Otherwise clear stale enrichment.
+    additions_only = body.enrich_only_repo_names is not None
+
     if experience:
         experience.github_username = body.github_username
         experience.github_repos = repos
-        experience.github_repo_details = None  # clear stale enrichment on username change
+        if not additions_only:
+            experience.github_repo_details = None
         profile = experience.extracted_profile or {}
         experience.extracted_profile = {**profile, "github": {"repos": repos}}
         experience.processed_at = datetime.now(timezone.utc)
@@ -469,11 +499,15 @@ def set_github(
     db.commit()
     db.refresh(experience)
 
+    repo_names_to_enrich = (
+        body.enrich_only_repo_names if additions_only else body.selected_repo_names
+    )
     background_tasks.add_task(
         enrich_github_repos,
         github_username=body.github_username,
         experience_id=experience.id,
-        repo_names=body.selected_repo_names,
+        repo_names=repo_names_to_enrich,
+        merge_with_existing=additions_only,
     )
     logger.info(
         "set_github: queued enrichment for user=%s username=%s", user.id, body.github_username

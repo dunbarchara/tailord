@@ -87,6 +87,7 @@ export interface GitHubRepo {
   language: string | null
   star_count: number
   pushed_at: string | null
+  scanned_at: string | null
 }
 
 export interface GitHubEnrichedRepo {
