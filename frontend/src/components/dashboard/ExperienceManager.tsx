@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Upload, Pencil, FileText, Trash2, Loader2, AlertCircle, X, RefreshCw, FolderGit2, GitBranch, ArrowUpRight,
+  Upload, Pencil, FileText, Trash2, Loader2, AlertCircle, X, RefreshCw, GitBranch, ArrowUpRight,
 } from 'lucide-react';
 import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
@@ -32,6 +32,7 @@ function formatRelativeDate(iso: string | null | undefined): string | null {
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
 type UploadPhase =
+  | { phase: 'loading' }
   | { phase: 'idle' }
   | { phase: 'uploading'; filename: string }
   | { phase: 'processing'; filename: string; experienceId: string }
@@ -102,7 +103,7 @@ const outlineBtnCls =
 
 function LiveBadge({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center w-fit font-medium bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 gap-[3px] text-xs rounded-full py-1 px-2">
+    <span className="inline-flex items-center w-fit font-medium bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 gap-[3px] text-xs leading-none rounded-full py-1 px-2">
       <span className="flex items-center justify-center size-3">
         <span className="size-1.5 bg-current rounded-full" />
       </span>
@@ -178,7 +179,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
 export function ExperienceManager() {
-  const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'idle' });
+  const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
   const [githubUrl, setGithubUrl] = useState('');
   const [githubState, setGithubState] = useState<GithubState>('idle');
   const [githubError, setGithubError] = useState<string | null>(null);
@@ -507,9 +508,79 @@ export function ExperienceManager() {
     }
   };
 
-  /* ─── Resume card content ───────────────────────────────────────────────── */
+  /* ─── Resume section: per-section helpers ───────────────────────────────── */
 
-  const renderResumeControls = () => {
+  const resumeHasFile =
+    uploadState.phase === 'ready' && !!uploadState.record.filename;
+
+  const resumeSubtext = (() => {
+    switch (uploadState.phase) {
+      case 'loading':
+      case 'error': return null;
+      case 'uploading':
+      case 'processing':
+      case 'idle': return 'Upload a PDF, DOCX, or TXT file to get started';
+      case 'ready':
+        if (!uploadState.record.filename) return 'Upload a PDF, DOCX, or TXT file to get started';
+        return `Last updated ${formatRelativeDate(uploadState.record.processed_at) ?? ''}`;
+    }
+  })();
+
+  const resumeCard = (() => {
+    switch (uploadState.phase) {
+      case 'loading':
+      case 'idle': return null;
+      case 'uploading':
+        return (
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
+            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
+            <div>
+              <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
+              <p className="text-xs text-text-disabled">Uploading…</p>
+            </div>
+          </div>
+        );
+      case 'processing': {
+        const overallStart = stageStartedAt[PROCESS_STAGES[0]];
+        const elapsed = overallStart ? Math.floor((Date.now() - overallStart) / 1000) : 0;
+        const label = processingStage ? (PROCESS_STAGE_LABELS[processingStage] ?? processingStage) : 'Processing';
+        return (
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
+            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
+            <div>
+              <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
+              <p className="text-xs text-text-disabled">
+                {label}…{overallStart ? ` ${formatElapsed(elapsed)}` : ''}
+              </p>
+            </div>
+          </div>
+        );
+      }
+      case 'ready':
+        if (!uploadState.record.filename) return null;
+        return (
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
+            <FileText className="h-4 w-4 text-text-tertiary flex-shrink-0" />
+            <div>
+              <p className="text-sm text-text-secondary truncate">{uploadState.record.filename}</p>
+              <p className="text-xs text-text-disabled">Processed</p>
+            </div>
+          </div>
+        );
+      case 'error':
+        return (
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-red-50/60 dark:bg-red-950/10 border border-error/20 w-fit min-w-xs">
+            <AlertCircle className="h-4 w-4 text-error flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm text-error">Processing failed</p>
+              <p className="text-xs text-text-tertiary truncate">{uploadState.message}</p>
+            </div>
+          </div>
+        );
+    }
+  })();
+
+  const resumeControls = (() => {
     const uploadBtn = (
       <button
         type="button"
@@ -523,78 +594,39 @@ export function ExperienceManager() {
         </div>
       </button>
     );
-
     switch (uploadState.phase) {
+      case 'loading':
+      case 'uploading': return null;
       case 'idle': return uploadBtn;
-
-      case 'uploading':
+      case 'processing':
         return (
-          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
-            <div>
-              <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
-              <p className="text-xs text-text-disabled">Uploading…</p>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <MintBtn icon={<X />} label="Cancel" onClick={handleRemove} danger />
           </div>
         );
-
-      case 'processing': {
-        const overallStart = stageStartedAt[PROCESS_STAGES[0]];
-        const overallElapsed = overallStart ? Math.floor((Date.now() - overallStart) / 1000) : 0;
-        const stageLabel = processingStage
-          ? (PROCESS_STAGE_LABELS[processingStage] ?? processingStage)
-          : 'Processing';
-        return (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-              <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
-                <p className="text-xs text-text-disabled">
-                  {stageLabel}…{overallStart ? ` ${formatElapsed(overallElapsed)}` : ''}
-                </p>
-              </div>
-            </div>
-
-            <div className="gap-2 flex flex-wrap items-center">
-              <MintBtn icon={<X />} label="Cancel" onClick={handleRemove} danger />
-            </div>
-          </div>
-        );
-      }
-
       case 'ready':
         if (!uploadState.record.filename) return uploadBtn;
         return (
-          <div className="gap-2 flex flex-wrap items-center">
+          <div className="flex flex-wrap items-center gap-2">
             <MintBtn icon={<RefreshCw />} label="Replace" onClick={() => setConfirmDialog('resume-replace')} />
             <MintBtn icon={<Trash2 />} label="Delete" onClick={() => setConfirmDialog('resume-remove')} danger />
           </div>
         );
-
       case 'error':
         return (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-red-50/60 dark:bg-red-950/10 border border-error/20">
-              <AlertCircle className="h-4 w-4 text-error flex-shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm text-error">Processing failed</p>
-                <p className="text-xs text-text-tertiary truncate">{uploadState.message}</p>
-              </div>
-            </div>
-            <div className="gap-2 flex flex-wrap items-center">
-              <MintBtn icon={<Upload />} label="Try again" onClick={() => fileInputRef.current?.click()} />
-              <MintBtn icon={<X />} label="Clear" onClick={handleRemove} danger />
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <MintBtn icon={<Upload />} label="Try again" onClick={() => fileInputRef.current?.click()} />
+            <MintBtn icon={<X />} label="Clear" onClick={handleRemove} danger />
           </div>
         );
     }
-  };
+  })();
 
   /* ─── GitHub card content ────────────────────────────────────────────────── */
 
   const githubConnected =
     uploadState.phase === 'ready' && !!uploadState.record.github_username;
+  const isInitialLoad = uploadState.phase === 'loading';
 
   const renderGithubControls = () => {
     // ── Connected ────────────────────────────────────────────────────────────
@@ -620,7 +652,7 @@ export function ExperienceManager() {
               </span>
               {repos.map((r) => (
                 <div key={r.name} className="group flex items-center gap-2">
-                  <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0 mt-0.5" />
+                  <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <a
                       href={`https://github.com/${username}/${r.name}`}
@@ -631,9 +663,9 @@ export function ExperienceManager() {
                       {r.name}
                     </a>
                     {r.scanned_at && (
-                      <p className="text-xs text-text-disabled">
-                        Scanned {formatRelativeDate(r.scanned_at)}
-                      </p>
+                      <span className="text-xs text-text-disabled ml-1.5">
+                        · last scanned {formatRelativeDate(r.scanned_at)}
+                      </span>
                     )}
                   </div>
                   <button
@@ -688,11 +720,12 @@ export function ExperienceManager() {
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />Fetching repos…
               </div>
             ) : previewRepos!.length === 0 ? (
-              <div className="items-center text-sm leading-5 flex flex-wrap gap-x-1.5 gap-y-0.5 [&_span]:whitespace-nowrap">
-                <span className="text-xs text-text-disabled py-2">No public repos found</span>
-              </div>
+              <p className="text-xs text-text-disabled py-2">No public repos found</p>
             ) : (
               <>
+                <span className="text-sm text-text-tertiary mb-2">
+                  {previewRepos!.length} repo{previewRepos!.length !== 1 ? 's' : ''} found
+                </span>
                 {previewRepos!.map((r) => (
                   <div key={r.name} className="flex items-center gap-3 py-1.5">
                     <Toggle checked={selectedRepoNames.has(r.name)} onChange={() => toggleRepo(r.name)} />
@@ -791,52 +824,43 @@ export function ExperienceManager() {
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-12">
             {/* Resume */}
             <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-2">
+              {/* 1. Header */}
+              <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-medium text-text-primary">Resume Upload</h2>
-                  <span className={uploadState.phase === 'ready' && !!uploadState.record.filename ? undefined : 'invisible'}>
+                  <span className={resumeHasFile ? undefined : 'invisible'}>
                     <LiveBadge label="Uploaded" />
                   </span>
                 </div>
-                <div className="items-center text-sm leading-5 flex flex-wrap gap-x-1.5 gap-y-0.5 [&_span]:whitespace-nowrap">
-                  {uploadState.phase === 'ready' && uploadState.record.filename ? (
-                    <>
-                      <span className="text-text-tertiary">Last updated</span>
-                      {formatRelativeDate(uploadState.record.processed_at) && (
-                        <span className="text-text-primary">{formatRelativeDate(uploadState.record.processed_at)}</span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-text-tertiary">Upload a PDF, DOCX, or TXT file to get started</span>
-                  )}
-                </div>
+                {/* 2. Subtext */}
+                {resumeSubtext && (
+                  <p className="text-sm text-text-tertiary">{resumeSubtext}</p>
+                )}
               </div>
-              {uploadState.phase === 'ready' && uploadState.record.filename && (
-                <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-                  <FileText className="h-4 w-4 text-text-tertiary flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-text-secondary truncate">{uploadState.record.filename}</p>
-                    <p className="text-xs text-text-disabled">Processed</p>
-                  </div>
-                </div>
-              )}
-              {renderResumeControls()}
+              {/* 3. Card */}
+              {resumeCard}
+              {/* 4. Controls */}
+              {resumeControls}
             </div>
 
             {/* GitHub */}
             <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-medium text-text-primary">GitHub Connection</h2>
                   <span className={githubConnected ? undefined : 'invisible'}>
                     <LiveBadge label="Connected" />
                   </span>
                 </div>
-                <div className="items-center text-sm leading-5 flex flex-wrap gap-x-1.5 gap-y-0.5 [&_span]:whitespace-nowrap">
-                  <span className="text-text-tertiary">Import your public repositories to enrich your experience</span>
-                </div>
+                {!isInitialLoad && (
+                  <p className="text-sm text-text-tertiary">
+                    {githubConnected
+                      ? 'Signals are derived from your connected repositories'
+                      : 'Import your public repositories to enrich your experience'}
+                  </p>
+                )}
               </div>
-              {renderGithubControls()}
+              {!isInitialLoad && renderGithubControls()}
             </div>
           </div>
 
