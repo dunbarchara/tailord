@@ -157,7 +157,7 @@ function TableRow({
             {context && (
               <p className="text-xs text-text-disabled italic mb-1 leading-relaxed">{context}</p>
             )}
-            <p className="text-sm text-text-secondary leading-relaxed line-clamp-2">
+            <p className="text-sm text-text-secondary leading-relaxed">
                 {normalizeContent(content)}
               </p>
           </div>
@@ -258,23 +258,25 @@ function ExperienceTable({
           />
         </div>
 
-        {/* Indented rows — collapsed shows count card, expanded shows rows + collapse card */}
+        {/* Indented rows */}
         {chunks.length > 0 && (
           <div className="ml-6 border border-t-0  rounded-b-md overflow-hidden">
-            {!tableExpanded ? (
-              <button
-                type="button"
-                onClick={() => setTableExpanded(true)}
-                className="w-full flex items-center gap-3 px-2 py-1 text-left hover:bg-surface-base transition-colors duration-100"
-              >
-                <span className="flex-1 text-sm text-text-tertiary">
-                  {chunks.length} {chunks.length === 1 ? 'item' : 'items'}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />
-              </button>
-            ) : (
+            {chunks.length > 3 ? (
               <>
-                {chunks.map((chunk, i) => (
+                {/* Always-visible toggle row */}
+                <button
+                  type="button"
+                  onClick={() => { setTableExpanded((v) => !v); if (tableExpanded) setExpandedId(null); }}
+                  className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-surface-base transition-colors duration-100"
+                >
+                  {tableExpanded
+                    ? <ChevronUp className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />
+                    : <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />}
+                  <span className="text-sm text-text-tertiary">
+                    {chunks.length} {chunks.length === 1 ? 'item' : 'items'}
+                  </span>
+                </button>
+                {tableExpanded && chunks.map((chunk, i) => (
                   <TableRow
                     key={chunk.id}
                     content={chunk.content}
@@ -286,14 +288,20 @@ function ExperienceTable({
                     isLast={i === chunks.length - 1}
                   />
                 ))}
-                <button
-                  type="button"
-                  onClick={() => { setTableExpanded(false); setExpandedId(null); }}
-                  className="w-full flex items-center justify-center py-1 border-t  hover:bg-surface-base transition-colors duration-100"
-                >
-                  <ChevronUp className="h-3.5 w-3.5 text-text-disabled" />
-                </button>
               </>
+            ) : (
+              chunks.map((chunk, i) => (
+                <TableRow
+                  key={chunk.id}
+                  content={chunk.content}
+                  context={context?.(chunk)}
+                  isExpanded={expandedId === chunk.id}
+                  onExpand={() => toggle(chunk.id)}
+                  onSave={(newContent) => onSave(chunk.id, newContent)}
+                  onDelete={() => onDelete(chunk.id)}
+                  isLast={i === chunks.length - 1}
+                />
+              ))
             )}
           </div>
         )}
@@ -327,12 +335,17 @@ function ExperienceTable({
 function SkillsTable({
   chunks,
   onDelete,
+  onSave,
 }: {
   chunks: ExperienceChunk[];
   onDelete: (id: string) => Promise<void>;
+  onSave: (id: string, content: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingPillId, setEditingPillId] = useState<string | null>(null);
+  const [editingPillValue, setEditingPillValue] = useState('');
+  const [savingPillId, setSavingPillId] = useState<string | null>(null);
 
   if (chunks.length === 0) return null;
 
@@ -343,10 +356,24 @@ function SkillsTable({
     try { await onDelete(id); } finally { setDeletingId(null); }
   };
 
+  const startPillEdit = (chunk: ExperienceChunk) => {
+    setEditingPillId(chunk.id);
+    setEditingPillValue(chunk.content);
+  };
+
+  const cancelPillEdit = () => {
+    setEditingPillId(null);
+    setEditingPillValue('');
+  };
+
+  const savePill = async (id: string) => {
+    const trimmed = editingPillValue.trim();
+    if (!trimmed) { cancelPillEdit(); return; }
+    setSavingPillId(id);
+    try { await onSave(id, trimmed); } finally { setSavingPillId(null); cancelPillEdit(); }
+  };
+
   return (
-    <>
-
-
     <div className="rounded-md border overflow-hidden">
 
       {/* Aggregate row */}
@@ -372,22 +399,57 @@ function SkillsTable({
           <div className="overflow-hidden">
             <div className="px-2 py-1 flex flex-wrap gap-1.5">
               {chunks.map((chunk) => (
-                <span
-                  key={chunk.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
-                >
-                  {chunk.content}
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(chunk.id)}
-                    disabled={deletingId === chunk.id}
-                    className="text-text-disabled hover:text-error transition-colors ml-0.5 flex-shrink-0"
+                editingPillId === chunk.id ? (
+                  <span
+                    key={chunk.id}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
                   >
-                    {deletingId === chunk.id
-                      ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                      : <X className="h-2.5 w-2.5" />}
-                  </button>
-                </span>
+                    <input
+                      autoFocus
+                      value={editingPillValue}
+                      onChange={(e) => setEditingPillValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') savePill(chunk.id);
+                        if (e.key === 'Escape') cancelPillEdit();
+                      }}
+                      className="bg-transparent outline-none min-w-0"
+                      style={{ width: `${Math.max(editingPillValue.length, 3)}ch` }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => savePill(chunk.id)}
+                      disabled={savingPillId === chunk.id}
+                      className="text-text-disabled hover:text-text-primary transition-colors ml-0.5 flex-shrink-0"
+                    >
+                      {savingPillId === chunk.id
+                        ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        : <Check className="h-2.5 w-2.5" />}
+                    </button>
+                  </span>
+                ) : (
+                  <span
+                    key={chunk.id}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
+                  >
+                    <button
+                      type="button"
+                      onClick={() => startPillEdit(chunk)}
+                      className="hover:text-text-primary transition-colors"
+                    >
+                      {chunk.content}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(chunk.id)}
+                      disabled={deletingId === chunk.id}
+                      className="text-text-disabled hover:text-error transition-colors ml-0.5 flex-shrink-0"
+                    >
+                      {deletingId === chunk.id
+                        ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        : <X className="h-2.5 w-2.5" />}
+                    </button>
+                  </span>
+                )
               ))}
             </div>
           </div>
@@ -395,7 +457,6 @@ function SkillsTable({
       </div>
 
     </div>
-    </>
   );
 }
 
@@ -406,12 +467,17 @@ function SkillsTable({
 function InlineSkillsRow({
   chunks,
   onDelete,
+  onSave,
 }: {
   chunks: ExperienceChunk[];
   onDelete: (id: string) => Promise<void>;
+  onSave: (id: string, content: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingPillId, setEditingPillId] = useState<string | null>(null);
+  const [editingPillValue, setEditingPillValue] = useState('');
+  const [savingPillId, setSavingPillId] = useState<string | null>(null);
 
   if (chunks.length === 0) return null;
 
@@ -420,6 +486,23 @@ function InlineSkillsRow({
   const handleDelete = async (id: string) => {
     setDeletingId(id);
     try { await onDelete(id); } finally { setDeletingId(null); }
+  };
+
+  const startPillEdit = (chunk: ExperienceChunk) => {
+    setEditingPillId(chunk.id);
+    setEditingPillValue(chunk.content);
+  };
+
+  const cancelPillEdit = () => {
+    setEditingPillId(null);
+    setEditingPillValue('');
+  };
+
+  const savePill = async (id: string) => {
+    const trimmed = editingPillValue.trim();
+    if (!trimmed) { cancelPillEdit(); return; }
+    setSavingPillId(id);
+    try { await onSave(id, trimmed); } finally { setSavingPillId(null); cancelPillEdit(); }
   };
 
   return (
@@ -444,22 +527,57 @@ function InlineSkillsRow({
         <div className="overflow-hidden">
           <div className="px-2 py-1 flex flex-wrap gap-1.5">
             {chunks.map((chunk) => (
-              <span
-                key={chunk.id}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
-              >
-                {chunk.content}
-                <button
-                  type="button"
-                  onClick={() => handleDelete(chunk.id)}
-                  disabled={deletingId === chunk.id}
-                  className="text-text-disabled hover:text-error transition-colors ml-0.5 flex-shrink-0"
+              editingPillId === chunk.id ? (
+                <span
+                  key={chunk.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
                 >
-                  {deletingId === chunk.id
-                    ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                    : <X className="h-2.5 w-2.5" />}
-                </button>
-              </span>
+                  <input
+                    autoFocus
+                    value={editingPillValue}
+                    onChange={(e) => setEditingPillValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') savePill(chunk.id);
+                      if (e.key === 'Escape') cancelPillEdit();
+                    }}
+                    className="bg-transparent outline-none min-w-0"
+                    style={{ width: `${Math.max(editingPillValue.length, 3)}ch` }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => savePill(chunk.id)}
+                    disabled={savingPillId === chunk.id}
+                    className="text-text-disabled hover:text-text-primary transition-colors ml-0.5 flex-shrink-0"
+                  >
+                    {savingPillId === chunk.id
+                      ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      : <Check className="h-2.5 w-2.5" />}
+                  </button>
+                </span>
+              ) : (
+                <span
+                  key={chunk.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
+                >
+                  <button
+                    type="button"
+                    onClick={() => startPillEdit(chunk)}
+                    className="hover:text-text-primary transition-colors"
+                  >
+                    {chunk.content}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(chunk.id)}
+                    disabled={deletingId === chunk.id}
+                    className="text-text-disabled hover:text-error transition-colors ml-0.5 flex-shrink-0"
+                  >
+                    {deletingId === chunk.id
+                      ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      : <X className="h-2.5 w-2.5" />}
+                  </button>
+                </span>
+              )
             ))}
           </div>
         </div>
@@ -509,17 +627,40 @@ function RepoTable({
       {/* Indented rows */}
       {itemCount > 0 && (
         <div className="ml-6 border border-t-0  rounded-b-md overflow-hidden">
-          {!tableExpanded ? (
-            <button
-              type="button"
-              onClick={() => setTableExpanded(true)}
-              className="w-full flex items-center gap-3 px-2 py-1 text-left hover:bg-surface-base transition-colors duration-100"
-            >
-              <span className="flex-1 text-sm text-text-tertiary">
-                {itemCount} {itemCount === 1 ? 'item' : 'items'}
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />
-            </button>
+          {itemCount > 3 ? (
+            <>
+              {/* Always-visible toggle row */}
+              <button
+                type="button"
+                onClick={() => { setTableExpanded((v) => !v); if (tableExpanded) setExpandedId(null); }}
+                className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-surface-base transition-colors duration-100"
+              >
+                {tableExpanded
+                  ? <ChevronUp className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />
+                  : <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0" />}
+                <span className="text-sm text-text-tertiary">
+                  {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                </span>
+              </button>
+              {tableExpanded && (
+                <>
+                  {contentChunks.map((chunk, i) => (
+                    <TableRow
+                      key={chunk.id}
+                      content={chunk.content}
+                      isExpanded={expandedId === chunk.id}
+                      onExpand={() => toggle(chunk.id)}
+                      onSave={(newContent) => onSave(chunk.id, newContent)}
+                      onDelete={() => onDelete(chunk.id)}
+                      isLast={skillChunks.length === 0 && i === contentChunks.length - 1}
+                    />
+                  ))}
+                  {skillChunks.length > 0 && (
+                    <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} onSave={onSave} />
+                  )}
+                </>
+              )}
+            </>
           ) : (
             <>
               {contentChunks.map((chunk, i) => (
@@ -534,15 +675,8 @@ function RepoTable({
                 />
               ))}
               {skillChunks.length > 0 && (
-                <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} />
+                <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} onSave={onSave} />
               )}
-              <button
-                type="button"
-                onClick={() => { setTableExpanded(false); setExpandedId(null); }}
-                className="w-full flex items-center justify-center py-1 border-t  hover:bg-surface-base transition-colors duration-100"
-              >
-                <ChevronUp className="h-3.5 w-3.5 text-text-disabled" />
-              </button>
             </>
           )}
         </div>
@@ -860,6 +994,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
               <SkillsTable
                 chunks={resume!.skills}
                 onDelete={handleDelete}
+                onSave={handleSave}
               />
             )}
 

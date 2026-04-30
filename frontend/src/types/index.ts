@@ -88,6 +88,7 @@ export interface GitHubRepo {
   star_count: number
   pushed_at: string | null
   scanned_at: string | null
+  scanning_started_at: string | null
 }
 
 export interface GitHubEnrichedRepo {
@@ -236,4 +237,5 @@ export interface ExperienceRecord {
   user_input_text: string | null
   uploaded_at: string | null
   processed_at: string | null
+  last_process_requested_at: string | null
 }

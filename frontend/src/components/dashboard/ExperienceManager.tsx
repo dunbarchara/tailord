@@ -19,7 +19,7 @@ function formatRelativeDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const diffMs = Date.now() - new Date(iso).getTime();
   const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 2) return 'just now';
+  if (diffMins < 1) return 'just now';
   if (diffMins < 60) return `${diffMins} minutes ago`;
   const diffHours = Math.floor(diffMins / 60);
   if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
@@ -192,10 +192,16 @@ export function ExperienceManager() {
   const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
   const [, setTick] = useState(0);
 
+  const [connectedGithub, setConnectedGithub] = useState<{ username: string; repos: GitHubRepo[] } | null>(null);
+
   const [chunksRefreshKey, setChunksRefreshKey] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmAction | null>(null);
   const [previouslyConnectedRepos, setPreviouslyConnectedRepos] = useState<Set<string>>(new Set());
   const [rescanConfirm, setRescanConfirm] = useState<string | null>(null);
+
+  const [scanningRepos, setScanningRepos] = useState<Record<string, number>>({});
+  const scanningReposRef = useRef<Record<string, number>>({});
+  const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -206,6 +212,13 @@ export function ExperienceManager() {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, [uploadState.phase]);
+
+  const scanIsActive = Object.keys(scanningRepos).length > 0;
+  useEffect(() => {
+    if (!scanIsActive) return;
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [scanIsActive]);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current !== null) {
@@ -225,6 +238,7 @@ export function ExperienceManager() {
         if (record.status === 'ready') {
           stopPolling();
           setUploadState({ phase: 'ready', record });
+          setChunksRefreshKey((k) => k + 1);
         } else if (record.status === 'error') {
           stopPolling();
           setUploadState({ phase: 'error', message: record.error_message ?? 'Processing failed' });
@@ -233,29 +247,101 @@ export function ExperienceManager() {
     }, 3000);
   }, [stopPolling]);
 
-  useEffect(() => {
-    async function loadInitialState() {
+  const updateScanningRepos = useCallback((fn: (prev: Record<string, number>) => Record<string, number>) => {
+    scanningReposRef.current = fn(scanningReposRef.current);
+    setScanningRepos({ ...scanningReposRef.current });
+  }, []);
+
+  const stopScanPolling = useCallback(() => {
+    if (scanPollRef.current) { clearInterval(scanPollRef.current); scanPollRef.current = null; }
+  }, []);
+
+  const startScanPolling = useCallback(() => {
+    stopScanPolling();
+    scanPollRef.current = setInterval(async () => {
       try {
         const res = await fetch('/api/experience');
         if (!res.ok) return;
         const record: ExperienceRecord | null = await res.json();
-        if (!record) return;
+        if (!record?.github_repos) return;
+
+        let anyCompleted = false;
+        updateScanningRepos((prev) => {
+          const next = { ...prev };
+          for (const [name, startTs] of Object.entries(prev)) {
+            const repo = record.github_repos!.find((r) => r.name === name);
+            if (repo?.scanned_at && new Date(repo.scanned_at).getTime() >= startTs) {
+              delete next[name];
+              anyCompleted = true;
+            }
+          }
+          return next;
+        });
+
+        if (anyCompleted) {
+          setConnectedGithub({ username: record.github_username!, repos: record.github_repos ?? [] });
+          setChunksRefreshKey((k) => k + 1);
+          if (Object.keys(scanningReposRef.current).length === 0) stopScanPolling();
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+  }, [stopScanPolling, updateScanningRepos]);
+
+  useEffect(() => {
+    async function loadInitialState() {
+      try {
+        const res = await fetch('/api/experience');
+        if (!res.ok) {
+          setUploadState({ phase: 'idle' });
+          return;
+        }
+        const record: ExperienceRecord | null = await res.json();
+        if (!record) {
+          setUploadState({ phase: 'idle' });
+          return;
+        }
+
+        // Always restore GitHub state regardless of resume processing status
+        if (record.github_username) {
+          setGithubUrl(record.github_username);
+          setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
+
+          // Restore in-flight scans from scanning_started_at
+          const scanning: Record<string, number> = {};
+          for (const repo of record.github_repos ?? []) {
+            if (repo.scanning_started_at) {
+              const startTs = new Date(repo.scanning_started_at).getTime();
+              const doneTs = repo.scanned_at ? new Date(repo.scanned_at).getTime() : 0;
+              if (doneTs < startTs) scanning[repo.name] = startTs;
+            }
+          }
+          if (Object.keys(scanning).length > 0) {
+            updateScanningRepos(() => scanning);
+            startScanPolling();
+          }
+        }
 
         if (record.status === 'ready') {
           setUploadState({ phase: 'ready', record });
-          if (record.github_username) setGithubUrl(record.github_username);
         } else if (record.status === 'processing' || record.status === 'pending') {
+          if (record.last_process_requested_at) {
+            const startTs = new Date(record.last_process_requested_at).getTime();
+            setStageStartedAt({ [PROCESS_STAGES[0]]: startTs });
+            setProcessingStage(PROCESS_STAGES[0]);
+          }
           setUploadState({ phase: 'processing', filename: record.filename ?? '', experienceId: record.id });
           startPolling();
         } else if (record.status === 'error') {
           setUploadState({ phase: 'error', message: record.error_message ?? 'Processing failed' });
         }
-      } catch { /* ignore */ }
+      } catch {
+        setUploadState({ phase: 'idle' });
+      }
     }
 
     loadInitialState();
-    return () => stopPolling();
-  }, [startPolling, stopPolling]);
+    return () => { stopPolling(); stopScanPolling(); };
+  }, [startPolling, stopPolling, stopScanPolling, startScanPolling, updateScanningRepos]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -322,7 +408,10 @@ export function ExperienceManager() {
               setUploadState({ phase: 'ready', record });
               setProcessingStage(null);
               setChunksRefreshKey((k) => k + 1);
-              if (record.github_username) setGithubUrl(record.github_username);
+              if (record.github_username) {
+                setGithubUrl(record.github_username);
+                setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
+              }
             } else if (currentEvent === 'error') {
               const { message } = JSON.parse(data);
               setUploadState({ phase: 'error', message });
@@ -361,7 +450,10 @@ export function ExperienceManager() {
     else if (action === 'resume-replace') fileInputRef.current?.click();
     else if (action === 'github-remove') await handleGithubRemove();
     else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
-    else if (action === 'github-repos-remove') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
+    else if (action === 'github-repos-remove') {
+      const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
+      await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], added);
+    }
   };
 
   function parseGithubUsername(input: string): string {
@@ -395,10 +487,26 @@ export function ExperienceManager() {
     setGithubEditing(false);
     resetGithubPreview();
     toast.success('GitHub profile connected');
-    const updated = await fetch('/api/experience').then((r) => r.json());
+    const updated: ExperienceRecord | null = await fetch('/api/experience').then((r) => r.json());
     if (updated) {
       setUploadState({ phase: 'ready', record: updated });
       setChunksRefreshKey((k) => k + 1);
+      if (updated.github_username) {
+        setConnectedGithub({ username: updated.github_username, repos: updated.github_repos ?? [] });
+      }
+      const toScan = enrichOnly ?? repoNames;
+      const now = Date.now();
+      const scanning: Record<string, number> = {};
+      for (const name of toScan) {
+        const repo = updated.github_repos?.find((r) => r.name === name);
+        if (!repo?.scanned_at || new Date(repo.scanned_at).getTime() < now) {
+          scanning[name] = now;
+        }
+      }
+      if (Object.keys(scanning).length > 0) {
+        updateScanningRepos((prev) => ({ ...prev, ...scanning }));
+        startScanPolling();
+      }
     }
   };
 
@@ -430,9 +538,9 @@ export function ExperienceManager() {
   };
 
   const handleGithubModify = async () => {
-    if (uploadState.phase !== 'ready') return;
-    const username = uploadState.record.github_username ?? '';
-    const currentRepos = new Set((uploadState.record.github_repos ?? []).map((r) => r.name));
+    if (!connectedGithub) return;
+    const username = connectedGithub.username;
+    const currentRepos = new Set(connectedGithub.repos.map((r) => r.name));
     setPreviouslyConnectedRepos(currentRepos);
     setGithubUrl(username);
     setGithubEditing(true);
@@ -485,6 +593,9 @@ export function ExperienceManager() {
       return;
     }
     toast.success(`Re-scan queued for ${repoName}`);
+    const now = Date.now();
+    updateScanningRepos((prev) => ({ ...prev, [repoName]: now }));
+    startScanPolling();
   };
 
   const handleGithubRemove = async () => {
@@ -499,6 +610,7 @@ export function ExperienceManager() {
     setGithubUrl('');
     setGithubState('idle');
     setGithubEditing(false);
+    setConnectedGithub(null);
     resetGithubPreview();
     toast.success('GitHub profile removed');
     const updated = await fetch('/api/experience').then((r) => r.json());
@@ -624,15 +736,14 @@ export function ExperienceManager() {
 
   /* ─── GitHub card content ────────────────────────────────────────────────── */
 
-  const githubConnected =
-    uploadState.phase === 'ready' && !!uploadState.record.github_username;
+  const githubConnected = !!connectedGithub;
   const isInitialLoad = uploadState.phase === 'loading';
 
   const renderGithubControls = () => {
     // ── Connected ────────────────────────────────────────────────────────────
-    if (githubConnected && !githubEditing && uploadState.phase === 'ready') {
-      const repos = uploadState.record.github_repos ?? [];
-      const username = uploadState.record.github_username!;
+    if (githubConnected && !githubEditing && connectedGithub) {
+      const repos = connectedGithub.repos;
+      const username = connectedGithub.username;
       return (
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
@@ -650,34 +761,46 @@ export function ExperienceManager() {
               <span className="text-sm text-text-tertiary">
                 {repos.length} repo{repos.length !== 1 ? 's' : ''} linked
               </span>
-              {repos.map((r) => (
-                <div key={r.name} className="group flex items-center gap-2">
-                  <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <a
-                      href={`https://github.com/${username}/${r.name}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium text-text-primary hover:opacity-80"
-                    >
-                      {r.name}
-                    </a>
-                    {r.scanned_at && (
-                      <span className="text-xs text-text-disabled ml-1.5">
-                        · last scanned {formatRelativeDate(r.scanned_at)}
-                      </span>
+              {repos.map((r) => {
+                const scanStart = scanningRepos[r.name];
+                const isScanning = !!scanStart;
+                const elapsed = scanStart ? Math.floor((Date.now() - scanStart) / 1000) : 0;
+                return (
+                  <div key={r.name} className="group flex items-center gap-2">
+                    <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={`https://github.com/${username}/${r.name}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-text-primary hover:opacity-80"
+                      >
+                        {r.name}
+                      </a>
+                      {isScanning ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-text-disabled ml-1.5">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          Scanning… {formatElapsed(elapsed)}
+                        </span>
+                      ) : r.scanned_at ? (
+                        <span className="text-xs text-text-disabled ml-1.5">
+                          · scanned {formatRelativeDate(r.scanned_at)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {!isScanning && (
+                      <button
+                        type="button"
+                        title="Re-scan this repository"
+                        onClick={() => setRescanConfirm(r.name)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-surface-sunken text-text-tertiary hover:text-text-secondary"
+                      >
+                        <RefreshCw className="size-3" />
+                      </button>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    title="Re-scan this repository"
-                    onClick={() => setRescanConfirm(r.name)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-surface-sunken text-text-tertiary hover:text-text-secondary"
-                  >
-                    <RefreshCw className="size-3" />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -831,9 +954,9 @@ export function ExperienceManager() {
             <div className="flex flex-col gap-5">
               {/* 1. Header */}
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 h-6">
                   <h2 className="text-sm font-medium text-text-primary">Resume Upload</h2>
-                  <span className={resumeHasFile ? undefined : 'invisible'}>
+                  <span className={resumeHasFile ? 'flex items-center' : 'invisible'}>
                     <LiveBadge label="Uploaded" />
                   </span>
                 </div>
@@ -851,9 +974,9 @@ export function ExperienceManager() {
             {/* GitHub */}
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 h-6">
                   <h2 className="text-sm font-medium text-text-primary">GitHub Connection</h2>
-                  <span className={githubConnected ? undefined : 'invisible'}>
+                  <span className={githubConnected ? 'flex items-center' : 'invisible'}>
                     <LiveBadge label="Connected" />
                   </span>
                 </div>

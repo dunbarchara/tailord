@@ -149,6 +149,9 @@ def _experience_response(e: Experience) -> dict:
         "user_input_text": e.user_input_text,
         "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None,
         "processed_at": e.processed_at.isoformat() if e.processed_at else None,
+        "last_process_requested_at": e.last_process_requested_at.isoformat()
+        if e.last_process_requested_at
+        else None,
     }
 
 
@@ -219,6 +222,7 @@ def get_upload_url(
 @router.post("/experience/process")
 async def trigger_process(
     body: ProcessRequest,
+    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -259,6 +263,7 @@ async def trigger_process(
     filename = experience.filename or "file.txt"
 
     async def _stream():
+        completed = False
         try:
             yield "event: stage\ndata: extracting\n\n"
 
@@ -275,6 +280,7 @@ async def trigger_process(
                 )
                 db.commit()
                 yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+                completed = True
                 return
 
             text = await anyio.to_thread.run_sync(lambda: extract_text(file_bytes, filename))
@@ -293,13 +299,14 @@ async def trigger_process(
 
             chunk_count = chunk_resume(db, experience)
             db.commit()
-            embed_experience_chunks(experience.id, db)
+            background_tasks.add_task(embed_experience_chunks_task, experience.id)
             logger.info(
                 "trigger_process SSE complete: experience_id=%s chunks=%d",
                 experience.id,
                 chunk_count,
             )
             yield f"event: ready\ndata: {json.dumps(_experience_response(experience))}\n\n"
+            completed = True
 
         except Exception as exc:
             logger.exception("trigger_process SSE failed: %s", exc)
@@ -307,6 +314,19 @@ async def trigger_process(
             experience.error_message = _friendly_processing_error(exc)
             db.commit()
             yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+            completed = True
+        finally:
+            if not completed and experience.status == "processing":
+                logger.warning(
+                    "trigger_process SSE interrupted (client disconnect?): experience_id=%s",
+                    experience.id,
+                )
+                experience.status = "error"
+                experience.error_message = "Processing was interrupted. Please try again."
+                try:
+                    db.commit()
+                except Exception:
+                    pass
 
     return StreamingResponse(
         _stream(),
@@ -430,6 +450,13 @@ def set_github(
     if body.rescan_repo_names is not None:
         if not experience or not experience.github_username:
             raise HTTPException(status_code=404, detail="No GitHub connection found")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        rescan_set = set(body.rescan_repo_names)
+        experience.github_repos = [
+            {**r, "scanning_started_at": now_iso} if r["name"] in rescan_set else r
+            for r in (experience.github_repos or [])
+        ]
+        db.commit()
         background_tasks.add_task(
             enrich_github_repos,
             github_username=body.github_username,
@@ -474,13 +501,19 @@ def set_github(
     additions_only = body.enrich_only_repo_names is not None
 
     if experience:
+        # Delete chunks for repos being removed whenever the selection changes
+        if body.selected_repo_names is not None:
+            old_repo_names = {r["name"] for r in (experience.github_repos or [])}
+            new_repo_names = set(body.selected_repo_names)
+            for removed_repo in old_repo_names - new_repo_names:
+                delete_github_chunks(db, experience.id, repo_name=removed_repo)
+
         experience.github_username = body.github_username
         experience.github_repos = repos
         if not additions_only:
             experience.github_repo_details = None
         profile = experience.extracted_profile or {}
         experience.extracted_profile = {**profile, "github": {"repos": repos}}
-        experience.processed_at = datetime.now(timezone.utc)
         if experience.status not in ("ready", "processing"):
             experience.status = "ready"
     else:
@@ -492,7 +525,6 @@ def set_github(
             github_username=body.github_username,
             github_repos=repos,
             extracted_profile={"github": {"repos": repos}},
-            processed_at=datetime.now(timezone.utc),
         )
         db.add(experience)
 
@@ -502,6 +534,17 @@ def set_github(
     repo_names_to_enrich = (
         body.enrich_only_repo_names if additions_only else body.selected_repo_names
     )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    enrich_set = (
+        set(repo_names_to_enrich)
+        if repo_names_to_enrich is not None
+        else {r["name"] for r in (experience.github_repos or [])}
+    )
+    experience.github_repos = [
+        {**r, "scanning_started_at": now_iso} if r["name"] in enrich_set else r
+        for r in (experience.github_repos or [])
+    ]
+    db.commit()
     background_tasks.add_task(
         enrich_github_repos,
         github_username=body.github_username,
