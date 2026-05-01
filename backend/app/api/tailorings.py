@@ -93,7 +93,7 @@ def _validate_profile(profile: dict) -> None:
     resume = profile.get("resume") or {}
     has_work = bool(resume.get("work_experience"))
     has_summary = bool((resume.get("summary") or "").strip())
-    has_github = bool((profile.get("github") or {}).get("repos"))
+    has_github = bool(profile.get("github_repos"))
     if not (has_work or has_summary or has_github):
         raise HTTPException(
             status_code=422,
