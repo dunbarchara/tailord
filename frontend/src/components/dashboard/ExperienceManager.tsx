@@ -2,21 +2,37 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Upload, FileText, Loader2, CheckCircle, AlertCircle, X, RefreshCw,
+  Upload, Pencil, FileText, Trash2, Loader2, AlertCircle, X, RefreshCw, GitBranch, ArrowUpRight,
 } from 'lucide-react';
 import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
 import { cn, toastError, formatElapsed } from '@/lib/utils';
 import { ChunkedProfile } from '@/components/dashboard/ChunkedProfile';
 import type { ExperienceRecord, GitHubRepo } from '@/types';
-import { IconCheck } from '@/components/ui/icons';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
+
+function formatRelativeDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMins = Math.floor(diffMs / 60_000);
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins} minutes ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return '1 day ago';
+  if (diffDays < 30) return `${diffDays} days ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
 type UploadPhase =
+  | { phase: 'loading' }
   | { phase: 'idle' }
   | { phase: 'uploading'; filename: string }
   | { phase: 'processing'; filename: string; experienceId: string }
@@ -24,7 +40,6 @@ type UploadPhase =
   | { phase: 'error'; message: string };
 
 type GithubState = 'idle' | 'fetching' | 'saving' | 'saved' | 'removing' | 'error';
-type SaveState = 'idle' | 'saving' | 'saved';
 
 const CONFIRM_CONFIGS = {
   'resume-remove': {
@@ -47,9 +62,9 @@ const CONFIRM_CONFIGS = {
     description: 'Your existing GitHub profile and imported repository data will be replaced with the new username. The previous data will be permanently deleted. This cannot be undone.',
     confirm: 'Change',
   },
-  'user-input-clear': {
-    title: 'Remove additional context',
-    description: 'Your additional context and any extracted data will be permanently deleted. This cannot be undone.',
+  'github-repos-remove': {
+    title: 'Remove repositories',
+    description: 'Removing repositories will permanently delete the signals extracted from them. This cannot be undone.',
     confirm: 'Remove',
   },
 } as const;
@@ -62,7 +77,7 @@ const PROCESS_STAGE_LABELS: Record<string, string> = {
 };
 const PROCESS_STAGES = ['extracting', 'analyzing'] as const;
 
-/* ─── Shared styles (mirrors SettingsPanel) ─────────────────────────────── */
+/* ─── Shared styles ─────────────────────────────────────────────────────── */
 
 const inputCls =
   'w-full h-10 rounded-xl border border-border-default bg-surface-elevated px-3 text-sm text-text-primary ' +
@@ -70,13 +85,6 @@ const inputCls =
   'hover:border-border-strong hover:bg-surface-base ' +
   'focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] ' +
   'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] disabled:opacity-50 disabled:cursor-not-allowed';
-
-const textareaCls =
-  'w-full rounded-xl border border-border-default bg-surface-elevated px-3 py-2.5 text-sm text-text-primary ' +
-  'placeholder:text-text-disabled outline-none transition-colors duration-100 resize-none ' +
-  'hover:border-border-strong hover:bg-surface-base ' +
-  'focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] ' +
-  'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)]';
 
 const saveBtnCls =
   'inline-flex items-center gap-1.5 justify-center h-9 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] ' +
@@ -91,105 +99,87 @@ const outlineBtnCls =
   'hover:bg-surface-base hover:border-border-strong hover:text-text-primary ' +
   'transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
-/* ─── Section row layout (matches SettingsPanel) ─────────────────────────── */
+/* ─── Live badge (Mintlify pill style) ───────────────────────────────────── */
 
-function SettingRow({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
+function LiveBadge({ label }: { label: string }) {
   return (
-    <div className="py-8 grid grid-cols-1 lg:grid-cols-8 gap-x-12 gap-y-4">
-      <div className="lg:col-span-3 flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-text-primary">{title}</h2>
-        {description && <p className="text-sm text-text-secondary">{description}</p>}
-      </div>
-      <div className="lg:col-span-5">{children}</div>
-    </div>
-  );
-}
-
-/* ─── Card box ──────────────────────────────────────────────────────────── */
-
-function CardBox({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn('flex flex-col gap-3 rounded-2xl bg-surface-base p-4 text-sm', className)}>
-      {children}
-    </div>
-  );
-}
-
-/* ─── Icon box ──────────────────────────────────────────────────────────── */
-
-function IconBox({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="shrink-0 rounded-xl p-2 bg-surface-elevated border border-border-subtle shadow-[0px_1px_2px_0px_rgba(20,21,26,0.05)]">
-      {children}
-    </div>
-  );
-}
-
-/* ─── Connected badge ───────────────────────────────────────────────────── */
-
-function StatusBadge({ label, variant }: { label: string; variant: 'green' | 'amber' }) {
-  return (
-    <span className={cn(
-      'inline-flex items-center gap-[3px] py-0.5 px-1.5 text-xs font-medium rounded-md',
-      variant === 'green'
-        ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400'
-        : 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'
-    )}>
-      {variant === 'green' ? (
-        <IconCheck size={11} />
-      ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 18 18" fill="currentColor" stroke="none" aria-hidden="true">
-          <circle cx="9" cy="9" r="3.5" />
-        </svg>
-      )}
+    <span className="inline-flex items-center w-fit font-medium bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 gap-[3px] text-xs leading-none rounded-full py-1 px-2">
+      <span className="flex items-center justify-center size-3">
+        <span className="size-1.5 bg-current rounded-full" />
+      </span>
       {label}
     </span>
   );
 }
 
-/* ─── Source row (ready state) ──────────────────────────────────────────── */
+/* ─── Mintlify-style button ──────────────────────────────────────────────── */
 
-function SourceRow({
+function MintBtn({
   icon,
-  name,
-  badge,
-  description,
-  action,
+  label,
+  onClick,
+  danger,
+  disabled,
 }: {
   icon: React.ReactNode;
-  name: string;
-  badge?: React.ReactNode;
-  description?: React.ReactNode;
-  action: React.ReactNode;
+  label?: string;
+  onClick?: () => void;
+  danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <IconBox>{icon}</IconBox>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-text-primary flex items-center gap-2 flex-wrap">
-          {name}{badge}
-        </p>
-        {description && (
-          <div className="text-sm text-text-secondary mt-0.5">{description}</div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center justify-center whitespace-nowrap rounded-[10px] border transition-colors',
+        'outline-none focus-visible:ring-2 [&_svg:not([class*="size-"])]:size-3.5',
+        label
+          ? 'gap-1.5 h-8 px-2.5 text-sm font-normal tracking-[-0.1px]'
+          : 'size-8',
+        danger
+          ? 'text-text-secondary bg-surface-elevated border-border-subtle text-red-600 border-red-300 dark:border-red-800 hover:border-red-300 hover:bg-red-50 hover:text-error dark:hover:border-red-800 dark:hover:bg-red-950/20'
+          : 'text-text-secondary bg-surface-elevated border-border-subtle hover:border-border-default hover:bg-surface-sunken hover:text-text-primary',
+        disabled && 'opacity-40 cursor-not-allowed pointer-events-none',
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+/* ─── Toggle switch ──────────────────────────────────────────────────────── */
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={cn(
+        'relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent',
+        'transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2',
+        checked ? 'bg-zinc-900 dark:bg-white' : 'bg-border-default',
+      )}
+    >
+      <span
+        className={cn(
+          'pointer-events-none inline-block h-3 w-3 rounded-full bg-white dark:bg-zinc-900',
+          'shadow transform transition duration-200 ease-in-out',
+          checked ? 'translate-x-3' : 'translate-x-0',
         )}
-      </div>
-      <div className="shrink-0 flex items-center gap-2">{action}</div>
-    </div>
+      />
+    </button>
   );
 }
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
 export function ExperienceManager() {
-  const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'idle' });
+  const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
   const [githubUrl, setGithubUrl] = useState('');
   const [githubState, setGithubState] = useState<GithubState>('idle');
   const [githubError, setGithubError] = useState<string | null>(null);
@@ -197,24 +187,38 @@ export function ExperienceManager() {
   const [previewRepos, setPreviewRepos] = useState<GitHubRepo[] | null>(null);
   const [selectedRepoNames, setSelectedRepoNames] = useState<Set<string>>(new Set());
   const [acknowledged, setAcknowledged] = useState(false);
-  const [directText, setDirectText] = useState('');
-  const [directState, setDirectState] = useState<SaveState>('idle');
 
   const [processingStage, setProcessingStage] = useState<string | null>(null);
   const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
   const [, setTick] = useState(0);
 
+  const [connectedGithub, setConnectedGithub] = useState<{ username: string; repos: GitHubRepo[] } | null>(null);
+
   const [chunksRefreshKey, setChunksRefreshKey] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmAction | null>(null);
+  const [previouslyConnectedRepos, setPreviouslyConnectedRepos] = useState<Set<string>>(new Set());
+  const [rescanConfirm, setRescanConfirm] = useState<string | null>(null);
+
+  const [scanningRepos, setScanningRepos] = useState<Record<string, number>>({});
+  const scanningReposRef = useRef<Record<string, number>>({});
+  const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
 
   useEffect(() => {
     if (uploadState.phase !== 'processing') return;
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, [uploadState.phase]);
+
+  const scanIsActive = Object.keys(scanningRepos).length > 0;
+  useEffect(() => {
+    if (!scanIsActive) return;
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [scanIsActive]);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current !== null) {
@@ -234,6 +238,7 @@ export function ExperienceManager() {
         if (record.status === 'ready') {
           stopPolling();
           setUploadState({ phase: 'ready', record });
+          setChunksRefreshKey((k) => k + 1);
         } else if (record.status === 'error') {
           stopPolling();
           setUploadState({ phase: 'error', message: record.error_message ?? 'Processing failed' });
@@ -242,30 +247,101 @@ export function ExperienceManager() {
     }, 3000);
   }, [stopPolling]);
 
-  useEffect(() => {
-    async function loadInitialState() {
+  const updateScanningRepos = useCallback((fn: (prev: Record<string, number>) => Record<string, number>) => {
+    scanningReposRef.current = fn(scanningReposRef.current);
+    setScanningRepos({ ...scanningReposRef.current });
+  }, []);
+
+  const stopScanPolling = useCallback(() => {
+    if (scanPollRef.current) { clearInterval(scanPollRef.current); scanPollRef.current = null; }
+  }, []);
+
+  const startScanPolling = useCallback(() => {
+    stopScanPolling();
+    scanPollRef.current = setInterval(async () => {
       try {
         const res = await fetch('/api/experience');
         if (!res.ok) return;
         const record: ExperienceRecord | null = await res.json();
-        if (!record) return;
+        if (!record?.github_repos) return;
+
+        let anyCompleted = false;
+        updateScanningRepos((prev) => {
+          const next = { ...prev };
+          for (const [name, startTs] of Object.entries(prev)) {
+            const repo = record.github_repos!.find((r) => r.name === name);
+            if (repo?.scanned_at && new Date(repo.scanned_at).getTime() >= startTs) {
+              delete next[name];
+              anyCompleted = true;
+            }
+          }
+          return next;
+        });
+
+        if (anyCompleted) {
+          setConnectedGithub({ username: record.github_username!, repos: record.github_repos ?? [] });
+          setChunksRefreshKey((k) => k + 1);
+          if (Object.keys(scanningReposRef.current).length === 0) stopScanPolling();
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+  }, [stopScanPolling, updateScanningRepos]);
+
+  useEffect(() => {
+    async function loadInitialState() {
+      try {
+        const res = await fetch('/api/experience');
+        if (!res.ok) {
+          setUploadState({ phase: 'idle' });
+          return;
+        }
+        const record: ExperienceRecord | null = await res.json();
+        if (!record) {
+          setUploadState({ phase: 'idle' });
+          return;
+        }
+
+        // Always restore GitHub state regardless of resume processing status
+        if (record.github_username) {
+          setGithubUrl(record.github_username);
+          setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
+
+          // Restore in-flight scans from scanning_started_at
+          const scanning: Record<string, number> = {};
+          for (const repo of record.github_repos ?? []) {
+            if (repo.scanning_started_at) {
+              const startTs = new Date(repo.scanning_started_at).getTime();
+              const doneTs = repo.scanned_at ? new Date(repo.scanned_at).getTime() : 0;
+              if (doneTs < startTs) scanning[repo.name] = startTs;
+            }
+          }
+          if (Object.keys(scanning).length > 0) {
+            updateScanningRepos(() => scanning);
+            startScanPolling();
+          }
+        }
 
         if (record.status === 'ready') {
           setUploadState({ phase: 'ready', record });
-          if (record.github_username) setGithubUrl(record.github_username);
-          if (record.user_input_text) setDirectText(record.user_input_text);
         } else if (record.status === 'processing' || record.status === 'pending') {
+          if (record.last_process_requested_at) {
+            const startTs = new Date(record.last_process_requested_at).getTime();
+            setStageStartedAt({ [PROCESS_STAGES[0]]: startTs });
+            setProcessingStage(PROCESS_STAGES[0]);
+          }
           setUploadState({ phase: 'processing', filename: record.filename ?? '', experienceId: record.id });
           startPolling();
         } else if (record.status === 'error') {
           setUploadState({ phase: 'error', message: record.error_message ?? 'Processing failed' });
         }
-      } catch { /* ignore */ }
+      } catch {
+        setUploadState({ phase: 'idle' });
+      }
     }
 
     loadInitialState();
-    return () => stopPolling();
-  }, [startPolling, stopPolling]);
+    return () => { stopPolling(); stopScanPolling(); };
+  }, [startPolling, stopPolling, stopScanPolling, startScanPolling, updateScanningRepos]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -332,8 +408,10 @@ export function ExperienceManager() {
               setUploadState({ phase: 'ready', record });
               setProcessingStage(null);
               setChunksRefreshKey((k) => k + 1);
-              if (record.github_username) setGithubUrl(record.github_username);
-              if (record.user_input_text) setDirectText(record.user_input_text);
+              if (record.github_username) {
+                setGithubUrl(record.github_username);
+                setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
+              }
             } else if (currentEvent === 'error') {
               const { message } = JSON.parse(data);
               setUploadState({ phase: 'error', message });
@@ -365,23 +443,6 @@ export function ExperienceManager() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleUserInputRemove = async () => {
-    const res = await fetch('/api/experience/user-input', { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? `Failed to remove (${res.status})`);
-      return;
-    }
-    setDirectText('');
-    setDirectState('idle');
-    toast.success('Additional context removed');
-    const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) {
-      setUploadState({ phase: 'ready', record: updated });
-      setChunksRefreshKey((k) => k + 1);
-    }
-  };
-
   const handleConfirmAction = async () => {
     const action = confirmDialog;
     setConfirmDialog(null);
@@ -389,7 +450,10 @@ export function ExperienceManager() {
     else if (action === 'resume-replace') fileInputRef.current?.click();
     else if (action === 'github-remove') await handleGithubRemove();
     else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
-    else if (action === 'user-input-clear') await handleUserInputRemove();
+    else if (action === 'github-repos-remove') {
+      const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
+      await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], added);
+    }
   };
 
   function parseGithubUsername(input: string): string {
@@ -403,13 +467,15 @@ export function ExperienceManager() {
     setAcknowledged(false);
   };
 
-  const doGithubSave = async (username: string, repoNames: string[]) => {
+  const doGithubSave = async (username: string, repoNames: string[], enrichOnly?: string[]) => {
     setGithubState('saving');
     setGithubError(null);
+    const payload: Record<string, unknown> = { github_username: username, selected_repo_names: repoNames };
+    if (enrichOnly !== undefined) payload.enrich_only_repo_names = enrichOnly;
     const res = await fetch('/api/experience/github', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ github_username: username, selected_repo_names: repoNames }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -421,17 +487,30 @@ export function ExperienceManager() {
     setGithubEditing(false);
     resetGithubPreview();
     toast.success('GitHub profile connected');
-    const updated = await fetch('/api/experience').then((r) => r.json());
+    const updated: ExperienceRecord | null = await fetch('/api/experience').then((r) => r.json());
     if (updated) {
       setUploadState({ phase: 'ready', record: updated });
       setChunksRefreshKey((k) => k + 1);
+      if (updated.github_username) {
+        setConnectedGithub({ username: updated.github_username, repos: updated.github_repos ?? [] });
+      }
+      const toScan = enrichOnly ?? repoNames;
+      const now = Date.now();
+      const scanning: Record<string, number> = {};
+      for (const name of toScan) {
+        const repo = updated.github_repos?.find((r) => r.name === name);
+        if (!repo?.scanned_at || new Date(repo.scanned_at).getTime() < now) {
+          scanning[name] = now;
+        }
+      }
+      if (Object.keys(scanning).length > 0) {
+        updateScanningRepos((prev) => ({ ...prev, ...scanning }));
+        startScanPolling();
+      }
     }
   };
 
-  const handleGithubFetch = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const username = parseGithubUsername(githubUrl);
-    if (!username) return;
+  const fetchReposForUsername = async (username: string, preselect?: Set<string>) => {
     setGithubState('fetching');
     setGithubError(null);
     const res = await fetch(`/api/experience/github/${encodeURIComponent(username)}/repos`);
@@ -444,17 +523,49 @@ export function ExperienceManager() {
     const data = await res.json();
     const repos: GitHubRepo[] = data.repos ?? [];
     setPreviewRepos(repos);
-    setSelectedRepoNames(new Set(repos.map((r) => r.name)));
+    // Default OFF for initial connect; pre-select for Modify
+    setSelectedRepoNames(preselect ? new Set(preselect) : new Set());
     setGithubState('idle');
+  };
+
+  const handleGithubFetch = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const username = parseGithubUsername(githubUrl);
+    if (!username) return;
+    setPreviewRepos(null);
+    setAcknowledged(false);
+    await fetchReposForUsername(username);
+  };
+
+  const handleGithubModify = async () => {
+    if (!connectedGithub) return;
+    const username = connectedGithub.username;
+    const currentRepos = new Set(connectedGithub.repos.map((r) => r.name));
+    setPreviouslyConnectedRepos(currentRepos);
+    setGithubUrl(username);
+    setGithubEditing(true);
+    setGithubError(null);
+    setPreviewRepos(null);
+    setAcknowledged(true); // pre-acknowledge for Modify since user already agreed once
+    await fetchReposForUsername(username, currentRepos);
   };
 
   const handleGithubConnect = async () => {
     const username = parseGithubUsername(githubUrl);
-    if (!username || selectedRepoNames.size === 0) return;
+    if (!username || selectedRepoNames.size === 0 || !acknowledged) return;
+
     if (githubEditing) {
-      setConfirmDialog('github-change');
+      const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
+      const removed = [...previouslyConnectedRepos].filter((n) => !selectedRepoNames.has(n));
+      if (removed.length > 0) {
+        setConfirmDialog('github-repos-remove');
+        return;
+      }
+      // Additions only — enrich only the new repos
+      await doGithubSave(username, [...selectedRepoNames], added.length > 0 ? added : undefined);
       return;
     }
+
     await doGithubSave(username, [...selectedRepoNames]);
   };
 
@@ -467,11 +578,24 @@ export function ExperienceManager() {
     });
   };
 
-  const handleGithubRescan = async () => {
-    if (uploadState.phase !== 'ready' || !uploadState.record.github_username) return;
+  const handleRepoRescan = async (repoName: string) => {
+    if (uploadState.phase !== 'ready') return;
     const username = uploadState.record.github_username;
-    const repoNames = (uploadState.record.github_repos ?? []).map((r) => r.name);
-    await doGithubSave(username, repoNames);
+    if (!username) return;
+    const res = await fetch('/api/experience/github', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ github_username: username, rescan_repo_names: [repoName] }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toastError(err.detail ?? 'Rescan failed');
+      return;
+    }
+    toast.success(`Re-scan queued for ${repoName}`);
+    const now = Date.now();
+    updateScanningRepos((prev) => ({ ...prev, [repoName]: now }));
+    startScanPolling();
   };
 
   const handleGithubRemove = async () => {
@@ -486,6 +610,7 @@ export function ExperienceManager() {
     setGithubUrl('');
     setGithubState('idle');
     setGithubEditing(false);
+    setConnectedGithub(null);
     resetGithubPreview();
     toast.success('GitHub profile removed');
     const updated = await fetch('/api/experience').then((r) => r.json());
@@ -495,405 +620,314 @@ export function ExperienceManager() {
     }
   };
 
-  const handleDirectSave = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!directText.trim()) return;
-    setDirectState('saving');
-    const res = await fetch('/api/experience/user-input', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: directText }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? `Failed to save (${res.status})`);
-      setDirectState('idle');
-      return;
-    }
-    setDirectState('saved');
-    toast.success('Additional context saved');
-    const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) {
-      setUploadState({ phase: 'ready', record: updated });
-      setChunksRefreshKey((k) => k + 1);
-    }
-  };
+  /* ─── Resume section: per-section helpers ───────────────────────────────── */
 
-  /* ─── Resume right-col content ─────────────────────────────────────────── */
+  const resumeHasFile =
+    uploadState.phase === 'ready' && !!uploadState.record.filename;
 
-  const renderResumeContent = () => {
+  const resumeSubtext = (() => {
     switch (uploadState.phase) {
-      case 'idle':
-        return (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full py-10 rounded-2xl border-2 border-dashed border-border-default bg-surface-base hover:border-border-strong hover:bg-surface-overlay transition-colors text-center"
-          >
-            <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2.5" />
-            <p className="text-sm text-text-secondary">Click to upload</p>
-            <p className="text-xs text-text-disabled mt-1">PDF, DOCX, or TXT</p>
-          </button>
-        );
+      case 'loading':
+      case 'error': return null;
+      case 'uploading':
+      case 'processing':
+      case 'idle': return 'Upload a PDF, DOCX, or TXT file to get started';
+      case 'ready':
+        if (!uploadState.record.filename) return 'Upload a PDF, DOCX, or TXT file to get started';
+        return `Last updated ${formatRelativeDate(uploadState.record.processed_at) ?? ''}`;
+    }
+  })();
 
+  const resumeCard = (() => {
+    switch (uploadState.phase) {
+      case 'loading':
+      case 'idle': return null;
       case 'uploading':
         return (
-          <CardBox>
-            <SourceRow
-              icon={<FileText className="h-4 w-4 text-text-tertiary" />}
-              name={uploadState.filename}
-              description={
-                <span className="flex items-center gap-1.5">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-text-disabled" />
-                  Uploading…
-                </span>
-              }
-              action={null}
-            />
-          </CardBox>
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
+            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
+            <div>
+              <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
+              <p className="text-xs text-text-disabled">Uploading…</p>
+            </div>
+          </div>
         );
-
       case 'processing': {
-        const stagesWithStatus = PROCESS_STAGES.map((stage) => {
-          const stageIndex = PROCESS_STAGES.indexOf(stage);
-          const activeIndex = processingStage
-            ? PROCESS_STAGES.indexOf(processingStage as typeof PROCESS_STAGES[number])
-            : -1;
-          const isActive = processingStage === stage;
-          const isDone = activeIndex > stageIndex;
-          return { stage, isActive, isDone };
-        }).filter(({ isActive, isDone }) => isActive || isDone);
-
+        const overallStart = stageStartedAt[PROCESS_STAGES[0]];
+        const elapsed = overallStart ? Math.floor((Date.now() - overallStart) / 1000) : 0;
+        const label = processingStage ? (PROCESS_STAGE_LABELS[processingStage] ?? processingStage) : 'Processing';
         return (
-          <CardBox>
-            <SourceRow
-              icon={<Loader2 className="h-4 w-4 text-text-tertiary animate-spin" />}
-              name={uploadState.filename}
-              description="Processing…"
-              action={
-                <button
-                  type="button"
-                  onClick={handleRemove}
-                  className="text-xs text-text-tertiary hover:text-error transition-colors"
-                >
-                  Cancel
-                </button>
-              }
-            />
-            {stagesWithStatus.length > 0 && (
-              <div className="space-y-1.5 pl-[52px]">
-                {stagesWithStatus.map(({ stage, isActive, isDone }) => {
-                  const stageIndex = PROCESS_STAGES.indexOf(stage as typeof PROCESS_STAGES[number]);
-                  const nextStage = PROCESS_STAGES[stageIndex + 1];
-                  const endTime = isDone && nextStage && stageStartedAt[nextStage]
-                    ? stageStartedAt[nextStage] : Date.now();
-                  const elapsed = stageStartedAt[stage]
-                    ? Math.floor((endTime - stageStartedAt[stage]) / 1000) : 0;
-                  return (
-                    <div key={stage} className="flex items-center gap-2">
-                      {isDone
-                        ? <CheckCircle className="h-3 w-3 text-success shrink-0" />
-                        : <div className="h-3 w-3 flex items-center justify-center shrink-0">
-                            <div className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse" />
-                          </div>}
-                      <span className="text-xs text-text-secondary flex-1">
-                        {PROCESS_STAGE_LABELS[stage]}{isActive ? '…' : ''}
-                      </span>
-                      {stageStartedAt[stage] && (
-                        <span className="text-xs text-text-disabled">{formatElapsed(elapsed)}</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardBox>
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
+            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
+            <div>
+              <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
+              <p className="text-xs text-text-disabled">
+                {label}…{overallStart ? ` ${formatElapsed(elapsed)}` : ''}
+              </p>
+            </div>
+          </div>
         );
       }
-
       case 'ready':
-        if (!uploadState.record.filename) {
-          return (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-10 rounded-2xl border-2 border-dashed border-border-default bg-surface-base hover:border-border-strong hover:bg-surface-overlay transition-colors text-center"
-            >
-              <Upload className="h-5 w-5 text-text-tertiary mx-auto mb-2.5" />
-              <p className="text-sm text-text-secondary">Click to upload</p>
-              <p className="text-xs text-text-disabled mt-1">PDF, DOCX, or TXT</p>
-            </button>
-          );
-        }
+        if (!uploadState.record.filename) return null;
         return (
-          <CardBox>
-            <SourceRow
-              icon={<FileText className="h-4 w-4 text-text-tertiary" />}
-              name={uploadState.record.filename}
-              badge={<StatusBadge label="Extracted" variant="green" />}
-              description="Profile extracted from resume"
-              action={
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDialog('resume-replace')}
-                    className={outlineBtnCls}
-                  >
-                    Replace
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDialog('resume-remove')}
-                    className="h-8 w-8 inline-flex items-center justify-center rounded-[10px] text-text-tertiary hover:text-error hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
-                    title="Remove"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </>
-              }
-            />
-          </CardBox>
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
+            <FileText className="h-4 w-4 text-text-tertiary flex-shrink-0" />
+            <div>
+              <p className="text-sm text-text-secondary truncate">{uploadState.record.filename}</p>
+              <p className="text-xs text-text-disabled">Processed</p>
+            </div>
+          </div>
         );
-
       case 'error':
         return (
-          <CardBox className="border border-error/30 bg-red-50/40 dark:bg-red-950/10 gap-0">
-            <SourceRow
-              icon={<AlertCircle className="h-4 w-4 text-error" />}
-              name="Processing failed"
-              description={uploadState.message}
-              action={
-                <button
-                  type="button"
-                  onClick={handleRemove}
-                  className={outlineBtnCls}
-                >
-                  Clear
-                </button>
-              }
-            />
-            <div className="pl-[52px] pt-1">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs text-text-link hover:underline"
-              >
-                Try again with a different file
-              </button>
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-red-50/60 dark:bg-red-950/10 border border-error/20 w-fit min-w-xs">
+            <AlertCircle className="h-4 w-4 text-error flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm text-error">Processing failed</p>
+              <p className="text-xs text-text-tertiary truncate">{uploadState.message}</p>
             </div>
-          </CardBox>
+          </div>
         );
     }
-  };
+  })();
 
-  /* ─── GitHub right-col content ─────────────────────────────────────────── */
+  const resumeControls = (() => {
+    const uploadBtn = (
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="flex items-center gap-3 px-3 py-3 rounded-xl border border-dashed border-border-default hover:border-border-strong hover:bg-surface-sunken transition-colors text-left w-fit min-w-xs"
+      >
+        <Upload className="h-4 w-4 text-text-tertiary flex-shrink-0" />
+        <div>
+          <p className="text-sm text-text-secondary">Click to upload</p>
+          <p className="text-xs text-text-disabled">PDF, DOCX, or TXT</p>
+        </div>
+      </button>
+    );
+    switch (uploadState.phase) {
+      case 'loading':
+      case 'uploading': return null;
+      case 'idle': return uploadBtn;
+      case 'processing':
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <MintBtn icon={<X />} label="Cancel" onClick={handleRemove} danger />
+          </div>
+        );
+      case 'ready':
+        if (!uploadState.record.filename) return uploadBtn;
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <MintBtn icon={<RefreshCw />} label="Replace" onClick={() => setConfirmDialog('resume-replace')} />
+            <MintBtn icon={<Trash2 />} label="Delete" onClick={() => setConfirmDialog('resume-remove')} danger />
+          </div>
+        );
+      case 'error':
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <MintBtn icon={<Upload />} label="Try again" onClick={() => fileInputRef.current?.click()} />
+            <MintBtn icon={<X />} label="Clear" onClick={handleRemove} danger />
+          </div>
+        );
+    }
+  })();
 
-  const githubConnected =
-    uploadState.phase === 'ready' && !!uploadState.record.github_username;
+  /* ─── GitHub card content ────────────────────────────────────────────────── */
 
-  const renderGithubContent = () => {
-    // ── Connected state ──────────────────────────────────────────────────────
-    if (githubConnected && !githubEditing && uploadState.phase === 'ready') {
+  const githubConnected = !!connectedGithub;
+  const isInitialLoad = uploadState.phase === 'loading';
+
+  const renderGithubControls = () => {
+    // ── Connected ────────────────────────────────────────────────────────────
+    if (githubConnected && !githubEditing && connectedGithub) {
+      const repos = connectedGithub.repos;
+      const username = connectedGithub.username;
       return (
-        <CardBox>
-          <SourceRow
-            icon={<LuGithub className="h-4 w-4 text-text-secondary" />}
-            name={uploadState.record.github_username!}
-            badge={<StatusBadge label="Connected" variant="green" />}
-            description={`${uploadState.record.github_repos?.length ?? 0} repos selected`}
-            action={
-              <>
-                <button
-                  type="button"
-                  onClick={handleGithubRescan}
-                  disabled={githubState === 'saving' || githubState === 'removing'}
-                  className={outlineBtnCls}
-                  title="Re-scan repos"
-                >
-                  {githubState === 'saving'
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <RefreshCw className="h-3.5 w-3.5" />}
-                  Re-scan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setGithubEditing(true); setGithubState('idle'); setGithubError(null); resetGithubPreview(); }}
-                  className={outlineBtnCls}
-                >
-                  Change
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDialog('github-remove')}
-                  disabled={githubState === 'removing'}
-                  className="h-8 w-8 inline-flex items-center justify-center rounded-[10px] text-text-tertiary hover:text-error hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors disabled:opacity-50"
-                  title="Remove"
-                >
-                  {githubState === 'removing'
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <X className="h-4 w-4" />}
-                </button>
-              </>
-            }
-          />
-        </CardBox>
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <a
+              href={`https://github.com/${username}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-2 w-fit"
+            >
+              <LuGithub className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
+              <span className="text-sm font-medium text-text-primary group-hover:opacity-80">{username}</span>
+              <ArrowUpRight className="size-3 text-text-tertiary" />
+            </a>
+            <div className="flex flex-col gap-2 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
+              <span className="text-sm text-text-tertiary">
+                {repos.length} repo{repos.length !== 1 ? 's' : ''} linked
+              </span>
+              {repos.map((r) => {
+                const scanStart = scanningRepos[r.name];
+                const isScanning = !!scanStart;
+                const elapsed = scanStart ? Math.floor((Date.now() - scanStart) / 1000) : 0;
+                return (
+                  <div key={r.name} className="group flex items-center gap-2">
+                    <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={`https://github.com/${username}/${r.name}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-text-primary hover:opacity-80"
+                      >
+                        {r.name}
+                      </a>
+                      {isScanning ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-text-disabled ml-1.5">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          Scanning… {formatElapsed(elapsed)}
+                        </span>
+                      ) : r.scanned_at ? (
+                        <span className="text-xs text-text-disabled ml-1.5">
+                          · scanned {formatRelativeDate(r.scanned_at)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {!isScanning && (
+                      <button
+                        type="button"
+                        title="Re-scan this repository"
+                        onClick={() => setRescanConfirm(r.name)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-surface-sunken text-text-tertiary hover:text-text-secondary"
+                      >
+                        <RefreshCw className="size-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <MintBtn
+              icon={<Pencil />}
+              label="Modify"
+              onClick={handleGithubModify}
+            />
+            <MintBtn
+              icon={githubState === 'removing' ? <Loader2 className="animate-spin" /> : <X />}
+              label="Disconnect"
+              onClick={() => setConfirmDialog('github-remove')}
+              danger
+              disabled={githubState === 'removing'}
+            />
+          </div>
+        </div>
       );
     }
 
     // ── Step 2: repo selection ───────────────────────────────────────────────
     if (previewRepos !== null || githubState === 'fetching') {
+      const previewUsername = parseGithubUsername(githubUrl);
       return (
-        <CardBox>
-          <div className="space-y-3">
-            {/* Username header */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-text-secondary font-mono">
-                @{parseGithubUsername(githubUrl)}
-              </span>
-              <button
-                type="button"
-                onClick={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); }}
-                className="text-xs text-text-tertiary hover:text-text-secondary"
-              >
-                Change username
-              </button>
-            </div>
+        <div className="flex flex-col gap-3">
+          <a
+            href={`https://github.com/${encodeURIComponent(previewUsername)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex items-center gap-2 w-fit"
+          >
+            <LuGithub className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
+            <span className="text-sm font-medium text-text-primary group-hover:opacity-80">{previewUsername}</span>
+            <ArrowUpRight className="size-3 text-text-tertiary" />
+          </a>
 
+          <div className="flex flex-col gap-0 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
             {githubState === 'fetching' ? (
-              <div className="flex items-center gap-2 py-4 justify-center text-xs text-text-tertiary">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Fetching repos…
+              <div className="flex items-center gap-2 py-3 justify-center text-xs text-text-tertiary">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />Fetching repos…
               </div>
             ) : previewRepos!.length === 0 ? (
-              <p className="text-xs text-text-disabled italic py-2">No public repos found.</p>
+              <p className="text-xs text-text-disabled py-2">No public repos found</p>
             ) : (
-              <div className="space-y-1 max-h-64 overflow-y-auto">
-                {previewRepos!.map((repo) => (
-                  <label
-                    key={repo.name}
-                    className="flex items-start gap-2.5 px-2 py-1.5 rounded-lg hover:bg-surface-sunken cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedRepoNames.has(repo.name)}
-                      onChange={() => toggleRepo(repo.name)}
-                      className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-brand-primary"
-                    />
-                    <div className="min-w-0">
-                      <span className="text-xs font-medium text-text-primary font-mono">{repo.name}</span>
-                      {repo.language && (
-                        <span className="text-xs text-text-tertiary ml-2">{repo.language}</span>
-                      )}
-                      {repo.description && (
-                        <p className="text-xs text-text-tertiary truncate mt-0.5">{repo.description}</p>
-                      )}
-                    </div>
-                    {repo.pushed_at && (
-                      <span className="text-xs text-text-disabled ml-auto flex-shrink-0">
-                        {new Date(repo.pushed_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
-                      </span>
-                    )}
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {githubState === 'error' && githubError && (
-              <p className="text-xs text-error">{githubError}</p>
-            )}
-
-            {previewRepos !== null && previewRepos.length > 0 && (
-              <label className="flex items-start gap-2.5 pt-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={acknowledged}
-                  onChange={(e) => setAcknowledged(e.target.checked)}
-                  className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-brand-primary"
-                />
-                <span className="text-xs text-text-secondary leading-relaxed">
-                  I confirm the selected repositories are representative of my engineering work. For repos with multiple contributors, Tailord treats the codebase as indicative of my experience.
+              <>
+                <span className="text-sm text-text-tertiary mb-2">
+                  {previewRepos!.length} repo{previewRepos!.length !== 1 ? 's' : ''} found
                 </span>
-              </label>
+                {previewRepos!.map((r) => (
+                  <div key={r.name} className="flex items-center gap-3 py-1.5">
+                    <Toggle checked={selectedRepoNames.has(r.name)} onChange={() => toggleRepo(r.name)} />
+                    <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <a
+                        href={`https://github.com/${encodeURIComponent(previewUsername)}/${encodeURIComponent(r.name)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-text-primary hover:opacity-80 truncate"
+                      >
+                        {r.name}
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
-
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleGithubConnect}
-                disabled={selectedRepoNames.size === 0 || !acknowledged || githubState === 'saving' || githubState === 'fetching'}
-                className={saveBtnCls}
-              >
-                {githubState === 'saving'
-                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Connecting…</>
-                  : `Connect (${selectedRepoNames.size} repo${selectedRepoNames.size !== 1 ? 's' : ''})`
-                }
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  resetGithubPreview();
-                  setGithubState('idle');
-                  setGithubError(null);
-                  if (githubEditing) setGithubEditing(false);
-                }}
-                className={outlineBtnCls}
-              >
-                Cancel
-              </button>
-            </div>
           </div>
-        </CardBox>
+          {githubState === 'error' && githubError && (
+            <p className="text-xs text-error">{githubError}</p>
+          )}
+          {previewRepos !== null && previewRepos.length > 0 && (
+            <label className="flex gap-2.5 cursor-pointer">
+              <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} className="h-3.5 w-3.5 my-1 flex-shrink-0 accent-brand-primary cursor-pointer" />
+              <span className="text-xs text-text-secondary leading-relaxed">
+                I confirm the selected repositories are representative of my engineering work. For repos with multiple contributors, Tailord treats the codebase as indicative of my experience.
+              </span>
+            </label>
+          )}
+          {(() => {
+            const hasNoChange = githubEditing &&
+              selectedRepoNames.size === previouslyConnectedRepos.size &&
+              [...selectedRepoNames].every((n) => previouslyConnectedRepos.has(n));
+            const connectDisabled = selectedRepoNames.size === 0 || !acknowledged || githubState === 'saving' || githubState === 'fetching' || hasNoChange;
+            return (
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={handleGithubConnect} disabled={connectDisabled} className={saveBtnCls}>
+                  {githubState === 'saving' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Connecting…</> : `Connect (${selectedRepoNames.size} repo${selectedRepoNames.size !== 1 ? 's' : ''})`}
+                </button>
+                <button type="button" onClick={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); if (githubEditing) setGithubEditing(false); }} className={outlineBtnCls}>
+                  Cancel
+                </button>
+              </div>
+            );
+          })()}
+        </div>
       );
     }
 
     // ── Step 1: username input ───────────────────────────────────────────────
     return (
-      <CardBox>
-        <form onSubmit={handleGithubFetch} className="space-y-3">
-          <div className="relative">
+      <form onSubmit={handleGithubFetch} className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-xs">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <LuGithub className="h-4 w-4 text-text-tertiary" />
             </div>
-            <input
-              type="text"
-              value={githubUrl}
-              onChange={(e) => { setGithubUrl(e.target.value); setGithubState('idle'); setGithubError(null); }}
-              placeholder="github.com/username or username"
-              className={cn(inputCls, 'pl-9')}
-            />
+            <input type="text" value={githubUrl} onChange={(e) => { setGithubUrl(e.target.value); setGithubState('idle'); setGithubError(null); }} placeholder="github.com/username or username" className={cn(inputCls, 'pl-9')} />
           </div>
-          {githubState === 'error' && githubError && (
-            <p className="text-xs text-error">{githubError}</p>
-          )}
-          <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={!githubUrl.trim()}
-              className={saveBtnCls}
-            >
-              Fetch Repos
-            </button>
-            {githubEditing && (
-              <button
-                type="button"
-                onClick={() => { setGithubEditing(false); setGithubState('idle'); setGithubError(null); resetGithubPreview(); }}
-                className={outlineBtnCls}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      </CardBox>
+          <button type="submit" disabled={!githubUrl.trim()} className={saveBtnCls}>
+            Connect
+          </button>
+        </div>
+        {githubState === 'error' && githubError && <p className="text-xs text-error">{githubError}</p>}
+        {githubEditing && (
+          <button type="button" onClick={() => { setGithubEditing(false); setGithubState('idle'); setGithubError(null); resetGithubPreview(); }} className={cn(outlineBtnCls, 'w-fit')}>Cancel</button>
+        )}
+      </form>
     );
   };
 
   /* ─── Render ─────────────────────────────────────────────────────────────── */
 
-  const hasExperience = uploadState.phase === 'ready';
-
   return (
     <div className="h-full flex flex-col bg-surface-elevated">
+
+      {/* Hidden file input */}
+      <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.txt" className="hidden" onChange={handleFileChange} />
 
       {/* Topbar */}
       <div className="shrink-0 flex items-center h-12 px-6 bg-surface-elevated">
@@ -902,92 +936,91 @@ export function ExperienceManager() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-6xl mx-auto px-6 lg:px-16 pt-12 pb-24">
+        <div className="mx-auto px-6 lg:px-16 pt-8 pb-24 max-w-6xl">
 
-          {/* Three input sections */}
-          <div className="divide-y divide-zinc-950/5 dark:divide-white/5 [&>*:first-child]:pt-0">
+          {/* Greeting */}
+          <div className="flex flex-col gap-1 pb-4">
+            <h2 suppressHydrationWarning className="text-lg font-medium text-text-primary tracking-[-0.2px]">
 
-            {/* Resume */}
-            <SettingRow
-              title="Resume"
-              description="Upload a PDF, DOCX, or TXT file. We'll extract your experience automatically."
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-              {renderResumeContent()}
-            </SettingRow>
+              Build your profile
+            </h2>
 
-            {/* GitHub */}
-            <SettingRow
-              title="GitHub"
-              description="Import your public repos to enrich your profile with real project context."
-            >
-              {renderGithubContent()}
-            </SettingRow>
-
-            {/* Additional Context */}
-            <SettingRow
-              title="Additional Context"
-              description="Skills, projects, or achievements not captured in your resume."
-            >
-              <form onSubmit={handleDirectSave} className="space-y-3">
-                <textarea
-                  value={directText}
-                  onChange={(e) => { setDirectText(e.target.value); setDirectState('idle'); }}
-                  placeholder="Describe your skills, projects, or achievements not captured in your resume…"
-                  rows={6}
-                  className={textareaCls}
-                />
-                <div className="flex items-center gap-2">
-                  {directState === 'saved' && (
-                    <span className="text-sm text-success">Saved</span>
-                  )}
-                  <div className="flex items-center gap-2 ml-auto">
-                    {uploadState.phase === 'ready' && !!uploadState.record.user_input_text && (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDialog('user-input-clear')}
-                        className={outlineBtnCls}
-                      >
-                        Remove
-                      </button>
-                    )}
-                    <button
-                      type="submit"
-                      disabled={!directText.trim() || directState === 'saving'}
-                      className={saveBtnCls}
-                    >
-                      {directState === 'saving' ? (
-                        <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</>
-                      ) : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </SettingRow>
-
+            <p className="text-sm text-text-secondary">Add your experience here and review it below</p>
           </div>
 
-          {/* Parsed profile — full-width section below the input rows */}
-          {hasExperience && (
-            <div className="mt-8 pt-8 border-t border-zinc-950/5 dark:border-white/5">
-              <div className="mb-6">
-                <h2 className="text-sm font-medium text-text-primary">Parsed Profile</h2>
-                <p className="text-sm text-text-secondary mt-0.5">
-                  Extracted from your sources — hover any item to edit it inline.
-                </p>
+          {/* Source sections — two-column grid */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-12 pb-6 border-b border-zinc-950/5 dark:border-white/5">
+            {/* Resume */}
+            <div className="flex flex-col gap-5">
+              {/* 1. Header */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 h-6">
+                  <h2 className="text-sm font-medium text-text-primary">Resume Upload</h2>
+                  <span className={resumeHasFile ? 'flex items-center' : 'invisible'}>
+                    <LiveBadge label="Uploaded" />
+                  </span>
+                </div>
+                {/* 2. Subtext */}
+                {resumeSubtext && (
+                  <p className="text-sm text-text-tertiary">{resumeSubtext}</p>
+                )}
               </div>
-              <ChunkedProfile refreshKey={chunksRefreshKey} />
+              {/* 3. Card */}
+              {resumeCard}
+              {/* 4. Controls */}
+              {resumeControls}
             </div>
-          )}
+
+            {/* GitHub */}
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 h-6">
+                  <h2 className="text-sm font-medium text-text-primary">GitHub Connection</h2>
+                  <span className={githubConnected ? 'flex items-center' : 'invisible'}>
+                    <LiveBadge label="Connected" />
+                  </span>
+                </div>
+                {!isInitialLoad && (
+                  <p className="text-sm text-text-tertiary">
+                    {githubConnected
+                      ? 'Signals are derived from your connected repositories'
+                      : 'Import your public repositories to enrich your experience'}
+                  </p>
+                )}
+              </div>
+              {!isInitialLoad && renderGithubControls()}
+            </div>
+          </div>
+
+          {/* Parsed experience */}
+          <div className="mt-8">
+            <ChunkedProfile refreshKey={chunksRefreshKey} />
+          </div>
 
         </div>
       </div>
+
+      {/* Rescan confirm dialog */}
+      <Dialog open={rescanConfirm !== null} onOpenChange={(o) => !o && setRescanConfirm(null)}>
+        <DialogContent className="max-w-sm bg-surface-elevated border-border-subtle rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-medium text-text-primary">Re-scan repository</DialogTitle>
+            <DialogDescription className="text-sm text-text-secondary">
+              Re-fetch and re-analyze <strong className="text-text-primary">{rescanConfirm}</strong>? The signals will be updated in the background.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-row justify-end gap-2 sm:gap-2">
+            <button type="button" onClick={() => setRescanConfirm(null)} className={outlineBtnCls}>Cancel</button>
+            <button
+              type="button"
+              onClick={() => { handleRepoRescan(rescanConfirm!); setRescanConfirm(null); }}
+              className={saveBtnCls}
+            >
+              Re-scan
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm dialog */}
       <Dialog open={confirmDialog !== null} onOpenChange={(o) => !o && setConfirmDialog(null)}>

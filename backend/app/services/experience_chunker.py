@@ -290,42 +290,6 @@ def chunk_github_repo(db: Session, experience: Experience, repo_name: str) -> in
     return len(raw)
 
 
-def chunk_user_input(db: Session, experience: Experience) -> int:
-    """Delete existing user_input chunks and replace with a single chunk for the full text.
-
-    User input tends to be short prose — splitting would over-fragment.
-    Does NOT commit — caller is responsible.
-    Returns number of chunks created (0 or 1).
-    """
-    text = (experience.user_input_text or "").strip()
-    if not text:
-        logger.debug(
-            "chunk_user_input: no user_input_text for experience=%s — skipping", experience.id
-        )
-        return 0
-
-    _delete_chunks(db, experience.id, "user_input")
-
-    now = datetime.now(timezone.utc)
-    db.add(
-        ExperienceChunk(
-            experience_id=experience.id,
-            source_type="user_input",
-            source_ref=None,
-            claim_type="other",
-            content=text,
-            date_range=None,
-            technologies=None,
-            position=0,
-            created_at=now,
-            updated_at=now,
-        )
-    )
-
-    logger.debug("chunk_user_input: created 1 chunk for experience=%s", experience.id)
-    return 1
-
-
 def delete_github_chunks(
     db: Session, experience_id: uuid.UUID, repo_name: str | None = None
 ) -> int:

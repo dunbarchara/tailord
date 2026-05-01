@@ -226,11 +226,18 @@ class ExperienceChunk(Base):
     Atomic, source-traceable claim derived from extracted_profile.
     One row per bullet / skill / project / education entry.
 
-    source_type: resume | github | user_input
-    source_ref:  null for resume/user_input; repo name for github
-    claim_type:  work_experience | skill | project | education | other
+    source_type values and lifecycle:
+      resume      — parsed from uploaded resume; deleted when resume is removed
+      github      — derived from GitHub repo enrichment; deleted when repo is disconnected
+      user_input  — manually submitted by user; deleted per-chunk or all at once
+      gap_response — user's answer to a gap question; NEVER deleted by source events,
+                     only by Experience cascade (see 17-chunk-model.md)
+      annotation  — (future) user-added claim on a position/project; same lifecycle as gap_response
 
-    Embedding column (Vector 1536) is added in Day 13 when pgvector is configured.
+    source_ref:  null for resume/user_input/gap_response; repo name for github
+    claim_type:  work_experience | skill | project | education | other
+    chunk_metadata: null for resume/github/user_input; JSON provenance for gap_response
+                    and annotation — e.g. {question, job_chunk_id, tailoring_id}
     """
 
     __tablename__ = "experience_chunks"
@@ -255,6 +262,11 @@ class ExperienceChunk(Base):
     group_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     date_range: Mapped[str | None] = mapped_column(String(100), nullable=True)
     technologies: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Provenance metadata for gap_response and annotation chunks.
+    # gap_response: {question: str, job_chunk_id: str, tailoring_id: str}
+    # annotation:   {parent_chunk_id: str}  (future)
+    # Null for resume, github, user_input.
+    chunk_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     # Populated by experience_embedder.py after chunking. Null until first embed run.
     # Not exposed in API responses — internal to the matching pipeline.

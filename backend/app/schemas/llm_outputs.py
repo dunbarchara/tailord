@@ -45,6 +45,12 @@ class ExtractedProfile(BaseModel):
     certifications: list[str] = []
 
 
+class ParsedClaims(BaseModel):
+    """LLM output for user_input_parse: atomic claims extracted from free-text input."""
+
+    claims: list[str] = []
+
+
 class GitHubRepoEnrichment(BaseModel):
     """LLM output for a single GitHub repo enrichment call (github_enricher.py)."""
 

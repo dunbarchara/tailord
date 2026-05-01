@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -7,16 +8,29 @@ import anyio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
+from app.clients.llm_client import get_llm_client
 from app.clients.storage_client import get_storage_client
+from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
-from app.models.database import Experience, ExperienceChunk, LlmTriggerLog, User
+from app.core.llm_utils import llm_parse_with_retry
+from app.models.database import (
+    Experience,
+    ExperienceChunk,
+    JobChunk,
+    LlmTriggerLog,
+    Tailoring,
+    User,
+)
+from app.prompts import user_input_parse as parse_prompt
+from app.schemas.llm_outputs import ParsedClaims
+from app.services.chunk_matcher import re_enrich_single_chunk
 from app.services.experience_chunker import (
     chunk_resume,
-    chunk_user_input,
     delete_github_chunks,
     delete_resume_chunks,
     delete_user_input_chunks,
@@ -87,10 +101,23 @@ class ProcessRequest(BaseModel):
 class GitHubRequest(BaseModel):
     github_username: str
     selected_repo_names: list[str] | None = None
+    rescan_repo_names: list[str] | None = None
+    enrich_only_repo_names: list[str] | None = None
 
 
 class UserInputRequest(BaseModel):
     text: str
+
+
+class UserInputChunksRequest(BaseModel):
+    chunks: list[str]
+
+
+class GapResponseRequest(BaseModel):
+    job_chunk_id: str
+    tailoring_id: str
+    question: str
+    answer: str
 
 
 class ProfileUpdate(BaseModel):
@@ -122,6 +149,9 @@ def _experience_response(e: Experience) -> dict:
         "user_input_text": e.user_input_text,
         "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None,
         "processed_at": e.processed_at.isoformat() if e.processed_at else None,
+        "last_process_requested_at": e.last_process_requested_at.isoformat()
+        if e.last_process_requested_at
+        else None,
     }
 
 
@@ -192,6 +222,7 @@ def get_upload_url(
 @router.post("/experience/process")
 async def trigger_process(
     body: ProcessRequest,
+    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -232,6 +263,7 @@ async def trigger_process(
     filename = experience.filename or "file.txt"
 
     async def _stream():
+        completed = False
         try:
             yield "event: stage\ndata: extracting\n\n"
 
@@ -248,6 +280,7 @@ async def trigger_process(
                 )
                 db.commit()
                 yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+                completed = True
                 return
 
             text = await anyio.to_thread.run_sync(lambda: extract_text(file_bytes, filename))
@@ -266,13 +299,14 @@ async def trigger_process(
 
             chunk_count = chunk_resume(db, experience)
             db.commit()
-            embed_experience_chunks(experience.id, db)
+            background_tasks.add_task(embed_experience_chunks_task, experience.id)
             logger.info(
                 "trigger_process SSE complete: experience_id=%s chunks=%d",
                 experience.id,
                 chunk_count,
             )
             yield f"event: ready\ndata: {json.dumps(_experience_response(experience))}\n\n"
+            completed = True
 
         except Exception as exc:
             logger.exception("trigger_process SSE failed: %s", exc)
@@ -280,6 +314,19 @@ async def trigger_process(
             experience.error_message = _friendly_processing_error(exc)
             db.commit()
             yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+            completed = True
+        finally:
+            if not completed and experience.status == "processing":
+                logger.warning(
+                    "trigger_process SSE interrupted (client disconnect?): experience_id=%s",
+                    experience.id,
+                )
+                experience.status = "error"
+                experience.error_message = "Processing was interrupted. Please try again."
+                try:
+                    db.commit()
+                except Exception:
+                    pass
 
     return StreamingResponse(
         _stream(),
@@ -398,6 +445,36 @@ def set_github(
     from app.services.github_enricher import enrich_github_repos
 
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+
+    # Rescan path: re-enrich specific repos without touching the connected repos list.
+    if body.rescan_repo_names is not None:
+        if not experience or not experience.github_username:
+            raise HTTPException(status_code=404, detail="No GitHub connection found")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        rescan_set = set(body.rescan_repo_names)
+        experience.github_repos = [
+            {**r, "scanning_started_at": now_iso} if r["name"] in rescan_set else r
+            for r in (experience.github_repos or [])
+        ]
+        db.commit()
+        background_tasks.add_task(
+            enrich_github_repos,
+            github_username=body.github_username,
+            experience_id=experience.id,
+            repo_names=body.rescan_repo_names,
+            merge_with_existing=True,
+        )
+        logger.info(
+            "set_github: queued rescan for user=%s repos=%s",
+            user.id,
+            body.rescan_repo_names,
+        )
+        return {
+            "experience_id": str(experience.id),
+            "status": experience.status,
+            "github_username": experience.github_username,
+        }
+
     client = get_github_client()
     try:
         raw_repos = client.get_user_repos(body.github_username)
@@ -419,13 +496,24 @@ def set_github(
         selected = set(body.selected_repo_names)
         repos = [r for r in repos if r["name"] in selected]
 
+    # When enrich_only_repo_names is set (additions-only modify), preserve existing
+    # enrichment and merge new repos in. Otherwise clear stale enrichment.
+    additions_only = body.enrich_only_repo_names is not None
+
     if experience:
+        # Delete chunks for repos being removed whenever the selection changes
+        if body.selected_repo_names is not None:
+            old_repo_names = {r["name"] for r in (experience.github_repos or [])}
+            new_repo_names = set(body.selected_repo_names)
+            for removed_repo in old_repo_names - new_repo_names:
+                delete_github_chunks(db, experience.id, repo_name=removed_repo)
+
         experience.github_username = body.github_username
         experience.github_repos = repos
-        experience.github_repo_details = None  # clear stale enrichment on username change
+        if not additions_only:
+            experience.github_repo_details = None
         profile = experience.extracted_profile or {}
         experience.extracted_profile = {**profile, "github": {"repos": repos}}
-        experience.processed_at = datetime.now(timezone.utc)
         if experience.status not in ("ready", "processing"):
             experience.status = "ready"
     else:
@@ -437,18 +525,32 @@ def set_github(
             github_username=body.github_username,
             github_repos=repos,
             extracted_profile={"github": {"repos": repos}},
-            processed_at=datetime.now(timezone.utc),
         )
         db.add(experience)
 
     db.commit()
     db.refresh(experience)
 
+    repo_names_to_enrich = (
+        body.enrich_only_repo_names if additions_only else body.selected_repo_names
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    enrich_set = (
+        set(repo_names_to_enrich)
+        if repo_names_to_enrich is not None
+        else {r["name"] for r in (experience.github_repos or [])}
+    )
+    experience.github_repos = [
+        {**r, "scanning_started_at": now_iso} if r["name"] in enrich_set else r
+        for r in (experience.github_repos or [])
+    ]
+    db.commit()
     background_tasks.add_task(
         enrich_github_repos,
         github_username=body.github_username,
         experience_id=experience.id,
-        repo_names=body.selected_repo_names,
+        repo_names=repo_names_to_enrich,
+        merge_with_existing=additions_only,
     )
     logger.info(
         "set_github: queued enrichment for user=%s username=%s", user.id, body.github_username
@@ -488,57 +590,142 @@ def remove_user_input(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    """Delete all user_input chunks for the experience."""
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience or not experience.user_input_text:
-        raise HTTPException(status_code=404, detail="No additional context found")
+    if not experience:
+        raise HTTPException(status_code=404, detail="No experience found")
 
     experience.user_input_text = None
     if experience.extracted_profile and "user_input" in experience.extracted_profile:
         experience.extracted_profile = {
             k: v for k, v in experience.extracted_profile.items() if k != "user_input"
         } or None
-    delete_user_input_chunks(db, experience.id)
+    deleted = delete_user_input_chunks(db, experience.id)
     db.commit()
-    logger.info("remove_user_input: complete for user=%s", user.id)
+    logger.info("remove_user_input: deleted %d chunks for user=%s", deleted, user.id)
 
 
-@router.post("/experience/user-input")
-def set_user_input(
+# ---------------------------------------------------------------------------
+# Short-input heuristic — no LLM needed for obvious single claims
+# ---------------------------------------------------------------------------
+
+_SENTENCE_SPLIT = re.compile(r"[.!?]\s[A-Z]")
+
+
+def _is_short_input(text: str) -> bool:
+    """Return True if the text is short enough to skip LLM parsing."""
+    stripped = text.strip()
+    if len(stripped) <= 200:
+        return True
+    # More than one sentence detected → needs LLM parse
+    if _SENTENCE_SPLIT.search(stripped):
+        return False
+    return True
+
+
+@router.post("/experience/user-input/parse")
+def parse_user_input(
     body: UserInputRequest,
-    background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
-    db: Session = Depends(get_db),
 ):
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    """Parse free-form text into a list of atomic claims. Preview only — no DB write."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="text cannot be empty")
 
-    if experience:
-        experience.user_input_text = body.text
-        profile = experience.extracted_profile or {}
-        experience.extracted_profile = {**profile, "user_input": {"text": body.text}}
-        experience.processed_at = datetime.now(timezone.utc)
-        if experience.status not in ("ready", "processing"):
-            experience.status = "ready"
-    else:
+    if _is_short_input(text):
+        return {"chunks": [text]}
+
+    result = llm_parse_with_retry(
+        get_llm_client(),
+        model=settings.llm_model,
+        messages=[
+            {"role": "system", "content": parse_prompt.SYSTEM},
+            {"role": "user", "content": parse_prompt.USER_TEMPLATE.format(text=text)},
+        ],
+        response_model=ParsedClaims,
+        temperature=parse_prompt.TEMPERATURE,
+    )
+    claims = [c.strip() for c in result.claims if c.strip()]
+    if not claims:
+        claims = [text]
+    return {"chunks": claims}
+
+
+def _ensure_experience(user: User, db: Session) -> Experience:
+    """Return the user's Experience row, creating one if it doesn't exist."""
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
         experience = Experience(
             user_id=user.id,
             s3_key=None,
             filename=None,
             status="ready",
-            user_input_text=body.text,
-            extracted_profile={"user_input": {"text": body.text}},
             processed_at=datetime.now(timezone.utc),
         )
         db.add(experience)
+        db.flush()
+    return experience
 
-    db.commit()
-    db.refresh(experience)
 
-    chunk_user_input(db, experience)
+@router.post("/experience/user-input/chunks")
+def persist_user_input_chunks(
+    body: UserInputChunksRequest,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Persist a list of user_input claim strings as individual ExperienceChunks.
+
+    Additive — does not replace existing user_input chunks.
+    Each chunk is embedded in a background task.
+    """
+    chunks_text = [c.strip() for c in body.chunks if c.strip()]
+    if not chunks_text:
+        raise HTTPException(status_code=422, detail="chunks cannot be empty")
+
+    experience = _ensure_experience(user, db)
+
+    # Append after the highest existing position across all source types
+    max_pos = (
+        db.query(func.max(ExperienceChunk.position))
+        .filter(ExperienceChunk.experience_id == experience.id)
+        .scalar()
+    )
+    next_pos = (max_pos if max_pos is not None else -1) + 1
+
+    now = datetime.now(timezone.utc)
+    created_ids: list[str] = []
+    for text in chunks_text:
+        chunk = ExperienceChunk(
+            experience_id=experience.id,
+            source_type="user_input",
+            source_ref=None,
+            claim_type="other",
+            content=text,
+            group_key=None,
+            date_range=None,
+            technologies=None,
+            chunk_metadata=None,
+            position=next_pos,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(chunk)
+        created_ids.append(str(chunk.id))
+        next_pos += 1
+
+    if experience.status not in ("ready", "processing"):
+        experience.status = "ready"
+
     db.commit()
     background_tasks.add_task(embed_experience_chunks_task, experience.id)
-
-    return {"experience_id": str(experience.id), "status": experience.status}
+    logger.info(
+        "persist_user_input_chunks: created %d chunks for user=%s", len(chunks_text), user.id
+    )
+    return {"experience_id": str(experience.id), "chunk_ids": created_ids}
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +743,7 @@ def _serialize_exp_chunk(c: ExperienceChunk) -> dict:
         "group_key": c.group_key,
         "date_range": c.date_range,
         "technologies": c.technologies,
+        "chunk_metadata": c.chunk_metadata,
         "position": c.position,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
     }
@@ -576,7 +764,8 @@ def _group_experience_chunks(chunks: list) -> dict:
     resume_other: list = []
     github_keys: list = []
     github_groups: dict = {}
-    user_input_chunk = None
+    user_input_chunks: list = []
+    gap_response_chunks: list = []
 
     for c in chunks:
         s = _serialize_exp_chunk(c)
@@ -610,7 +799,9 @@ def _group_experience_chunks(chunks: list) -> dict:
                 github_groups[key] = {"group_key": c.source_ref, "chunks": []}
             github_groups[key]["chunks"].append(s)
         elif c.source_type == "user_input":
-            user_input_chunk = s
+            user_input_chunks.append(s)
+        elif c.source_type == "gap_response":
+            gap_response_chunks.append(s)
 
     has_resume = bool(
         work_exp_keys or resume_skills or project_keys or resume_education or resume_other
@@ -628,7 +819,8 @@ def _group_experience_chunks(chunks: list) -> dict:
         if has_resume
         else None,
         "github": {"repos": [github_groups[k] for k in github_keys]} if has_github else None,
-        "user_input": user_input_chunk,
+        "user_input": user_input_chunks if user_input_chunks else None,
+        "gap_response": gap_response_chunks if gap_response_chunks else None,
     }
 
 
@@ -640,7 +832,7 @@ def get_experience_chunks(
 ):
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
     if not experience:
-        return {"resume": None, "github": None, "user_input": None}
+        return {"resume": None, "github": None, "user_input": None, "gap_response": None}
 
     chunks = (
         db.query(ExperienceChunk)
@@ -726,3 +918,147 @@ def update_experience_chunk(
         background_tasks.add_task(re_embed_chunk, chunk.id)
     logger.info("update_experience_chunk: chunk=%s user=%s", chunk.id, user.id)
     return _serialize_exp_chunk(chunk)
+
+
+@router.delete("/experience/chunks/{chunk_id}", status_code=204)
+def delete_experience_chunk(
+    chunk_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a single ExperienceChunk by ID. Works for any source_type."""
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
+        raise HTTPException(status_code=404, detail="No experience found")
+
+    try:
+        chunk_uuid = uuid.UUID(chunk_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid chunk ID")
+
+    chunk = (
+        db.query(ExperienceChunk)
+        .filter(
+            ExperienceChunk.id == chunk_uuid,
+            ExperienceChunk.experience_id == experience.id,
+        )
+        .first()
+    )
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    db.delete(chunk)
+    db.commit()
+    logger.info("delete_experience_chunk: chunk=%s user=%s", chunk_uuid, user.id)
+
+
+# ---------------------------------------------------------------------------
+# gap_response — creation + inline re-scoring
+# ---------------------------------------------------------------------------
+
+
+@router.post("/experience/gap-response")
+def create_gap_response(
+    body: GapResponseRequest,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Record a user's answer to a gap question.
+
+    Creates a gap_response ExperienceChunk, embeds it synchronously, then re-scores
+    the specific JobChunk that triggered the gap question. Returns the new score inline
+    so the UI can update the requirement badge without a full page reload.
+    """
+    answer = body.answer.strip()
+    question = body.question.strip()
+    if not answer:
+        raise HTTPException(status_code=422, detail="answer cannot be empty")
+
+    # Verify the tailoring belongs to this user
+    try:
+        tailoring_uuid = uuid.UUID(body.tailoring_id)
+        job_chunk_uuid = uuid.UUID(body.job_chunk_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid tailoring_id or job_chunk_id")
+
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_uuid, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    # Verify the job chunk belongs to that tailoring's job
+    job_chunk = (
+        db.query(JobChunk)
+        .filter(JobChunk.id == job_chunk_uuid, JobChunk.job_id == tailoring.job_id)
+        .first()
+    )
+    if not job_chunk:
+        raise HTTPException(status_code=404, detail="Job chunk not found")
+
+    experience = _ensure_experience(user, db)
+
+    max_pos = (
+        db.query(func.max(ExperienceChunk.position))
+        .filter(ExperienceChunk.experience_id == experience.id)
+        .scalar()
+    )
+    next_pos = (max_pos if max_pos is not None else -1) + 1
+
+    now = datetime.now(timezone.utc)
+    gap_chunk = ExperienceChunk(
+        experience_id=experience.id,
+        source_type="gap_response",
+        source_ref=None,
+        claim_type="other",
+        content=answer,
+        group_key=None,
+        date_range=None,
+        technologies=None,
+        chunk_metadata={
+            "question": question,
+            "job_chunk_id": body.job_chunk_id,
+            "tailoring_id": body.tailoring_id,
+        },
+        position=next_pos,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(gap_chunk)
+    db.commit()
+
+    # Embed synchronously — must complete before re_enrich so the new vector is retrievable
+    embed_experience_chunks(experience.id, db)
+
+    # Re-score the requirement synchronously — user is waiting for the result
+    preferred = " ".join(
+        filter(None, [user.preferred_first_name, user.preferred_last_name])
+    ).strip()
+    candidate_name = preferred or user.name or user.email
+    re_enrich_single_chunk(
+        str(job_chunk_uuid),
+        experience.extracted_profile or {},
+        user.pronouns,
+        experience.id,
+        candidate_name,
+    )
+
+    # re_enrich_single_chunk committed via its own session — re-query for updated score
+    updated_chunk = db.query(JobChunk).filter(JobChunk.id == job_chunk_uuid).first()
+
+    logger.info(
+        "create_gap_response: chunk=%s user=%s new_score=%s",
+        gap_chunk.id,
+        user.id,
+        updated_chunk.match_score if updated_chunk else None,
+    )
+    return {
+        "chunk_id": str(gap_chunk.id),
+        "updated_score": updated_chunk.match_score if updated_chunk else None,
+        "updated_rationale": updated_chunk.match_rationale if updated_chunk else None,
+    }

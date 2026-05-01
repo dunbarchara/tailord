@@ -12,7 +12,6 @@ from app.services.experience_chunker import (
     _resume_chunks,
     chunk_github_repo,
     chunk_resume,
-    chunk_user_input,
     delete_github_chunks,
     delete_resume_chunks,
 )
@@ -22,15 +21,8 @@ from app.services.experience_chunker import (
 # ---------------------------------------------------------------------------
 
 
-def _make_experience(
-    extracted_profile: dict | None = None,
-    user_input_text: str | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=uuid.uuid4(),
-        extracted_profile=extracted_profile,
-        user_input_text=user_input_text,
-    )
+def _make_experience(extracted_profile: dict | None = None) -> SimpleNamespace:
+    return SimpleNamespace(id=uuid.uuid4(), extracted_profile=extracted_profile)
 
 
 def _make_db() -> MagicMock:
@@ -290,46 +282,6 @@ def test_chunk_github_repo_positions_are_sequential():
 
     positions = [a.position for a in db._added]
     assert positions == list(range(len(positions)))
-
-
-# ---------------------------------------------------------------------------
-# chunk_user_input — DB interaction
-# ---------------------------------------------------------------------------
-
-
-def test_chunk_user_input_creates_single_chunk():
-    exp = _make_experience(user_input_text="I have 10 years of Python experience.")
-    db = _make_db()
-
-    count = chunk_user_input(db, exp)
-
-    assert count == 1
-    chunk = db._added[0]
-    assert chunk.source_type == "user_input"
-    assert chunk.source_ref is None
-    assert chunk.claim_type == "other"
-    assert chunk.content == "I have 10 years of Python experience."
-    assert chunk.position == 0
-
-
-def test_chunk_user_input_noop_when_empty():
-    exp = _make_experience(user_input_text="   ")
-    db = _make_db()
-
-    count = chunk_user_input(db, exp)
-
-    assert count == 0
-    db.add.assert_not_called()
-
-
-def test_chunk_user_input_noop_when_none():
-    exp = _make_experience(user_input_text=None)
-    db = _make_db()
-
-    count = chunk_user_input(db, exp)
-
-    assert count == 0
-    db.add.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

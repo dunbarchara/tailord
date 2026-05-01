@@ -63,6 +63,7 @@ def enrich_github_repos(
     github_username: str,
     experience_id: uuid.UUID,
     repo_names: list[str] | None = None,
+    merge_with_existing: bool = False,
 ) -> None:
     """
     Background task: fetches authenticated repo data for each of the user's repos,
@@ -127,6 +128,7 @@ def enrich_github_repos(
                         "topics": topics,
                         "stars": repo.get("stargazers_count", 0),
                         "last_pushed_at": repo.get("pushed_at"),
+                        "scanned_at": datetime.now(timezone.utc).isoformat(),
                     }
                 )
                 logger.debug("github_enricher: enriched %s/%s", github_username, name)
@@ -139,12 +141,33 @@ def enrich_github_repos(
             logger.error("github_enricher: experience %s not found after enrichment", experience_id)
             return
 
-        experience.github_repo_details = {
-            "enriched_at": datetime.now(timezone.utc).isoformat(),
-            "repos": enriched,
-            "request_count": github.request_count,
-            "error_count": errors,
-        }
+        if merge_with_existing and experience.github_repo_details:
+            existing_by_name = {
+                r["name"]: r for r in experience.github_repo_details.get("repos", [])
+            }
+            for r in enriched:
+                existing_by_name[r["name"]] = r
+            experience.github_repo_details = {
+                **experience.github_repo_details,
+                "repos": list(existing_by_name.values()),
+                "request_count": experience.github_repo_details.get("request_count", 0)
+                + github.request_count,
+                "error_count": experience.github_repo_details.get("error_count", 0) + errors,
+            }
+        else:
+            experience.github_repo_details = {
+                "enriched_at": datetime.now(timezone.utc).isoformat(),
+                "repos": enriched,
+                "request_count": github.request_count,
+                "error_count": errors,
+            }
+
+        # Propagate scanned_at back into github_repos so the frontend can display it.
+        enriched_names = {r["name"]: r["scanned_at"] for r in enriched}
+        experience.github_repos = [
+            {**r, "scanned_at": enriched_names[r["name"]]} if r.get("name") in enriched_names else r
+            for r in (experience.github_repos or [])
+        ]
 
         # Merge enriched fields into extracted_profile["github"]["repos"] so the
         # tailoring generator and requirement matcher see the enriched data.

@@ -123,7 +123,7 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
         <div className="max-w-6xl mx-auto px-6 lg:px-16 pt-12 pb-24">
 
           {/* ── Greeting ───────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-1 pb-8 border-b border-zinc-950/5 dark:border-white/5">
+          <div className="flex flex-col gap-1 pb-4">
             <h2
               suppressHydrationWarning
               className="text-lg font-medium text-text-primary tracking-[-0.2px]"
@@ -165,7 +165,7 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
 
           {/* ── Tailorings table ────────────────────────────────────────── */}
           {!isEmpty && (
-            <div className="mt-8">
+            <div className="mt-6">
 
               {/* Section header */}
               <div className="flex items-center justify-between mb-4">
