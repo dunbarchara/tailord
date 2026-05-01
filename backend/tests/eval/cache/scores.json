@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "recorded_at": "2026-04-28",
+  "recorded_at": "2026-05-01",
   "llm_model": "gpt-5.4-mini",
   "embedding_model": "text-embedding-3-small",
   "k": 8,
-  "pipeline_hash": "fdb8ef6d2a9a156f",
+  "pipeline_hash": "e8e7387df89402df",
   "scores": {
     "01-strong-yoe-match": {
       "llm": [

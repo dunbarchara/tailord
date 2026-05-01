@@ -668,6 +668,63 @@ def submit_gap_answer(
     }
 
 
+@router.post("/tailorings/{tailoring_id}/chunks/{chunk_id}/rescore")
+def rescore_chunk(
+    tailoring_id: str,
+    chunk_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    chunk = (
+        db.query(JobChunk)
+        .filter(JobChunk.id == chunk_id, JobChunk.job_id == tailoring.job_id)
+        .first()
+    )
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
+        raise HTTPException(status_code=422, detail="No experience found")
+
+    preferred = " ".join(
+        filter(None, [user.preferred_first_name, user.preferred_last_name])
+    ).strip()
+    candidate_name = preferred or user.name or user.email
+
+    re_enrich_single_chunk(
+        str(chunk.id),
+        experience.extracted_profile or {},
+        user.pronouns,
+        experience.id,
+        candidate_name,
+    )
+
+    # re_enrich_single_chunk commits via its own session — re-query for fresh data
+    db.expire(chunk)
+    db.refresh(chunk)
+
+    return {
+        "id": str(chunk.id),
+        "match_score": chunk.match_score,
+        "match_rationale": chunk.match_rationale,
+        "advocacy_blurb": chunk.advocacy_blurb,
+        "experience_source": chunk.experience_source,
+        "source_label": SOURCE_LABELS.get(chunk.experience_source)
+        if chunk.experience_source
+        else None,
+    }
+
+
 @router.get("/tailorings/{tailoring_id}/debug-info")
 def get_tailoring_debug_info(
     tailoring_id: str,

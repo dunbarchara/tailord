@@ -77,6 +77,7 @@ The single-blob user_input model is replaced with a multi-chunk flow.
   - Re-queries JobChunk after re_enrich (separate session committed) for fresh score
   - Returns `{chunk_id, updated_score, updated_rationale}`
   - Frontend API route: `POST /api/experience/gap-response/route.ts` (new)
+  - **Hotfix (2026-05-01):** `source_type` column was VARCHAR(20); `"additional_experience"` (22 chars) caused `StringDataRightTruncation` in production — expanded to VARCHAR(30) via migration `e6f7a8b9c0d1`; `ExperienceChunk.source_type` model updated to `String(30)`
 
 ### gap_response lifecycle verification
 - [x] Confirmed: all three delete functions delegate to `_delete_chunks` with their specific `source_type` — gap_response is never passed; lifecycle tests verify this
@@ -156,29 +157,35 @@ with the requirement scoring view. The answer flow is unclear and routes to user
 ### New direction
 
 **Analysis tab layout:**
-- [ ] Group requirements by score: STRONG (2) → PARTIAL (1) → GAP (0) → N/A (hidden or collapsed)
-- [ ] Each requirement card shows: requirement text, score badge, rationale (collapsed by default, expand on click)
-- [ ] STRONG and PARTIAL requirements: read-only (collapsible rationale is the only interaction)
+- [x] Group requirements by score: STRONG (2) → PARTIAL (1) → GAP (0) → N/A (hidden or collapsed) — implemented in `AnalysisView.tsx` (replaced `FitAnalysis.tsx` + `GapQuestions.tsx`, both deleted)
+- [x] Each requirement card shows: requirement text, score badge, rationale (collapsed by default, expand on click) — `ChunkContextPanel` component
+- [x] STRONG and PARTIAL requirements: read-only (collapsible rationale is the only interaction)
 
 **GAP requirements — enrichment inline:**
-- [ ] For each GAP requirement that has a gap question (from `gap_analyzer`):
+- [x] For each GAP requirement that has a gap question (from `gap_analyzer`):
   - Show the question below the requirement text
   - Inline text area: "Your answer..."
   - Submit button → calls `POST /api/experience/gap-response`
   - Loading state while re-match runs (typically < 2s)
   - On success: score badge animates to new value (PARTIAL or STRONG if evidence is strong)
-  - Below the updated badge: "Your response has been saved to your experience and will help future tailorings"
-- [ ] For GAP requirements with no gap question (non-evaluable or gap analyzer didn't run):
+  - `GapAnswerForm` component; `question=""` (empty) triggers `additional_experience` source_type on backend
+- [x] For GAP requirements with no gap question (non-evaluable or gap analyzer didn't run):
   - Show score badge with no input field — just the requirement and a "—" rationale
 
 **Already-answered gaps:**
-- [ ] If a gap_response chunk exists for this job_chunk_id (check metadata):
+- [x] If a gap_response chunk exists for this job_chunk_id (check metadata):
   - Show "You answered this" with the response text and a small edit link
-  - Do not show the answer input again (it's been answered)
+  - Gap question mode: "You answered this" card → edit flow; additional experience mode: textarea stays open pre-populated, button changes to "Update"
 
 **Score summary bar:**
-- [ ] Top of Analysis tab: `X Strong  ·  Y Partial  ·  Z Gap` — updates reactively as gaps are answered
-- [ ] Not a progress bar — just counts. Clean and scannable.
+- [x] Top of Analysis tab: `X Strong  ·  Y Partial  ·  Z Gap` — updates reactively as gaps are answered
+
+**Additional items implemented:**
+- [x] `additional_experience` source_type for proactive context (no gap question) — `question: str = ""` on `GapResponseRequest`; empty question → `source_type="additional_experience"`, metadata without question field; grouped under `gap_response` API key so no frontend shape change needed
+- [x] Rename `"Gap Answers"` → `"Candidate Notes"` in `_build_grouped_context` (`chunk_matcher.py`) to remove label-bias hallucination; `additional_experience` chunks rendered under same label
+- [x] `'additional_experience'` added to `ExperienceChunk.source_type` union in `frontend/src/types/index.ts`
+- [x] `GapAnswerForm` `buttonLabel` / `prompt` props; `ChunkContextPanel` `submissionCount` key for re-mount on additional experience submit
+- [~] bfcache/pageShowKey in `TailoringDetail.tsx` — attempted (`pageShowKey` state + `pageshow` effect, deps `[tailoringId, pageShowKey]`), then reverted same session; deferred to avoid debugging bfcache edge cases now
 
 ---
 

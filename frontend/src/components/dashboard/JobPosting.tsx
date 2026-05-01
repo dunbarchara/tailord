@@ -20,6 +20,9 @@ interface JobPostingProps {
   hideHeader?: boolean;
   /** Whether the main tailoring generation has finished. When false, the posting analysis hasn't started yet. */
   generationReady?: boolean;
+  /** Controlled selection — set from outside (AnalysisView). When provided, inline accordion is suppressed. */
+  selectedId?: string | null;
+  onSelect?: (id: string | null) => void;
 }
 
 
@@ -33,15 +36,18 @@ function ChunkItem({
   expandedId,
   setExpandedId,
   publicMode,
+  selectedId,
+  onSelect,
 }: {
   chunk: JobChunk;
   expandedId: string | null;
   setExpandedId: (id: string | null) => void;
   publicMode?: boolean;
+  selectedId?: string | null;
+  onSelect?: (id: string | null) => void;
 }) {
   const barColor = scoreBarColor(chunk.match_score, publicMode);
   const isInteractive = barColor !== null;
-  const isExpanded = expandedId === chunk.id;
 
   const body = chunk.chunk_type === 'bullet' ? (
     <div className="flex gap-2 text-sm text-text-secondary leading-relaxed">
@@ -58,6 +64,28 @@ function ChunkItem({
     return <div className="mb-1.5">{body}</div>;
   }
 
+  // Controlled mode — used by AnalysisView split panel
+  if (onSelect) {
+    const isSelected = selectedId === chunk.id;
+    return (
+      <div
+        className={cn(
+          'relative mb-1.5 cursor-pointer select-none rounded px-1 -mx-1 transition-colors duration-150',
+          isSelected ? 'bg-surface-sunken' : 'hover:bg-surface-sunken/50',
+        )}
+        onClick={() => onSelect(isSelected ? null : chunk.id)}
+      >
+        <div className={cn(
+          'absolute top-0 bottom-0 -left-3 w-1 rounded-sm',
+          barColor,
+        )} />
+        {body}
+      </div>
+    );
+  }
+
+  // Uncontrolled mode — inline accordion (Posting tab default)
+  const isExpanded = expandedId === chunk.id;
   return (
     <div
       className={cn(
@@ -113,12 +141,16 @@ function SectionBlock({
   expandedId,
   setExpandedId,
   publicMode,
+  selectedId,
+  onSelect,
 }: {
   section: string;
   chunks: JobChunk[];
   expandedId: string | null;
   setExpandedId: (id: string | null) => void;
   publicMode?: boolean;
+  selectedId?: string | null;
+  onSelect?: (id: string | null) => void;
 }) {
   const sorted = [...chunks].sort((a, b) => a.position - b.position);
   return (
@@ -133,13 +165,15 @@ function SectionBlock({
           expandedId={expandedId}
           setExpandedId={setExpandedId}
           publicMode={publicMode}
+          selectedId={selectedId}
+          onSelect={onSelect}
         />
       ))}
     </div>
   );
 }
 
-export function JobPosting({ data, error, title, company, jobUrl, authorName, publicMode, hideHeader, generationReady }: JobPostingProps) {
+export function JobPosting({ data, error, title, company, jobUrl, authorName, publicMode, hideHeader, generationReady, selectedId, onSelect }: JobPostingProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (error) return <TailoringErrorState message={error} jobUrl={jobUrl} />;
@@ -190,6 +224,8 @@ export function JobPosting({ data, error, title, company, jobUrl, authorName, pu
             expandedId={expandedId}
             setExpandedId={setExpandedId}
             publicMode={publicMode}
+            selectedId={selectedId}
+            onSelect={onSelect}
           />
         ))
       )}

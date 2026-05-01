@@ -177,7 +177,7 @@ export interface ChunksResponse {
 
 export interface ExperienceChunk {
   id: string
-  source_type: 'resume' | 'github' | 'user_input' | 'gap_response'
+  source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'additional_experience'
   source_ref: string | null
   claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
   content: string

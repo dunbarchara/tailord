@@ -69,6 +69,18 @@ def run_gap_analysis(tailoring_id: str) -> None:
             extracted_profile, candidate_name=candidate_name, pronouns=pronouns
         )
 
+        extracted_job = job.extracted_job or {}
+        job_title = extracted_job.get("title") or ""
+        job_company = extracted_job.get("company") or ""
+        if job_title and job_company:
+            role_context = f"{job_title} at {job_company}"
+        elif job_title:
+            role_context = job_title
+        elif job_company:
+            role_context = f"role at {job_company}"
+        else:
+            role_context = "this role"
+
         # Use chunk matcher scores as the authoritative source — no re-scoring.
         # Headers are excluded: they carry no scoreable requirement content.
         all_scored_chunks = (
@@ -109,6 +121,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
                 result = _generate_gap_question(
                     requirement=chunk.content,
                     formatted_profile=formatted_profile,
+                    role_context=role_context,
                 )
                 gaps_with_questions.append(
                     ProfileGapWithChunk(
@@ -158,6 +171,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
 def _generate_gap_question(
     requirement: str,
     formatted_profile: str,
+    role_context: str,
 ) -> GapQuestion:
     """
     Single-responsibility LLM call: given one confirmed gap requirement and the
@@ -180,6 +194,7 @@ def _generate_gap_question(
                 "role": "user",
                 "content": prompt.USER_TEMPLATE.format(
                     requirement=requirement,
+                    role_context=role_context,
                     formatted_profile=formatted_profile,
                 ),
             },

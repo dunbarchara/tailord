@@ -61,6 +61,7 @@ def test_generate_gap_question_returns_llm_result():
             result = _generate_gap_question(
                 requirement="Python 3+ experience",
                 formatted_profile="Senior engineer, 5 years Python",
+                role_context="Backend Engineer at Acme Corp",
             )
 
     assert result.question_for_candidate == "Do you have Python experience?"
@@ -73,7 +74,9 @@ def test_generate_gap_question_includes_requirement_in_prompt():
         "app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_result
     ) as mock_llm:
         with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
-            _generate_gap_question("Kubernetes orchestration", "some profile")
+            _generate_gap_question(
+                "Kubernetes orchestration", "some profile", "DevOps Engineer at Acme Corp"
+            )
 
     messages = mock_llm.call_args.kwargs["messages"]
     user_content = messages[-1]["content"]
