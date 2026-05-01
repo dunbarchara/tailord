@@ -97,7 +97,18 @@ def _build_grouped_context(chunks: list) -> str:
         lines.append("")
 
     if ungrouped:
-        for c in ungrouped:
+        candidate_notes = [
+            c for c in ungrouped if c.source_type in ("gap_response", "additional_experience")
+        ]
+        other = [
+            c for c in ungrouped if c.source_type not in ("gap_response", "additional_experience")
+        ]
+        if candidate_notes:
+            lines.append("Candidate Notes")
+            for c in candidate_notes:
+                lines.append(f"  • {c.content}")
+            lines.append("")
+        for c in other:
             lines.append(f"  • {c.content}")
 
     return "\n".join(lines).strip()

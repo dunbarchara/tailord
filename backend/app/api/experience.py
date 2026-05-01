@@ -116,7 +116,7 @@ class UserInputChunksRequest(BaseModel):
 class GapResponseRequest(BaseModel):
     job_chunk_id: str
     tailoring_id: str
-    question: str
+    question: str = ""
     answer: str
 
 
@@ -800,7 +800,7 @@ def _group_experience_chunks(chunks: list) -> dict:
             github_groups[key]["chunks"].append(s)
         elif c.source_type == "user_input":
             user_input_chunks.append(s)
-        elif c.source_type == "gap_response":
+        elif c.source_type in ("gap_response", "additional_experience"):
             gap_response_chunks.append(s)
 
     has_resume = bool(
@@ -976,6 +976,8 @@ def create_gap_response(
     question = body.question.strip()
     if not answer:
         raise HTTPException(status_code=422, detail="answer cannot be empty")
+    is_additional = not question
+    source_type = "additional_experience" if is_additional else "gap_response"
 
     # Verify the tailoring belongs to this user
     try:
@@ -1003,33 +1005,61 @@ def create_gap_response(
 
     experience = _ensure_experience(user, db)
 
-    max_pos = (
-        db.query(func.max(ExperienceChunk.position))
-        .filter(ExperienceChunk.experience_id == experience.id)
-        .scalar()
+    # Upsert: reuse any existing gap_response or additional_experience chunk for this job_chunk_id
+    existing_gap_chunks = (
+        db.query(ExperienceChunk)
+        .filter(
+            ExperienceChunk.experience_id == experience.id,
+            ExperienceChunk.source_type.in_(["gap_response", "additional_experience"]),
+        )
+        .all()
     )
-    next_pos = (max_pos if max_pos is not None else -1) + 1
+    gap_chunk = next(
+        (
+            c
+            for c in existing_gap_chunks
+            if c.chunk_metadata and c.chunk_metadata.get("job_chunk_id") == body.job_chunk_id
+        ),
+        None,
+    )
 
     now = datetime.now(timezone.utc)
-    gap_chunk = ExperienceChunk(
-        experience_id=experience.id,
-        source_type="gap_response",
-        source_ref=None,
-        claim_type="other",
-        content=answer,
-        group_key=None,
-        date_range=None,
-        technologies=None,
-        chunk_metadata={
+    metadata = (
+        {"job_chunk_id": body.job_chunk_id, "tailoring_id": body.tailoring_id}
+        if is_additional
+        else {
             "question": question,
             "job_chunk_id": body.job_chunk_id,
             "tailoring_id": body.tailoring_id,
-        },
-        position=next_pos,
-        created_at=now,
-        updated_at=now,
+        }
     )
-    db.add(gap_chunk)
+    if gap_chunk is not None:
+        gap_chunk.content = answer
+        gap_chunk.source_type = source_type
+        gap_chunk.chunk_metadata = metadata
+        gap_chunk.updated_at = now
+    else:
+        max_pos = (
+            db.query(func.max(ExperienceChunk.position))
+            .filter(ExperienceChunk.experience_id == experience.id)
+            .scalar()
+        )
+        next_pos = (max_pos if max_pos is not None else -1) + 1
+        gap_chunk = ExperienceChunk(
+            experience_id=experience.id,
+            source_type=source_type,
+            source_ref=None,
+            claim_type="other",
+            content=answer,
+            group_key=None,
+            date_range=None,
+            technologies=None,
+            chunk_metadata=metadata,
+            position=next_pos,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(gap_chunk)
     db.commit()
 
     # Embed synchronously — must complete before re_enrich so the new vector is retrievable
@@ -1061,4 +1091,6 @@ def create_gap_response(
         "chunk_id": str(gap_chunk.id),
         "updated_score": updated_chunk.match_score if updated_chunk else None,
         "updated_rationale": updated_chunk.match_rationale if updated_chunk else None,
+        "advocacy_blurb": updated_chunk.advocacy_blurb if updated_chunk else None,
+        "experience_source": updated_chunk.experience_source if updated_chunk else None,
     }

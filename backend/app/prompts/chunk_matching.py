@@ -34,7 +34,7 @@ CRITICAL RULES — read before scoring:
 6. Do NOT infer the presence of a specific tool from experience with a related tool. If "Terraform" is not mentioned anywhere in the profile, it is a gap — even if the candidate has extensive Kubernetes, Helm, or other infrastructure experience. Score based only on what is explicitly present.
 7. A 0 (gap) rationale must state specifically what evidence is missing, not just restate the requirement.
 8. A -1 rationale needs only a one-phrase reason (e.g. "company perk, not a candidate requirement").
-9. experience_source must be "resume", "github", or "user_input". Set to null for -1 or 0.
+9. experience_source must be "resume", "github", "user_input", "gap_response", or "additional_experience". Set to null for -1 or 0. Use "gap_response" when matching evidence comes from a Candidate Note entry. Use "additional_experience" when matching evidence comes from an Additional Context entry.
 10. Return JSON only. No markdown fences. Exactly as many results as input chunks.
 11. For scores 2 and 1, populate advocacy_blurb with a 1–2 sentence statement in third person that advocates for the candidate on this specific requirement. Use the candidate's first name and pronouns from the [CANDIDATE] block.
     - rationale and advocacy_blurb convey the same core argument — the difference is register and audience. rationale is analytical: it explains the scoring decision as if reviewing the profile internally. advocacy_blurb is advocating: it presents the same evidence as if making the case for the candidate to a recruiter.
@@ -107,7 +107,7 @@ CHUNKS:
 {chunks_block}
 
 Score each chunk. Return a JSON object with exactly as many results as chunks:
-{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|null, "should_render": true|false}}]}}
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|"gap_response"|"additional_experience"|null, "should_render": true|false}}]}}
 """
 
 # Used by the vector matching path (MATCHING_MODE=vector).
@@ -123,5 +123,5 @@ RELEVANT EXPERIENCE (top-{k} results by semantic similarity):
 {grouped_context}
 
 Score this single requirement. Return a JSON object with exactly one result:
-{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|null, "should_render": true|false}}]}}
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|"gap_response"|"additional_experience"|null, "should_render": true|false}}]}}
 """

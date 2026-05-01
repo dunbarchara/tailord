@@ -20,14 +20,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { FitAnalysis, fitAnalysisToText } from '@/components/dashboard/FitAnalysis';
-import { GapQuestions } from '@/components/dashboard/GapQuestions';
+import { AnalysisView, fitAnalysisToText } from '@/components/dashboard/AnalysisView';
 import { JobPosting } from '@/components/dashboard/JobPosting';
 import { DebugPanel } from '@/components/dashboard/DebugPanel';
 import { AdvocacyLetter } from '@/components/dashboard/AdvocacyLetter';
 import { GenerationView } from '@/components/dashboard/GenerationView';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
-import type { Tailoring, ChunksResponse } from '@/types';
+import type { Tailoring, ChunksResponse, ExperienceChunk } from '@/types';
 
 const POLL_INTERVAL = 3000;
 
@@ -130,6 +129,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
+  const [gapResponses, setGapResponses] = useState<ExperienceChunk[] | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
@@ -259,6 +259,15 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     // router is stable across renders in Next.js.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tailoringId, tailoring?.generation_status]);
+
+  // Fetch gap responses from experience chunks once tailoring is ready.
+  useEffect(() => {
+    if (tailoring?.generation_status !== 'ready') return;
+    fetch('/api/experience/chunks')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.gap_response) setGapResponses(d.gap_response); })
+      .catch(() => {});
+  }, [tailoring?.generation_status]);
 
   // Poll for gap_analysis_status after enrichment completes.
   // Gap analysis runs after chunk enrichment — we must not reveal the full UI until it finishes.
@@ -803,7 +812,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       )}
 
       {/* ── Content ─────────────────────────────────────────────────────── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-scroll custom-scrollbar">
+      <div ref={scrollRef} className={cn('flex-1 custom-scrollbar', activeTab === 'analysis' ? 'overflow-hidden' : 'overflow-y-scroll')}>
 
         {/* Generation in progress */}
         {showGenerationView && (
@@ -845,50 +854,18 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
               />
             )}
             {activeTab === 'analysis' && (
-              <>
-                <FitAnalysis
-                  data={chunksData}
-                  error={effectiveChunksError}
-                  title={tailoring.title}
-                  company={tailoring.company}
-                  jobUrl={tailoring.job_url}
-                  authorName={userName}
-                />
-                {tailoring.gap_analysis && tailoring.gap_analysis.gaps.length > 0 && (
-                  <div className="px-4 pb-6 pt-2">
-                    <details className="group">
-                      <summary className="flex items-center justify-between cursor-pointer list-none select-none py-3 border-t border-border-subtle">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-text-primary tracking-[-0.1px]">
-                            Strengthen your profile
-                          </span>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
-                            {tailoring.gap_analysis.gaps.length} {tailoring.gap_analysis.gaps.length === 1 ? 'gap' : 'gaps'}
-                          </span>
-                        </div>
-                        <svg
-                          className="h-4 w-4 text-text-tertiary transition-transform group-open:rotate-180"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </summary>
-                      <div className="pt-1 pb-2">
-                        <p className="text-xs text-text-tertiary mb-3 leading-relaxed">
-                          These requirements weren&apos;t found in your profile. Answer the questions below to add context — each answer updates your experience and re-scores the relevant requirement.
-                        </p>
-                        <GapQuestions
-                          tailoringId={tailoring.id}
-                          gaps={tailoring.gap_analysis.gaps}
-                        />
-                      </div>
-                    </details>
-                  </div>
-                )}
-              </>
+              <AnalysisView
+                data={chunksData}
+                error={effectiveChunksError}
+                title={tailoring.title}
+                company={tailoring.company}
+                jobUrl={tailoring.job_url}
+                authorName={userName}
+                tailoringId={tailoring.id}
+                gapAnalysis={tailoring.gap_analysis}
+                gapResponses={gapResponses}
+                generationReady={tailoring.generation_status === 'ready'}
+              />
             )}
             {activeTab === 'debug' && (
               <DebugPanel

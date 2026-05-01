@@ -16,8 +16,8 @@ Rules for the question:
 - Phrase as an invitation, not an interrogation.
 
 Rules for context:
-- One sentence explaining WHY this requirement matters for THIS specific role or company.
-- Be specific — reference the company name or role title if useful.
+- One sentence explaining WHY this requirement matters for THIS specific role.
+- Reference the role title or hiring company from "## Role context" — NOT anything from the candidate's profile.
 
 Return JSON only. No markdown fences. No preamble.
 """
@@ -25,6 +25,9 @@ Return JSON only. No markdown fences. No preamble.
 USER_TEMPLATE = """
 ## Job requirement (confirmed gap)
 {requirement}
+
+## Role context
+{role_context}
 
 ## Candidate profile
 {formatted_profile}
