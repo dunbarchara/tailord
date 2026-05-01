@@ -609,7 +609,7 @@ def remove_user_input(
 # Short-input heuristic — no LLM needed for obvious single claims
 # ---------------------------------------------------------------------------
 
-_SENTENCE_SPLIT = re.compile(r"[.!?]+\s+[A-Z]")
+_SENTENCE_SPLIT = re.compile(r"[.!?]\s[A-Z]")
 
 
 def _is_short_input(text: str) -> bool:

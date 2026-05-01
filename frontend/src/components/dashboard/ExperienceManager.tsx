@@ -827,7 +827,7 @@ export function ExperienceManager() {
       return (
         <div className="flex flex-col gap-3">
           <a
-            href={`https://github.com/${previewUsername}`}
+            href={`https://github.com/${encodeURIComponent(previewUsername)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="group flex items-center gap-2 w-fit"
@@ -855,7 +855,7 @@ export function ExperienceManager() {
                     <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                       <a
-                        href={`https://github.com/${previewUsername}/${r.name}`}
+                        href={`https://github.com/${encodeURIComponent(previewUsername)}/${encodeURIComponent(r.name)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-sm font-medium text-text-primary hover:opacity-80 truncate"
