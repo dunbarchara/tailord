@@ -8,7 +8,7 @@ import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
 import { cn, toastError, formatElapsed } from '@/lib/utils';
 import { ChunkedProfile } from '@/components/dashboard/ChunkedProfile';
-import type { ExperienceRecord, GitHubRepo } from '@/types';
+import type { ExperienceRecord, ExperienceChunksResponse, GitHubRepo } from '@/types';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -178,7 +178,15 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
-export function ExperienceManager() {
+export function ExperienceManager({
+  readOnly,
+  initialRecord,
+  initialChunks,
+}: {
+  readOnly?: boolean;
+  initialRecord?: ExperienceRecord;
+  initialChunks?: ExperienceChunksResponse;
+} = {}) {
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
   const [githubUrl, setGithubUrl] = useState('');
   const [githubState, setGithubState] = useState<GithubState>('idle');
@@ -289,18 +297,24 @@ export function ExperienceManager() {
 
   useEffect(() => {
     async function loadInitialState() {
-      try {
-        const res = await fetch('/api/experience');
-        if (!res.ok) {
+      // When initialRecord is provided (e.g. demo mode), skip the fetch.
+      const record: ExperienceRecord | null = initialRecord ?? await (async () => {
+        try {
+          const res = await fetch('/api/experience');
+          if (!res.ok) { setUploadState({ phase: 'idle' }); return null; }
+          return await res.json() as ExperienceRecord | null;
+        } catch {
           setUploadState({ phase: 'idle' });
-          return;
+          return null;
         }
-        const record: ExperienceRecord | null = await res.json();
-        if (!record) {
-          setUploadState({ phase: 'idle' });
-          return;
-        }
+      })();
 
+      if (!record) {
+        if (!initialRecord) setUploadState({ phase: 'idle' });
+        return;
+      }
+
+      try {
         // Always restore GitHub state regardless of resume processing status
         if (record.github_username) {
           setGithubUrl(record.github_username);
@@ -341,6 +355,7 @@ export function ExperienceManager() {
 
     loadInitialState();
     return () => { stopPolling(); stopScanPolling(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startPolling, stopPolling, stopScanPolling, startScanPolling, updateScanningRepos]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -696,8 +711,12 @@ export function ExperienceManager() {
     const uploadBtn = (
       <button
         type="button"
-        onClick={() => fileInputRef.current?.click()}
-        className="flex items-center gap-3 px-3 py-3 rounded-xl border border-dashed border-border-default hover:border-border-strong hover:bg-surface-sunken transition-colors text-left w-fit min-w-xs"
+        onClick={() => !readOnly && fileInputRef.current?.click()}
+        disabled={readOnly}
+        className={cn(
+          'flex items-center gap-3 px-3 py-3 rounded-xl border border-dashed border-border-default text-left w-fit min-w-xs transition-colors',
+          readOnly ? 'opacity-50 cursor-not-allowed' : 'hover:border-border-strong hover:bg-surface-sunken',
+        )}
       >
         <Upload className="h-4 w-4 text-text-tertiary flex-shrink-0" />
         <div>
@@ -713,22 +732,22 @@ export function ExperienceManager() {
       case 'processing':
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <MintBtn icon={<X />} label="Cancel" onClick={handleRemove} danger />
+            <MintBtn icon={<X />} label="Cancel" onClick={handleRemove} danger disabled={readOnly} />
           </div>
         );
       case 'ready':
         if (!uploadState.record.filename) return uploadBtn;
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <MintBtn icon={<RefreshCw />} label="Replace" onClick={() => setConfirmDialog('resume-replace')} />
-            <MintBtn icon={<Trash2 />} label="Delete" onClick={() => setConfirmDialog('resume-remove')} danger />
+            <MintBtn icon={<RefreshCw />} label="Replace" onClick={() => setConfirmDialog('resume-replace')} disabled={readOnly} />
+            <MintBtn icon={<Trash2 />} label="Delete" onClick={() => setConfirmDialog('resume-remove')} danger disabled={readOnly} />
           </div>
         );
       case 'error':
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <MintBtn icon={<Upload />} label="Try again" onClick={() => fileInputRef.current?.click()} />
-            <MintBtn icon={<X />} label="Clear" onClick={handleRemove} danger />
+            <MintBtn icon={<Upload />} label="Try again" onClick={() => fileInputRef.current?.click()} disabled={readOnly} />
+            <MintBtn icon={<X />} label="Clear" onClick={handleRemove} danger disabled={readOnly} />
           </div>
         );
     }
@@ -788,7 +807,7 @@ export function ExperienceManager() {
                         </span>
                       ) : null}
                     </div>
-                    {!isScanning && (
+                    {!isScanning && !readOnly && (
                       <button
                         type="button"
                         title="Re-scan this repository"
@@ -808,13 +827,14 @@ export function ExperienceManager() {
               icon={<Pencil />}
               label="Modify"
               onClick={handleGithubModify}
+              disabled={readOnly}
             />
             <MintBtn
               icon={githubState === 'removing' ? <Loader2 className="animate-spin" /> : <X />}
               label="Disconnect"
               onClick={() => setConfirmDialog('github-remove')}
               danger
-              disabled={githubState === 'removing'}
+              disabled={readOnly || githubState === 'removing'}
             />
           </div>
         </div>
@@ -886,7 +906,7 @@ export function ExperienceManager() {
             const connectDisabled = selectedRepoNames.size === 0 || !acknowledged || githubState === 'saving' || githubState === 'fetching' || hasNoChange;
             return (
               <div className="flex items-center gap-2">
-                <button type="button" onClick={handleGithubConnect} disabled={connectDisabled} className={saveBtnCls}>
+                <button type="button" onClick={handleGithubConnect} disabled={readOnly || connectDisabled} className={saveBtnCls}>
                   {githubState === 'saving' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Connecting…</> : `Connect (${selectedRepoNames.size} repo${selectedRepoNames.size !== 1 ? 's' : ''})`}
                 </button>
                 <button type="button" onClick={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); if (githubEditing) setGithubEditing(false); }} className={outlineBtnCls}>
@@ -901,15 +921,15 @@ export function ExperienceManager() {
 
     // ── Step 1: username input ───────────────────────────────────────────────
     return (
-      <form onSubmit={handleGithubFetch} className="flex flex-col gap-2">
+      <form onSubmit={readOnly ? (e) => e.preventDefault() : handleGithubFetch} className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <div className="relative flex-1 max-w-xs">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <LuGithub className="h-4 w-4 text-text-tertiary" />
             </div>
-            <input type="text" value={githubUrl} onChange={(e) => { setGithubUrl(e.target.value); setGithubState('idle'); setGithubError(null); }} placeholder="github.com/username or username" className={cn(inputCls, 'pl-9')} />
+            <input type="text" value={githubUrl} onChange={(e) => { setGithubUrl(e.target.value); setGithubState('idle'); setGithubError(null); }} placeholder="github.com/username or username" disabled={readOnly} className={cn(inputCls, 'pl-9')} />
           </div>
-          <button type="submit" disabled={!githubUrl.trim()} className={saveBtnCls}>
+          <button type="submit" disabled={readOnly || !githubUrl.trim()} className={saveBtnCls}>
             Connect
           </button>
         </div>
@@ -994,7 +1014,7 @@ export function ExperienceManager() {
 
           {/* Parsed experience */}
           <div className="mt-8">
-            <ChunkedProfile refreshKey={chunksRefreshKey} />
+            <ChunkedProfile refreshKey={chunksRefreshKey} initialData={initialChunks} readOnly={readOnly} />
           </div>
 
         </div>

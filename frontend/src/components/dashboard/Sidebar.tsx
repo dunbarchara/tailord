@@ -178,11 +178,15 @@ function TailoringItem({
   active,
   collapsed,
   onDelete,
+  basePath = '/dashboard',
+  isMock,
 }: {
   tailoring: TailoringListItem;
   active: boolean;
   collapsed: boolean;
   onDelete: (id: string) => void;
+  basePath?: string;
+  isMock?: boolean;
 }) {
   const label = tailoringLabel(tailoring);
   const generating = tailoring.generation_status === 'generating';
@@ -192,7 +196,7 @@ function TailoringItem({
   if (collapsed) {
     return (
       <Link
-        href={`/dashboard/tailorings/${tailoring.id}`}
+        href={`${basePath}/tailorings/${tailoring.id}`}
         title={[label, tailoring.company].filter(Boolean).join(' — ')}
         className={cn(navItemBase, active ? navItemActive : navItemInactive)}
       >
@@ -204,7 +208,7 @@ function TailoringItem({
   return (
     <div className="group relative">
       <Link
-        href={`/dashboard/tailorings/${tailoring.id}`}
+        href={`${basePath}/tailorings/${tailoring.id}`}
         title={[label, tailoring.company].filter(Boolean).join(' — ')}
         className={cn(
           'flex items-center gap-2 w-full px-2 py-1.5 pr-8 rounded-[10px] border border-transparent transition-colors outline-none',
@@ -231,8 +235,12 @@ function TailoringItem({
       </Link>
       <button
         type="button"
-        onClick={(e) => { e.preventDefault(); onDelete(tailoring.id); }}
-        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-[6px] opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-error"
+        onClick={(e) => { e.preventDefault(); if (!isMock) onDelete(tailoring.id); }}
+        disabled={isMock}
+        className={cn(
+          'absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-[6px] opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary',
+          isMock ? 'cursor-not-allowed opacity-30' : 'hover:text-error',
+        )}
         aria-label="Delete tailoring"
       >
         <Trash2 className="h-4 w-4" />
@@ -243,12 +251,13 @@ function TailoringItem({
 
 /* ─── Account popover ────────────────────────────────────────────────────── */
 
-function AccountPopover({ collapsed }: { collapsed: boolean }) {
+function AccountPopover({ collapsed, isMock }: { collapsed: boolean; isMock?: boolean }) {
   const { data: session } = useSession();
   const { darkMode, setDarkMode } = useTheme();
   const [preferredName, setPreferredName] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isMock) return;
     fetch('/api/users')
       .then((r) => r.json())
       .then((data) => {
@@ -264,10 +273,10 @@ function AccountPopover({ collapsed }: { collapsed: boolean }) {
     }
     window.addEventListener('preferred-name-changed', onNameChanged);
     return () => window.removeEventListener('preferred-name-changed', onNameChanged);
-  }, []);
+  }, [isMock]);
 
-  const displayName = preferredName ?? session?.user?.name ?? '';
-  const email = session?.user?.email ?? '';
+  const displayName = isMock ? 'Demo User' : (preferredName ?? session?.user?.name ?? '');
+  const email = isMock ? '' : (session?.user?.email ?? '');
 
   return (
     <DropdownMenu>
@@ -301,12 +310,19 @@ function AccountPopover({ collapsed }: { collapsed: boolean }) {
 
         <DropdownMenuSeparator className="bg-border-subtle mx-1 my-1" />
 
-        <DropdownMenuItem asChild className="rounded-xl gap-1.5 p-2 text-sm text-text-secondary cursor-pointer focus:bg-black/5 dark:focus:bg-white/5 focus:text-text-primary">
-          <Link href="/dashboard/settings">
+        {isMock ? (
+          <DropdownMenuItem disabled className="rounded-xl gap-1.5 p-2 text-sm text-text-disabled cursor-not-allowed opacity-50">
             <Settings className="size-4 text-text-tertiary shrink-0" strokeWidth={1.8} />
             <span>Settings</span>
-          </Link>
-        </DropdownMenuItem>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem asChild className="rounded-xl gap-1.5 p-2 text-sm text-text-secondary cursor-pointer focus:bg-black/5 dark:focus:bg-white/5 focus:text-text-primary">
+            <Link href="/dashboard/settings">
+              <Settings className="size-4 text-text-tertiary shrink-0" strokeWidth={1.8} />
+              <span>Settings</span>
+            </Link>
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem
           onClick={() => setDarkMode(!darkMode)}
@@ -320,13 +336,22 @@ function AccountPopover({ collapsed }: { collapsed: boolean }) {
 
         <DropdownMenuSeparator className="bg-border-subtle mx-1 my-1" />
 
-        <DropdownMenuItem
-          onClick={() => signOut({ callbackUrl: '/' })}
-          className="rounded-xl gap-1.5 p-2 text-sm text-red-600 cursor-pointer focus:bg-red-50 dark:focus:bg-red-950/20 focus:text-red-600"
-        >
-          <LogOut className="size-4 shrink-0" strokeWidth={1.8} />
-          <span>Sign out</span>
-        </DropdownMenuItem>
+        {isMock ? (
+          <DropdownMenuItem asChild className="rounded-xl gap-1.5 p-2 text-sm text-text-secondary cursor-pointer focus:bg-black/5 dark:focus:bg-white/5 focus:text-text-primary">
+            <Link href="/login">
+              <LogOut className="size-4 shrink-0" strokeWidth={1.8} />
+              <span>Sign in</span>
+            </Link>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={() => signOut({ callbackUrl: '/' })}
+            className="rounded-xl gap-1.5 p-2 text-sm text-red-600 cursor-pointer focus:bg-red-50 dark:focus:bg-red-950/20 focus:text-red-600"
+          >
+            <LogOut className="size-4 shrink-0" strokeWidth={1.8} />
+            <span>Sign out</span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -344,23 +369,34 @@ function Divider() {
 
 /* ─── Active item ────────────────────────────────────────────────────────── */
 
-function getActiveItem(pathname: string | null): string {
-  if (!pathname || pathname === '/dashboard') return 'Home';
-  if (pathname.startsWith('/dashboard/experience')) return 'My Experience';
-  if (pathname.startsWith('/dashboard/profile')) return 'My Profile';
-  if (pathname.startsWith('/dashboard/settings')) return 'Settings';
-  if (pathname === '/dashboard/tailorings/new') return 'New Tailoring';
-  const match = pathname.match(/^\/dashboard\/tailorings\/([^/]+)$/);
-  if (match) return match[1];
+function getActiveItem(pathname: string | null, basePath = '/dashboard'): string {
+  if (!pathname || pathname === basePath) return 'Home';
+  if (pathname.startsWith(`${basePath}/experience`)) return 'My Experience';
+  if (pathname.startsWith(`${basePath}/profile`)) return 'My Profile';
+  if (pathname.startsWith(`${basePath}/settings`)) return 'Settings';
+  if (pathname === `${basePath}/tailorings/new`) return 'New Tailoring';
+  const prefix = `${basePath}/tailorings/`;
+  if (pathname.startsWith(prefix)) {
+    const rest = pathname.slice(prefix.length);
+    if (rest && !rest.includes('/')) return rest;
+  }
   return 'Home';
 }
 
 /* ─── Sidebar ────────────────────────────────────────────────────────────── */
 
-export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] }) {
+export function Sidebar({
+  tailorings = [],
+  isMock,
+  basePath = '/dashboard',
+}: {
+  tailorings?: TailoringListItem[];
+  isMock?: boolean;
+  basePath?: string;
+}) {
   const pathname = usePathname();
   const router = useRouter();
-  const activeItem = getActiveItem(pathname);
+  const activeItem = getActiveItem(pathname, basePath);
   const [collapsed, setCollapsed] = useState(false);
   const [smallScreen, setSmallScreen] = useState(false);
   const [query, setQuery] = useState('');
@@ -395,14 +431,15 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
     : tailorings;
 
   async function handleDelete(id: string) {
+    if (isMock) return;
     setDeleting(true);
     try {
       await fetch(`/api/tailorings/${id}`, { method: 'DELETE' });
     } finally {
       setDeleting(false);
       setConfirmDeleteId(null);
-      if (pathname === `/dashboard/tailorings/${id}`) {
-        router.push('/dashboard');
+      if (pathname === `${basePath}/tailorings/${id}`) {
+        router.push(basePath);
       }
       router.refresh();
     }
@@ -448,9 +485,9 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
 
             {/* Primary nav */}
             <nav className="flex flex-col gap-0.5">
-              <NavItem icon={IconHome}   label="Home"          href="/dashboard"           active={activeItem === 'Home'}          collapsed={isCollapsed} />
-              <NavItem icon={IconEditor} label="My Experience" href="/dashboard/experience" active={activeItem === 'My Experience'} collapsed={isCollapsed} />
-              <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href="/dashboard/profile" active={activeItem === 'My Profile'} collapsed={isCollapsed} />
+              <NavItem icon={IconHome}   label="Home"          href={basePath}                    active={activeItem === 'Home'}          collapsed={isCollapsed} />
+              <NavItem icon={IconEditor} label="My Experience" href={`${basePath}/experience`}     active={activeItem === 'My Experience'} collapsed={isCollapsed} />
+              <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href={`${basePath}/profile`} active={activeItem === 'My Profile'} collapsed={isCollapsed} />
             </nav>
 
             {/* Tailorings section header + controls */}
@@ -464,7 +501,19 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
                   Tailorings
                 </span>
               )}
-              <NavItem icon={(p) => <Plus {...p} size={18} strokeWidth={1.8} />} label="New Tailoring" href="/dashboard/tailorings/new" active={activeItem === 'New Tailoring'} collapsed={isCollapsed} />
+              {isMock ? (
+                <button
+                  type="button"
+                  disabled
+                  title={isCollapsed ? 'New Tailoring' : undefined}
+                  className={cn(navItemBase, 'opacity-40 cursor-not-allowed text-text-secondary')}
+                >
+                  <Plus className="size-[18px] shrink-0" strokeWidth={1.8} />
+                  {!isCollapsed && <span>New Tailoring</span>}
+                </button>
+              ) : (
+                <NavItem icon={(p) => <Plus {...p} size={18} strokeWidth={1.8} />} label="New Tailoring" href={`${basePath}/tailorings/new`} active={activeItem === 'New Tailoring'} collapsed={isCollapsed} />
+              )}
               <SearchBar collapsed={isCollapsed} onExpand={handleExpand} query={query} onQueryChange={setQuery} />
             </div>
 
@@ -486,6 +535,8 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
                           active={activeItem === activeTailoring.id}
                           collapsed={true}
                           onDelete={setConfirmDeleteId}
+                          basePath={basePath}
+                          isMock={isMock}
                         />
                       )}
                       {hasMore && (
@@ -509,6 +560,8 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
                     active={activeItem === t.id}
                     collapsed={false}
                     onDelete={setConfirmDeleteId}
+                    basePath={basePath}
+                    isMock={isMock}
                   />
                 ))}
               </div>
@@ -524,7 +577,7 @@ export function Sidebar({ tailorings = [] }: { tailorings?: TailoringListItem[] 
               <div className="h-px bg-border-subtle" />
             </div>
             <div className="flex flex-col gap-0.5">
-              <AccountPopover collapsed={isCollapsed} />
+              <AccountPopover collapsed={isCollapsed} isMock={isMock} />
             </div>
             <div className="mt-0.5" />
             <button

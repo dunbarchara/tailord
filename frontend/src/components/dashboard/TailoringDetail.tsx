@@ -105,10 +105,14 @@ function NotionViewRow({
 /* ─── Main component ────────────────────────────────────────────────────── */
 
 interface TailoringDetailProps {
-  tailoringId: string;
+  tailoringId?: string;
+  readOnly?: boolean;
+  initialTailoring?: Tailoring;
+  initialChunks?: ChunksResponse;
 }
 
-export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
+export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initialTailoring, initialChunks }: TailoringDetailProps) {
+  const tailoringId = tailoringIdProp ?? initialTailoring?.id ?? '';
   const router = useRouter();
   const searchParams = useSearchParams();
   const isDebug = searchParams?.get('debug') === '1';
@@ -141,6 +145,13 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const [gapAnalysisSettled, setGapAnalysisSettled] = useState(false);
 
   useEffect(() => {
+    // When initialTailoring is provided (demo/readOnly mode), skip the API fetch.
+    if (initialTailoring) {
+      setTailoring(initialTailoring);
+      if (initialTailoring.gap_analysis_status === 'complete') setGapAnalysisSettled(true);
+      setLoading(false);
+      return;
+    }
     async function load() {
       try {
         const [tailoringRes, userRes] = await Promise.all([
@@ -176,7 +187,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     load();
     // router is stable across renders in Next.js — safe to omit from deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tailoringId]);
+  }, [tailoringId, initialTailoring]);
 
   useEffect(() => {
     if (!tailoring || tailoring.generation_status !== 'generating') return;
@@ -220,6 +231,12 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   }, [tailoring?.generation_status, chunksData?.enrichment_status]);
 
   useEffect(() => {
+    // When initialChunks is provided (demo/readOnly mode), use them directly — no polling.
+    if (initialChunks) {
+      setChunksData(initialChunks);
+      prevEnrichmentStatusRef.current = initialChunks.enrichment_status;
+      return;
+    }
     // Don't poll if generation already failed — enrichment will never complete
     if (tailoring?.generation_status === 'error') return;
 
@@ -258,20 +275,22 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     // Intentional: restart chunks polling only on generation_status transitions.
     // router is stable across renders in Next.js.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tailoringId, tailoring?.generation_status]);
+  }, [tailoringId, tailoring?.generation_status, initialChunks]);
 
   // Fetch gap responses from experience chunks once tailoring is ready.
   useEffect(() => {
+    if (readOnly) return;
     if (tailoring?.generation_status !== 'ready') return;
     fetch('/api/experience/chunks')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.gap_response) setGapResponses(d.gap_response); })
       .catch(() => {});
-  }, [tailoring?.generation_status]);
+  }, [tailoring?.generation_status, readOnly]);
 
   // Poll for gap_analysis_status after enrichment completes.
   // Gap analysis runs after chunk enrichment — we must not reveal the full UI until it finishes.
   useEffect(() => {
+    if (readOnly) return;
     if (gapAnalysisSettled) return;
     const enrichmentComplete = chunksData?.enrichment_status === 'complete' || chunksData?.enrichment_status === 'error';
     if (!enrichmentComplete) return;
@@ -300,7 +319,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
     interval = setInterval(pollGapStatus, POLL_INTERVAL);
     return () => { if (interval) clearInterval(interval); };
     // Intentional: restart only when enrichment or gap settlement status changes.
-  }, [tailoringId, chunksData?.enrichment_status, gapAnalysisSettled]);
+  }, [tailoringId, chunksData?.enrichment_status, gapAnalysisSettled, readOnly]);
 
   async function handleRegenerate() {
     setShowRegenConfirm(false);
@@ -514,9 +533,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
   const postingOn = tailoring.posting_public;
   const anyPublic = letterOn || postingOn;
 
-  const canCopy = activeTab !== 'posting' && activeTab !== 'debug' && (
-    activeTab === 'analysis' ? !!chunksData : !!tailoring.generated_output
-  );
+  const canCopy = activeTab === 'letter' && !!tailoring.generated_output;
 
   return (
     <div className="h-full flex flex-col bg-surface-elevated">
@@ -639,12 +656,12 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           </button>
 
           {/* Notion */}
-          <Popover open={notionOpen} onOpenChange={setNotionOpen}>
+          <Popover open={notionOpen} onOpenChange={readOnly ? undefined : setNotionOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
-                title="Export to Notion"
-                disabled={showGenerationView || generationFailed}
+                title={readOnly ? 'Sign in to export to Notion' : 'Export to Notion'}
+                disabled={readOnly || showGenerationView || generationFailed}
                 className={iconBtnCls}
               >
                 <SiNotion className="h-4 w-4" />
@@ -690,9 +707,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           {/* Regenerate */}
           <button
             type="button"
-            onClick={() => setShowRegenConfirm(true)}
-            disabled={regenerating || showGenerationView}
-            title={regenerating ? 'Regenerating…' : 'Regenerate'}
+            onClick={() => !readOnly && setShowRegenConfirm(true)}
+            disabled={readOnly || regenerating || showGenerationView}
+            title={readOnly ? 'Sign in to regenerate' : regenerating ? 'Regenerating…' : 'Regenerate'}
             className={iconBtnCls}
           >
             {regenerating
@@ -703,9 +720,9 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
           <ToolDivider />
 
           {/* Share — Publish style */}
-          <Popover open={shareOpen} onOpenChange={setShareOpen}>
+          <Popover open={shareOpen} onOpenChange={readOnly ? undefined : setShareOpen}>
             <PopoverTrigger asChild>
-              <button type="button" disabled={showGenerationView || generationFailed} className={textBtnCls}>
+              <button type="button" disabled={readOnly || showGenerationView || generationFailed} className={textBtnCls}>
                 {anyPublic
                   ? <Globe className="h-3.5 w-3.5 text-brand-accent" />
                   : <Lock className="h-3.5 w-3.5" />}
@@ -762,8 +779,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                   </div>
                   <Switch
                     checked={postingOn}
-                    onCheckedChange={v => handleToggleShare('posting', v)}
-                    disabled={sharing}
+                    onCheckedChange={v => !readOnly && handleToggleShare('posting', v)}
+                    disabled={readOnly || sharing}
                   />
                 </div>
                 <div className="flex items-center justify-between gap-4">
@@ -773,8 +790,8 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                   </div>
                   <Switch
                     checked={letterOn}
-                    onCheckedChange={v => handleToggleShare('letter', v)}
-                    disabled={sharing}
+                    onCheckedChange={v => !readOnly && handleToggleShare('letter', v)}
+                    disabled={readOnly || sharing}
                   />
                 </div>
               </div>
@@ -807,7 +824,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
       {!showGenerationView && !generationFailed && (activeTab === 'letter' || activeTab === 'posting') && (
         <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border-subtle bg-surface-base text-xs text-text-tertiary">
           <Info className="h-3.5 w-3.5 shrink-0" />
-          This is a preview. Shared tailorings omit gaps and show partials as green.
+          Preview — this is how your tailoring appears when shared. Gap requirements are hidden, partial matches appear green, and each matched item includes an advocacy statement and the experience source that supports it.
         </div>
       )}
 
@@ -851,6 +868,7 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 jobUrl={tailoring.job_url}
                 authorName={userName}
                 generationReady={tailoring.generation_status === 'ready'}
+                publicMode={true}
               />
             )}
             {activeTab === 'analysis' && (
@@ -861,10 +879,11 @@ export function TailoringDetail({ tailoringId }: TailoringDetailProps) {
                 company={tailoring.company}
                 jobUrl={tailoring.job_url}
                 authorName={userName}
-                tailoringId={tailoring.id}
+                tailoringId={readOnly ? undefined : tailoring.id}
                 gapAnalysis={tailoring.gap_analysis}
                 gapResponses={gapResponses}
                 generationReady={tailoring.generation_status === 'ready'}
+                readOnly={readOnly}
               />
             )}
             {activeTab === 'debug' && (

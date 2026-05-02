@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
-export function ClosingCTA({ isSignedIn }: { isSignedIn: boolean }) {
+export function ClosingCTA() {
   return (
     <section className="px-6 py-20 lg:px-8 lg:py-28 border-t border-border-subtle bg-surface-elevated">
       <div className="mx-auto max-w-2xl text-center">
@@ -15,10 +15,10 @@ export function ClosingCTA({ isSignedIn }: { isSignedIn: boolean }) {
           Bring your resume and a job URL. Tailord does the rest.
         </p>
         <Link
-          href={isSignedIn ? '/dashboard/tailorings/new' : '/register'}
+          href="/demo/dashboard"
           className="group inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium bg-text-primary text-surface-base hover:opacity-90 transition-opacity"
         >
-          {isSignedIn ? 'Create a tailoring' : 'Start your first tailoring'}
+          View demo dashboard
           <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>

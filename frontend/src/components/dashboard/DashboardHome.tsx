@@ -95,9 +95,11 @@ function VisibilityBadge({ isPublic }: { isPublic: boolean }) {
 interface DashboardHomeProps {
   name: string | null;
   tailorings: TailoringListItem[];
+  basePath?: string;
+  readOnly?: boolean;
 }
 
-export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
+export function DashboardHome({ name, tailorings, basePath = '/dashboard', readOnly }: DashboardHomeProps) {
   const router = useRouter();
   const isEmpty = tailorings.length === 0;
   const [displayName, setDisplayName] = useState<string | null>(name);
@@ -147,18 +149,29 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
               </div>
               <div className="flex items-center gap-2">
                 <Link
-                  href="/dashboard/experience"
+                  href={`${basePath}/experience`}
                   className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] border border-border-default bg-surface-elevated text-text-secondary hover:bg-surface-base hover:border-border-strong hover:text-text-primary transition-colors"
                 >
                   Add Experience
                 </Link>
-                <Link
-                  href="/dashboard/tailorings/new"
-                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 transition-opacity"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New Tailoring
-                </Link>
+                {readOnly ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 opacity-40 cursor-not-allowed"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New Tailoring
+                  </button>
+                ) : (
+                  <Link
+                    href={`${basePath}/tailorings/new`}
+                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 transition-opacity"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New Tailoring
+                  </Link>
+                )}
               </div>
             </div>
           )}
@@ -175,13 +188,24 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
                     {tailorings.length} tailoring{tailorings.length !== 1 ? 's' : ''} generated
                   </p>
                 </div>
-                <Link
-                  href="/dashboard/tailorings/new"
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 transition-opacity shrink-0"
-                >
-                  <Plus className="h-4 w-4" />
-                  New Tailoring
-                </Link>
+                {readOnly ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 opacity-40 cursor-not-allowed shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    New Tailoring
+                  </button>
+                ) : (
+                  <Link
+                    href={`${basePath}/tailorings/new`}
+                    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[10px] text-sm font-normal tracking-[-0.1px] bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 transition-opacity shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    New Tailoring
+                  </Link>
+                )}
               </div>
 
               {/* Table */}
@@ -209,7 +233,7 @@ export function DashboardHome({ name, tailorings }: DashboardHomeProps) {
                       return (
                         <tr
                           key={t.id}
-                          onClick={() => router.push(`/dashboard/tailorings/${t.id}`)}
+                          onClick={() => router.push(`${basePath}/tailorings/${t.id}`)}
                           className="bg-surface-elevated border-t border-border-subtle hover:bg-surface-base transition-colors cursor-pointer group"
                         >
                           {/* Role + company */}

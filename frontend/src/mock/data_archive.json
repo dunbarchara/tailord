@@ -1,0 +1,1116 @@
+{
+  "displayName": "Alex Chen",
+  "user": {
+    "id": "mock-user-001",
+    "email": "alex@example.com",
+    "name": "Alex Chen",
+    "preferred_first_name": "Alex",
+    "preferred_last_name": "Chen",
+    "username_slug": "alex-chen",
+    "profile_public": true,
+    "avatar_url": null,
+    "notion_workspace_name": null
+  },
+  "experience": {
+    "id": "mock-exp-001",
+    "filename": "alex_chen_resume.pdf",
+    "status": "ready",
+    "extracted_profile": {
+      "resume": {
+        "email": "alex@example.com",
+        "phone": null,
+        "linkedin": "linkedin.com/in/alex-chen",
+        "location": "San Francisco, CA",
+        "title": "Senior Software Engineer",
+        "headline": "Backend & distributed systems engineer with 5+ years building high-scale APIs",
+        "summary": "Software engineer with 5+ years of experience building high-scale distributed systems and APIs. Proven track record of owning product surfaces end-to-end at growth-stage companies, from architecture through deployment. Deep background in payments infrastructure, developer tooling, and data pipelines.",
+        "work_experience": [
+          {
+            "title": "Senior Software Engineer",
+            "company": "TechCorp",
+            "location": "San Francisco, CA",
+            "duration": "Jan 2022 – Present",
+            "bullets": [
+              "Led redesign of the payment processing pipeline handling $2B+ in annual transaction volume, reducing p99 latency by 40%",
+              "Architected multi-region active-active database replication strategy for PostgreSQL, achieving 99.99% uptime",
+              "Mentored 4 junior engineers; introduced ADR process adopted across 3 teams",
+              "Drove migration from monolith to event-driven microservices using Kafka, reducing deployment frequency from monthly to daily"
+            ]
+          },
+          {
+            "title": "Software Engineer II",
+            "company": "DataFlow Inc",
+            "location": "Remote",
+            "duration": "Jun 2020 – Dec 2021",
+            "bullets": [
+              "Built real-time data ingestion service processing 500K events/sec using Python and Apache Flink",
+              "Designed and shipped developer SDK (Python, Go) used by 300+ external developers",
+              "Reduced infrastructure costs by 35% through spot instance automation and right-sizing",
+              "Implemented distributed rate limiting across API gateway serving 10M+ requests/day"
+            ]
+          },
+          {
+            "title": "Software Engineer",
+            "company": "Startup Labs",
+            "location": "San Francisco, CA",
+            "duration": "Aug 2018 – May 2020",
+            "bullets": [
+              "Full-stack engineer on B2B SaaS platform; shipped 3 major product features from spec to GA",
+              "Built CI/CD pipeline on GitHub Actions + Kubernetes, cutting release cycle from 2 weeks to same-day",
+              "Migrated legacy PHP codebase to TypeScript/Node.js, improving test coverage from 12% to 78%"
+            ]
+          }
+        ],
+        "skills": {
+          "technical": ["Python", "TypeScript", "Go", "PostgreSQL", "Redis", "Kafka", "Kubernetes", "AWS", "React", "FastAPI", "Node.js", "Docker", "Terraform"],
+          "soft": ["Technical leadership", "Cross-functional collaboration", "Mentorship", "Systems design"]
+        },
+        "education": [
+          {
+            "degree": "B.S. Computer Science",
+            "institution": "UC Berkeley",
+            "location": "Berkeley, CA",
+            "year": "2018",
+            "distinction": null
+          }
+        ],
+        "projects": [
+          {
+            "name": "OpenRateLimiter",
+            "description": "Open-source distributed rate limiter built on Redis with sliding window algorithm. 1.2K GitHub stars.",
+            "technologies": ["Go", "Redis", "gRPC"]
+          },
+          {
+            "name": "PGMigrate",
+            "description": "Zero-downtime PostgreSQL schema migration tool used by 50+ companies in production.",
+            "technologies": ["Python", "PostgreSQL", "Click"]
+          }
+        ],
+        "certifications": ["AWS Certified Solutions Architect – Associate"]
+      }
+    },
+    "raw_resume_text": null,
+    "error_message": null,
+    "github_username": "alexchen-dev",
+    "github_repos": [
+      {
+        "name": "open-rate-limiter",
+        "description": "Distributed rate limiter built on Redis",
+        "language": "Go",
+        "star_count": 1243,
+        "pushed_at": "2025-03-15T10:00:00Z",
+        "scanned_at": "2025-03-16T08:00:00Z",
+        "scanning_started_at": null
+      },
+      {
+        "name": "pgmigrate",
+        "description": "Zero-downtime PostgreSQL migrations",
+        "language": "Python",
+        "star_count": 312,
+        "pushed_at": "2025-02-20T10:00:00Z",
+        "scanned_at": "2025-02-21T08:00:00Z",
+        "scanning_started_at": null
+      }
+    ],
+    "github_repo_details": null,
+    "user_input_text": null,
+    "uploaded_at": "2025-04-10T09:00:00Z",
+    "processed_at": "2025-04-10T09:02:00Z",
+    "last_process_requested_at": "2025-04-10T09:01:00Z"
+  },
+  "experienceChunks": {
+    "resume": {
+      "work_experience": [
+        {
+          "group_key": "TechCorp | Senior Software Engineer",
+          "date_range": "Jan 2022 – Present",
+          "chunks": [
+            {
+              "id": "ec-we-1-1",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Led redesign of the payment processing pipeline handling $2B+ in annual transaction volume, reducing p99 latency by 40%",
+              "group_key": "TechCorp | Senior Software Engineer",
+              "date_range": "Jan 2022 – Present",
+              "technologies": ["PostgreSQL", "Python"],
+              "chunk_metadata": null,
+              "position": 0,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-1-2",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Architected multi-region active-active database replication strategy for PostgreSQL, achieving 99.99% uptime",
+              "group_key": "TechCorp | Senior Software Engineer",
+              "date_range": "Jan 2022 – Present",
+              "technologies": ["PostgreSQL"],
+              "chunk_metadata": null,
+              "position": 1,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-1-3",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Mentored 4 junior engineers; introduced ADR process adopted across 3 teams",
+              "group_key": "TechCorp | Senior Software Engineer",
+              "date_range": "Jan 2022 – Present",
+              "technologies": null,
+              "chunk_metadata": null,
+              "position": 2,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-1-4",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Drove migration from monolith to event-driven microservices using Kafka, reducing deployment frequency from monthly to daily",
+              "group_key": "TechCorp | Senior Software Engineer",
+              "date_range": "Jan 2022 – Present",
+              "technologies": ["Kafka"],
+              "chunk_metadata": null,
+              "position": 3,
+              "updated_at": "2025-04-10T09:02:00Z"
+            }
+          ]
+        },
+        {
+          "group_key": "DataFlow Inc | Software Engineer II",
+          "date_range": "Jun 2020 – Dec 2021",
+          "chunks": [
+            {
+              "id": "ec-we-2-1",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Built real-time data ingestion service processing 500K events/sec using Python and Apache Flink",
+              "group_key": "DataFlow Inc | Software Engineer II",
+              "date_range": "Jun 2020 – Dec 2021",
+              "technologies": ["Python", "Apache Flink"],
+              "chunk_metadata": null,
+              "position": 4,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-2-2",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Designed and shipped developer SDK (Python, Go) used by 300+ external developers",
+              "group_key": "DataFlow Inc | Software Engineer II",
+              "date_range": "Jun 2020 – Dec 2021",
+              "technologies": ["Python", "Go"],
+              "chunk_metadata": null,
+              "position": 5,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-2-3",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Reduced infrastructure costs by 35% through spot instance automation and right-sizing",
+              "group_key": "DataFlow Inc | Software Engineer II",
+              "date_range": "Jun 2020 – Dec 2021",
+              "technologies": ["AWS"],
+              "chunk_metadata": null,
+              "position": 6,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-2-4",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Implemented distributed rate limiting across API gateway serving 10M+ requests/day",
+              "group_key": "DataFlow Inc | Software Engineer II",
+              "date_range": "Jun 2020 – Dec 2021",
+              "technologies": ["Redis"],
+              "chunk_metadata": null,
+              "position": 7,
+              "updated_at": "2025-04-10T09:02:00Z"
+            }
+          ]
+        },
+        {
+          "group_key": "Startup Labs | Software Engineer",
+          "date_range": "Aug 2018 – May 2020",
+          "chunks": [
+            {
+              "id": "ec-we-3-1",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Full-stack engineer on B2B SaaS platform; shipped 3 major product features from spec to GA",
+              "group_key": "Startup Labs | Software Engineer",
+              "date_range": "Aug 2018 – May 2020",
+              "technologies": ["React", "Node.js", "PostgreSQL"],
+              "chunk_metadata": null,
+              "position": 8,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-3-2",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Built CI/CD pipeline on GitHub Actions + Kubernetes, cutting release cycle from 2 weeks to same-day",
+              "group_key": "Startup Labs | Software Engineer",
+              "date_range": "Aug 2018 – May 2020",
+              "technologies": ["Kubernetes", "Docker"],
+              "chunk_metadata": null,
+              "position": 9,
+              "updated_at": "2025-04-10T09:02:00Z"
+            },
+            {
+              "id": "ec-we-3-3",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "work_experience",
+              "content": "Migrated legacy PHP codebase to TypeScript/Node.js, improving test coverage from 12% to 78%",
+              "group_key": "Startup Labs | Software Engineer",
+              "date_range": "Aug 2018 – May 2020",
+              "technologies": ["TypeScript", "Node.js"],
+              "chunk_metadata": null,
+              "position": 10,
+              "updated_at": "2025-04-10T09:02:00Z"
+            }
+          ]
+        }
+      ],
+      "skills": [
+        { "id": "ec-sk-1", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Python", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 0, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-2", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "TypeScript", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 1, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-3", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Go", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 2, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-4", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "PostgreSQL", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 3, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-5", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Redis", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 4, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-6", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Kafka", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 5, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-7", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Kubernetes", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 6, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-8", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "AWS", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 7, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-9", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "React", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 8, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-10", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "FastAPI", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 9, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-11", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Node.js", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 10, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-12", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Docker", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 11, "updated_at": "2025-04-10T09:02:00Z" },
+        { "id": "ec-sk-13", "source_type": "resume", "source_ref": null, "claim_type": "skill", "content": "Terraform", "group_key": null, "date_range": null, "technologies": null, "chunk_metadata": null, "position": 12, "updated_at": "2025-04-10T09:02:00Z" }
+      ],
+      "projects": [
+        {
+          "group_key": "OpenRateLimiter",
+          "chunks": [
+            {
+              "id": "ec-pr-1-1",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "project",
+              "content": "Open-source distributed rate limiter built on Redis with sliding window algorithm. 1.2K GitHub stars.",
+              "group_key": "OpenRateLimiter",
+              "date_range": null,
+              "technologies": ["Go", "Redis", "gRPC"],
+              "chunk_metadata": null,
+              "position": 0,
+              "updated_at": "2025-04-10T09:02:00Z"
+            }
+          ]
+        },
+        {
+          "group_key": "PGMigrate",
+          "chunks": [
+            {
+              "id": "ec-pr-2-1",
+              "source_type": "resume",
+              "source_ref": null,
+              "claim_type": "project",
+              "content": "Zero-downtime PostgreSQL schema migration tool used by 50+ companies in production.",
+              "group_key": "PGMigrate",
+              "date_range": null,
+              "technologies": ["Python", "PostgreSQL", "Click"],
+              "chunk_metadata": null,
+              "position": 0,
+              "updated_at": "2025-04-10T09:02:00Z"
+            }
+          ]
+        }
+      ],
+      "education": [
+        {
+          "id": "ec-ed-1",
+          "source_type": "resume",
+          "source_ref": null,
+          "claim_type": "education",
+          "content": "B.S. Computer Science — UC Berkeley, Berkeley, CA (2018)",
+          "group_key": null,
+          "date_range": "2014 – 2018",
+          "technologies": null,
+          "chunk_metadata": null,
+          "position": 0,
+          "updated_at": "2025-04-10T09:02:00Z"
+        }
+      ],
+      "other": [
+        {
+          "id": "ec-ot-1",
+          "source_type": "resume",
+          "source_ref": null,
+          "claim_type": "other",
+          "content": "Software engineer with 5+ years of experience building high-scale distributed systems and APIs. Deep background in payments infrastructure, developer tooling, and data pipelines.",
+          "group_key": null,
+          "date_range": null,
+          "technologies": null,
+          "chunk_metadata": null,
+          "position": 0,
+          "updated_at": "2025-04-10T09:02:00Z"
+        },
+        {
+          "id": "ec-ot-2",
+          "source_type": "resume",
+          "source_ref": null,
+          "claim_type": "other",
+          "content": "AWS Certified Solutions Architect – Associate",
+          "group_key": null,
+          "date_range": null,
+          "technologies": null,
+          "chunk_metadata": null,
+          "position": 1,
+          "updated_at": "2025-04-10T09:02:00Z"
+        }
+      ]
+    },
+    "github": {
+      "repos": [
+        {
+          "group_key": "open-rate-limiter",
+          "chunks": [
+            {
+              "id": "ec-gh-1-1",
+              "source_type": "github",
+              "source_ref": "open-rate-limiter",
+              "claim_type": "work_experience",
+              "content": "Implemented sliding window rate limiting algorithm in Go using Redis atomic operations for correctness under concurrent load",
+              "group_key": "open-rate-limiter",
+              "date_range": null,
+              "technologies": ["Go", "Redis"],
+              "chunk_metadata": null,
+              "position": 0,
+              "updated_at": "2025-03-16T08:00:00Z"
+            },
+            {
+              "id": "ec-gh-1-2",
+              "source_type": "github",
+              "source_ref": "open-rate-limiter",
+              "claim_type": "work_experience",
+              "content": "Published gRPC-based client libraries with circuit breaker support; 1.2K stars and used in 40+ downstream projects",
+              "group_key": "open-rate-limiter",
+              "date_range": null,
+              "technologies": ["Go", "gRPC"],
+              "chunk_metadata": null,
+              "position": 1,
+              "updated_at": "2025-03-16T08:00:00Z"
+            },
+            {
+              "id": "ec-gh-1-3",
+              "source_type": "github",
+              "source_ref": "open-rate-limiter",
+              "claim_type": "skill",
+              "content": "Go",
+              "group_key": "open-rate-limiter",
+              "date_range": null,
+              "technologies": null,
+              "chunk_metadata": null,
+              "position": 2,
+              "updated_at": "2025-03-16T08:00:00Z"
+            }
+          ]
+        },
+        {
+          "group_key": "pgmigrate",
+          "chunks": [
+            {
+              "id": "ec-gh-2-1",
+              "source_type": "github",
+              "source_ref": "pgmigrate",
+              "claim_type": "work_experience",
+              "content": "Built zero-downtime schema migration engine for PostgreSQL using advisory locks and transactional DDL; deployed at 50+ companies",
+              "group_key": "pgmigrate",
+              "date_range": null,
+              "technologies": ["Python", "PostgreSQL"],
+              "chunk_metadata": null,
+              "position": 0,
+              "updated_at": "2025-02-21T08:00:00Z"
+            },
+            {
+              "id": "ec-gh-2-2",
+              "source_type": "github",
+              "source_ref": "pgmigrate",
+              "claim_type": "skill",
+              "content": "Python",
+              "group_key": "pgmigrate",
+              "date_range": null,
+              "technologies": null,
+              "chunk_metadata": null,
+              "position": 1,
+              "updated_at": "2025-02-21T08:00:00Z"
+            }
+          ]
+        }
+      ]
+    },
+    "user_input": null,
+    "gap_response": null
+  },
+  "tailorings": [
+    {
+      "id": "mock-tailoring-1",
+      "title": "Senior Software Engineer",
+      "company": "Stripe",
+      "job_url": "/mock/job-mid-level-engineer",
+      "generation_status": "ready",
+      "letter_public": false,
+      "posting_public": false,
+      "is_public": false,
+      "public_slug": null,
+      "created_at": "2025-04-28T14:30:00Z"
+    },
+    {
+      "id": "mock-tailoring-2",
+      "title": "Software Engineer",
+      "company": "Linear",
+      "job_url": "/mock/job-software-engineer-linear",
+      "generation_status": "ready",
+      "letter_public": false,
+      "posting_public": false,
+      "is_public": false,
+      "public_slug": null,
+      "created_at": "2025-04-26T10:15:00Z"
+    },
+    {
+      "id": "mock-tailoring-3",
+      "title": "Staff Engineer",
+      "company": "Vercel",
+      "job_url": "/mock/job-staff-engineer",
+      "generation_status": "ready",
+      "letter_public": false,
+      "posting_public": false,
+      "is_public": false,
+      "public_slug": null,
+      "created_at": "2025-04-24T11:00:00Z"
+    }
+  ],
+  "tailoringDetails": {
+    "mock-tailoring-1": {
+      "id": "mock-tailoring-1",
+      "title": "Senior Software Engineer",
+      "company": "Stripe",
+      "job_url": "/mock/job-mid-level-engineer",
+      "generated_output": "## Why Alex Chen is a Strong Fit for Senior Software Engineer at Stripe\n\nAlex Chen brings a rare combination of payments infrastructure depth, distributed systems experience, and proven ownership at scale — precisely the profile Stripe looks for in senior engineers. With 5+ years building and operating systems that process billions in transaction volume, Alex has directly solved the class of problems that define Stripe's core engineering challenges.\n\n### Payments & Financial Infrastructure\n\nAlex led the redesign of a payment processing pipeline handling $2B+ in annual transaction volume at TechCorp, reducing p99 latency by 40%. This is direct, verifiable experience with the reliability and performance requirements that Stripe holds its engineers to. The work involved not just backend engineering but deep collaboration with product and compliance teams — the cross-functional ownership model Stripe prizes.\n\n### Distributed Systems at Scale\n\nArchitecting multi-region active-active replication for PostgreSQL (achieving 99.99% uptime) demonstrates the fault-tolerance thinking that underpins Stripe's infrastructure. The migration from monolith to event-driven microservices via Kafka is also directly relevant to Stripe's internal platform evolution.\n\n### Developer Experience & API Design\n\nAt DataFlow, Alex designed and shipped a developer SDK (Python, Go) adopted by 300+ external developers. This directly maps to Stripe's API-first culture — the instinct to treat the developer experience as a first-class product surface, not an afterthought.\n\n### Technical Leadership\n\nMentoring 4 junior engineers and introducing an Architecture Decision Record process adopted across 3 teams shows the collaborative, force-multiplying leadership style Stripe values at the senior level.\n\n### Open Source Signal\n\nOpenRateLimiter (1.2K GitHub stars) and PGMigrate (used in production by 50+ companies) demonstrate applied craftsmanship and the ability to build tools that other engineers trust with critical workloads. Both projects are highly relevant to Stripe's infrastructure domain.\n\n### Summary Fit Assessment\n\nAlex Chen is a compelling match for this role. The payments background is rare and directly applicable, the distributed systems depth is exactly what Stripe's infrastructure demands, and the leadership track record shows readiness to operate at Stripe's senior engineering bar.",
+      "generation_status": "ready",
+      "enrichment_status": "complete",
+      "generation_stage": null,
+      "generation_error": null,
+      "generation_started_at": "2025-04-28T14:30:05Z",
+      "letter_public": false,
+      "posting_public": false,
+      "is_public": false,
+      "public_slug": null,
+      "author_username_slug": "alex-chen",
+      "notion_page_url": null,
+      "notion_posting_page_url": null,
+      "generation_duration_ms": 18400,
+      "chunk_batch_count": 3,
+      "chunk_error_count": 0,
+      "gap_analysis": {
+        "gaps": [
+          {
+            "job_requirement": "React or modern frontend framework experience",
+            "question_for_candidate": "Do you have any recent hands-on React experience beyond what's listed on your resume?",
+            "context": "The role has a frontend component. React is listed in your skills but not highlighted in recent roles.",
+            "source_searched": "work_experience, skills",
+            "chunk_id": null
+          }
+        ],
+        "sourced_claim_count": 9,
+        "unsourced_claim_count": 0
+      },
+      "gap_analysis_status": "complete",
+      "created_at": "2025-04-28T14:30:00Z"
+    },
+    "mock-tailoring-2": {
+      "id": "mock-tailoring-2",
+      "title": "Software Engineer",
+      "company": "Linear",
+      "job_url": "/mock/job-software-engineer-linear",
+      "generated_output": "## Why Alex Chen is a Fit for Software Engineer at Linear\n\nAlex Chen's background in full-stack product engineering and developer tooling aligns well with Linear's engineering culture — particularly the emphasis on API design, TypeScript, and performance-conscious frontend work. The match is solid in several areas, with some gaps worth discussing.\n\n### TypeScript & Full-Stack Engineering\n\nAlex has shipped TypeScript/Node.js at Startup Labs (migrating a PHP codebase and improving test coverage from 12% to 78%) and has TypeScript listed as a core skill. This maps directly to Linear's TypeScript-first stack.\n\n### API Design & Developer Experience\n\nThe developer SDK at DataFlow (used by 300+ external developers) demonstrates strong API design instincts — Linear values this given their public API is a first-class product.\n\n### PostgreSQL\n\nAlex's PGMigrate project and extensive PostgreSQL experience aligns directly with Linear's data layer.\n\n### Gaps to Discuss\n\nThe role has a meaningful React/frontend component. Alex has React listed as a skill but it doesn't feature prominently in recent work history — primarily backend-focused. Familiarity with Linear's product space (project management tooling, issue trackers) isn't evident in the profile but could be addressed in conversation.",
+      "generation_status": "ready",
+      "enrichment_status": "complete",
+      "generation_stage": null,
+      "generation_error": null,
+      "generation_started_at": "2025-04-26T10:15:05Z",
+      "letter_public": false,
+      "posting_public": false,
+      "is_public": false,
+      "public_slug": null,
+      "author_username_slug": "alex-chen",
+      "notion_page_url": null,
+      "notion_posting_page_url": null,
+      "generation_duration_ms": 14200,
+      "chunk_batch_count": 2,
+      "chunk_error_count": 0,
+      "gap_analysis": {
+        "gaps": [
+          {
+            "job_requirement": "Strong React and frontend component experience",
+            "question_for_candidate": "Can you share examples of React work beyond Startup Labs? Any side projects or recent frontend features?",
+            "context": "Alex lists React as a skill but recent roles are backend-focused. The Linear role has significant frontend responsibilities.",
+            "source_searched": "work_experience, projects",
+            "chunk_id": null
+          },
+          {
+            "job_requirement": "Experience with collaborative productivity or project management tooling",
+            "question_for_candidate": "Have you worked on tools used for team collaboration, issue tracking, or project coordination?",
+            "context": "Linear builds project management software. Familiarity with the problem space would strengthen the application.",
+            "source_searched": "work_experience",
+            "chunk_id": null
+          },
+          {
+            "job_requirement": "GraphQL API experience",
+            "question_for_candidate": "Have you worked with GraphQL APIs, either building or consuming them?",
+            "context": "Linear's API is GraphQL-based. No GraphQL experience is listed in Alex's profile.",
+            "source_searched": "skills, projects",
+            "chunk_id": null
+          }
+        ],
+        "sourced_claim_count": 5,
+        "unsourced_claim_count": 1
+      },
+      "gap_analysis_status": "complete",
+      "created_at": "2025-04-26T10:15:00Z"
+    },
+    "mock-tailoring-3": {
+      "id": "mock-tailoring-3",
+      "title": "Staff Engineer",
+      "company": "Vercel",
+      "job_url": "/mock/job-staff-engineer",
+      "generated_output": "## Alex Chen — Staff Engineer at Vercel: Fit Assessment\n\nThis role asks for a Staff Engineer with deep experience in technical leadership, cross-team architecture, and edge/CDN infrastructure. Alex Chen has a strong backend and distributed systems foundation, but this role skews heavily toward leadership scope, Next.js ecosystem depth, and edge infrastructure — areas where the profile is thinner.\n\n### What Transfers Well\n\nAlex's distributed systems background (multi-region PostgreSQL replication, Kafka-based microservices) speaks to the infrastructure complexity Vercel operates at. The mentorship track record (4 junior engineers, ADR process adoption) demonstrates some leadership influence.\n\n### Significant Gaps\n\nThe role requires staff-level scope: driving architectural direction across multiple teams, owning the technical roadmap for edge compute, and influencing engineering org-wide decisions. Alex's profile shows strong individual contributor output but the cross-team, staff-scope leadership signal is limited.\n\nVercel's core stack is deeply Next.js-centric. Alex's frontend experience is limited (React listed as a skill, used at Startup Labs) and there's no evidence of familiarity with Next.js, edge runtimes, or CDN infrastructure.\n\n8+ years of experience is required. Alex has approximately 7 years based on the timeline shown.\n\n### Recommendation\n\nAlex would be a strong mid-senior backend candidate at Vercel, but this specific Staff Engineer role represents a stretch. The infrastructure intuition is there; the staff-level cross-org leadership and edge/CDN domain expertise would need to be demonstrated in the application and interviews.",
+      "generation_status": "ready",
+      "enrichment_status": "complete",
+      "generation_stage": null,
+      "generation_error": null,
+      "generation_started_at": "2025-04-24T11:00:05Z",
+      "letter_public": false,
+      "posting_public": false,
+      "is_public": false,
+      "public_slug": null,
+      "author_username_slug": "alex-chen",
+      "notion_page_url": null,
+      "notion_posting_page_url": null,
+      "generation_duration_ms": 21600,
+      "chunk_batch_count": 3,
+      "chunk_error_count": 1,
+      "gap_analysis": {
+        "gaps": [
+          {
+            "job_requirement": "8+ years of software engineering experience",
+            "question_for_candidate": "Your timeline shows ~7 years. Do you have earlier experience not listed on your resume?",
+            "context": "The role requires 8+ years. Alex appears to have approximately 7 based on the timeline.",
+            "source_searched": "work_experience",
+            "chunk_id": null
+          },
+          {
+            "job_requirement": "Staff-level technical leadership across multiple engineering teams",
+            "question_for_candidate": "Can you describe a situation where you drove a technical initiative that spanned multiple teams or organizational units?",
+            "context": "Alex's ADR process and mentoring show some leadership influence, but staff-scope cross-org leadership is not clearly evidenced.",
+            "source_searched": "work_experience",
+            "chunk_id": null
+          },
+          {
+            "job_requirement": "Deep Next.js or edge runtime expertise",
+            "question_for_candidate": "Do you have experience with Next.js, edge runtimes (Deno, Cloudflare Workers), or CDN infrastructure?",
+            "context": "No Next.js or edge runtime experience is listed. Vercel's core product is Next.js.",
+            "source_searched": "skills, projects",
+            "chunk_id": null
+          },
+          {
+            "job_requirement": "Experience designing CDN or edge compute architecture",
+            "question_for_candidate": "Have you worked on caching layers, CDN configuration, or latency-sensitive globally distributed compute?",
+            "context": "No CDN or edge compute experience is listed in Alex's profile.",
+            "source_searched": "work_experience",
+            "chunk_id": null
+          }
+        ],
+        "sourced_claim_count": 3,
+        "unsourced_claim_count": 4
+      },
+      "gap_analysis_status": "complete",
+      "created_at": "2025-04-24T11:00:00Z"
+    }
+  },
+  "chunks": {
+    "mock-tailoring-1": {
+      "enrichment_status": "complete",
+      "chunks": [
+        {
+          "id": "jc1-001",
+          "chunk_type": "header",
+          "content": "Requirements",
+          "position": 0,
+          "section": "Requirements",
+          "match_score": -1,
+          "match_rationale": null,
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": false,
+          "display_ready": false
+        },
+        {
+          "id": "jc1-002",
+          "chunk_type": "bullet",
+          "content": "3–5 years of professional software engineering experience",
+          "position": 1,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Alex has 7 years of professional experience spanning TechCorp, DataFlow, and Startup Labs.",
+          "advocacy_blurb": "Alex's 7-year track record across three companies — including 3 years at a senior level at TechCorp — comfortably clears this bar.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-003",
+          "chunk_type": "bullet",
+          "content": "Proficiency in Python, TypeScript, or Go",
+          "position": 2,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Alex lists Python, TypeScript, and Go as core skills and has shipped production code in all three.",
+          "advocacy_blurb": "Fluent in all three listed languages — Python at DataFlow (500K events/sec ingestion), TypeScript at Startup Labs, and Go in open-source projects with 1.2K+ GitHub stars.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-004",
+          "chunk_type": "bullet",
+          "content": "Experience building and operating REST APIs in production",
+          "position": 3,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Alex built APIs serving 10M+ requests/day at DataFlow and shipped a developer SDK used by 300+ developers.",
+          "advocacy_blurb": "Built and operated an API gateway at DataFlow serving 10M+ requests/day, plus shipped a multi-language SDK adopted by 300+ external developers.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-005",
+          "chunk_type": "bullet",
+          "content": "Strong PostgreSQL and relational database skills",
+          "position": 4,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "PostgreSQL is a core skill; Alex architected multi-region replication and built PGMigrate (used in production at 50+ companies).",
+          "advocacy_blurb": "Built PGMigrate — a zero-downtime schema migration tool deployed at 50+ companies — and architected multi-region active-active PostgreSQL replication achieving 99.99% uptime.",
+          "experience_source": "github",
+          "source_label": "GitHub",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-006",
+          "chunk_type": "bullet",
+          "content": "Payments or financial services domain experience",
+          "position": 5,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Led payment processing pipeline redesign at TechCorp handling $2B+ in annual transaction volume.",
+          "advocacy_blurb": "Led the redesign of TechCorp's payment processing pipeline ($2B+ annual volume, 40% p99 latency improvement) — the most directly relevant experience a candidate could bring to this role.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-007",
+          "chunk_type": "bullet",
+          "content": "Familiarity with containerisation and deployment pipelines",
+          "position": 6,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Alex built CI/CD pipelines on GitHub Actions + Kubernetes and lists Docker, Kubernetes, and Terraform as core skills.",
+          "advocacy_blurb": "Built a Kubernetes-based CI/CD pipeline at Startup Labs cutting release cycles from 2 weeks to same-day; lists Docker, Kubernetes, and Terraform as core skills.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-008",
+          "chunk_type": "bullet",
+          "content": "Distributed systems or high-availability design",
+          "position": 7,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Multi-region active-active PostgreSQL replication and Kafka-based microservices migration are direct evidence.",
+          "advocacy_blurb": "Architected fault-tolerant multi-region infrastructure at TechCorp (99.99% uptime) and migrated a monolith to event-driven microservices — both directly in the distributed systems tier this role requires.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-009",
+          "chunk_type": "bullet",
+          "content": "Ability to mentor and support junior engineers",
+          "position": 8,
+          "section": "Nice to Have",
+          "match_score": 2,
+          "match_rationale": "Alex mentored 4 junior engineers and introduced an ADR process adopted across 3 teams.",
+          "advocacy_blurb": "Mentored 4 junior engineers and introduced an Architecture Decision Record process adopted across 3 teams — clear evidence of technical leadership beyond individual contribution.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-010",
+          "chunk_type": "bullet",
+          "content": "Open source contributions or public technical work",
+          "position": 9,
+          "section": "Nice to Have",
+          "match_score": 2,
+          "match_rationale": "OpenRateLimiter (1.2K stars) and PGMigrate (50+ production deployments) are strong open source signals.",
+          "advocacy_blurb": "OpenRateLimiter (1.2K GitHub stars) and PGMigrate (production use at 50+ companies) are unusually strong open-source signals for a candidate at this level.",
+          "experience_source": "github",
+          "source_label": "GitHub",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc1-011",
+          "chunk_type": "bullet",
+          "content": "React or modern frontend framework experience",
+          "position": 10,
+          "section": "Nice to Have",
+          "match_score": 1,
+          "match_rationale": "React is listed as a skill and was used at Startup Labs, but recent roles are backend-focused. The signal is present but not deep.",
+          "advocacy_blurb": "React is listed as a core skill and was used at Startup Labs, though recent roles have been backend-focused — worth discussing scope in the interview.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        }
+      ]
+    },
+    "mock-tailoring-2": {
+      "enrichment_status": "complete",
+      "chunks": [
+        {
+          "id": "jc2-001",
+          "chunk_type": "header",
+          "content": "Requirements",
+          "position": 0,
+          "section": "Requirements",
+          "match_score": -1,
+          "match_rationale": null,
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": false,
+          "display_ready": false
+        },
+        {
+          "id": "jc2-002",
+          "chunk_type": "bullet",
+          "content": "2–4 years of professional software engineering experience",
+          "position": 1,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Alex has 7 years of experience, comfortably within the band.",
+          "advocacy_blurb": "Alex's 7-year track record well exceeds the experience bar, bringing additional depth to the role.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-003",
+          "chunk_type": "bullet",
+          "content": "TypeScript proficiency (frontend and backend)",
+          "position": 2,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "TypeScript is a core skill; Alex led a TypeScript/Node.js migration at Startup Labs.",
+          "advocacy_blurb": "Led a PHP → TypeScript/Node.js migration at Startup Labs improving test coverage from 12% to 78% — demonstrates TypeScript fluency in production at scale.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-004",
+          "chunk_type": "bullet",
+          "content": "PostgreSQL or relational database experience",
+          "position": 3,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "PGMigrate and multi-region replication demonstrate deep PostgreSQL expertise.",
+          "advocacy_blurb": "Built PGMigrate (zero-downtime migration tool at 50+ companies) and designed multi-region active-active PostgreSQL replication at TechCorp.",
+          "experience_source": "github",
+          "source_label": "GitHub",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-005",
+          "chunk_type": "bullet",
+          "content": "Experience building or consuming REST or GraphQL APIs",
+          "position": 4,
+          "section": "Requirements",
+          "match_score": 1,
+          "match_rationale": "Alex has strong REST API experience (10M+ req/day, developer SDK) but no GraphQL is listed.",
+          "advocacy_blurb": "Strong REST API background (SDK for 300+ developers, 10M+ req/day gateway), though no GraphQL experience is listed — worth a quick discussion.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-006",
+          "chunk_type": "bullet",
+          "content": "React experience with component-driven UI development",
+          "position": 5,
+          "section": "Requirements",
+          "match_score": 1,
+          "match_rationale": "React is listed as a skill and used at Startup Labs, but recent 5 years are primarily backend-focused.",
+          "advocacy_blurb": "React is listed as a skill with usage at Startup Labs, but recent experience is predominantly backend — the candidate may need a ramp-up period for React-heavy work.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-007",
+          "chunk_type": "bullet",
+          "content": "Attention to product quality and design detail",
+          "position": 6,
+          "section": "Requirements",
+          "match_score": 1,
+          "match_rationale": "Alex shipped product features at Startup Labs end-to-end; open-source projects show attention to quality. Not explicitly signalled in the profile.",
+          "advocacy_blurb": "Shipped 3 major product features end-to-end at Startup Labs and built open-source tools trusted in 50+ production environments — indirect signal of product quality instinct.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-008",
+          "chunk_type": "bullet",
+          "content": "Experience with project management or productivity tooling",
+          "position": 7,
+          "section": "Nice to Have",
+          "match_score": 0,
+          "match_rationale": "No experience with project management tooling or this problem domain is listed in Alex's profile.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-009",
+          "chunk_type": "bullet",
+          "content": "GraphQL API design and implementation",
+          "position": 8,
+          "section": "Nice to Have",
+          "match_score": 0,
+          "match_rationale": "GraphQL is not listed in Alex's skills or work history.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc2-010",
+          "chunk_type": "bullet",
+          "content": "Electron or desktop application experience",
+          "position": 9,
+          "section": "Nice to Have",
+          "match_score": 0,
+          "match_rationale": "No Electron or desktop app experience listed.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        }
+      ]
+    },
+    "mock-tailoring-3": {
+      "enrichment_status": "complete",
+      "chunks": [
+        {
+          "id": "jc3-001",
+          "chunk_type": "header",
+          "content": "Requirements",
+          "position": 0,
+          "section": "Requirements",
+          "match_score": -1,
+          "match_rationale": null,
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": false,
+          "display_ready": false
+        },
+        {
+          "id": "jc3-002",
+          "chunk_type": "bullet",
+          "content": "8+ years of software engineering experience",
+          "position": 1,
+          "section": "Requirements",
+          "match_score": 1,
+          "match_rationale": "Alex has approximately 7 years based on the timeline (Aug 2018 – present). Close but technically short of the requirement.",
+          "advocacy_blurb": "Alex's 7-year timeline approaches but doesn't clearly meet the 8-year bar — worth addressing directly in the application.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-003",
+          "chunk_type": "bullet",
+          "content": "Proven technical leadership across multiple teams or engineering organisations",
+          "position": 2,
+          "section": "Requirements",
+          "match_score": 1,
+          "match_rationale": "Alex mentored 4 engineers and introduced an ADR process across 3 teams, but formal cross-team or org-wide technical leadership is not clearly evidenced.",
+          "advocacy_blurb": "Alex's ADR process adoption across 3 teams shows influence beyond the immediate team, but staff-scope cross-org leadership is not clearly evidenced in the profile.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-004",
+          "chunk_type": "bullet",
+          "content": "Deep experience with Next.js or edge runtime environments",
+          "position": 3,
+          "section": "Requirements",
+          "match_score": 0,
+          "match_rationale": "No Next.js or edge runtime experience is listed in Alex's profile.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-005",
+          "chunk_type": "bullet",
+          "content": "CDN, caching, or edge compute infrastructure design",
+          "position": 4,
+          "section": "Requirements",
+          "match_score": 0,
+          "match_rationale": "No CDN or edge compute experience is listed.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-006",
+          "chunk_type": "bullet",
+          "content": "Ownership of engineering org-wide technical roadmap or architecture decisions",
+          "position": 5,
+          "section": "Requirements",
+          "match_score": 0,
+          "match_rationale": "No evidence of org-wide technical roadmap ownership. Alex's scope has been team-level.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-007",
+          "chunk_type": "bullet",
+          "content": "Strong distributed systems or infrastructure background",
+          "position": 6,
+          "section": "Requirements",
+          "match_score": 2,
+          "match_rationale": "Multi-region PostgreSQL replication and Kafka-based microservices migration are strong distributed systems signals.",
+          "advocacy_blurb": "Architected multi-region active-active PostgreSQL replication (99.99% uptime) and led Kafka-based microservices migration — directly relevant infrastructure depth.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-008",
+          "chunk_type": "bullet",
+          "content": "Mentorship and development of senior engineers",
+          "position": 7,
+          "section": "Requirements",
+          "match_score": 1,
+          "match_rationale": "Alex mentored 4 junior engineers. Mentoring senior engineers at staff-level scope is not evidenced.",
+          "advocacy_blurb": "Mentored 4 junior engineers and drove process improvements across teams — good signal, though at mid-level scope rather than staff-level senior mentorship.",
+          "experience_source": "resume",
+          "source_label": "Resume",
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-009",
+          "chunk_type": "bullet",
+          "content": "Experience with serverless or stateless compute patterns",
+          "position": 8,
+          "section": "Nice to Have",
+          "match_score": 0,
+          "match_rationale": "No serverless experience listed. Alex's background is in stateful, containerised infrastructure.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-010",
+          "chunk_type": "bullet",
+          "content": "Contributions to frontend performance or Core Web Vitals",
+          "position": 9,
+          "section": "Nice to Have",
+          "match_score": 0,
+          "match_rationale": "No frontend performance or Core Web Vitals work listed.",
+          "advocacy_blurb": null,
+          "experience_source": null,
+          "source_label": null,
+          "should_render": true,
+          "display_ready": true
+        },
+        {
+          "id": "jc3-011",
+          "chunk_type": "bullet",
+          "content": "Open source contributions or public technical writing",
+          "position": 10,
+          "section": "Nice to Have",
+          "match_score": 2,
+          "match_rationale": "OpenRateLimiter (1.2K stars) and PGMigrate (50+ production deployments) are strong open-source signals.",
+          "advocacy_blurb": "Two open-source tools with significant adoption — OpenRateLimiter (1.2K stars) and PGMigrate (50+ production deployments) — demonstrate public technical credibility.",
+          "experience_source": "github",
+          "source_label": "GitHub",
+          "should_render": true,
+          "display_ready": true
+        }
+      ]
+    }
+  }
+}

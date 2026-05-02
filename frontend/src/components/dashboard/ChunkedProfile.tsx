@@ -53,6 +53,7 @@ interface TableRowProps {
   onSave: (newContent: string) => Promise<void>;
   onDelete: () => Promise<void>;
   isLast?: boolean;
+  readOnly?: boolean;
 }
 
 function TableRow({
@@ -64,6 +65,7 @@ function TableRow({
   onSave,
   onDelete,
   isLast = false,
+  readOnly = false,
 }: TableRowProps) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(() => normalizeContent(content));
@@ -143,6 +145,17 @@ function TableRow({
           {/* Chevron kept visible but static while editing */}
           <ChevronDown className="h-3.5 w-3.5 text-text-disabled flex-shrink-0 mt-0.5 rotate-180" />
         </div>
+      ) : readOnly ? (
+        <div className={cn(headerBase)}>
+          <div className="flex-1 min-w-0">
+            {context && (
+              <p className="text-xs text-text-disabled italic mb-1 leading-relaxed">{context}</p>
+            )}
+            <p className="text-sm text-text-secondary leading-relaxed">
+                {normalizeContent(content)}
+              </p>
+          </div>
+        </div>
       ) : (
         <button
           type="button"
@@ -171,7 +184,7 @@ function TableRow({
       )}
 
       {/* ── Controls: animates open/closed based on isExpanded ── */}
-      <div className={cn('grid transition-all duration-150', isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+      {!readOnly && <div className={cn('grid transition-all duration-150', isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="overflow-hidden">
           <div className="px-2 py-1 flex items-center gap-0.5">
             {editing ? (
@@ -200,7 +213,7 @@ function TableRow({
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
     </div>
   );
@@ -222,6 +235,7 @@ function ExperienceTable({
   onSaveGroupKey,
   onDelete,
   onDeleteGroup,
+  readOnly = false,
 }: {
   groupLabel?: string;
   groupChunkIds?: string[];
@@ -231,6 +245,7 @@ function ExperienceTable({
   onSaveGroupKey?: (chunkIds: string[], newLabel: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onDeleteGroup?: (chunkIds: string[]) => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [tableExpanded, setTableExpanded] = useState(false);
@@ -255,6 +270,7 @@ function ExperienceTable({
             onSave={(newLabel) => onSaveGroupKey!(groupChunkIds!, newLabel)}
             onDelete={() => onDeleteGroup!(groupChunkIds!)}
             isLast
+            readOnly={readOnly}
           />
         </div>
 
@@ -286,6 +302,7 @@ function ExperienceTable({
                     onSave={(newContent) => onSave(chunk.id, newContent)}
                     onDelete={() => onDelete(chunk.id)}
                     isLast={i === chunks.length - 1}
+                    readOnly={readOnly}
                   />
                 ))}
               </>
@@ -300,6 +317,7 @@ function ExperienceTable({
                   onSave={(newContent) => onSave(chunk.id, newContent)}
                   onDelete={() => onDelete(chunk.id)}
                   isLast={i === chunks.length - 1}
+                  readOnly={readOnly}
                 />
               ))
             )}
@@ -321,6 +339,7 @@ function ExperienceTable({
           onSave={(newContent) => onSave(chunk.id, newContent)}
           onDelete={() => onDelete(chunk.id)}
           isLast={i === chunks.length - 1}
+          readOnly={readOnly}
         />
       ))}
     </div>
@@ -336,10 +355,12 @@ function SkillsTable({
   chunks,
   onDelete,
   onSave,
+  readOnly = false,
 }: {
   chunks: ExperienceChunk[];
   onDelete: (id: string) => Promise<void>;
   onSave: (id: string, content: string) => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -399,7 +420,14 @@ function SkillsTable({
           <div className="overflow-hidden">
             <div className="px-2 py-1 flex flex-wrap gap-1.5">
               {chunks.map((chunk) => (
-                editingPillId === chunk.id ? (
+                readOnly ? (
+                  <span
+                    key={chunk.id}
+                    className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
+                  >
+                    {chunk.content}
+                  </span>
+                ) : editingPillId === chunk.id ? (
                   <span
                     key={chunk.id}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
@@ -468,10 +496,12 @@ function InlineSkillsRow({
   chunks,
   onDelete,
   onSave,
+  readOnly = false,
 }: {
   chunks: ExperienceChunk[];
   onDelete: (id: string) => Promise<void>;
   onSave: (id: string, content: string) => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -527,7 +557,14 @@ function InlineSkillsRow({
         <div className="overflow-hidden">
           <div className="px-2 py-1 flex flex-wrap gap-1.5">
             {chunks.map((chunk) => (
-              editingPillId === chunk.id ? (
+              readOnly ? (
+                <span
+                  key={chunk.id}
+                  className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
+                >
+                  {chunk.content}
+                </span>
+              ) : editingPillId === chunk.id ? (
                 <span
                   key={chunk.id}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
@@ -596,11 +633,13 @@ function RepoTable({
   chunks,
   onSave,
   onDelete,
+  readOnly = false,
 }: {
   repoName: string;
   chunks: ExperienceChunk[];
   onSave: (id: string, content: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [tableExpanded, setTableExpanded] = useState(false);
@@ -653,10 +692,11 @@ function RepoTable({
                       onSave={(newContent) => onSave(chunk.id, newContent)}
                       onDelete={() => onDelete(chunk.id)}
                       isLast={skillChunks.length === 0 && i === contentChunks.length - 1}
+                      readOnly={readOnly}
                     />
                   ))}
                   {skillChunks.length > 0 && (
-                    <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} onSave={onSave} />
+                    <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} onSave={onSave} readOnly={readOnly} />
                   )}
                 </>
               )}
@@ -672,10 +712,11 @@ function RepoTable({
                   onSave={(newContent) => onSave(chunk.id, newContent)}
                   onDelete={() => onDelete(chunk.id)}
                   isLast={skillChunks.length === 0 && i === contentChunks.length - 1}
+                  readOnly={readOnly}
                 />
               ))}
               {skillChunks.length > 0 && (
-                <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} onSave={onSave} />
+                <InlineSkillsRow chunks={skillChunks} onDelete={onDelete} onSave={onSave} readOnly={readOnly} />
               )}
             </>
           )}
@@ -711,7 +752,7 @@ function ActivitySection({
 
 /* ─── AddExperienceForm ──────────────────────────────────────────────────── */
 
-function AddExperienceForm({ onAdded }: { onAdded: (chunks: ExperienceChunk[]) => void }) {
+function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: ExperienceChunk[]) => void; readOnly?: boolean }) {
   const [text, setText] = useState('');
   const [parsing, setParsing] = useState(false);
   const [persisting, setPersisting] = useState(false);
@@ -832,10 +873,11 @@ function AddExperienceForm({ onAdded }: { onAdded: (chunks: ExperienceChunk[]) =
             onChange={(e) => setText(e.target.value)}
             placeholder="Describe experience, projects, or skills not captured above…"
             rows={3}
-            className={textareaCls}
+            disabled={readOnly}
+            className={cn(textareaCls, readOnly && 'opacity-50 cursor-not-allowed')}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleParseAndAdd(); }}
           />
-          <button type="button" onClick={handleParseAndAdd} disabled={parsing || !text.trim()}
+          <button type="button" onClick={handleParseAndAdd} disabled={readOnly || parsing || !text.trim()}
             className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[8px] text-xs font-medium bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 disabled:opacity-40 transition-opacity">
             {parsing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
             {parsing ? 'Parsing…' : 'Parse & Add'}
@@ -857,9 +899,9 @@ function formatWorkGroupKey(group: WorkExperienceGroup): string {
 
 /* ─── ChunkedProfile ─────────────────────────────────────────────────────── */
 
-export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
-  const [data, setData] = useState<ExperienceChunksResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+export function ChunkedProfile({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceChunksResponse; readOnly?: boolean }) {
+  const [data, setData] = useState<ExperienceChunksResponse | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
 
   const fetchChunks = useCallback(async () => {
     setLoading(true);
@@ -873,7 +915,10 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
     }
   }, []);
 
-  useEffect(() => { fetchChunks(); }, [fetchChunks, refreshKey]);
+  useEffect(() => {
+    if (initialData) return;
+    fetchChunks();
+  }, [fetchChunks, refreshKey, initialData]);
 
   const handleSave = async (id: string, content: string) => {
     const res = await fetch(`/api/experience/chunks/${id}`, {
@@ -972,6 +1017,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 chunks={[resume!.other[0]]}
                 onSave={handleSave}
                 onDelete={handleDelete}
+                readOnly={readOnly}
               />
             )}
 
@@ -986,6 +1032,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 onSaveGroupKey={handleSaveGroupKey}
                 onDelete={handleDelete}
                 onDeleteGroup={handleDeleteGroup}
+                readOnly={readOnly}
               />
             ))}
 
@@ -995,6 +1042,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 chunks={resume!.skills}
                 onDelete={handleDelete}
                 onSave={handleSave}
+                readOnly={readOnly}
               />
             )}
 
@@ -1009,6 +1057,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 onSaveGroupKey={handleSaveGroupKey}
                 onDelete={handleDelete}
                 onDeleteGroup={handleDeleteGroup}
+                readOnly={readOnly}
               />
             ))}
 
@@ -1018,6 +1067,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 chunks={resume!.education}
                 onSave={handleSave}
                 onDelete={handleDelete}
+                readOnly={readOnly}
               />
             )}
 
@@ -1027,6 +1077,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 chunks={resume!.other.slice(1)}
                 onSave={handleSave}
                 onDelete={handleDelete}
+                readOnly={readOnly}
               />
             )}
 
@@ -1045,6 +1096,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 chunks={repo.chunks}
                 onSave={handleSave}
                 onDelete={handleDelete}
+                readOnly={readOnly}
               />
             ))}
           </div>
@@ -1053,12 +1105,13 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
 
       {/* ── Additional Experience ── */}
       <ActivitySection title="Additional Experience" description="Manually added experience and context">
-        <AddExperienceForm onAdded={handleAdded} />
+        <AddExperienceForm onAdded={handleAdded} readOnly={readOnly} />
         {data?.user_input?.length ? (
           <ExperienceTable
             chunks={data.user_input}
             onSave={handleSave}
             onDelete={handleDelete}
+            readOnly={readOnly}
           />
         ) : null}
       </ActivitySection>
@@ -1074,6 +1127,7 @@ export function ChunkedProfile({ refreshKey }: { refreshKey?: number }) {
                 context={(c) => c.chunk_metadata?.question}
                 onSave={handleSave}
                 onDelete={handleDelete}
+                readOnly={readOnly}
               />
             ))}
           </div>
