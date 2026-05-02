@@ -33,7 +33,7 @@ Never fabricate. Never overstate. Present the best truthful version of this cand
 
 - Return JSON only matching the schema provided. No preamble, no markdown, no commentary.
 - 3–5 advocacy statements. Quality over quantity — three strong arguments beat five weak ones.
-- `sources` lists which sources back the claim: "Resume", "GitHub", and/or "Direct Input".
+- `sources` lists only the sources whose specific evidence is referenced in this statement's body. If the body cites a resume achievement, list "Resume". If it also references a GitHub project, add "GitHub". Never list a source that isn't directly evidenced in the body text. Valid values: "Resume", "GitHub", "Direct Input".
 - `closing` is 1–2 sentences synthesising the argument. Do NOT include contact details — those are added automatically.
 """
 
@@ -52,7 +52,7 @@ Return JSON matching this schema exactly:
     {{
       "header": "Candidate-strength heading",
       "body": "2–4 sentences of specific, sourced advocacy prose.",
-      "sources": ["Resume"]
+      "sources": ["Resume", "GitHub"]
     }}
   ],
   "closing": "1–2 sentence synthesis of the argument."

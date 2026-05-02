@@ -1,6 +1,6 @@
 # Eval Results
 
-**Date:** 2026-05-01
+**Date:** 2026-05-02
 **LLM model:** `gpt-5.4-mini`
 **Embedding model:** `text-embedding-3-small`
 **Vector top-K:** 8
@@ -12,7 +12,7 @@
 | 01-strong-yoe-match | [STRONG, STRONG, STRONG] | [STRONG, STRONG, STRONG] | [STRONG, STRONG, STRONG] | ✓ | ✓ |
 | 02-partial-skill-match | [PARTIAL, PARTIAL] | [GAP, GAP] | [GAP, GAP] | ✗ | ✗ |
 | 03-clear-gap | [GAP, GAP] | [GAP, GAP] | [GAP, GAP] | ✓ | ✓ |
-| 04-non-evaluable | [N/A, N/A, N/A, N/A] | [N/A, N/A, N/A, N/A] | [GAP, N/A, N/A, N/A] | ✓ | ✗ |
+| 04-non-evaluable | [N/A, N/A, N/A, N/A] | [N/A, N/A, N/A, N/A] | [N/A, N/A, N/A, N/A] | ✓ | ✓ |
 | 05-multi-source | [STRONG, STRONG] | [STRONG, STRONG] | [STRONG, STRONG] | ✓ | ✓ |
 
 ## Agreement rates
@@ -20,7 +20,7 @@
 | Mode | Matched | Total | Rate |
 |------|---------|-------|------|
 | LLM (full profile) | 11 | 13 | 85% |
-| Vector (top-8) | 10 | 13 | 77% |
+| Vector (top-8) | 11 | 13 | 85% |
 
 ## Methodology
 

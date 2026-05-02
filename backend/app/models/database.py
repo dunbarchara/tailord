@@ -295,6 +295,9 @@ class JobChunk(Base):
     match_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     advocacy_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
     experience_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    experience_sources: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )  # list[str]: resume, github, user_input, gap_response, additional_experience
     should_render: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )

@@ -199,7 +199,7 @@ def test_re_enrich_updates_chunk_fields_in_place():
                 score=2,
                 rationale="Strong Python",
                 advocacy_blurb="Expert Python engineer",
-                experience_source="resume",
+                experience_sources=["resume"],
                 should_render=True,
             )
         ]
@@ -217,7 +217,7 @@ def test_re_enrich_updates_chunk_fields_in_place():
     assert mock_chunk.match_score == 2
     assert mock_chunk.match_rationale == "Strong Python"
     assert mock_chunk.advocacy_blurb == "Expert Python engineer"
-    assert mock_chunk.experience_source == "resume"
+    assert mock_chunk.experience_sources == ["resume"]
     assert mock_chunk.should_render is True
     mock_db.commit.assert_called_once()
 
