@@ -10,6 +10,7 @@ export interface ProfileGap {
 
 export interface GapAnalysis {
   gaps: ProfileGap[]
+  partials: ProfileGap[]
   sourced_claim_count: number
   unsourced_claim_count: number
 }
@@ -178,7 +179,7 @@ export interface ChunksResponse {
 
 export interface ExperienceChunk {
   id: string
-  source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'additional_experience'
+  source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'partial_response' | 'additional_experience'
   source_ref: string | null
   claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
   content: string
@@ -223,6 +224,7 @@ export interface ExperienceChunksResponse {
   github: GitHubChunksSection | null
   user_input: ExperienceChunk[] | null
   gap_response: ExperienceChunk[] | null
+  partial_response: ExperienceChunk[] | null
 }
 
 export interface ExperienceRecord {

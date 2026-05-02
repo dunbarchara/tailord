@@ -135,6 +135,8 @@ class Tailoring(Base):
     enrichment_status: Mapped[str] = mapped_column(
         String, default="pending", server_default="pending"
     )
+    # Matching mode used during chunk enrichment: "vector" | "llm" | null (pre-migration historical)
+    matching_mode: Mapped[str | None] = mapped_column(String, nullable=True)
     # Generation telemetry — populated on completion, overwritten on regen
     generation_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chunk_batch_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -232,6 +234,7 @@ class ExperienceChunk(Base):
       user_input  — manually submitted by user; deleted per-chunk or all at once
       gap_response — user's answer to a gap question; NEVER deleted by source events,
                      only by Experience cascade (see 17-chunk-model.md)
+      partial_response — user's answer to a path-to-strong question; same lifecycle as gap_response
       annotation  — (future) user-added claim on a position/project; same lifecycle as gap_response
 
     source_ref:  null for resume/user_input/gap_response; repo name for github

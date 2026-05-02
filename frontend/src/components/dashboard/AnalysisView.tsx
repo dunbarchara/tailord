@@ -19,6 +19,7 @@ interface AnalysisViewProps {
   tailoringId?: string;
   gapAnalysis?: GapAnalysis | null;
   gapResponses?: ExperienceChunk[] | null;
+  partialResponses?: ExperienceChunk[] | null;
   generationReady?: boolean;
   readOnly?: boolean;
 }
@@ -32,7 +33,8 @@ interface GapAnswerFormProps {
   initialValue?: string;
   buttonLabel?: string;
   readOnly?: boolean;
-  onSuccess: (updatedScore: number | null, updatedRationale: string | null, blurb: string | null, submittedText: string) => void;
+  responseType?: string;
+  onSuccess: (updatedScore: number | null, updatedRationale: string | null, blurb: string | null, submittedText: string, partialQuestion?: string | null, partialContext?: string | null) => void;
 }
 
 interface ChunkContextPanelProps {
@@ -40,7 +42,9 @@ interface ChunkContextPanelProps {
   tailoringId?: string;
   gapQuestion?: { question: string; context: string } | null;
   answeredChunk?: ExperienceChunk | null;
-  onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null) => void;
+  partialQuestion?: { question: string; context: string } | null;
+  partialAnsweredChunk?: ExperienceChunk | null;
+  onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null, partialQuestion?: string | null, partialContext?: string | null) => void;
   readOnly?: boolean;
 }
 
@@ -118,7 +122,7 @@ export function fitAnalysisToText(
 
 /* ─── Gap answer form ────────────────────────────────────────────────────── */
 
-function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, initialValue, buttonLabel = 'Save answer', readOnly = false, onSuccess }: GapAnswerFormProps) {
+function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, initialValue, buttonLabel = 'Save answer', readOnly = false, responseType = 'gap', onSuccess }: GapAnswerFormProps) {
   const [answer, setAnswer] = useState(initialValue ?? '');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -137,6 +141,7 @@ function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, ini
           tailoring_id: tailoringId,
           question,
           answer: trimmed,
+          response_type: responseType,
         }),
       });
       if (!res.ok) {
@@ -145,7 +150,7 @@ function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, ini
         return;
       }
       const data = await res.json().catch(() => ({}));
-      onSuccess(data?.updated_score ?? null, data?.updated_rationale ?? null, data?.advocacy_blurb ?? null, trimmed);
+      onSuccess(data?.updated_score ?? null, data?.updated_rationale ?? null, data?.advocacy_blurb ?? null, trimmed, data?.partial_question ?? null, data?.partial_context ?? null);
     } catch {
       setErrorMsg('Could not reach the server.');
     } finally {
@@ -270,13 +275,17 @@ function ExpandableText({ text, textClassName }: { text: string; textClassName?:
 
 /* ─── Chunk context panel ────────────────────────────────────────────────── */
 
-function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, onScoreChange, readOnly }: ChunkContextPanelProps) {
+function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, partialQuestion, partialAnsweredChunk, onScoreChange, readOnly }: ChunkContextPanelProps) {
   const [rescoring, setRescoring] = useState(false);
   const [rescoreMsg, setRescoreMsg] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [localAnswer, setLocalAnswer] = useState<string | null>(null);
   const [justAnswered, setJustAnswered] = useState(false);
   const [submissionCount, setSubmissionCount] = useState(0);
+  const [isEditingPartial, setIsEditingPartial] = useState(false);
+  const [localPartialAnswer, setLocalPartialAnswer] = useState<string | null>(null);
+  const [justPartialAnswered, setJustPartialAnswered] = useState(false);
+  const [partialSubmissionCount, setPartialSubmissionCount] = useState(0);
 
   const variant = scoreToVariant(chunk.match_score);
   const config = SCORE_CONFIG[variant];
@@ -458,6 +467,87 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, onS
         </div>
       )}
 
+      {/* Path to Strong section */}
+      {variant === 'partial' && (
+        <div className="mt-4">
+          <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">
+            Path to Strong
+          </p>
+
+          {readOnly && partialQuestion ? (
+            <GapAnswerForm
+              jobChunkId={chunk.id}
+              tailoringId=""
+              question={partialQuestion.question}
+              context={partialQuestion.context}
+              responseType="partial"
+              readOnly
+              onSuccess={() => {}}
+            />
+          ) : partialQuestion && tailoringId ? (
+            (partialAnsweredChunk || justPartialAnswered) && !isEditingPartial ? (
+              <div className="rounded-lg border border-border-subtle bg-surface-base px-3 py-2.5 space-y-1.5">
+                <p className="text-xs font-medium text-success flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3 w-3 shrink-0" />
+                  You strengthened this
+                </p>
+                {(partialAnsweredChunk?.chunk_metadata?.question ?? partialQuestion.question) && (
+                  <p className="text-sm text-text-tertiary leading-relaxed italic">
+                    {partialAnsweredChunk?.chunk_metadata?.question ?? partialQuestion.question}
+                  </p>
+                )}
+                <p className="text-sm text-text-secondary leading-relaxed">
+                  {localPartialAnswer ?? partialAnsweredChunk?.content ?? ''}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPartial(true)}
+                  className="text-xs text-text-link hover:underline"
+                >
+                  Edit answer
+                </button>
+              </div>
+            ) : (
+              <GapAnswerForm
+                jobChunkId={chunk.id}
+                tailoringId={tailoringId}
+                question={partialQuestion.question}
+                context={partialQuestion.context}
+                responseType="partial"
+                initialValue={isEditingPartial ? (localPartialAnswer ?? partialAnsweredChunk?.content ?? '') : undefined}
+                onSuccess={(score, rationale, blurb, text) => {
+                  onScoreChange(chunk.id, score, rationale, blurb);
+                  setLocalPartialAnswer(text);
+                  setJustPartialAnswered(true);
+                  setIsEditingPartial(false);
+                }}
+              />
+            )
+          ) : tailoringId ? (
+            <>
+              <p className="text-sm text-text-disabled mb-2">
+                Adding a specific example could strengthen this match.
+              </p>
+              <GapAnswerForm
+                key={partialSubmissionCount}
+                jobChunkId={chunk.id}
+                tailoringId={tailoringId}
+                question=""
+                prompt="Share a concrete example that demonstrates this requirement in more depth."
+                responseType="partial"
+                initialValue={localPartialAnswer ?? partialAnsweredChunk?.content ?? ''}
+                buttonLabel={localPartialAnswer || partialAnsweredChunk ? 'Update' : 'Save answer'}
+                onSuccess={(score, rationale, blurb, text) => {
+                  onScoreChange(chunk.id, score, rationale, blurb);
+                  setLocalPartialAnswer(text);
+                  setPartialSubmissionCount(c => c + 1);
+                }}
+              />
+            </>
+          ) : null}
+        </div>
+      )}
+
       {/* Re-score section */}
       {tailoringId && (
         <div className="mt-4">
@@ -507,12 +597,16 @@ export function AnalysisView({
   tailoringId,
   gapAnalysis,
   gapResponses,
+  partialResponses,
   generationReady,
   readOnly,
 }: AnalysisViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scoreOverrides, setScoreOverrides] = useState<
     Map<string, { match_score: number | null; match_rationale: string | null; advocacy_blurb?: string | null }>
+  >(new Map());
+  const [inlinePartialQuestions, setInlinePartialQuestions] = useState<
+    Map<string, { question: string; context: string }>
   >(new Map());
 
   const localChunks = useMemo(() => {
@@ -558,15 +652,42 @@ export function AnalysisView({
     [gapResponses],
   );
 
+  const partialByChunkId = useMemo(
+    () =>
+      new Map(
+        (gapAnalysis?.partials ?? [])
+          .filter(p => p.chunk_id)
+          .map(p => [p.chunk_id!, { question: p.question_for_candidate, context: p.context }]),
+      ),
+    [gapAnalysis],
+  );
+
+  const partialAnsweredByChunkId = useMemo(
+    () =>
+      new Map(
+        (partialResponses ?? [])
+          .filter(c => c.chunk_metadata?.job_chunk_id)
+          .map(c => [c.chunk_metadata!.job_chunk_id, c]),
+      ),
+    [partialResponses],
+  );
+
   function handleScoreChange(
     chunkId: string,
     score: number | null,
     rationale: string | null,
     blurb?: string | null,
+    partialQuestion?: string | null,
+    partialContext?: string | null,
   ) {
     setScoreOverrides(prev =>
       new Map(prev).set(chunkId, { match_score: score, match_rationale: rationale, advocacy_blurb: blurb }),
     );
+    if (partialQuestion) {
+      setInlinePartialQuestions(prev =>
+        new Map(prev).set(chunkId, { question: partialQuestion, context: partialContext ?? '' }),
+      );
+    }
   }
 
   return (
@@ -599,6 +720,8 @@ export function AnalysisView({
               tailoringId={tailoringId}
               gapQuestion={gapByChunkId.get(selectedChunk.id) ?? null}
               answeredChunk={answeredByChunkId.get(selectedChunk.id) ?? null}
+              partialQuestion={inlinePartialQuestions.get(selectedChunk.id) ?? partialByChunkId.get(selectedChunk.id) ?? null}
+              partialAnsweredChunk={partialAnsweredByChunkId.get(selectedChunk.id) ?? null}
               onScoreChange={handleScoreChange}
               readOnly={readOnly}
             />

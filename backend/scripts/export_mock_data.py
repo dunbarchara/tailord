@@ -6,6 +6,12 @@ Usage (from backend/):
         --user-id <uuid> \\
         --tailoring-id <uuid> [--tailoring-id <uuid> ...]
 
+    uv run python scripts/export_mock_data.py \
+        --user-id "6dc01c0d-637d-4234-8673-7ced3254513a" \
+        --tailoring-id "ad408020-c23d-4626-95bd-9e7bc6c81741" \
+        --tailoring-id "413ba9d6-57b9-457e-9ee0-dbac5b6339e5" \
+        --tailoring-id "d8add4c8-1f55-4839-a171-50d2027db58a"
+
 The script queries the local PostgreSQL database and writes the mock data file
 used by the demo dashboard at /demo/dashboard.
 """
@@ -307,7 +313,9 @@ def main() -> None:
             "chunks": chunks_map,
         }
 
-        OUTPUT_PATH.write_text(json.dumps(output, indent=2, default=str))
+        OUTPUT_PATH.write_text(
+            json.dumps(output, indent=2, default=str).replace("http://localhost:3000", "")
+        )
         print(f"[OK] Written to {OUTPUT_PATH}")
         print(f"     {len(tailorings_list)} tailoring(s) exported")
         print(f"     {len(exp_chunks)} experience chunks")

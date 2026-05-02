@@ -35,8 +35,11 @@ from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
 from app.services.gap_analyzer import run_gap_analysis
 from app.services.job_extractor import extract_job
-from app.services.requirement_matcher import match_requirements
-from app.services.tailoring_generator import _format_sourced_profile, generate_tailoring
+from app.services.tailoring_generator import (
+    _build_ranked_matches_from_chunks,
+    _format_sourced_profile,
+    generate_tailoring,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -161,15 +164,17 @@ def _finalize_tailoring(
     experience_id: uuid.UUID | None = None,
 ) -> None:
     """
-    Background task: extract the job, run requirement matching + tailoring generation,
-    then persist the result and trigger chunk enrichment.
+    Background task: extract the job, enrich chunks, derive ranked matches from chunk
+    scores, generate the tailoring letter, then run gap analysis.
 
     Creates its own DB session (request session is closed by the time this runs).
     Updates generation_stage as each step starts so the frontend can poll progress.
-    Stages: extracting → matching → generating
+    Stages: extracting → enriching → generating
     """
     from app.clients.database import SessionLocal
 
+    # Phase 1: job extraction (extracting stage)
+    extracted_job: dict = {}
     db = SessionLocal()
     try:
         tailoring = db.get(Tailoring, tailoring_id)
@@ -186,7 +191,6 @@ def _finalize_tailoring(
         )
         db.commit()
 
-        # Step 1: Extract structured job data from scraped markdown
         try:
             extracted_job = extract_job(job_markdown, html=html)
         except Exception:
@@ -204,14 +208,58 @@ def _finalize_tailoring(
             job.extracted_job = extracted_job
             db.commit()
 
-        tailoring.generation_stage = "matching"
+        tailoring.generation_stage = "enriching"
         db.commit()
 
+    except Exception:
+        logger.exception(
+            "Unexpected error in _finalize_tailoring (extraction) for tailoring %s", tailoring_id
+        )
         try:
-            ranked_matches = match_requirements(extracted_job, extracted_profile, pronouns=pronouns)
+            tailoring = db.get(Tailoring, tailoring_id)
+            if tailoring:
+                tailoring.generation_status = "error"
+                tailoring.generation_stage = None
+                tailoring.generation_error = "An unexpected error occurred."
+                db.commit()
         except Exception:
-            logger.exception("Requirement matching failed — proceeding without ranked matches")
-            ranked_matches = []
+            pass
+        return
+    finally:
+        db.close()
+
+    # Phase 2: chunk enrichment (uses its own session)
+    try:
+        enrich_job_chunks(
+            job_id,
+            job_markdown,
+            extracted_profile,
+            pronouns=pronouns,
+            experience_id=experience_id,
+            candidate_name=candidate_name,
+        )
+    except Exception:
+        logger.exception("Chunk enrichment failed for job %s", job_id)
+
+    # Phase 3: read chunk scores → build ranked matches for the letter
+    ranked_matches: list[dict] = []
+    try:
+        with SessionLocal() as chunk_db:
+            ranked_matches = _build_ranked_matches_from_chunks(uuid.UUID(job_id), chunk_db)
+    except Exception:
+        logger.exception(
+            "Failed to build ranked matches from chunks for job %s — proceeding without", job_id
+        )
+
+    # Phase 4: letter generation (generating stage)
+    db = SessionLocal()
+    try:
+        tailoring = db.get(Tailoring, tailoring_id)
+        if not tailoring:
+            logger.error(
+                "_finalize_tailoring: tailoring %s not found after enrichment", tailoring_id
+            )
+            return
 
         tailoring.generation_stage = "generating"
         db.commit()
@@ -241,7 +289,8 @@ def _finalize_tailoring(
         tailoring.generation_status = "ready"
         tailoring.generation_stage = None
         tailoring.generated_at = now
-        tailoring.enrichment_status = "pending"
+        tailoring.enrichment_status = "complete"  # backward compat — enrichment ran inline
+        tailoring.matching_mode = settings.matching_mode
         if tailoring.generation_started_at:
             delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
             tailoring.generation_duration_ms = int(delta_ms)
@@ -265,7 +314,9 @@ def _finalize_tailoring(
             logger.warning("Failed to write TailoringDebugLog for tailoring %s", tailoring_id)
 
     except Exception:
-        logger.exception("Unexpected error in _finalize_tailoring for tailoring %s", tailoring_id)
+        logger.exception(
+            "Unexpected error in _finalize_tailoring (generation) for tailoring %s", tailoring_id
+        )
         try:
             tailoring = db.get(Tailoring, tailoring_id)
             if tailoring:
@@ -278,20 +329,7 @@ def _finalize_tailoring(
     finally:
         db.close()
 
-    # Chunk enrichment runs after generation succeeds
-    try:
-        enrich_job_chunks(
-            job_id,
-            job_markdown,
-            extracted_profile,
-            pronouns=pronouns,
-            experience_id=experience_id,
-            candidate_name=candidate_name,
-        )
-    except Exception:
-        logger.exception("Chunk enrichment failed for job %s", job_id)
-
-    # Gap analysis runs after chunk enrichment so chunk_ids are resolvable.
+    # Gap analysis runs after generation succeeds so chunk_ids are resolvable.
     # Non-fatal: a failure here must never affect the tailoring itself.
     try:
         run_gap_analysis(tailoring_id)
@@ -768,9 +806,13 @@ def get_tailoring_debug_info(
         .all()
     )
     scored_chunks = [c for c in chunks if c.chunk_type != "header" and c.match_score is not None]
-    used_vector = any(
-        c.match_rationale and c.match_rationale.startswith("[vector") for c in scored_chunks
-    )
+    if tailoring.matching_mode is not None:
+        used_vector = tailoring.matching_mode == "vector"
+    else:
+        # Historical tailoring — infer from rationale prefix (pre-migration data only)
+        used_vector = any(
+            c.match_rationale and c.match_rationale.startswith("[vector") for c in scored_chunks
+        )
 
     if used_vector and scored_chunks:
         from app.services.chunk_matcher import _build_candidate_header

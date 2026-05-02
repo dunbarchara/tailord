@@ -134,6 +134,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
   const [gapResponses, setGapResponses] = useState<ExperienceChunk[] | null>(null);
+  const [partialResponses, setPartialResponses] = useState<ExperienceChunk[] | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
@@ -283,7 +284,10 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     if (tailoring?.generation_status !== 'ready') return;
     fetch('/api/experience/chunks')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.gap_response) setGapResponses(d.gap_response); })
+      .then(d => {
+        if (d?.gap_response) setGapResponses(d.gap_response);
+        if (d?.partial_response) setPartialResponses(d.partial_response);
+      })
       .catch(() => {});
   }, [tailoring?.generation_status, readOnly]);
 
@@ -836,7 +840,6 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
           <GenerationView
             tailoring={tailoring}
             regenSsePhase={regenSsePhase}
-            enrichmentSettled={enrichmentSettled}
             gapAnalysisSettled={gapAnalysisSettled}
             elapsed={elapsed}
           />
@@ -882,6 +885,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                 tailoringId={readOnly ? undefined : tailoring.id}
                 gapAnalysis={tailoring.gap_analysis}
                 gapResponses={gapResponses}
+                partialResponses={partialResponses}
                 generationReady={tailoring.generation_status === 'ready'}
                 readOnly={readOnly}
               />

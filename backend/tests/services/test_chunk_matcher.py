@@ -385,7 +385,8 @@ def test_vector_mode_scores_non_header_chunks():
 
     assert len(added) == 1
     assert added[0].match_score == 2
-    assert "[vector top-" in added[0].match_rationale
+    assert added[0].match_rationale
+    assert "[vector" not in added[0].match_rationale
 
 
 def test_vector_mode_header_chunks_get_minus_one():
@@ -487,7 +488,8 @@ def test_re_enrich_vector_path_updates_chunk_fields():
                             re_enrich_single_chunk("fake-chunk-id", {}, experience_id=experience_id)
 
     assert mock_chunk.match_score == 2
-    assert "[vector top-" in mock_chunk.match_rationale
+    assert mock_chunk.match_rationale
+    assert "[vector" not in mock_chunk.match_rationale
     assert mock_chunk.advocacy_blurb == "Expert TypeScript engineer"
     # Embedding was null — should be populated opportunistically
     assert mock_chunk.embedding is not None
