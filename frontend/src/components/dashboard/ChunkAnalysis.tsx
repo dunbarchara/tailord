@@ -17,6 +17,8 @@ const SOURCE_LABELS: Record<string, string> = {
   resume: 'Resume',
   github: 'GitHub',
   user_input: 'Direct Input',
+  gap_response: 'Direct Input',
+  additional_experience: 'Additional Context',
 };
 
 const SCORE_LABELS: Record<number, string> = {
@@ -28,7 +30,8 @@ const SCORE_LABELS: Record<number, string> = {
 
 function chunkToMarkdown(chunk: JobChunk): string {
   const score = chunk.match_score != null ? (SCORE_LABELS[chunk.match_score] ?? String(chunk.match_score)) : 'Pending';
-  const source = chunk.experience_source ? (SOURCE_LABELS[chunk.experience_source] ?? chunk.experience_source) : null;
+  const sources = chunk.experience_sources?.length ? chunk.experience_sources : chunk.experience_source ? [chunk.experience_source] : [];
+  const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
   const meta = [
     `[${chunk.chunk_type.toUpperCase()}]`,
     `pos:${chunk.position}`,
@@ -136,9 +139,8 @@ function CopyButton({ getText }: { getText: () => string }) {
 }
 
 function ChunkRow({ chunk }: { chunk: JobChunk }) {
-  const source = chunk.experience_source
-    ? (SOURCE_LABELS[chunk.experience_source] ?? chunk.experience_source)
-    : null;
+  const sources = chunk.experience_sources?.length ? chunk.experience_sources : chunk.experience_source ? [chunk.experience_source] : [];
+  const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
 
   return (
     <div className={cn(

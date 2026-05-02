@@ -115,6 +115,7 @@ def _serialize_chunk(c: JobChunk) -> dict:
         "match_rationale": c.match_rationale,
         "advocacy_blurb": c.advocacy_blurb,
         "experience_source": c.experience_source,
+        "experience_sources": c.experience_sources or [],
         "source_label": SOURCE_LABELS.get(c.experience_source) if c.experience_source else None,
         "should_render": c.should_render,
         "display_ready": is_display_ready(c),
@@ -719,6 +720,7 @@ def rescore_chunk(
         "match_rationale": chunk.match_rationale,
         "advocacy_blurb": chunk.advocacy_blurb,
         "experience_source": chunk.experience_source,
+        "experience_sources": chunk.experience_sources or [],
         "source_label": SOURCE_LABELS.get(chunk.experience_source)
         if chunk.experience_source
         else None,
@@ -810,6 +812,8 @@ def get_tailoring_debug_info(
         matching_mode = settings.matching_mode
 
     from app.prompts import gap_analysis as gap_prompt
+    from app.prompts import job_extraction as prompt_job_extraction
+    from app.prompts import requirement_matching as prompt_req_matching
 
     return {
         "model": tailoring.model or settings.llm_model,
@@ -819,6 +823,8 @@ def get_tailoring_debug_info(
         "formatted_profile": formatted_profile,
         "profile_snapshot_source": profile_snapshot_source,
         "matching_mode": matching_mode,
+        "job_extraction_system_prompt": prompt_job_extraction.SYSTEM,
+        "requirement_matching_system_prompt": prompt_req_matching.SYSTEM,
         "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
         "sample_chunk_user_message": sample_user_message,
         "tailoring_system_prompt": tailoring_prompt.SYSTEM

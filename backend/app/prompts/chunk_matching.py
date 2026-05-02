@@ -34,7 +34,7 @@ CRITICAL RULES — read before scoring:
 6. Do NOT infer the presence of a specific tool from experience with a related tool. If "Terraform" is not mentioned anywhere in the profile, it is a gap — even if the candidate has extensive Kubernetes, Helm, or other infrastructure experience. Score based only on what is explicitly present.
 7. A 0 (gap) rationale must state specifically what evidence is missing, not just restate the requirement.
 8. A -1 rationale needs only a one-phrase reason (e.g. "company perk, not a candidate requirement").
-9. experience_source must be "resume", "github", "user_input", "gap_response", or "additional_experience". Set to null for -1 or 0. Use "gap_response" when matching evidence comes from a Candidate Note entry. Use "additional_experience" when matching evidence comes from an Additional Context entry.
+9. experience_sources is a list of all sources contributing evidence for this chunk. Use [] for score -1 or 0. Valid values: "resume", "github", "user_input", "gap_response", "additional_experience". Use "gap_response" when evidence comes from a Candidate Note entry. Use "additional_experience" when evidence comes from an Additional Context entry. Include multiple values when both contribute (e.g. resume lists the skill AND a GitHub project demonstrates it).
 10. Return JSON only. No markdown fences. Exactly as many results as input chunks.
 11. For scores 2 and 1, populate advocacy_blurb with a 1–2 sentence statement in third person that advocates for the candidate on this specific requirement. Use the candidate's first name and pronouns from the [CANDIDATE] block.
     - rationale and advocacy_blurb convey the same core argument — the difference is register and audience. rationale is analytical: it explains the scoring decision as if reviewing the profile internally. advocacy_blurb is advocating: it presents the same evidence as if making the case for the candidate to a recruiter.
@@ -57,7 +57,7 @@ Profile excerpt:
 Section: Requirements
 Chunk: 1. [BULLET] 3+ years of professional software engineering experience
 Correct output:
-{"results": [{"score": 2, "rationale": "Pre-computed total of 5.2 years exceeds the 3+ year requirement.", "advocacy_blurb": "[FIRST_NAME] brings over five years of professional software engineering experience across two roles, exceeding this requirement with a track record of progressively senior work.", "experience_source": "resume"}]}
+{"results": [{"score": 2, "rationale": "Pre-computed total of 5.2 years exceeds the 3+ year requirement.", "advocacy_blurb": "[FIRST_NAME] brings over five years of professional software engineering experience across two roles, exceeding this requirement with a track record of progressively senior work.", "experience_sources": ["resume"]}]}
 
 EXAMPLE 2 (Partial — adjacent skill; advocacy reflects proximity honestly, does not overclaim):
 Profile excerpt:
@@ -69,7 +69,7 @@ Profile excerpt:
 Section: Requirements
 Chunk: 1. [BULLET] Expertise in Vue.js or React for frontend development
 Correct output:
-{"results": [{"score": 1, "rationale": "React listed in skills and used at Acme for internal tooling, but no production-scale or customer-facing React work documented.", "advocacy_blurb": "[FIRST_NAME] has built with React professionally — maintaining an internal dashboard at Acme — and brings a strong TypeScript foundation. The React experience is scoped to internal tooling rather than customer-facing work.", "experience_source": "resume"}]}
+{"results": [{"score": 1, "rationale": "React listed in skills and used at Acme for internal tooling, but no production-scale or customer-facing React work documented.", "advocacy_blurb": "[FIRST_NAME] has built with React professionally — maintaining an internal dashboard at Acme — and brings a strong TypeScript foundation. The React experience is scoped to internal tooling rather than customer-facing work.", "experience_sources": ["resume"]}]}
 
 EXAMPLE 3 (Mixed batch — qualification, perk, legal boilerplate, compensation):
 Profile excerpt:
@@ -85,7 +85,7 @@ Chunks:
 3. [PARAGRAPH] It's our policy to provide equal employment opportunity for all applicants...
 4. [BULLET] Base salary range between $161,500 - $227,000 USD + equity + 401K with company match
 Correct output:
-{"results": [{"score": 2, "rationale": "Bachelor of Science in Computer Science confirmed in education.", "advocacy_blurb": "[FIRST_NAME] holds a Bachelor of Science in Computer Science from State University, directly satisfying this requirement.", "experience_source": "resume"}, {"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_source": null, "should_render": true}, {"score": -1, "rationale": "EEO statement, not job content.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Compensation information — candidates need this to evaluate the role.", "experience_source": null, "should_render": true}]}
+{"results": [{"score": 2, "rationale": "Bachelor of Science in Computer Science confirmed in education.", "advocacy_blurb": "[FIRST_NAME] holds a Bachelor of Science in Computer Science from State University, directly satisfying this requirement.", "experience_sources": ["resume"]}, {"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_sources": [], "should_render": true}, {"score": -1, "rationale": "EEO statement, not job content.", "experience_sources": [], "should_render": false}, {"score": -1, "rationale": "Compensation information — candidates need this to evaluate the role.", "experience_sources": [], "should_render": true}]}
 
 EXAMPLE 4 (Job board chrome — should_render false):
 Profile excerpt: [any profile]
@@ -94,7 +94,7 @@ Chunks:
 1. [PARAGRAPH] Interested in building your career at Acme? Get future opportunities sent straight to your email.
 2. [PARAGRAPH] [Create job alert](https://jobs.acme.com/alert)
 Correct output:
-{"results": [{"score": -1, "rationale": "Sign-up CTA, not job content.", "experience_source": null, "should_render": false}, {"score": -1, "rationale": "Job alert link, not job content.", "experience_source": null, "should_render": false}]}
+{"results": [{"score": -1, "rationale": "Sign-up CTA, not job content.", "experience_sources": [], "should_render": false}, {"score": -1, "rationale": "Job alert link, not job content.", "experience_sources": [], "should_render": false}]}
 """
 
 USER_TEMPLATE = """
@@ -107,7 +107,7 @@ CHUNKS:
 {chunks_block}
 
 Score each chunk. Return a JSON object with exactly as many results as chunks:
-{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|"gap_response"|"additional_experience"|null, "should_render": true|false}}]}}
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false}}]}}
 """
 
 # Used by the vector matching path (MATCHING_MODE=vector).
@@ -123,5 +123,5 @@ RELEVANT EXPERIENCE (top-{k} results by semantic similarity):
 {grouped_context}
 
 Score this single requirement. Return a JSON object with exactly one result:
-{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_source": "resume"|"github"|"user_input"|"gap_response"|"additional_experience"|null, "should_render": true|false}}]}}
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false}}]}}
 """

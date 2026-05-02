@@ -6,7 +6,7 @@ class RequirementMatch(BaseModel):
     is_preferred: bool = False
     score: int  # 0=not met, 1=partial, 2=strong
     rationale: str = ""
-    experience_source: str | None = None  # resume, github, user_input
+    experience_sources: list[str] = []  # resume, github, user_input
 
 
 class RequirementMatchList(BaseModel):
@@ -17,7 +17,7 @@ class ChunkMatchResult(BaseModel):
     score: int = 0  # -1=non-evaluable, 0=gap, 1=partial, 2=strong
     rationale: str = ""
     advocacy_blurb: str | None = None  # personal advocacy statement; only for score >= 1
-    experience_source: str | None = None
+    experience_sources: list[str] = []
     should_render: bool = True
 
 

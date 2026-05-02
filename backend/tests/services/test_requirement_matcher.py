@@ -121,12 +121,12 @@ def test_preferred_requirements_included():
 
 def test_experience_source_preserved():
     llm_result = RequirementMatchList(
-        matches=[RequirementMatch(requirement="Python", score=2, experience_source="github")]
+        matches=[RequirementMatch(requirement="Python", score=2, experience_sources=["github"])]
     )
     with _llm_patch(llm_result), _client_patch(), _profile_patch():
         result = match_requirements({"requirements": {"required": ["Python"]}}, PROFILE)
 
-    assert result[0]["experience_source"] == "github"
+    assert result[0]["experience_sources"] == ["github"]
 
 
 def test_is_preferred_flag_preserved():

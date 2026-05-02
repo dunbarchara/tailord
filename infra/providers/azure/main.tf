@@ -195,7 +195,8 @@ resource "azurerm_container_app" "backend_prod" {
   }
 
   template {
-    max_replicas = 1
+    min_replicas = 1
+    max_replicas = 2
 
     http_scale_rule {
       name                = "http-scaling"
@@ -503,6 +504,9 @@ resource "azurerm_container_app" "frontend_prod" {
   }
 
   template {
+    min_replicas = 1
+    max_replicas = 2
+
     container {
       name   = "frontend"
       image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"

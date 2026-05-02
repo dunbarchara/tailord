@@ -26,6 +26,17 @@ interface JobPostingProps {
 }
 
 
+/* ─── Constants ──────────────────────────────────────────────────────────── */
+
+const SOURCE_LABELS: Record<string, string> = {
+  resume: 'Resume',
+  github: 'GitHub',
+  user_input: 'Direct Input',
+  gap_response: 'Direct Input',
+  additional_experience: 'Additional Context',
+};
+
+
 function stripMarkdown(text: string): string {
   return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
 }
@@ -111,14 +122,16 @@ function ChunkItem({
             {chunk.advocacy_blurb && (
               <p className="text-xs text-text-secondary leading-relaxed">{chunk.advocacy_blurb}</p>
             )}
-            {chunk.advocacy_blurb && chunk.experience_source && chunk.match_score !== 0 && (
+            {chunk.advocacy_blurb && !!(chunk.experience_sources?.length || chunk.experience_source) && chunk.match_score !== 0 && (
               <hr className="my-1.5 border-border-strong" />
             )}
-            {chunk.experience_source && chunk.match_score !== 0 && (
+            {!!(chunk.experience_sources?.length || chunk.experience_source) && chunk.match_score !== 0 && (
               <p className="text-xs text-text-tertiary">
                 Source:{' '}
                 <span className="font-medium text-text-secondary">
-                  {chunk.source_label ?? chunk.experience_source}
+                  {chunk.experience_sources?.length
+                    ? chunk.experience_sources.map(s => SOURCE_LABELS[s] ?? s).join(', ')
+                    : (chunk.source_label ?? chunk.experience_source)}
                 </span>
               </p>
             )}

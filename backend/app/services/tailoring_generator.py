@@ -258,8 +258,9 @@ def _format_ranked_matches(matches: list[dict]) -> str:
         is_preferred = match.get("is_preferred", False)
         req_label = "Preferred" if is_preferred else "Required"
         rationale = match.get("rationale", "")
-        source_key = match.get("experience_source")
-        source_label = source_labels.get(source_key, source_key) if source_key else None
+        source_keys = match.get("experience_sources") or []
+        source_parts = [source_labels.get(k, k) for k in source_keys if k]
+        source_label = ", ".join(source_parts) if source_parts else None
 
         header = f'[{score_label}] {req_label}: "{req}"'
         if source_label and rationale:

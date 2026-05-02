@@ -51,6 +51,7 @@ const SOURCE_LABELS: Record<string, string> = {
   github: 'GitHub',
   user_input: 'Direct Input',
   gap_response: 'Direct Input',
+  additional_experience: 'Additional Context',
 };
 
 const SCORE_CONFIG = {
@@ -279,9 +280,8 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, onS
 
   const variant = scoreToVariant(chunk.match_score);
   const config = SCORE_CONFIG[variant];
-  const source = chunk.experience_source
-    ? (SOURCE_LABELS[chunk.experience_source] ?? chunk.source_label ?? chunk.experience_source)
-    : null;
+  const sources = chunk.experience_sources?.length ? chunk.experience_sources : chunk.experience_source ? [chunk.experience_source] : [];
+  const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
 
   const hasAdvocacy = !!chunk.advocacy_blurb && variant !== 'gap';
   const hasRationale = !!chunk.match_rationale && (variant === 'partial' || variant === 'gap');

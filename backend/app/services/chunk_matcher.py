@@ -184,7 +184,7 @@ def _score_chunk_vector(
         score=raw.score,
         rationale=f"[vector top-{len(top_k_chunks)}] {raw.rationale}",
         advocacy_blurb=raw.advocacy_blurb,
-        experience_source=raw.experience_source,
+        experience_sources=raw.experience_sources,
         should_render=raw.should_render,
     )
     return annotated, job_chunk_embedding
@@ -389,7 +389,7 @@ def enrich_job_chunks(
                 match_score=match.score,
                 match_rationale=match.rationale,
                 advocacy_blurb=match.advocacy_blurb,
-                experience_source=match.experience_source,
+                experience_sources=match.experience_sources or [],
                 should_render=match.should_render,
                 enriched_at=now,
                 embedding=embedding,
@@ -526,7 +526,7 @@ def re_enrich_single_chunk(
         chunk.match_score = match.score
         chunk.match_rationale = match.rationale
         chunk.advocacy_blurb = match.advocacy_blurb
-        chunk.experience_source = match.experience_source
+        chunk.experience_sources = match.experience_sources or []
         chunk.should_render = match.should_render
         chunk.enriched_at = now
         db.commit()
