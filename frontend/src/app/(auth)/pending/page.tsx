@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -56,6 +57,18 @@ export default function PendingPage() {
         >
           {checking ? "Checking…" : "Check approval status"}
         </Button>
+
+        <div className="pt-6 border-t border-border-subtle space-y-3 text-center">
+          <p className="text-sm text-text-secondary">
+            In the meantime, explore the demo to see what Tailord can do.
+          </p>
+          <Link
+            href="/demo/dashboard"
+            className="inline-flex items-center justify-center w-full h-9 px-4 rounded-md border border-border-default bg-surface-elevated text-sm text-text-secondary hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary transition-colors"
+          >
+            View Demo Dashboard
+          </Link>
+        </div>
       </div>
       </div>
     </div>

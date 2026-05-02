@@ -20,6 +20,7 @@ interface AnalysisViewProps {
   gapAnalysis?: GapAnalysis | null;
   gapResponses?: ExperienceChunk[] | null;
   generationReady?: boolean;
+  readOnly?: boolean;
 }
 
 interface GapAnswerFormProps {
@@ -30,6 +31,7 @@ interface GapAnswerFormProps {
   prompt?: string;
   initialValue?: string;
   buttonLabel?: string;
+  readOnly?: boolean;
   onSuccess: (updatedScore: number | null, updatedRationale: string | null, blurb: string | null, submittedText: string) => void;
 }
 
@@ -39,6 +41,7 @@ interface ChunkContextPanelProps {
   gapQuestion?: { question: string; context: string } | null;
   answeredChunk?: ExperienceChunk | null;
   onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null) => void;
+  readOnly?: boolean;
 }
 
 /* ─── Constants ──────────────────────────────────────────────────────────── */
@@ -114,7 +117,7 @@ export function fitAnalysisToText(
 
 /* ─── Gap answer form ────────────────────────────────────────────────────── */
 
-function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, initialValue, buttonLabel = 'Save answer', onSuccess }: GapAnswerFormProps) {
+function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, initialValue, buttonLabel = 'Save answer', readOnly = false, onSuccess }: GapAnswerFormProps) {
   const [answer, setAnswer] = useState(initialValue ?? '');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -165,12 +168,14 @@ function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, ini
         placeholder="Share your experience here…"
         value={answer}
         onChange={e => setAnswer(e.target.value)}
+        disabled={readOnly}
         className={cn(
           'w-full resize-none rounded-lg border border-border-default bg-surface-elevated',
           'px-3 py-2 text-sm text-text-primary placeholder:text-text-disabled',
           'focus:outline-none focus:ring-border-focus focus:border-border-focus',
           'transition-colors',
-          'focus:border-text-primary'
+          'focus:border-text-primary',
+          readOnly && 'opacity-50 cursor-not-allowed',
         )}
       />
       {errorMsg && <p className="text-sm text-error">{errorMsg}</p>}
@@ -178,7 +183,7 @@ function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, ini
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={saving || !answer.trim()}
+          disabled={readOnly || saving || !answer.trim()}
           className={cn(
             'inline-flex items-center gap-1.5 h-7 px-3 rounded-[8px]',
             'bg-brand-primary text-white text-sm font-normal tracking-[-0.1px]',
@@ -264,7 +269,7 @@ function ExpandableText({ text, textClassName }: { text: string; textClassName?:
 
 /* ─── Chunk context panel ────────────────────────────────────────────────── */
 
-function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, onScoreChange }: ChunkContextPanelProps) {
+function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, onScoreChange, readOnly }: ChunkContextPanelProps) {
   const [rescoring, setRescoring] = useState(false);
   const [rescoreMsg, setRescoreMsg] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -380,7 +385,16 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, onS
             Gap Enrichment
           </p>
 
-          {gapQuestion && tailoringId ? (
+          {readOnly && gapQuestion ? (
+            <GapAnswerForm
+              jobChunkId={chunk.id}
+              tailoringId=""
+              question={gapQuestion.question}
+              context={gapQuestion.context}
+              readOnly
+              onSuccess={() => {}}
+            />
+          ) : gapQuestion && tailoringId ? (
             // Gap question mode: "You answered this" card → edit flow
             (answeredChunk || justAnswered) && !isEditing ? (
               <div className="rounded-lg border border-border-subtle bg-surface-base px-3 py-2.5 space-y-1.5">
@@ -494,6 +508,7 @@ export function AnalysisView({
   gapAnalysis,
   gapResponses,
   generationReady,
+  readOnly,
 }: AnalysisViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scoreOverrides, setScoreOverrides] = useState<
@@ -585,6 +600,7 @@ export function AnalysisView({
               gapQuestion={gapByChunkId.get(selectedChunk.id) ?? null}
               answeredChunk={answeredByChunkId.get(selectedChunk.id) ?? null}
               onScoreChange={handleScoreChange}
+              readOnly={readOnly}
             />
           ) : (
             <DefaultHint />
