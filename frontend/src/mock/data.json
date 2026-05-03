@@ -22,10 +22,9 @@
         "email": "dunbarchara@gmail.com",
         "phone": null,
         "linkedin": "linkedin.com/in/charles-dunbar",
-        "location": "Redmond, WA",
-        "title": "Software Engineer II",
-        "headline": "Software Engineer II with 5+ years in cloud infrastructure, IoT platforms, and distributed systems.",
-        "summary": "Software Engineer II with experience building and operating globally distributed cloud services, infrastructure tooling, and customer-facing IoT platforms at Microsoft. Strong background in TypeScript, C#, .NET, Go, Kubernetes, Azure, CI/CD, reliability, and cross-team collaboration.",
+        "title": "Software Engineer",
+        "headline": "Software Engineer with 5+ years in cloud infrastructure, IoT platforms, and distributed systems.",
+        "summary": "Software Engineer with experience building and operating globally distributed cloud services, infrastructure tooling, and customer-facing IoT platforms at Microsoft. Strong background in TypeScript, C#, .NET, Go, Kubernetes, Azure, CI/CD, reliability, and cross-team collaboration.",
         "work_experience": [
           {
             "title": "Software Engineer II",
@@ -222,7 +221,7 @@
       "request_count": 12,
       "error_count": 0
     },
-    "user_input_text": "[Gap answer \u2014 At Capital One, we are creating responsible and reliable AI ]: Test gap answer",
+    "user_input_text": null,
     "uploaded_at": "2026-05-02T00:33:33.017250+00:00",
     "processed_at": "2026-05-02T00:33:40.042562+00:00",
     "last_process_requested_at": "2026-05-02T00:33:33.190426+00:00"
@@ -1144,7 +1143,7 @@
   "tailoringDetails": {
     "ad408020-c23d-4626-95bd-9e7bc6c81741": {
       "id": "ad408020-c23d-4626-95bd-9e7bc6c81741",
-      "generated_output": "Hello **Linear**,\n\nGiven the requirements in your [Software Engineer](/mock/job-software-engineer-linear) job posting, here are some reasons **Charles Dunbar** would be a strong fit for the role.\n\n---\n\n**Full-stack TypeScript work across product and platform**\n\nCharles brings direct full-stack experience from Microsoft, where he worked on customer-facing IoT software and a deployment engine that had previously been tightly coupled to the service UI. His profile also shows TypeScript on both the backend and frontend side, plus React in his GitHub stack, which makes him a credible match for a role spanning Linear\u2019s TypeScript backend and React frontend. The combination of RESTful API work, UI-adjacent delivery, and product-facing engineering gives him a practical foundation for shipping across the stack. *[Resume] [GitHub]*\n\n**Proven ownership of reliability and scalable service operations**\n\nAt Azure IoT Central, Charles owned infrastructure for a globally distributed service with 35+ engineers and 40+ microservices, and he overhauled CI/CD to enable targeted microservice deployment and triple deployment frequency. He also worked heavily in production incident response, focused on hot-fixing issues and minimizing customer impact, while at Azure IoT Solutions he identified and eliminated the most common failure scenarios to improve reliability and customer experience. That background maps well to a team that cares deeply about performance, reliability, and scaling the product without sacrificing quality. *[Resume]*\n\n**API and database experience that supports a developer-facing product**\n\nCharles has direct RESTful API experience from Microsoft, including replacing UI-coupled deployment logic with a RESTful deployment engine. His GitHub project adds concrete evidence of modern backend implementation with FastAPI, SQLAlchemy, and PostgreSQL, which strengthens the case that he can work comfortably in API-heavy systems with relational data. While the profile does not show public GraphQL specifically, it does show the underlying backend fluency that would transfer well to a developer platform surface. *[Resume] [GitHub]*\n\n**Engineering judgment shaped by operating complex systems**\n\nCharles\u2019s work shows more than feature delivery: he built tooling and documentation to remove infrastructure bottlenecks, implemented region-agnostic provisioning to cut new-region setup from weeks to hours, and saved substantial dev cost through self-serve environment provisioning. He also mentored junior engineers and collaborated across teams, which suggests he can contribute thoughtfully as the product and codebase evolve. That mix of operational ownership and cross-team communication is a strong fit for a team that values fast shipping with careful technical decisions. *[Resume]*\n\n---\n\nCharles looks like a strong conversation candidate for Linear because his background combines full-stack TypeScript work, service reliability ownership, and practical API/backend experience. He has already operated in environments where product quality, deployment speed, and developer experience all mattered at once, which is a useful signal for this role.\n\nIf you're interested in continuing the conversation, Charles can be reached at [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com).\n\n---\n\n*Charles Dunbar \u00b7 Software Engineer II \u00b7 [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com) \u00b7 [LinkedIn](https://linkedin.com/in/charles-dunbar)*",
+      "generated_output": "Hello **Linear**,\n\nGiven the requirements in your [Software Engineer](/mock/job-software-engineer-linear) job posting, here are some reasons **Charles Dunbar** would be a strong fit for the role.\n\n---\n\n**Full-stack TypeScript work across product and platform**\n\nCharles brings direct full-stack experience from Microsoft, where he worked on customer-facing IoT software and a deployment engine that had previously been tightly coupled to the service UI. His profile also shows TypeScript on both the backend and frontend side, plus React in his GitHub stack, which makes him a credible match for a role spanning Linear\u2019s TypeScript backend and React frontend. The combination of RESTful API work, hands-on UI contribution, and product-facing engineering gives him a practical foundation for shipping across the stack. *[Resume] [GitHub]*\n\n**Proven ownership of reliability and scalable service operations**\n\nAt Azure IoT Central, Charles owned infrastructure for a globally distributed service with 35+ engineers and 40+ microservices, and he overhauled CI/CD to enable targeted microservice deployment and triple deployment frequency. He also worked heavily in production incident response, focused on hot-fixing issues and minimizing customer impact, while at Azure IoT Solutions he identified and eliminated the most common failure scenarios to improve reliability and customer experience. That background maps well to a team that cares deeply about performance, reliability, and scaling the product without sacrificing quality. *[Resume]*\n\n**API and database experience that supports a developer-facing product**\n\nCharles has direct RESTful API experience from Microsoft, including replacing UI-coupled deployment logic with a RESTful deployment engine. His GitHub project adds concrete evidence of modern backend implementation with FastAPI, SQLAlchemy, and PostgreSQL, which strengthens the case that he can work comfortably in API-heavy systems with relational data. While the profile does not show public GraphQL specifically, it does show the underlying backend fluency that would transfer well to a developer platform surface. *[Resume] [GitHub]*\n\n**Engineering judgment shaped by operating complex systems**\n\nCharles\u2019s work shows more than feature delivery: he built tooling and documentation to remove infrastructure bottlenecks, implemented region-agnostic provisioning to cut new-region setup from weeks to hours, and saved substantial dev cost through self-serve environment provisioning. He also mentored junior engineers and collaborated across teams, which suggests he can contribute thoughtfully as the product and codebase evolve. That mix of operational ownership and cross-team communication is a strong fit for a team that values fast shipping with careful technical decisions. *[Resume]*\n\n---\n\nCharles looks like a strong conversation candidate for Linear because his background combines full-stack TypeScript work, service reliability ownership, and practical API/backend experience. He has already operated in environments where product quality, deployment speed, and developer experience all mattered at once, which is a useful signal for this role.\n\nIf you're interested in continuing the conversation, Charles can be reached at [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com).\n\n---\n\n*Charles Dunbar \u00b7 Software Engineer \u00b7 [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com) \u00b7 [LinkedIn](https://linkedin.com/in/charles-dunbar)*",
       "generation_status": "ready",
       "generation_stage": null,
       "generation_error": null,
@@ -1158,13 +1157,6 @@
       "chunk_error_count": 0,
       "gap_analysis": {
         "gaps": [
-          {
-            "job_requirement": "GraphQL API design and implementation",
-            "question_for_candidate": "Linear\u2019s public GraphQL API is a core part of this Software Engineer role \u2014 have you designed or implemented a GraphQL API before, and if so, could you share one concrete example of the schema, resolvers, and any performance or pagination decisions you made?",
-            "context": "This matters for Linear because the role includes contributing to the product\u2019s public GraphQL API and developer platform, so we need evidence you can design and ship GraphQL endpoints, not just REST APIs.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "28861749-13d0-4d8d-bdf2-af9ceeb0c837"
-          },
           {
             "job_requirement": "Electron or desktop application experience",
             "question_for_candidate": "Linear is a desktop-first product, so have you built or shipped any Electron or other desktop app features where you owned the app shell, native integrations, or update/release flow?",
@@ -1251,7 +1243,7 @@
     },
     "413ba9d6-57b9-457e-9ee0-dbac5b6339e5": {
       "id": "413ba9d6-57b9-457e-9ee0-dbac5b6339e5",
-      "generated_output": "Hello **Stripe**,\n\nGiven the requirements in your [Senior Software Engineer](/mock/job-mid-level-engineer) job posting, here are some reasons **Charles Dunbar** would be a strong fit for the role.\n\n---\n\n**Five years building and operating globally distributed cloud services**\n\nCharles brings five years of professional software engineering experience from Microsoft, including ownership of infrastructure for Azure IoT Central, a globally distributed service with 35+ engineers and 40+ microservices. His work spans TypeScript, .NET, and Go on AKS, with Docker, Helm, and Istio in production, which is the kind of backend and systems foundation Stripe\u2019s infrastructure work demands. He also improved the service\u2019s operational posture by overhauling CI/CD pipelines and enabling targeted microservice deployment, tripling deployment frequency. *[Resume]*\n\n**Proven incident response and reliability ownership**\n\nCharles was heavily involved in PROD incident response across service team areas, with explicit responsibility for hot-fixing issues and minimizing customer impact and downtime. Earlier at Azure IoT Solutions, he improved reliability and customer experience by identifying and eliminating the most common failure scenarios, and he delivered weekly incident reports to leadership across multiple teams. That combination shows he can help operate critical services under pressure and contribute meaningfully when incidents arise. *[Resume]*\n\n**Strong backend breadth across APIs, Python, PostgreSQL, and modern frontend work**\n\nHis profile shows direct experience with RESTful APIs, Python, TypeScript, and Go, and his public project adds PostgreSQL, SQLAlchemy, FastAPI, React, and Next.js to that picture. At Microsoft, he adopted a RESTful deployment engine, built Python testing tooling for end-to-end validation, and stepped in on a UX/UI refresh when front-end engineers had moved on. That breadth is useful for a senior engineer who needs to move comfortably across service boundaries and ship production changes end to end. *[Resume] [GitHub]*\n\n**Mentorship and cross-team execution in complex environments**\n\nCharles mentored junior engineers at Microsoft and fostered an environment where they could onboard, ask questions, and grow. He also built tooling and documentation to democratize infrastructure operations across service teams, reducing bottlenecks and making the platform easier for others to use. Those are strong signals that he can support teammates while improving the way a team works, not just the code he personally writes. *[Resume]*\n\n---\n\nCharles looks well suited for a senior backend role that values operational ownership, reliability, and practical systems judgment. His Microsoft experience shows he has already worked in the kind of production environment where service health, deployment discipline, and team leverage matter every day.\n\nIf you're interested in continuing the conversation, Charles can be reached at [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com).\n\n---\n\n*Charles Dunbar \u00b7 Software Engineer II \u00b7 [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com) \u00b7 [LinkedIn](https://linkedin.com/in/charles-dunbar)*",
+      "generated_output": "Hello **Stripe**,\n\nGiven the requirements in your [Senior Software Engineer](/mock/job-mid-level-engineer) job posting, here are some reasons **Charles Dunbar** would be a strong fit for the role.\n\n---\n\n**Five years building and operating globally distributed cloud services**\n\nCharles brings five years of professional software engineering experience from Microsoft, including ownership of infrastructure for Azure IoT Central, a globally distributed service with 35+ engineers and 40+ microservices. His work spans TypeScript, .NET, and Go on AKS, with Docker, Helm, and Istio in production, which is the kind of backend and systems foundation Stripe\u2019s infrastructure work demands. He also improved the service\u2019s operational posture by overhauling CI/CD pipelines and enabling targeted microservice deployment, tripling deployment frequency. *[Resume]*\n\n**Proven incident response and reliability ownership**\n\nCharles was heavily involved in PROD incident response across service team areas, with explicit responsibility for hot-fixing issues and minimizing customer impact and downtime. Earlier at Azure IoT Solutions, he improved reliability and customer experience by identifying and eliminating the most common failure scenarios, and he delivered weekly incident reports to leadership across multiple teams. That combination shows he can help operate critical services under pressure and contribute meaningfully when incidents arise. *[Resume]*\n\n**Strong backend breadth across APIs, Python, PostgreSQL, and modern frontend work**\n\nHis profile shows direct experience with RESTful APIs, Python, TypeScript, and Go, and his public project adds PostgreSQL, SQLAlchemy, FastAPI, React, and Next.js to that picture. At Microsoft, he adopted a RESTful deployment engine, built Python testing tooling for end-to-end validation, and stepped in on a UX/UI refresh when front-end engineers had moved on. That breadth is useful for a senior engineer who needs to move comfortably across service boundaries and ship production changes end to end. *[Resume] [GitHub]*\n\n**Mentorship and cross-team execution in complex environments**\n\nCharles mentored junior engineers at Microsoft and fostered an environment where they could onboard, ask questions, and grow. He also built tooling and documentation to democratize infrastructure operations across service teams, reducing bottlenecks and making the platform easier for others to use. That combination \u2014 reducing bottlenecks at the system level while developing engineers at the individual level \u2014 is the kind of leverage a senior engineer creates, and it shows up concretely in Charles's record. *[Resume]*\n\n---\n\nCharles looks well suited for a senior backend role that values operational ownership, reliability, and practical systems judgment. His Microsoft experience shows he has already worked in the kind of production environment where service health, deployment discipline, and team leverage matter every day.\n\nIf you're interested in continuing the conversation, Charles can be reached at [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com).\n\n---\n\n*Charles Dunbar \u00b7 Software Engineer \u00b7 [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com) \u00b7 [LinkedIn](https://linkedin.com/in/charles-dunbar)*",
       "generation_status": "ready",
       "generation_stage": null,
       "generation_error": null,
@@ -1274,20 +1266,6 @@
           }
         ],
         "partials": [
-          {
-            "job_requirement": "We are looking for a Senior Software Engineer to join our Payments Infrastructure team. You will build and scale the systems that move money reliably for millions of businesses around the world. This is a high-ownership role: you will be responsible for the full lifecycle of the services you build, from design through production.",
-            "question_for_candidate": "Stripe\u2019s Payments Infrastructure role needs direct experience with money-movement or payment-processing systems \u2014 can you share a specific project where you designed, launched, or operated a service that moved money or handled financial transactions end to end?",
-            "context": "The current evidence shows strong ownership of globally distributed cloud services at Microsoft, but it doesn\u2019t yet show a concrete example of payments infrastructure, transaction processing, or money-movement systems experience needed for Stripe.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "cfd2d2b1-cd33-404f-bfa1-d78076e3e0c9"
-          },
-          {
-            "job_requirement": "Design, build, and operate backend services for payment processing and financial infrastructure",
-            "question_for_candidate": "Stripe needs concrete payment or financial infrastructure experience \u2014 can you share a specific backend service you designed, built, and operated that handled money movement, billing, ledgering, or transaction reliability, and what scale/reliability challenges you solved?",
-            "context": "What\u2019s missing for a strong match is direct evidence of building and operating payment-processing or financial-infrastructure systems, not just broadly distributed backend services.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "d944b44c-42f6-4dc0-b974-d0150f6013aa"
-          },
           {
             "job_requirement": "Improve reliability, latency, and scalability of critical payments systems",
             "question_for_candidate": "At Microsoft, can you share a specific example where you improved latency, reliability, or scalability for a high-traffic backend service\u2014what was the bottleneck, what changes did you make, and what measurable impact did it have?",
@@ -1317,7 +1295,7 @@
             "chunk_id": "5970d6db-47d3-4fcf-a85d-698a5320e1cb"
           }
         ],
-        "sourced_claim_count": 15,
+        "sourced_claim_count": 13,
         "unsourced_claim_count": 1
       },
       "gap_analysis_status": "complete",
@@ -1337,7 +1315,7 @@
     },
     "d8add4c8-1f55-4839-a171-50d2027db58a": {
       "id": "d8add4c8-1f55-4839-a171-50d2027db58a",
-      "generated_output": "Hello **Vercel**,\n\nGiven the requirements in your [Staff Engineer](/mock/job-staff-engineer) job posting, here are some reasons **Charles Dunbar** would be a strong fit for the role.\n\n---\n\n**Cross-team infrastructure ownership that improved reliability and delivery**\n\nCharles has owned infrastructure for a globally distributed service with 35+ engineers and 40+ microservices on AKS, using Docker, Helm, Istio, and related cloud tooling. He also overhauled CI/CD pipelines to enable targeted microservice deployment, tripled deployment frequency, and introduced region-agnostic provisioning that cut new-region setup from weeks to hours. That combination shows he can take a technical problem from operational pain to durable platform improvement. *[Resume]*\n\n**Proactive incident leadership and systemic risk reduction**\n\nCharles was heavily involved in PROD incident response across all service team areas, where he helped deliver hot-fix solutions that minimized customer impact and downtime. Earlier, he improved service reliability by identifying and eliminating the most common failure scenarios, and he maintained weekly incident reporting to IoT leadership across multiple teams and a third-party offering. This is strong evidence of someone who spots systemic risk early and acts before it becomes a larger incident. *[Resume]*\n\n**Technical leadership that unblocks engineers across teams**\n\nCharles developed tooling and documentation to democratize infrastructure operations for engineers across all service teams, explicitly removing dev-cycle bottlenecks. He also mentored junior engineers and helped create an environment where they could onboard, ask questions, and grow. That makes him a credible multiplier: not just contributing individually, but making other engineers more effective. *[Resume]*\n\n**Strong foundation in modern web and platform tooling**\n\nCharles\u2019s GitHub work on Tailord shows hands-on use of Next.js, React, TypeScript, FastAPI, PostgreSQL, Terraform, Azure Container Apps, AWS, and GitHub Actions in a real product. While his Microsoft experience is centered on cloud infrastructure rather than frontend product development, the repository demonstrates current fluency with the kinds of tools that sit close to Vercel\u2019s ecosystem. That gives him a practical bridge into the company\u2019s platform and runtime conversations. *[GitHub] [Resume]*\n\n---\n\nCharles brings a rare mix of distributed-systems ownership, incident discipline, and cross-team enablement. For a Staff Engineer role, that combination suggests someone who can help improve platform reliability while also raising the effectiveness of the engineers around him.\n\nIf you're interested in continuing the conversation, Charles can be reached at [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com).\n\n---\n\n*Charles Dunbar \u00b7 Software Engineer II \u00b7 [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com) \u00b7 [LinkedIn](https://linkedin.com/in/charles-dunbar)*",
+      "generated_output": "Hello **Vercel**,\n\nGiven the requirements in your [Staff Engineer](/mock/job-staff-engineer) job posting, here are some reasons **Charles Dunbar** would be a strong fit for the role.\n\n---\n\n**Cross-team infrastructure ownership that improved reliability and delivery**\n\nCharles has owned infrastructure for a globally distributed service with 35+ engineers and 40+ microservices on AKS, using Docker, Helm, Istio, and related cloud tooling. He also overhauled CI/CD pipelines to enable targeted microservice deployment, tripled deployment frequency, and introduced region-agnostic provisioning that cut new-region setup from weeks to hours. That combination shows he can take a technical problem from operational pain to durable platform improvement. *[Resume]*\n\n**Proactive incident leadership and systemic risk reduction**\n\nCharles was heavily involved in PROD incident response across all service team areas, where he helped deliver hot-fix solutions that minimized customer impact and downtime. Earlier, he improved service reliability by identifying and eliminating the most common failure scenarios, and he maintained weekly incident reporting to IoT leadership across multiple teams and a third-party offering. This is strong evidence of someone who spots systemic risk early and acts before it becomes a larger incident. *[Resume]*\n\n**Technical leadership that unblocks engineers across teams**\n\nCharles developed tooling and documentation to democratize infrastructure operations for engineers across all service teams, explicitly removing dev-cycle bottlenecks. He also mentored junior engineers and helped create an environment where they could onboard, ask questions, and grow. That makes him a credible multiplier: not just contributing individually, but making other engineers more effective. *[Resume]*\n\n**Strong foundation in modern web and platform tooling**\n\nCharles\u2019s GitHub work on Tailord shows hands-on use of Next.js, React, TypeScript, FastAPI, PostgreSQL, Terraform, Azure Container Apps, AWS, and GitHub Actions in a real product. While his Microsoft experience is centered on cloud infrastructure rather than frontend product development, the repository demonstrates current fluency with the kinds of tools that sit close to Vercel\u2019s ecosystem. That gives him a practical bridge into the company\u2019s platform and runtime conversations. *[GitHub] [Resume]*\n\n---\n\nCharles brings distributed-systems ownership, incident discipline, and cross-team enablement that maps well to what Vercel's Staff Engineer role asks for technically. He is applying at a stretch level \u2014 particularly around edge compute depth, CDN design, and formal architectural authority \u2014 but the operational instincts and trajectory are clear. If Vercel is open to a conversation with someone who has the right foundation and is actively building toward Staff scope, he would welcome it.\n\nIf you're interested in continuing the conversation, Charles can be reached at [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com).\n\n---\n\n*Charles Dunbar \u00b7 Software Engineer \u00b7 [dunbarchara@gmail.com](mailto:dunbarchara@gmail.com) \u00b7 [LinkedIn](https://linkedin.com/in/charles-dunbar)*",
       "generation_status": "ready",
       "generation_stage": null,
       "generation_error": null,
@@ -1357,6 +1335,27 @@
             "context": "This matters for Vercel because the Staff Engineer role spans platform-wide technical decisions, and frontend performance/Core Web Vitals directly affect the user experience and credibility of the edge/runtime platform.",
             "source_searched": "chunk_scorer",
             "chunk_id": "7af1abe4-2721-4935-a4e0-f79f2f68b4a4"
+          },
+          {
+            "job_requirement": "Experience with serverless or stateless compute patterns (Deno, Cloudflare Workers, Lambda@Edge)",
+            "question_for_candidate": "Vercel's edge runtime relies heavily on serverless and stateless compute \u2014 have you worked directly with Deno, Cloudflare Workers, Lambda@Edge, or a comparable serverless execution model? If so, share one production example including the constraints you designed for.",
+            "context": "This matters because Azure Container Apps and Kubernetes are fundamentally different paradigms from serverless/edge compute. Vercel's platform is built around this model and needs Staff Engineers with direct production experience in it.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "c8aa2f49-f52b-4c55-ab62-dba0627beb7c"
+          },
+          {
+            "job_requirement": "CDN, caching, or edge compute infrastructure design",
+            "question_for_candidate": "Vercel's platform is a global CDN and edge compute network \u2014 have you designed or operated CDN infrastructure, caching layers, or edge routing at scale? Container orchestration on Kubernetes is not a substitute here.",
+            "context": "This is a core infrastructure domain at Vercel. Kubernetes and Docker show strong distributed systems experience, but CDN and edge caching design is a distinct discipline not evidenced in the profile.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "1c3947eb-af07-4d9e-84ad-2ce977d8f0ae"
+          },
+          {
+            "job_requirement": "8+ years of software engineering experience",
+            "question_for_candidate": "The Vercel Staff Engineer role requires 8+ years of experience \u2014 Charles's documented experience at Microsoft spans 5.8 years. Do you have earlier professional engineering roles, significant contract work, or pre-Microsoft experience that brings your total to 8+ years?",
+            "context": "This is a hard requirement gap. The profile documents 03/2018\u201304/2023 at Microsoft. Without additional experience, Charles is 2+ years short of this threshold, which is a genuine barrier for this particular role.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "7b04f9e6-c9c2-4f76-ac16-fa440e40f7e3"
           }
         ],
         "partials": [
@@ -1366,13 +1365,6 @@
             "context": "What\u2019s missing is concrete evidence of mentoring or developing senior engineers, not just junior engineers, in a way that shows impact on technical judgment, ownership, or cross-team influence.",
             "source_searched": "chunk_scorer",
             "chunk_id": "e5039df0-d6cc-4629-ac4a-3220f8b63918"
-          },
-          {
-            "job_requirement": "Experience with serverless or stateless compute patterns (Deno, Cloudflare Workers, Lambda@Edge)",
-            "question_for_candidate": "For Vercel\u2019s edge compute/runtime work, can you share a specific example where you owned or shipped a stateless/serverless component\u2014what platform you used, what constraints you designed for, and how you handled scaling, cold starts, or runtime limits?",
-            "context": "The missing evidence is a concrete, hands-on example of owning serverless or edge compute in a production setting, ideally with Deno, Cloudflare Workers, or Lambda@Edge, rather than adjacent container-based infrastructure work.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "c8aa2f49-f52b-4c55-ab62-dba0627beb7c"
           },
           {
             "job_requirement": "Open source contributions or public technical writing",
@@ -1396,27 +1388,6 @@
             "chunk_id": "f50a82ef-000f-4799-a558-b286005e36ac"
           },
           {
-            "job_requirement": "Define and own the technical roadmap for edge compute and runtime infrastructure",
-            "question_for_candidate": "At Microsoft, can you share a specific example where you defined or drove the roadmap for edge or runtime infrastructure\u2014what problem you prioritized, how you aligned multiple teams, and what shipped as a result?",
-            "context": "Vercel\u2019s Staff Engineer role needs evidence of owning a technical roadmap for edge compute and runtime infrastructure; the current evidence shows strong distributed infrastructure and Kubernetes ownership, but not a concrete example of roadmap-setting for edge/runtime at platform scope.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "1baa4038-5c51-4902-9a26-78908d1b1c97"
-          },
-          {
-            "job_requirement": "Drive architectural decisions that span multiple teams and affect the entire platform",
-            "question_for_candidate": "Can you share a specific example at Microsoft where you drove a platform-wide architectural decision that affected multiple service teams\u2014what was the decision, who was involved, and what changed across the platform as a result?",
-            "context": "For Vercel\u2019s Staff Engineer role, the missing evidence is a concrete example of Charles personally leading an architectural decision with platform-wide scope, not just owning infrastructure or influencing multiple teams.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "e1d3f0a9-1239-4c48-8f9e-e9cb7852b405"
-          },
-          {
-            "job_requirement": "Mentor and develop senior engineers across the organisation",
-            "question_for_candidate": "At Microsoft, can you share a specific example of mentoring or developing a senior engineer or tech lead across multiple teams\u2014what was the situation, what guidance did you provide, and what changed as a result?",
-            "context": "For Vercel\u2019s Staff Engineer role, the missing evidence is org-wide development of senior engineers rather than junior-mentor experience.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "4ef5a7ba-b6fd-49f7-adcd-1b669de6723d"
-          },
-          {
             "job_requirement": "Represent engineering in product strategy and external technical communications",
             "question_for_candidate": "For a Vercel Staff Engineer role, can you share a specific time you represented engineering in product strategy or external technical communications\u2014such as shaping a roadmap, speaking with customers/partners, or publishing a technical update\u2014and what impact it had?",
             "context": "What\u2019s missing for a strong match is direct evidence of owning product strategy or external-facing technical communication, beyond internal cross-team and leadership updates.",
@@ -1431,21 +1402,21 @@
             "chunk_id": "147c44ac-cdc7-4e62-8aeb-9205f314240b"
           },
           {
-            "job_requirement": "CDN, caching, or edge compute infrastructure design",
-            "question_for_candidate": "For Vercel\u2019s edge compute/runtime infrastructure, can you share a specific example where you designed or improved CDN, caching, or edge behavior to reduce latency, origin load, or cost at scale?",
-            "context": "The current evidence shows strong globally distributed infrastructure ownership at Microsoft, but it doesn\u2019t yet show a concrete CDN, caching, or edge compute design example needed for a Staff Engineer role at Vercel.",
-            "source_searched": "chunk_scorer",
-            "chunk_id": "1c3947eb-af07-4d9e-84ad-2ce977d8f0ae"
-          },
-          {
             "job_requirement": "Ownership of engineering org-wide technical roadmap or architecture decisions",
             "question_for_candidate": "At Microsoft Azure IoT Central, can you share a specific example where you owned or influenced an org-wide technical roadmap or architecture decision that affected multiple service teams or the broader platform?",
             "context": "Vercel\u2019s Staff Engineer role needs evidence of setting technical direction at the organization level\u2014owning a roadmap or making architecture calls that span multiple teams\u2014beyond infrastructure ownership and tooling improvements.",
             "source_searched": "chunk_scorer",
             "chunk_id": "50779e84-1052-4c71-9335-5b952542d2f8"
+          },
+          {
+            "job_requirement": "Lead cross-functional technical initiatives from inception to production",
+            "question_for_candidate": "At Microsoft, can you share a specific example where you were the named owner of a cross-functional technical initiative \u2014 one that you scoped, drove alignment on across multiple teams, and owned through to production \u2014 and what the measurable outcome was?",
+            "context": "The current evidence shows cross-team influence through shared tooling and incident response, but not formal ownership of a Staff-level initiative with clear DRI accountability from design through production.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "f5098d7f-e849-484d-840a-7090359a1284"
           }
         ],
-        "sourced_claim_count": 17,
+        "sourced_claim_count": 15,
         "unsourced_claim_count": 1
       },
       "gap_analysis_status": "complete",
@@ -2461,9 +2432,9 @@
           "content": "Lead cross-functional technical initiatives from inception to production",
           "position": 10,
           "section": "Responsibilities",
-          "match_score": 2,
-          "match_rationale": "Charles was heavily involved in PROD incident response across all service team areas and developed tooling and documentation to remove infrastructure bottlenecks, showing leadership on cross-functional technical work from problem identification through production support. He also spearheaded a UX/UI refresh across team boundaries and delivered weekly incident reports to leadership across multiple teams, which supports end-to-end initiative ownership.",
-          "advocacy_blurb": "Charles has led technical work across team boundaries at Microsoft, from spearheading a UX/UI refresh to building tooling that removed infrastructure bottlenecks and supporting production incident response. His experience shows he can drive cross-functional initiatives from inception through production with real operational impact.",
+          "match_score": 1,
+          "match_rationale": "Charles has driven cross-team work at Microsoft \u2014 a UX/UI refresh after engineers moved teams, shared infrastructure tooling, and incident response across service areas. However, these are engineer-level contributions, not Staff-level cross-functional initiatives with formal ownership from inception to production. The profile does not show him scoping, owning, and shipping a multi-team technical initiative as a named DRI.",
+          "advocacy_blurb": "Charles has driven cross-team work at Microsoft that spans service boundaries: the UX/UI refresh, shared infrastructure tooling, and cross-team incident response. Those are credible examples of cross-functional impact, though at engineer scope rather than Staff-level initiative ownership.",
           "experience_source": null,
           "experience_sources": [
             "resume"
@@ -2559,13 +2530,11 @@
           "content": "8+ years of software engineering experience",
           "position": 16,
           "section": "Required",
-          "match_score": 2,
-          "match_rationale": "Charles has 5.8 years of documented software engineering experience at Microsoft, and the profile also states he is a software engineer with experience building and operating cloud services, indicating additional relevant experience beyond the listed roles. That supports the 8+ year requirement as a strong match when considering the full profile evidence provided.",
-          "advocacy_blurb": "Charles brings nearly six years of directly documented software engineering experience at Microsoft, plus a profile summary that frames him as an experienced engineer building and operating globally distributed cloud services. His background shows sustained, hands-on engineering work across Azure IoT platforms, infrastructure, and reliability.",
+          "match_score": 0,
+          "match_rationale": "Charles has 5.8 documented years of professional software engineering experience at Microsoft (03/2018\u201304/2023). The profile does not provide evidence of additional experience beyond these roles. This requirement is not met.",
+          "advocacy_blurb": null,
           "experience_source": null,
-          "experience_sources": [
-            "resume"
-          ],
+          "experience_sources": [],
           "should_render": true,
           "display_ready": true,
           "source_label": null
@@ -2576,9 +2545,9 @@
           "content": "Proven technical leadership across multiple teams or engineering organisations",
           "position": 17,
           "section": "Required",
-          "match_score": 2,
-          "match_rationale": "Charles shows technical leadership across multiple teams by building tooling and documentation that democratized infrastructure operations for engineers across all service teams, and by driving incident response work spanning all service team areas. He also mentored junior engineers and helped onboard them, which supports leadership beyond a single team.",
-          "advocacy_blurb": "Charles has led technical work that reached engineers across all service teams at Microsoft, not just within one squad. His tooling, documentation, and cross-service incident response show the kind of multi-team technical leadership this role asks for.",
+          "match_score": 1,
+          "match_rationale": "Charles built shared tooling and documentation that reached engineers across service teams, and he participated in incident response spanning team boundaries. However, the profile does not show formal technical leadership authority over multiple teams \u2014 this is influence through shared infrastructure, not a staff-level leadership mandate.",
+          "advocacy_blurb": "Charles has had cross-team technical influence at Microsoft, building tooling that democratized infrastructure operations across the service and participating in incident response affecting all team areas. That shows he can operate as a multiplier, though his experience is at the engineer level rather than a formal multi-team technical leadership role.",
           "experience_source": null,
           "experience_sources": [
             "resume"
@@ -2610,13 +2579,11 @@
           "content": "CDN, caching, or edge compute infrastructure design",
           "position": 19,
           "section": "Required",
-          "match_score": 1,
-          "match_rationale": "Charles has strong adjacent infrastructure experience at Azure IoT Central, owning infrastructure for a globally distributed service and working with Kubernetes, Docker, Helm, and Istio, but there is no explicit evidence of CDN, caching, or edge compute design.",
-          "advocacy_blurb": "Charles has owned infrastructure for a globally distributed Azure service and worked across Kubernetes, Docker, Helm, and Istio at Microsoft, which is closely adjacent to edge and caching infrastructure work. While his profile does not explicitly name CDN or caching design, he brings relevant large-scale distributed systems experience.",
+          "match_score": 0,
+          "match_rationale": "Kubernetes, Istio, and Docker are container orchestration technologies, not CDN or edge compute infrastructure. The profile shows no evidence of CDN design, caching layer ownership, or edge compute infrastructure work. These are distinct domains from the distributed microservices infrastructure Charles operated.",
+          "advocacy_blurb": null,
           "experience_source": null,
-          "experience_sources": [
-            "resume"
-          ],
+          "experience_sources": [],
           "should_render": true,
           "display_ready": true,
           "source_label": null
@@ -2693,14 +2660,11 @@
           "content": "Experience with serverless or stateless compute patterns (Deno, Cloudflare Workers, Lambda@Edge)",
           "position": 24,
           "section": "Nice to have",
-          "match_score": 1,
-          "match_rationale": "Charles has adjacent stateless/serverless-adjacent experience through Azure Container Apps and cloud infrastructure work, but there is no explicit evidence of Deno, Cloudflare Workers, Lambda@Edge, or direct serverless compute ownership.",
-          "advocacy_blurb": "Charles has built and operated cloud infrastructure at Microsoft and has hands-on Azure Container Apps experience in GitHub, which is closely related to stateless compute patterns. While he does not show explicit Deno, Cloudflare Workers, or Lambda@Edge work, his background suggests he can ramp quickly on this space.",
+          "match_score": 0,
+          "match_rationale": "Azure Container Apps is a managed container hosting platform, not a serverless or stateless edge compute paradigm. The profile shows no evidence of Deno, Cloudflare Workers, Lambda@Edge, or comparable serverless/edge compute experience. These are fundamentally different execution models.",
+          "advocacy_blurb": null,
           "experience_source": null,
-          "experience_sources": [
-            "resume",
-            "github"
-          ],
+          "experience_sources": [],
           "should_render": true,
           "display_ready": true,
           "source_label": null
