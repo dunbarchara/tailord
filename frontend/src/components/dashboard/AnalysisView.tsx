@@ -239,11 +239,63 @@ function ScoreSummaryStrip({ strong, partial, gap }: { strong: number; partial: 
 
 function DefaultHint() {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-      <MousePointerClick className="h-8 w-8 text-text-disabled" />
-      <p className="text-sm text-text-tertiary leading-relaxed max-w-[18rem]">
-        Select a requirement from the posting to see analysis details.
+    <div className="flex-1 flex flex-col px-4 pt-8 pb-8 min-h-0">
+      <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2 mt-2">
+        Match Card
       </p>
+
+      <div className="rounded-md border border-border-subtle overflow-hidden">
+        {/* Row 1 — Score + Requirement */}
+        <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-border-subtle">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border shrink-0 bg-surface-overlay text-text-disabled border-border-subtle">
+            <span className="h-1.5 w-1.5 rounded-full flex-shrink-0 bg-text-disabled" />
+            Score
+          </span>
+          <p className="text-sm text-text-disabled truncate overflow-hidden leading-snug flex-1 min-w-0">
+            Job requirement...
+          </p>
+        </div>
+
+        {/* Row 2 — Advocacy */}
+        <div className="px-3 py-2.5 border-b border-border-subtle">
+          <p className="text-[11px] font-medium text-text-disabled uppercase tracking-wider mb-1.5">
+            Advocacy
+          </p>
+          <p className="text-sm text-text-disabled italic">
+            How this candidate&apos;s experience speaks to the requirement.
+          </p>
+        </div>
+
+        {/* Row 3 — Rationale */}
+        <div className="px-3 py-2.5 border-b border-border-subtle">
+          <p className="text-[11px] font-medium text-text-disabled uppercase tracking-wider mb-1.5">
+            Rationale
+          </p>
+          <p className="text-sm text-text-disabled italic">
+            Why the match was scored the way it was.
+          </p>
+        </div>
+
+        {/* Row 4 — Sources */}
+        <div className="px-3 py-2.5">
+          <p className="text-[11px] font-medium text-text-disabled uppercase tracking-wider mb-1.5">
+            Sources
+          </p>
+          <p className="text-sm text-text-disabled italic">
+            Where in the candidate&apos;s experience the match was found.
+          </p>
+        </div>
+      </div>
+
+      {/* 1:2 spacers place the hint 1/3 down the space below the card */}
+      <div className="flex-[1] min-h-6" />
+      <div className="flex flex-col items-center gap-3 text-center">
+        <MousePointerClick className="h-6 w-6 text-text-disabled" />
+        <p className="text-sm text-text-tertiary leading-relaxed max-w-[18rem]">
+          Select a requirement from the posting to see analysis details.
+        </p>
+      </div>
+      <div className="flex-[3]" />
     </div>
   );
 }
@@ -324,7 +376,7 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
   return (
     <div className="flex flex-col gap-0 px-4 py-8">
 
-      <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">
+      <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2 mt-2">
             Match Card
           </p>
 
