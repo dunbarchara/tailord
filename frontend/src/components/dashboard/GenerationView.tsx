@@ -7,17 +7,16 @@ import type { Tailoring } from '@/types';
 interface GenerationViewProps {
   tailoring: Tailoring;
   regenSsePhase: string | null;
-  enrichmentSettled: boolean;
   gapAnalysisSettled: boolean;
   elapsed: number;
 }
 
-export function GenerationView({ tailoring, regenSsePhase, enrichmentSettled, gapAnalysisSettled, elapsed }: GenerationViewProps) {
+export function GenerationView({ tailoring, regenSsePhase, gapAnalysisSettled, elapsed }: GenerationViewProps) {
   const stage = tailoring.generation_stage;
   const generationComplete = tailoring.generation_status === 'ready';
 
-  const extractingDone = stage === 'matching' || stage === 'generating' || generationComplete;
-  const matchingDone = stage === 'generating' || generationComplete;
+  const extractingDone = stage === 'enriching' || stage === 'generating' || generationComplete;
+  const enrichingDone = stage === 'generating' || generationComplete;
 
   const phases = [
     {
@@ -27,10 +26,10 @@ export function GenerationView({ tailoring, regenSsePhase, enrichmentSettled, ga
       running: stage === 'extracting',
     },
     {
-      key: 'matching',
-      label: 'Matching to your profile',
-      done: matchingDone,
-      running: stage === 'matching',
+      key: 'enriching',
+      label: 'Scoring requirements',
+      done: enrichingDone,
+      running: stage === 'enriching',
     },
     {
       key: 'generating',
@@ -39,16 +38,10 @@ export function GenerationView({ tailoring, regenSsePhase, enrichmentSettled, ga
       running: stage === 'generating',
     },
     {
-      key: 'enriching',
-      label: 'Scoring requirements',
-      done: enrichmentSettled,
-      running: generationComplete && !enrichmentSettled,
-    },
-    {
       key: 'gap-analysis',
       label: 'Analyzing gaps',
       done: gapAnalysisSettled,
-      running: enrichmentSettled && !gapAnalysisSettled,
+      running: generationComplete && !gapAnalysisSettled,
     },
   ];
 

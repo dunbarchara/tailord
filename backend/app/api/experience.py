@@ -21,6 +21,7 @@ from app.core.llm_utils import llm_parse_with_retry
 from app.models.database import (
     Experience,
     ExperienceChunk,
+    Job,
     JobChunk,
     LlmTriggerLog,
     Tailoring,
@@ -45,6 +46,7 @@ from app.services.experience_processor import (
     _normalize_resume_text,
     extract_text,
 )
+from app.services.gap_analyzer import _build_job_context, _generate_partial_question
 from app.services.profile_extractor import extract_profile
 
 router = APIRouter()
@@ -118,6 +120,7 @@ class GapResponseRequest(BaseModel):
     tailoring_id: str
     question: str = ""
     answer: str
+    response_type: str = "gap"  # "gap" | "partial"
 
 
 class ProfileUpdate(BaseModel):
@@ -766,6 +769,7 @@ def _group_experience_chunks(chunks: list) -> dict:
     github_groups: dict = {}
     user_input_chunks: list = []
     gap_response_chunks: list = []
+    partial_response_chunks: list = []
 
     for c in chunks:
         s = _serialize_exp_chunk(c)
@@ -802,6 +806,8 @@ def _group_experience_chunks(chunks: list) -> dict:
             user_input_chunks.append(s)
         elif c.source_type in ("gap_response", "additional_experience"):
             gap_response_chunks.append(s)
+        elif c.source_type == "partial_response":
+            partial_response_chunks.append(s)
 
     has_resume = bool(
         work_exp_keys or resume_skills or project_keys or resume_education or resume_other
@@ -821,6 +827,7 @@ def _group_experience_chunks(chunks: list) -> dict:
         "github": {"repos": [github_groups[k] for k in github_keys]} if has_github else None,
         "user_input": user_input_chunks if user_input_chunks else None,
         "gap_response": gap_response_chunks if gap_response_chunks else None,
+        "partial_response": partial_response_chunks if partial_response_chunks else None,
     }
 
 
@@ -832,7 +839,13 @@ def get_experience_chunks(
 ):
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
     if not experience:
-        return {"resume": None, "github": None, "user_input": None, "gap_response": None}
+        return {
+            "resume": None,
+            "github": None,
+            "user_input": None,
+            "gap_response": None,
+            "partial_response": None,
+        }
 
     chunks = (
         db.query(ExperienceChunk)
@@ -977,7 +990,12 @@ def create_gap_response(
     if not answer:
         raise HTTPException(status_code=422, detail="answer cannot be empty")
     is_additional = not question
-    source_type = "additional_experience" if is_additional else "gap_response"
+    if body.response_type == "partial":
+        source_type = "partial_response"
+    elif question:
+        source_type = "gap_response"
+    else:
+        source_type = "additional_experience"
 
     # Verify the tailoring belongs to this user
     try:
@@ -1005,12 +1023,14 @@ def create_gap_response(
 
     experience = _ensure_experience(user, db)
 
-    # Upsert: reuse any existing gap_response or additional_experience chunk for this job_chunk_id
+    # Upsert: reuse any existing response chunk for this job_chunk_id regardless of source type
     existing_gap_chunks = (
         db.query(ExperienceChunk)
         .filter(
             ExperienceChunk.experience_id == experience.id,
-            ExperienceChunk.source_type.in_(["gap_response", "additional_experience"]),
+            ExperienceChunk.source_type.in_(
+                ["gap_response", "additional_experience", "partial_response"]
+            ),
         )
         .all()
     )
@@ -1081,6 +1101,38 @@ def create_gap_response(
     # re_enrich_single_chunk committed via its own session — re-query for updated score
     updated_chunk = db.query(JobChunk).filter(JobChunk.id == job_chunk_uuid).first()
 
+    # If the re-score landed at partial (1), generate a path-to-strong question on the spot
+    partial_question: str | None = None
+    partial_context: str | None = None
+    if updated_chunk and updated_chunk.match_score == 1:
+        try:
+            job = db.query(Job).filter(Job.id == tailoring.job_id).first()
+            extracted_job = (job.extracted_job or {}) if job else {}
+            job_context = _build_job_context(extracted_job)
+            preferred = " ".join(
+                filter(None, [user.preferred_first_name, user.preferred_last_name])
+            ).strip()
+            candidate_name = preferred or user.name or user.email
+            from app.services.tailoring_generator import _format_sourced_profile
+
+            formatted_profile = _format_sourced_profile(
+                experience.extracted_profile or {},
+                candidate_name=candidate_name,
+                pronouns=user.pronouns,
+            )
+            pq = _generate_partial_question(
+                requirement=updated_chunk.content,
+                match_rationale=updated_chunk.match_rationale or "",
+                formatted_profile=formatted_profile,
+                job_context=job_context,
+            )
+            partial_question = pq.question_for_candidate
+            partial_context = pq.context
+        except Exception:
+            logger.warning(
+                "On-demand partial question generation failed for chunk %s", job_chunk_uuid
+            )
+
     logger.info(
         "create_gap_response: chunk=%s user=%s new_score=%s",
         gap_chunk.id,
@@ -1093,4 +1145,6 @@ def create_gap_response(
         "updated_rationale": updated_chunk.match_rationale if updated_chunk else None,
         "advocacy_blurb": updated_chunk.advocacy_blurb if updated_chunk else None,
         "experience_source": updated_chunk.experience_source if updated_chunk else None,
+        "partial_question": partial_question,
+        "partial_context": partial_context,
     }

@@ -1002,6 +1002,7 @@ export function ChunkedProfile({ refreshKey, initialData, readOnly }: { refreshK
   );
   const hasGithub = !!(data?.github?.repos?.some((r) => r.chunks.length > 0));
   const hasGapResponse = !!(data?.gap_response?.length);
+  const hasPartialResponse = !!(data?.partial_response?.length);
 
   return (
     <div className="space-y-10">
@@ -1103,19 +1104,6 @@ export function ChunkedProfile({ refreshKey, initialData, readOnly }: { refreshK
         </ActivitySection>
       )}
 
-      {/* ── Additional Experience ── */}
-      <ActivitySection title="Additional Experience" description="Manually added experience and context">
-        <AddExperienceForm onAdded={handleAdded} readOnly={readOnly} />
-        {data?.user_input?.length ? (
-          <ExperienceTable
-            chunks={data.user_input}
-            onSave={handleSave}
-            onDelete={handleDelete}
-            readOnly={readOnly}
-          />
-        ) : null}
-      </ActivitySection>
-
       {/* ── Gap Responses ── */}
       {hasGapResponse && (
         <ActivitySection title="Gap Responses" description="Answers to gap questions from your tailorings">
@@ -1133,6 +1121,37 @@ export function ChunkedProfile({ refreshKey, initialData, readOnly }: { refreshK
           </div>
         </ActivitySection>
       )}
+
+      {/* ── Path to Strong Responses ── */}
+      {hasPartialResponse && (
+        <ActivitySection title="Path to Strong" description="Answers to path-to-strong questions from your tailorings">
+          <div className="space-y-2">
+            {data!.partial_response!.map((chunk) => (
+              <ExperienceTable
+                key={chunk.id}
+                chunks={[chunk]}
+                context={(c) => c.chunk_metadata?.question}
+                onSave={handleSave}
+                onDelete={handleDelete}
+                readOnly={readOnly}
+              />
+            ))}
+          </div>
+        </ActivitySection>
+      )}
+
+      {/* ── Additional Experience ── */}
+      <ActivitySection title="Additional Experience" description="Manually added experience and context">
+        <AddExperienceForm onAdded={handleAdded} readOnly={readOnly} />
+        {data?.user_input?.length ? (
+          <ExperienceTable
+            chunks={data.user_input}
+            onSave={handleSave}
+            onDelete={handleDelete}
+            readOnly={readOnly}
+          />
+        ) : null}
+      </ActivitySection>
 
     </div>
   );
@@ -1164,6 +1183,7 @@ function patchChunkInResponse(
       : null,
     user_input: prev.user_input ? replaceIn(prev.user_input) : null,
     gap_response: prev.gap_response ? replaceIn(prev.gap_response) : null,
+    partial_response: prev.partial_response ? replaceIn(prev.partial_response) : null,
   };
 }
 
@@ -1204,5 +1224,6 @@ function removeChunkFromResponse(
       : null,
     user_input: prev.user_input ? filterOut(prev.user_input) : null,
     gap_response: prev.gap_response ? filterOut(prev.gap_response) : null,
+    partial_response: prev.partial_response ? filterOut(prev.partial_response) : null,
   };
 }

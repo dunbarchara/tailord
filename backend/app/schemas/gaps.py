@@ -20,5 +20,6 @@ class ProfileGapWithChunk(BaseModel):
 
 class GapAnalysis(BaseModel):
     gaps: list[ProfileGapWithChunk]
+    partials: list[ProfileGapWithChunk] = []
     sourced_claim_count: int
     unsourced_claim_count: int

@@ -60,8 +60,9 @@ def test_generate_gap_question_returns_llm_result():
         with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
             result = _generate_gap_question(
                 requirement="Python 3+ experience",
+                match_rationale="No Python evidence found",
                 formatted_profile="Senior engineer, 5 years Python",
-                role_context="Backend Engineer at Acme Corp",
+                job_context="Backend Engineer at Acme Corp",
             )
 
     assert result.question_for_candidate == "Do you have Python experience?"
@@ -75,7 +76,10 @@ def test_generate_gap_question_includes_requirement_in_prompt():
     ) as mock_llm:
         with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
             _generate_gap_question(
-                "Kubernetes orchestration", "some profile", "DevOps Engineer at Acme Corp"
+                "Kubernetes orchestration",
+                "No K8s evidence found",
+                "some profile",
+                "DevOps Engineer at Acme Corp",
             )
 
     messages = mock_llm.call_args.kwargs["messages"]
@@ -89,8 +93,8 @@ def test_generate_gap_question_includes_requirement_in_prompt():
 
 
 def test_run_gap_analysis_zero_gaps_empty_result():
-    """All chunks scored >= 1 → gaps=[], correct counts, LLM not called."""
-    chunks = [_make_chunk(2), _make_chunk(1)]
+    """All chunks scored 2 → gaps=[], partials=[], correct counts, LLM not called."""
+    chunks = [_make_chunk(2), _make_chunk(2)]
     tailoring, db = _ready_tailoring(chunks)
 
     with patch("app.clients.database.SessionLocal", return_value=db):

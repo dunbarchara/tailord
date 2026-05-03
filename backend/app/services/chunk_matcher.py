@@ -180,9 +180,10 @@ def _score_chunk_vector(
         if result.results
         else ChunkMatchResult(score=-1, rationale="Not evaluated")
     )
+    logger.debug("_score_chunk_vector: retrieved %d top-k chunks", len(top_k_chunks))
     annotated = ChunkMatchResult(
         score=raw.score,
-        rationale=f"[vector top-{len(top_k_chunks)}] {raw.rationale}",
+        rationale=raw.rationale,
         advocacy_blurb=raw.advocacy_blurb,
         experience_sources=raw.experience_sources,
         should_render=raw.should_render,

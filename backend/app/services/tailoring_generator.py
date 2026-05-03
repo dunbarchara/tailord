@@ -279,6 +279,37 @@ def _format_ranked_matches(matches: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _build_ranked_matches_from_chunks(job_id, db) -> list[dict]:
+    """Build ranked matches from scored JobChunk rows for a given job.
+
+    Reads JobChunk rows where match_score >= 1 and should_render is True, ordered
+    by score descending so the strongest matches appear first in the tailoring prompt.
+    """
+    from app.models.database import JobChunk
+
+    chunks = (
+        db.query(JobChunk)
+        .filter(
+            JobChunk.job_id == job_id,
+            JobChunk.match_score >= 1,
+            JobChunk.should_render.is_(True),
+        )
+        .order_by(JobChunk.match_score.desc(), JobChunk.position)
+        .all()
+    )
+    return [
+        {
+            "requirement": chunk.content,
+            "score": chunk.match_score,
+            "rationale": chunk.match_rationale or "",
+            "advocacy_blurb": chunk.advocacy_blurb or "",
+            "experience_sources": chunk.experience_sources or [],
+            "is_preferred": False,
+        }
+        for chunk in chunks
+    ]
+
+
 def _strip_city(institution: str) -> str:
     """Remove trailing city/state from institution names.
 

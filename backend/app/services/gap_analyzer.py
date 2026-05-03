@@ -70,16 +70,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
         )
 
         extracted_job = job.extracted_job or {}
-        job_title = extracted_job.get("title") or ""
-        job_company = extracted_job.get("company") or ""
-        if job_title and job_company:
-            role_context = f"{job_title} at {job_company}"
-        elif job_title:
-            role_context = job_title
-        elif job_company:
-            role_context = f"role at {job_company}"
-        else:
-            role_context = "this role"
+        job_context = _build_job_context(extracted_job)
 
         # Use chunk matcher scores as the authoritative source — no re-scoring.
         # Headers are excluded: they carry no scoreable requirement content.
@@ -105,13 +96,15 @@ def run_gap_analysis(tailoring_id: str) -> None:
         # Counts derived from chunk scores — no LLM needed
         sourced_count = sum(1 for c in all_scored_chunks if (c.match_score or 0) >= 1)
         gap_chunks = [c for c in all_scored_chunks if c.match_score == 0 and c.should_render]
+        partial_chunks = [c for c in all_scored_chunks if c.match_score == 1 and c.should_render]
 
         logger.info(
-            "run_gap_analysis: tailoring=%s total_scored=%d sourced=%d gaps=%d",
+            "run_gap_analysis: tailoring=%s total_scored=%d sourced=%d gaps=%d partials=%d",
             tailoring_id,
             len(all_scored_chunks),
             sourced_count,
             len(gap_chunks),
+            len(partial_chunks),
         )
 
         # One focused LLM call per gap chunk — single responsibility: question generation only
@@ -120,8 +113,9 @@ def run_gap_analysis(tailoring_id: str) -> None:
             try:
                 result = _generate_gap_question(
                     requirement=chunk.content,
+                    match_rationale=chunk.match_rationale or "",
                     formatted_profile=formatted_profile,
-                    role_context=role_context,
+                    job_context=job_context,
                 )
                 gaps_with_questions.append(
                     ProfileGapWithChunk(
@@ -138,8 +132,34 @@ def run_gap_analysis(tailoring_id: str) -> None:
                     chunk.id,
                 )
 
+        # One focused LLM call per partial chunk — path-to-strong question generation
+        partials_with_questions: list[ProfileGapWithChunk] = []
+        for chunk in partial_chunks:
+            try:
+                result = _generate_partial_question(
+                    requirement=chunk.content,
+                    match_rationale=chunk.match_rationale or "",
+                    formatted_profile=formatted_profile,
+                    job_context=job_context,
+                )
+                partials_with_questions.append(
+                    ProfileGapWithChunk(
+                        job_requirement=chunk.content,
+                        question_for_candidate=result.question_for_candidate,
+                        context=result.context,
+                        source_searched="chunk_scorer",
+                        chunk_id=str(chunk.id),
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "run_gap_analysis: partial question generation failed for chunk %s — skipping",
+                    chunk.id,
+                )
+
         gap_analysis = GapAnalysis(
             gaps=gaps_with_questions,
+            partials=partials_with_questions,
             sourced_claim_count=sourced_count,
             unsourced_claim_count=len(gap_chunks),
         )
@@ -168,10 +188,26 @@ def run_gap_analysis(tailoring_id: str) -> None:
         db.close()
 
 
+def _build_job_context(extracted_job: dict) -> str:
+    """Build a compact job context string for gap question prompts."""
+    lines = []
+    if title := extracted_job.get("title"):
+        lines.append(f"Role: {title}")
+    if company := extracted_job.get("company"):
+        lines.append(f"Company: {company}")
+    if desc := extracted_job.get("description"):
+        lines.append(f"About the role: {desc[:400]}")
+    if responsibilities := extracted_job.get("responsibilities"):
+        top = responsibilities[:4]
+        lines.append("Key responsibilities: " + "; ".join(top))
+    return "\n".join(lines) if lines else "this role"
+
+
 def _generate_gap_question(
     requirement: str,
+    match_rationale: str,
     formatted_profile: str,
-    role_context: str,
+    job_context: str,
 ) -> GapQuestion:
     """
     Single-responsibility LLM call: given one confirmed gap requirement and the
@@ -194,7 +230,47 @@ def _generate_gap_question(
                 "role": "user",
                 "content": prompt.USER_TEMPLATE.format(
                     requirement=requirement,
-                    role_context=role_context,
+                    match_rationale=match_rationale,
+                    job_context=job_context,
+                    formatted_profile=formatted_profile,
+                ),
+            },
+        ],
+        response_model=GapQuestion,
+        temperature=prompt.TEMPERATURE,
+        validate_fn=_validate,
+    )
+
+
+def _generate_partial_question(
+    requirement: str,
+    match_rationale: str,
+    formatted_profile: str,
+    job_context: str,
+) -> GapQuestion:
+    """
+    Single-responsibility LLM call: given one partial-match requirement and the
+    candidate's profile, generate a targeted path-to-strong question.
+
+    The requirement has already been scored 1 by the chunk matcher — this function
+    only generates the question; it does not re-score.
+    """
+
+    def _validate(r: GapQuestion) -> None:
+        if not r.question_for_candidate.strip():
+            raise ValueError("question_for_candidate is empty")
+
+    return llm_parse_with_retry(
+        get_llm_client(),
+        model=settings.llm_model,
+        messages=[
+            {"role": "system", "content": prompt.PARTIAL_SYSTEM},
+            {
+                "role": "user",
+                "content": prompt.PARTIAL_USER_TEMPLATE.format(
+                    requirement=requirement,
+                    match_rationale=match_rationale,
+                    job_context=job_context,
                     formatted_profile=formatted_profile,
                 ),
             },

@@ -132,7 +132,20 @@ export function DashboardHome({ name, tailorings, basePath = '/dashboard', readO
             >
               {greeting}
             </h2>
-            <p className="text-sm text-text-secondary">Welcome back to Tailord</p>
+            {readOnly ? (
+              <p className="text-sm text-text-secondary">
+                Head to the{' '}
+                <Link
+                  href={`${basePath}/experience`}
+                  className="text-text-link hover:text-text-primary transition-colors hover:underline"
+                >
+                  My Experience
+                </Link>
+                {' '}tab to view and edit your experience.
+              </p>
+            ) : (
+              <p className="text-sm text-text-secondary">Welcome back to Tailord</p>
+            )}
           </div>
 
           {/* ── Empty state ─────────────────────────────────────────────── */}

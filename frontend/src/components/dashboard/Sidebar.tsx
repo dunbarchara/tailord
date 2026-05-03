@@ -468,12 +468,19 @@ export function Sidebar({
             >
               <Image alt="Tailord logo" width={22} height={22} className="h-[22px] w-[22px] shrink-0" src="/logo.svg" />
               {!isCollapsed && (
-                <span
-                  className="text-text-primary text-[16px] leading-none font-semibold tracking-tight whitespace-nowrap"
-                  style={{ fontFamily: 'var(--font-inter), ui-sans-serif, system-ui' }}
-                >
-                  Tailord
-                </span>
+                <>
+                  <span
+                    className="text-text-primary text-[16px] leading-none font-semibold tracking-tight whitespace-nowrap"
+                    style={{ fontFamily: 'var(--font-inter), ui-sans-serif, system-ui' }}
+                  >
+                    Tailord
+                  </span>
+                  {isMock && (
+                    <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none bg-info-bg text-info border border-info/20">
+                      Demo
+                    </span>
+                  )}
+                </>
               )}
             </Link>
           </div>
