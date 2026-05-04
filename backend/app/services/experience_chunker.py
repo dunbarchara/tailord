@@ -183,6 +183,19 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
                 }
             )
 
+    for claim in repo.get("experience_claims") or []:
+        claim = claim.strip()
+        if claim:
+            chunks.append(
+                {
+                    "claim_type": "work_experience",
+                    "content": claim,
+                    "group_key": repo_name,
+                    "date_range": None,
+                    "technologies": None,
+                }
+            )
+
     return chunks
 
 

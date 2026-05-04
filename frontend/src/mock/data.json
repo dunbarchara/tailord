@@ -1158,6 +1158,13 @@
       "gap_analysis": {
         "gaps": [
           {
+            "job_requirement": "GraphQL API design and implementation",
+            "question_for_candidate": "Linear\u2019s public GraphQL API is a core part of this Software Engineer role \u2014 have you designed or implemented a GraphQL API before, and if so, could you share one concrete example of the schema, resolvers, and any performance or pagination decisions you made?",
+            "context": "This matters for Linear because the role includes contributing to the product\u2019s public GraphQL API and developer platform, so we need evidence you can design and ship GraphQL endpoints, not just REST APIs.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "28861749-13d0-4d8d-bdf2-af9ceeb0c837"
+          },
+          {
             "job_requirement": "Electron or desktop application experience",
             "question_for_candidate": "Linear is a desktop-first product, so have you built or shipped any Electron or other desktop app features where you owned the app shell, native integrations, or update/release flow?",
             "context": "This matters for Linear because the Software Engineer role spans polished product work across the app experience, and desktop application experience would be directly relevant to shipping and maintaining a desktop-first interface.",
@@ -1267,6 +1274,20 @@
         ],
         "partials": [
           {
+            "job_requirement": "We are looking for a Senior Software Engineer to join our Payments Infrastructure team. You will build and scale the systems that move money reliably for millions of businesses around the world. This is a high-ownership role: you will be responsible for the full lifecycle of the services you build, from design through production.",
+            "question_for_candidate": "Stripe\u2019s Payments Infrastructure role needs direct experience with money-movement or payment-processing systems \u2014 can you share a specific project where you designed, built, or operated a service that moved money or handled financial transactions end to end?",
+            "context": "The current evidence shows strong ownership of globally distributed cloud services at Microsoft, but it doesn\u2019t yet show a concrete example of payments infrastructure, transaction processing, or money-movement systems experience needed for Stripe.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "cfd2d2b1-cd33-404f-bfa1-d78076e3e0c9"
+          },
+          {
+            "job_requirement": "Design, build, and operate backend services for payment processing and financial infrastructure",
+            "question_for_candidate": "Stripe needs concrete payment or financial infrastructure experience \u2014 can you share a specific backend service you designed, built, and operated that handled money movement, billing, ledgering, or transaction reliability, and what scale/reliability challenges you solved?",
+            "context": "What\u2019s missing for a strong match is direct evidence of building and operating payment-processing or financial-infrastructure systems, not just broadly distributed backend services.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "d944b44c-42f6-4dc0-b974-d0150f6013aa"
+          },
+          {
             "job_requirement": "Improve reliability, latency, and scalability of critical payments systems",
             "question_for_candidate": "At Microsoft, can you share a specific example where you improved latency, reliability, or scalability for a high-traffic backend service\u2014what was the bottleneck, what changes did you make, and what measurable impact did it have?",
             "context": "The current evidence shows strong reliability and infrastructure ownership at Microsoft, but it doesn\u2019t yet show a concrete example of optimizing latency or scalability for a payments or financial infrastructure system like Stripe\u2019s backend services.",
@@ -1295,7 +1316,7 @@
             "chunk_id": "5970d6db-47d3-4fcf-a85d-698a5320e1cb"
           }
         ],
-        "sourced_claim_count": 13,
+        "sourced_claim_count": 15,
         "unsourced_claim_count": 1
       },
       "gap_analysis_status": "complete",
@@ -1388,6 +1409,34 @@
             "chunk_id": "f50a82ef-000f-4799-a558-b286005e36ac"
           },
           {
+            "job_requirement": "Define and own the technical roadmap for edge compute and runtime infrastructure",
+            "question_for_candidate": "At Microsoft, can you share a specific example where you defined or drove the roadmap for edge or runtime infrastructure\u2014what problem you prioritized, how you aligned multiple teams, and what shipped as a result?",
+            "context": "Vercel\u2019s Staff Engineer role needs evidence of owning a technical roadmap for edge compute and runtime infrastructure; the current evidence shows strong distributed infrastructure and Kubernetes ownership, but not a concrete example of roadmap-setting for edge/runtime at platform scope.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "1baa4038-5c51-4902-9a26-78908d1b1c97"
+          },
+          {
+            "job_requirement": "Drive architectural decisions that span multiple teams and affect the entire platform",
+            "question_for_candidate": "Can you share a specific example at Microsoft where you drove a platform-wide architectural decision that affected multiple service teams\u2014what was the decision, who was involved, and what changed across the platform as a result?",
+            "context": "For Vercel\u2019s Staff Engineer role, the missing evidence is a concrete example of Charles personally leading an architectural decision with platform-wide scope, not just owning infrastructure or influencing multiple teams.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "e1d3f0a9-1239-4c48-8f9e-e9cb7852b405"
+          },
+          {
+            "job_requirement": "Mentor and develop senior engineers across the organisation",
+            "question_for_candidate": "At Microsoft, can you share a specific example of mentoring or developing a senior engineer or tech lead across multiple teams\u2014what was the situation, what guidance did you provide, and what changed as a result?",
+            "context": "For Vercel\u2019s Staff Engineer role, the missing evidence is org-wide development of senior engineers rather than junior-mentor experience.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "4ef5a7ba-b6fd-49f7-adcd-1b669de6723d"
+          },
+          {
+            "job_requirement": "Proven technical leadership across multiple teams or engineering organisations",
+            "question_for_candidate": "At Microsoft, can you share a specific example where you held explicit technical leadership authority across multiple teams \u2014 such as setting technical direction, owning a roadmap decision, or making architectural calls that multiple engineering teams deferred to you on \u2014 and what the outcome was?",
+            "context": "For Vercel\u2019s Staff Engineer role, the current evidence shows cross-team technical influence through shared tooling and incident coordination, but what\u2019s missing is a concrete example of formal or explicit technical leadership authority \u2014 where Charles was the named technical owner whose decisions and direction multiple teams followed.",
+            "source_searched": "chunk_scorer",
+            "chunk_id": "0f80ee3e-edea-4f5a-bdaa-a6ba1f439e7c"
+          },
+          {
             "job_requirement": "Represent engineering in product strategy and external technical communications",
             "question_for_candidate": "For a Vercel Staff Engineer role, can you share a specific time you represented engineering in product strategy or external technical communications\u2014such as shaping a roadmap, speaking with customers/partners, or publishing a technical update\u2014and what impact it had?",
             "context": "What\u2019s missing for a strong match is direct evidence of owning product strategy or external-facing technical communication, beyond internal cross-team and leadership updates.",
@@ -1416,7 +1465,7 @@
             "chunk_id": "f5098d7f-e849-484d-840a-7090359a1284"
           }
         ],
-        "sourced_claim_count": 15,
+        "sourced_claim_count": 17,
         "unsourced_claim_count": 1
       },
       "gap_analysis_status": "complete",
@@ -2531,7 +2580,7 @@
           "position": 16,
           "section": "Required",
           "match_score": 0,
-          "match_rationale": "Charles has 5.8 documented years of professional software engineering experience at Microsoft (03/2018\u201304/2023). The profile does not provide evidence of additional experience beyond these roles. This requirement is not met.",
+          "match_rationale": "Charles has 5 documented years of professional software engineering experience at Microsoft (03/2018\u201304/2023). The profile does not provide evidence of additional experience beyond these roles. This requirement is not met.",
           "advocacy_blurb": null,
           "experience_source": null,
           "experience_sources": [],

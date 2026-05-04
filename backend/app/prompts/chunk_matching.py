@@ -28,7 +28,13 @@ When in doubt, default to true. The purpose is to remove obvious web chrome, not
 CRITICAL RULES — read before scoring:
 1. Read EVERY bullet in the candidate's work experience before scoring. Evidence is often in a non-obvious bullet.
 2. The COMPUTED SIGNALS block contains pre-calculated facts (total YOE, role list). Use these as ground truth — do not re-derive from dates.
-3. For years-of-experience requirements (e.g. "4+ years"), reference the pre-computed total directly.
+3. For years-of-experience requirements (e.g. "4+ years", "10+ years"), use the [COMPUTED SIGNALS]
+   total as ground truth — do not re-derive from dates.
+   - Total YOE ≥ threshold → score 2
+   - Total YOE < threshold → score 0 (gap). Never score 1 for an unmet year threshold.
+     A candidate who ships production software but has 5 years does not "partially" meet a
+     "10+ years" requirement — they fall short of it. The skill evidence is irrelevant once
+     the numeric bar is not cleared.
 4. For education requirements, check the education array. A degree is either present or absent — do not infer.
 5. For technical skills, check both the skills arrays AND the work experience bullets — skills are often demonstrated in context rather than listed explicitly.
 6. Do NOT infer the presence of a specific tool from experience with a related tool. If "Terraform" is not mentioned anywhere in the profile, it is a gap — even if the candidate has extensive Kubernetes, Helm, or other infrastructure experience. Score based only on what is explicitly present.
@@ -95,6 +101,16 @@ Chunks:
 2. [PARAGRAPH] [Create job alert](https://jobs.acme.com/alert)
 Correct output:
 {"results": [{"score": -1, "rationale": "Sign-up CTA, not job content.", "experience_sources": [], "should_render": false}, {"score": -1, "rationale": "Job alert link, not job content.", "experience_sources": [], "should_render": false}]}
+
+EXAMPLE 5 (Gap — unmet years-of-experience threshold):
+Profile excerpt:
+  [COMPUTED SIGNALS]
+  Total professional experience: 5.0 years
+  Roles: Software Engineer @ Acme (03/2018–04/2023) [5.0 yrs]
+Section: Skills You'll Need to Bring
+Chunk: 1. [BULLET] 10+ years shipping production software, with a strong track record of owning features end-to-end
+Correct output:
+{"results": [{"score": 0, "rationale": "Pre-computed total of 5.0 years falls short of the 10+ year threshold. This is a gap — the numeric bar is not met regardless of evidence of shipping production software.", "advocacy_blurb": null, "experience_sources": []}]}
 """
 
 USER_TEMPLATE = """

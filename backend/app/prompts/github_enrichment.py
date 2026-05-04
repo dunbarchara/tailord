@@ -22,6 +22,17 @@ Rules:
   "high"   — README present AND at least one manifest file found
   "medium" — README present OR manifest files found, but not both
   "low"    — neither README nor manifests; inference from language stats or topics only
+- experience_claims: 0 to 3 concrete, resume-style bullets describing what was built or done.
+  Rules:
+  - Each claim must start with a past-tense verb (Built, Implemented, Designed, Set up, Migrated, ...)
+  - Each claim must add signal beyond detected_stack — do not restate the tech list
+  - Each claim must be grounded in explicit evidence from the README or manifests — do not infer
+  - Each claim must be ≤ 20 words
+  - Return [] if the README / manifests don't contain enough concrete detail to make defensible claims
+  Bad: "Used React to build a frontend." — restates stack, vague
+  Bad: "Implemented best practices." — no evidence, not specific
+  Good: "Implemented JWT authentication with refresh token rotation and secure cookie storage."
+  Good: "Set up GitHub Actions CI pipeline running tests and linting on every pull request."
 - Return only valid JSON matching the schema. No preamble, no code fences, no commentary.
 """
 
@@ -43,6 +54,7 @@ Return JSON matching this schema exactly:
   "readme_summary": "2–3 sentences describing what this project does and why.",
   "detected_stack": ["Framework", "Tool", "Library"],
   "project_domain": "concise domain phrase",
-  "confidence": "high | medium | low"
+  "confidence": "high | medium | low",
+  "experience_claims": ["Past-tense verb + specific action + concrete detail"]
 }}
 """

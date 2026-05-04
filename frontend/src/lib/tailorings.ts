@@ -1,5 +1,5 @@
 import { env } from '@/lib/env'
-import type { TailoringListItem } from '@/types'
+import type { ExperienceRecord, TailoringListItem } from '@/types'
 
 export async function fetchDisplayName(
   userId: string,
@@ -25,6 +25,31 @@ export async function fetchDisplayName(
     return preferred || userName || null
   } catch {
     return userName ?? null
+  }
+}
+
+export async function fetchExperience(
+  userId: string,
+  userEmail: string,
+  userName?: string | null,
+): Promise<ExperienceRecord | null> {
+  try {
+    const headers: Record<string, string> = {
+      'X-API-Key': env.apiKey,
+      'X-User-Id': userId,
+      'X-User-Email': userEmail,
+    }
+    if (userName) headers['X-User-Name'] = userName
+
+    const res = await fetch(`${env.apiBaseUrl}/experience`, {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
   }
 }
 

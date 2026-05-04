@@ -59,8 +59,10 @@ class Settings(BaseSettings):
     # matching_mode: "vector" = cosine pre-selection → focused grouped context → LLM scores (default)
     #                "llm"    = full formatted profile passed to LLM scorer (legacy fallback)
     # vector_top_k: number of ExperienceChunk rows retrieved per JobChunk in vector mode.
+    # chunk_scorer_concurrency: max parallel LLM/embedding calls during chunk scoring.
     matching_mode: str = "vector"
     vector_top_k: int = 8
+    chunk_scorer_concurrency: int = 8
 
     # ── GitHub App ────────────────────────────────────────────────────────────
     # Authentication uses Installation Access Tokens — not personal PATs.

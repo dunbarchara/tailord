@@ -122,6 +122,7 @@ def enrich_github_repos(
                         "detected_stack": llm_result.detected_stack,
                         "project_domain": llm_result.project_domain,
                         "confidence": llm_result.confidence,
+                        "experience_claims": llm_result.experience_claims,
                         "language_breakdown": {
                             lang: round(count / total_bytes, 3) for lang, count in languages.items()
                         },
