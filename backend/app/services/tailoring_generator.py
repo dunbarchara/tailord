@@ -183,6 +183,8 @@ def _fmt_github_prose(data: dict) -> str:
             lines.append(f"    Summary: {r['readme_summary']}")
             if stack:
                 lines.append(f"    Stack: {stack}")
+            for claim in r.get("experience_claims") or []:
+                lines.append(f"    - {claim}")
             if confidence:
                 lines.append(f"    Confidence: {confidence}")
         else:

@@ -33,3 +33,15 @@ Score 0 (not 1) when candidate total YOE falls below a numeric year threshold.
 
 - [x] `backend/app/prompts/chunk_matching.py` — CRITICAL RULE 3 expanded from one-liner to explicit decision tree: YOE ≥ threshold → score 2; YOE < threshold → score 0, never score 1; added rationale ("the skill evidence is irrelevant once the numeric bar is not cleared")
 - [x] `backend/app/prompts/chunk_matching.py` — added EXAMPLE 5: 5.0-year profile vs "10+ years shipping production software" → score 0; correct output shows null advocacy_blurb and gap rationale citing pre-computed total
+
+---
+
+## Item 4 — GitHub experience claims
+
+Extended GitHub enrichment to extract concrete, resume-style work bullets from repo READMEs and manifests — no new API calls, same LLM pass.
+
+- [x] `backend/app/schemas/llm_outputs.py` — added `experience_claims: list[str]` field to `GitHubRepoEnrichment` (default `[]`; 0–3 past-tense bullets grounded in README/manifest content)
+- [x] `backend/app/prompts/github_enrichment.py` — added `experience_claims` rules block to SYSTEM prompt (past-tense verb requirement, ≤20 words, must add signal beyond `detected_stack`, return `[]` if not enough concrete detail, bad/good examples); added field to USER_TEMPLATE JSON schema
+- [x] `backend/app/services/github_enricher.py` — added `"experience_claims": llm_result.experience_claims` to the `enriched.append(...)` dict; was missing, causing claims to be silently dropped before reaching the chunker
+- [x] `backend/app/services/experience_chunker.py` — in `_github_repo_chunks()`, added loop after `detected_stack` that emits `claim_type="work_experience"` chunks for each claim, grouped under `group_key=repo_name`
+- [x] `backend/app/services/tailoring_generator.py` — in `_fmt_github_prose()`, renders each claim as a bullet after `Stack:` in the enriched repo block so claims appear in the LLM profile context

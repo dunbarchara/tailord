@@ -60,6 +60,10 @@ class GitHubRepoEnrichment(BaseModel):
     )
     project_domain: str = Field(default="unknown", description="Concise domain phrase")
     confidence: Literal["high", "medium", "low"] = "low"
+    experience_claims: list[str] = Field(
+        default_factory=list,
+        description="0–3 concrete, resume-style bullets about what was built or done",
+    )
 
 
 class JobRequirements(BaseModel):
