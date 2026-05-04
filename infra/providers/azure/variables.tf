@@ -26,7 +26,7 @@ variable "db_password" {
 
 variable "llm_model" {
   type    = string
-  default = "gpt-5.4-mini"
+default = "gpt-5.4"
 }
 
 variable "embedding_model" {

@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "recorded_at": "2026-05-02",
-  "llm_model": "gpt-5.4-mini",
+  "recorded_at": "2026-05-04",
+  "llm_model": "gpt-5.4",
   "embedding_model": "text-embedding-3-small",
   "k": 8,
-  "pipeline_hash": "aec96856f046bad5",
+  "pipeline_hash": "cc7eee863e971c5e",
   "scores": {
     "01-strong-yoe-match": {
       "llm": [
@@ -40,13 +40,13 @@
     },
     "04-non-evaluable": {
       "llm": [
-        -1,
+        0,
         -1,
         -1,
         -1
       ],
       "vector": [
-        -1,
+        0,
         -1,
         -1,
         -1
