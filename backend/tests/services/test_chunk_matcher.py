@@ -364,6 +364,7 @@ def _run_enrich_vector(job_id, chunks, llm_result, experience_id=None):
                                 mock_settings.vector_top_k = 8
                                 mock_settings.llm_model = "gpt-4o-mini"
                                 mock_settings.embedding_model = "text-embedding-3-small"
+                                mock_settings.chunk_scorer_concurrency = 8
                                 enrich_job_chunks(
                                     job_id,
                                     "# Job\n\nContent",
@@ -432,6 +433,7 @@ def test_vector_mode_falls_back_to_llm_when_no_experience_id():
                                 mock_settings.vector_top_k = 8
                                 mock_settings.llm_model = "gpt-4o-mini"
                                 mock_settings.embedding_model = "text-embedding-3-small"
+                                mock_settings.chunk_scorer_concurrency = 8
                                 # No experience_id — should fall back to llm path
                                 enrich_job_chunks(job_id, "# Job\n\nContent", {})
 

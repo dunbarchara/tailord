@@ -1,6 +1,7 @@
 import logging
 import uuid
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from app.clients.llm_client import get_llm_client
@@ -250,34 +251,38 @@ def enrich_job_chunks(
         if use_vector:
             candidate_header = _build_candidate_header(candidate_name, pronouns)
             k = settings.vector_top_k
+            scoreable = [c for c in chunks if c.chunk_type != "header"]
+            batch_count += len(scoreable)
 
-            for chunk in chunks:
-                if chunk.chunk_type == "header":
-                    continue  # handled in "Build ordered results" below
+            def _score_one_vector(chunk):
+                return chunk, _score_chunk_vector(
+                    chunk.content,
+                    chunk.chunk_type,
+                    chunk.section,
+                    experience_id,
+                    db,
+                    candidate_header,
+                    k,
+                )
 
-                batch_count += 1
-                try:
-                    match, embedding = _score_chunk_vector(
-                        chunk.content,
-                        chunk.chunk_type,
-                        chunk.section,
-                        experience_id,
-                        db,
-                        candidate_header,
-                        k,
-                    )
-                    result_map[chunk.position] = match
-                    embedding_map[chunk.position] = embedding
-                except Exception:
-                    logger.exception(
-                        "enrich_job_chunks: vector scoring failed job_id=%s position=%d",
-                        job_id,
-                        chunk.position,
-                    )
-                    error_count += 1
-                    result_map[chunk.position] = ChunkMatchResult(
-                        score=-1, rationale="Not evaluated (vector error)"
-                    )
+            with ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency) as executor:
+                futures = {executor.submit(_score_one_vector, c): c for c in scoreable}
+                for future in as_completed(futures):
+                    chunk = futures[future]
+                    try:
+                        _, (match, embedding) = future.result()
+                        result_map[chunk.position] = match
+                        embedding_map[chunk.position] = embedding
+                    except Exception:
+                        logger.exception(
+                            "enrich_job_chunks: vector scoring failed job_id=%s position=%d",
+                            job_id,
+                            chunk.position,
+                        )
+                        error_count += 1
+                        result_map[chunk.position] = ChunkMatchResult(
+                            score=-1, rationale="Not evaluated (vector error)"
+                        )
 
         else:
             # LLM path: full profile, batched per section
@@ -290,58 +295,69 @@ def enrich_job_chunks(
                 key = chunk.section or "General"
                 section_map.setdefault(key, []).append(chunk)
 
+            # Collect all (section, batch_start, batch, preceding_paragraph) units upfront
+            # so we can submit them all in parallel.
+            batch_units: list[tuple[str, int, list, str]] = []
             for section, section_chunks in section_map.items():
                 last_paragraph: str | None = None
-
                 for batch_start in range(0, len(section_chunks), BATCH_SIZE):
                     batch = section_chunks[batch_start : batch_start + BATCH_SIZE]
-                    batch_count += 1
-
                     preceding = ""
                     if last_paragraph is not None:
                         preceding = (
                             f"PRECEDING CONTEXT (do not score):\n[PARAGRAPH] {last_paragraph}\n\n"
                         )
-
                     for c in batch:
                         if c.chunk_type == "paragraph":
                             last_paragraph = c.content
+                    batch_units.append((section, batch_start, batch, preceding))
 
-                    chunks_block = preceding + "\n".join(
-                        f"{idx}. [{c.chunk_type.upper()}] {c.content}"
-                        for idx, c in enumerate(batch, start=1)
-                    )
+            batch_count += len(batch_units)
 
-                    def _validate_batch(r: ChunkMatchBatch) -> None:
-                        for i, item in enumerate(r.results):
-                            if item.score in (1, 2) and not (
-                                item.advocacy_blurb and item.advocacy_blurb.strip()
-                            ):
-                                raise ValueError(
-                                    f"result[{i}] has score={item.score} but advocacy_blurb is empty"
-                                    " — populate it with a 1–2 sentence third-person advocacy statement"
-                                )
+            def _run_llm_batch(unit: tuple[str, int, list, str]) -> tuple[list, list]:
+                section, batch_start, batch, preceding = unit
+                chunks_block = preceding + "\n".join(
+                    f"{idx}. [{c.chunk_type.upper()}] {c.content}"
+                    for idx, c in enumerate(batch, start=1)
+                )
 
+                def _validate_batch(r: ChunkMatchBatch) -> None:
+                    for i, item in enumerate(r.results):
+                        if item.score in (1, 2) and not (
+                            item.advocacy_blurb and item.advocacy_blurb.strip()
+                        ):
+                            raise ValueError(
+                                f"result[{i}] has score={item.score} but advocacy_blurb is empty"
+                                " — populate it with a 1–2 sentence third-person advocacy statement"
+                            )
+
+                result = llm_parse_with_retry(
+                    get_llm_client(),
+                    model=settings.llm_model,
+                    messages=[
+                        {"role": "system", "content": prompt.SYSTEM},
+                        {
+                            "role": "user",
+                            "content": prompt.USER_TEMPLATE.format(
+                                extracted_profile=formatted_profile,
+                                section=section,
+                                chunks_block=chunks_block,
+                            ),
+                        },
+                    ],
+                    response_model=ChunkMatchBatch,
+                    temperature=prompt.TEMPERATURE,
+                    validate_fn=_validate_batch,
+                )
+                return batch, result.results
+
+            with ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency) as executor:
+                futures = {executor.submit(_run_llm_batch, unit): unit for unit in batch_units}
+                for future in as_completed(futures):
+                    unit = futures[future]
+                    section, batch_start, batch, _ = unit
                     try:
-                        result = llm_parse_with_retry(
-                            get_llm_client(),
-                            model=settings.llm_model,
-                            messages=[
-                                {"role": "system", "content": prompt.SYSTEM},
-                                {
-                                    "role": "user",
-                                    "content": prompt.USER_TEMPLATE.format(
-                                        extracted_profile=formatted_profile,
-                                        section=section,
-                                        chunks_block=chunks_block,
-                                    ),
-                                },
-                            ],
-                            response_model=ChunkMatchBatch,
-                            temperature=prompt.TEMPERATURE,
-                            validate_fn=_validate_batch,
-                        )
-                        batch_results = result.results
+                        batch, batch_results = future.result()
                     except Exception:
                         logger.exception(
                             "enrich_job_chunks: LLM batch failed for job_id=%s section=%r batch_start=%d",

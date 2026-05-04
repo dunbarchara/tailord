@@ -97,9 +97,10 @@ interface DashboardHomeProps {
   tailorings: TailoringListItem[];
   basePath?: string;
   readOnly?: boolean;
+  hasExperience?: boolean;
 }
 
-export function DashboardHome({ name, tailorings, basePath = '/dashboard', readOnly }: DashboardHomeProps) {
+export function DashboardHome({ name, tailorings, basePath = '/dashboard', readOnly, hasExperience = true }: DashboardHomeProps) {
   const router = useRouter();
   const isEmpty = tailorings.length === 0;
   const [displayName, setDisplayName] = useState<string | null>(name);
@@ -132,7 +133,7 @@ export function DashboardHome({ name, tailorings, basePath = '/dashboard', readO
             >
               {greeting}
             </h2>
-            {readOnly ? (
+            {(readOnly || !hasExperience) ? (
               <p className="text-sm text-text-secondary">
                 Head to the{' '}
                 <Link
