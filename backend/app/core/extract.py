@@ -201,6 +201,28 @@ _LOGIN_WALL_PHRASES = [
 
 _MIN_CONTENT_LENGTH = 200
 
+_JOB_CONTENT_SIGNALS = [
+    "responsibilities",
+    "qualifications",
+    "requirements",
+    "what you'll do",
+    "what you will do",
+    "years of experience",
+    "nice to have",
+    "must have",
+    "about the role",
+    "about this role",
+    "who you are",
+    "your background",
+    "we're looking for",
+    "you will be",
+    "you'll be",
+    "preferred qualifications",
+    "basic qualifications",
+    "minimum qualifications",
+    "skills required",
+]
+
 
 def _markdown_plain_text(markdown: str) -> str:
     """Strip markdown syntax to get approximate plain text for length checking.
@@ -252,6 +274,13 @@ def validate_job_content(markdown: str, html: str | None = None) -> tuple[bool, 
         return False, (
             "That page didn't return enough content to extract a job posting. "
             "The URL may have redirected, returned an error, or requires a login."
+        )
+
+    if not any(signal in plain_text.lower() for signal in _JOB_CONTENT_SIGNALS):
+        return False, (
+            "That page doesn't look like a specific job posting — we couldn't find "
+            "typical job description content like requirements or responsibilities. "
+            "The URL may have loaded a careers listing page rather than a specific role."
         )
 
     for phrase in _BOT_DETECTION_PHRASES:

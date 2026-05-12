@@ -126,12 +126,21 @@ def _serialize_chunk(c: JobChunk) -> dict:
 
 
 async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
-    """Playwright-fetch a URL and return (html, job_markdown, valid, reason).
+    """Fetch a URL and return (html, job_markdown, valid, reason).
 
-    Raises HTTPException only on hard Playwright failures (crash/timeout).
-    Soft validation failures are returned as (html, job_markdown, False, reason)
-    so the caller can decide whether to surface a warning or proceed anyway.
+    Tries Greenhouse/Lever public APIs first. Falls through to Playwright
+    on no ATS match or API failure. Raises HTTPException only on hard
+    Playwright failures. Soft validation failures are returned as
+    (html, job_markdown, False, reason).
     """
+    from app.core.ats_client import try_ats_fetch
+
+    ats_markdown = try_ats_fetch(url)
+    if ats_markdown:
+        job_markdown = truncate_to_tokens(ats_markdown, max_tokens=12_000, model=settings.llm_model)
+        logger.info("_scrape_job_url: ATS direct fetch succeeded for %s", url)
+        return "", job_markdown, True, ""
+
     try:
         html = await get_rendered_content(url)
         job_markdown = extract_markdown_content(html)

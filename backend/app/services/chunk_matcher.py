@@ -1,7 +1,7 @@
 import logging
 import uuid
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 
 from app.clients.llm_client import get_llm_client
@@ -17,6 +17,13 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = (
     3  # Smaller batches reduce output token count — advocacy_blurb roughly doubles output length
 )
+
+# Hard ceiling on the entire chunk-scoring phase. LLM calls use a per-request HTTP timeout
+# (120 s) but streaming LLM servers can bypass it by trickling tokens. This wall-clock budget
+# covers the full parallel batch regardless of LLM speed. Futures that have not completed when
+# this expires are abandoned (executor.shutdown(wait=False)) — their threads drain in the
+# background when the HTTP timeout eventually fires.
+_CHUNK_SCORING_TIMEOUT_SECONDS = 300  # 5 minutes
 
 # ---------------------------------------------------------------------------
 # Vector-path helpers
@@ -120,7 +127,6 @@ def _score_chunk_vector(
     chunk_type: str,
     chunk_section: str | None,
     experience_id: uuid.UUID,
-    db,
     candidate_header: str,
     k: int,
 ) -> tuple[ChunkMatchResult, list[float]]:
@@ -130,14 +136,22 @@ def _score_chunk_vector(
     Embeds chunk_content, retrieves the top-K most similar ExperienceChunks,
     builds a grouped context block, then calls the LLM for a single score + blurb.
 
+    Creates its own DB session — safe to call from threads.
+
     Returns (ChunkMatchResult, job_chunk_embedding). Raises on any failure —
     callers are responsible for exception handling and error counting.
     """
+    from app.clients.database import SessionLocal
     from app.clients.embedding_client import embed_text
 
     job_chunk_embedding = embed_text(chunk_content)
 
-    top_k_chunks = _retrieve_top_k_experience_chunks(job_chunk_embedding, experience_id, db, k)
+    db = SessionLocal()
+    try:
+        top_k_chunks = _retrieve_top_k_experience_chunks(job_chunk_embedding, experience_id, db, k)
+    finally:
+        db.close()
+
     if not top_k_chunks:
         return (
             ChunkMatchResult(score=-1, rationale="No embedded experience chunks available"),
@@ -260,29 +274,44 @@ def enrich_job_chunks(
                     chunk.chunk_type,
                     chunk.section,
                     experience_id,
-                    db,
                     candidate_header,
                     k,
                 )
 
-            with ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency) as executor:
-                futures = {executor.submit(_score_one_vector, c): c for c in scoreable}
-                for future in as_completed(futures):
-                    chunk = futures[future]
-                    try:
-                        _, (match, embedding) = future.result()
-                        result_map[chunk.position] = match
-                        embedding_map[chunk.position] = embedding
-                    except Exception:
-                        logger.exception(
-                            "enrich_job_chunks: vector scoring failed job_id=%s position=%d",
-                            job_id,
-                            chunk.position,
-                        )
-                        error_count += 1
-                        result_map[chunk.position] = ChunkMatchResult(
-                            score=-1, rationale="Not evaluated (vector error)"
-                        )
+            executor = ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency)
+            futures_map = {executor.submit(_score_one_vector, c): c for c in scoreable}
+            done, not_done = wait(list(futures_map.keys()), timeout=_CHUNK_SCORING_TIMEOUT_SECONDS)
+            # Don't block on lingering threads — they will drain when the HTTP timeout fires.
+            executor.shutdown(wait=False)
+
+            for future in not_done:
+                chunk = futures_map[future]
+                logger.warning(
+                    "enrich_job_chunks: vector scoring timed out job_id=%s position=%d",
+                    job_id,
+                    chunk.position,
+                )
+                error_count += 1
+                result_map[chunk.position] = ChunkMatchResult(
+                    score=-1, rationale="Not evaluated (scoring timeout)"
+                )
+
+            for future in done:
+                chunk = futures_map[future]
+                try:
+                    _, (match, embedding) = future.result()
+                    result_map[chunk.position] = match
+                    embedding_map[chunk.position] = embedding
+                except Exception:
+                    logger.exception(
+                        "enrich_job_chunks: vector scoring failed job_id=%s position=%d",
+                        job_id,
+                        chunk.position,
+                    )
+                    error_count += 1
+                    result_map[chunk.position] = ChunkMatchResult(
+                        score=-1, rationale="Not evaluated (vector error)"
+                    )
 
         else:
             # LLM path: full profile, batched per section
@@ -351,31 +380,49 @@ def enrich_job_chunks(
                 )
                 return batch, result.results
 
-            with ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency) as executor:
-                futures = {executor.submit(_run_llm_batch, unit): unit for unit in batch_units}
-                for future in as_completed(futures):
-                    unit = futures[future]
-                    section, batch_start, batch, _ = unit
-                    try:
-                        batch, batch_results = future.result()
-                    except Exception:
-                        logger.exception(
-                            "enrich_job_chunks: LLM batch failed for job_id=%s section=%r batch_start=%d",
-                            job_id,
-                            section,
-                            batch_start,
-                        )
-                        error_count += 1
-                        batch_results = []
+            executor = ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency)
+            futures_map = {executor.submit(_run_llm_batch, unit): unit for unit in batch_units}
+            done, not_done = wait(list(futures_map.keys()), timeout=_CHUNK_SCORING_TIMEOUT_SECONDS)
+            executor.shutdown(wait=False)
 
-                    # Pad results if LLM returned fewer than chunks sent
-                    while len(batch_results) < len(batch):
-                        batch_results.append(
-                            ChunkMatchResult(score=-1, rationale="Not evaluated (batch error)")
-                        )
+            for future in not_done:
+                unit = futures_map[future]
+                section, batch_start, batch, _ = unit
+                logger.warning(
+                    "enrich_job_chunks: LLM batch timed out job_id=%s section=%r batch_start=%d",
+                    job_id,
+                    section,
+                    batch_start,
+                )
+                error_count += 1
+                for chunk in batch:
+                    result_map[chunk.position] = ChunkMatchResult(
+                        score=-1, rationale="Not evaluated (scoring timeout)"
+                    )
 
-                    for chunk, match in zip(batch, batch_results):
-                        result_map[chunk.position] = match
+            for future in done:
+                unit = futures_map[future]
+                section, batch_start, batch, _ = unit
+                try:
+                    batch, batch_results = future.result()
+                except Exception:
+                    logger.exception(
+                        "enrich_job_chunks: LLM batch failed for job_id=%s section=%r batch_start=%d",
+                        job_id,
+                        section,
+                        batch_start,
+                    )
+                    error_count += 1
+                    batch_results = []
+
+                # Pad results if LLM returned fewer than chunks sent
+                while len(batch_results) < len(batch):
+                    batch_results.append(
+                        ChunkMatchResult(score=-1, rationale="Not evaluated (batch error)")
+                    )
+
+                for chunk, match in zip(batch, batch_results):
+                    result_map[chunk.position] = match
 
         # Build ordered results list (header chunks get a -1 placeholder)
         all_results: list[tuple] = []
@@ -488,7 +535,6 @@ def re_enrich_single_chunk(
                 chunk.chunk_type,
                 chunk.section,
                 experience_id,
-                db,
                 candidate_header,
                 k,
             )
