@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronUp, Loader2, MousePointerClick, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, MousePointerClick, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, ExperienceChunk, GapAnalysis, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
@@ -22,6 +22,11 @@ interface AnalysisViewProps {
   partialResponses?: ExperienceChunk[] | null;
   generationReady?: boolean;
   readOnly?: boolean;
+  editMode?: boolean;
+  onChunkUpdate?: (chunk: JobChunk) => void;
+  onChunkDelete?: (chunkId: string) => void;
+  onChunkCreate?: (chunk: JobChunk) => void;
+  onSectionRename?: (oldSection: string, newSection: string | null) => void;
 }
 
 interface GapAnswerFormProps {
@@ -209,7 +214,7 @@ function GapAnswerForm({ jobChunkId, tailoringId, question, context, prompt, ini
 
 function ScoreSummaryStrip({ strong, partial, gap }: { strong: number; partial: number; gap: number }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center justify-center gap-6 px-4 py-2.5 bg-surface-elevated border-b border-border-subtle text-xs text-text-tertiary">
+    <div className="flex items-center justify-center gap-6 text-xs text-text-tertiary flex-1">
       {strong > 0 && (
         <span className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-score-strong" />
@@ -652,7 +657,13 @@ export function AnalysisView({
   partialResponses,
   generationReady,
   readOnly,
+  editMode,
+  onChunkUpdate,
+  onChunkDelete,
+  onChunkCreate,
+  onSectionRename,
 }: AnalysisViewProps) {
+  const [showHidden, setShowHidden] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scoreOverrides, setScoreOverrides] = useState<
     Map<string, { match_score: number | null; match_rationale: string | null; advocacy_blurb?: string | null }>
@@ -745,7 +756,25 @@ export function AnalysisView({
   return (
     <div className="h-full flex flex-col overflow-hidden">
 
-      <ScoreSummaryStrip strong={strongCount} partial={partialCount} gap={gapCount} />
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-4 px-4 py-2.5 bg-surface-elevated border-b border-border-subtle">
+        <ScoreSummaryStrip strong={strongCount} partial={partialCount} gap={gapCount} />
+        {editMode && (
+          <button
+            type="button"
+            onClick={() => setShowHidden(h => !h)}
+            title={showHidden ? 'Hide non-rendered chunks' : 'Show hidden chunks'}
+            className={cn(
+              'shrink-0 inline-flex items-center gap-1 h-6 px-2 rounded text-xs transition-colors',
+              showHidden
+                ? 'bg-surface-overlay border border-border-strong text-text-primary'
+                : 'text-text-tertiary hover:text-text-secondary',
+            )}
+          >
+            {showHidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            {showHidden ? 'All shown' : 'Show hidden'}
+          </button>
+        )}
+      </div>
 
       <div className="flex-1 flex overflow-hidden">
 
@@ -761,6 +790,13 @@ export function AnalysisView({
             generationReady={generationReady}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            editMode={editMode}
+            showHidden={showHidden}
+            tailoringId={tailoringId}
+            onChunkUpdate={onChunkUpdate}
+            onChunkDelete={onChunkDelete}
+            onChunkCreate={onChunkCreate}
+            onSectionRename={onSectionRename}
           />
         </div>
 

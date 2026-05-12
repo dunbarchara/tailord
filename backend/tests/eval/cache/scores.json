@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "recorded_at": "2026-05-04",
-  "llm_model": "gpt-5.4",
+  "recorded_at": "2026-05-12",
+  "llm_model": "gpt-5.4-mini",
   "embedding_model": "text-embedding-3-small",
   "k": 8,
   "pipeline_hash": "cc7eee863e971c5e",
@@ -40,7 +40,7 @@
     },
     "04-non-evaluable": {
       "llm": [
-        0,
+        -1,
         -1,
         -1,
         -1

@@ -456,6 +456,7 @@ def enrich_job_chunks(
                 experience_sources=match.experience_sources or [],
                 should_render=match.should_render,
                 enriched_at=now,
+                scored_content=chunk.content,
                 embedding=embedding,
                 embedding_model=settings.embedding_model if embedding is not None else None,
             )
@@ -592,6 +593,7 @@ def re_enrich_single_chunk(
         chunk.experience_sources = match.experience_sources or []
         chunk.should_render = match.should_render
         chunk.enriched_at = now
+        chunk.scored_content = chunk.content
         db.commit()
 
         logger.info(
@@ -602,6 +604,237 @@ def re_enrich_single_chunk(
 
     except Exception:
         logger.exception("re_enrich_single_chunk failed for chunk_id=%s", chunk_id)
+    finally:
+        db.close()
+
+
+def refresh_job_chunks(
+    job_id: uuid.UUID,
+    tailoring_id: str,
+    extracted_profile: dict,
+    pronouns: str | None = None,
+    experience_id: uuid.UUID | None = None,
+    candidate_name: str | None = None,
+) -> None:
+    """
+    Re-score existing JobChunk rows in-place without deleting them.
+
+    Only chunks where is_requirement=True are re-scored; is_requirement=False chunks
+    are left untouched. Sets enrichment_status on the specific tailoring.
+
+    Creates its own DB session — do not pass a session across thread boundaries.
+    """
+    from app.clients.database import SessionLocal
+    from app.models.database import JobChunk, Tailoring
+
+    logger.info(
+        "refresh_job_chunks start: job_id=%s tailoring_id=%s mode=%s",
+        job_id,
+        tailoring_id,
+        settings.matching_mode,
+    )
+
+    db = SessionLocal()
+    try:
+        chunks = (
+            db.query(JobChunk).filter(JobChunk.job_id == job_id).order_by(JobChunk.position).all()
+        )
+        scoreable = [c for c in chunks if c.is_requirement and c.chunk_type != "header"]
+
+        if not scoreable:
+            logger.info("refresh_job_chunks: no scoreable chunks for job_id=%s", job_id)
+            db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
+                {"enrichment_status": "complete"}
+            )
+            db.commit()
+            return
+
+        use_vector = settings.matching_mode == "vector" and experience_id is not None
+
+        result_map: dict[str, ChunkMatchResult] = {}
+        error_count = 0
+
+        if use_vector:
+            candidate_header = _build_candidate_header(candidate_name, pronouns)
+            k = settings.vector_top_k
+
+            def _score_one_vector(chunk):
+                return chunk, _score_chunk_vector(
+                    chunk.content,
+                    chunk.chunk_type,
+                    chunk.section,
+                    experience_id,
+                    candidate_header,
+                    k,
+                )
+
+            executor = ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency)
+            futures_map = {executor.submit(_score_one_vector, c): c for c in scoreable}
+            done, not_done = wait(list(futures_map.keys()), timeout=_CHUNK_SCORING_TIMEOUT_SECONDS)
+            executor.shutdown(wait=False)
+
+            for future in not_done:
+                chunk = futures_map[future]
+                logger.warning(
+                    "refresh_job_chunks: vector scoring timed out job_id=%s chunk_id=%s",
+                    job_id,
+                    chunk.id,
+                )
+                error_count += 1
+                result_map[str(chunk.id)] = ChunkMatchResult(
+                    score=-1, rationale="Not evaluated (scoring timeout)"
+                )
+
+            for future in done:
+                chunk = futures_map[future]
+                try:
+                    _, (match, _embedding) = future.result()
+                    result_map[str(chunk.id)] = match
+                except Exception:
+                    logger.exception(
+                        "refresh_job_chunks: vector scoring failed job_id=%s chunk_id=%s",
+                        job_id,
+                        chunk.id,
+                    )
+                    error_count += 1
+                    result_map[str(chunk.id)] = ChunkMatchResult(
+                        score=-1, rationale="Not evaluated (vector error)"
+                    )
+
+        else:
+            formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
+
+            section_map: dict[str, list] = {}
+            for chunk in scoreable:
+                key = chunk.section or "General"
+                section_map.setdefault(key, []).append(chunk)
+
+            batch_units: list[tuple[str, int, list, str]] = []
+            for section, section_chunks in section_map.items():
+                last_paragraph: str | None = None
+                for batch_start in range(0, len(section_chunks), BATCH_SIZE):
+                    batch = section_chunks[batch_start : batch_start + BATCH_SIZE]
+                    preceding = ""
+                    if last_paragraph is not None:
+                        preceding = (
+                            f"PRECEDING CONTEXT (do not score):\n[PARAGRAPH] {last_paragraph}\n\n"
+                        )
+                    for c in batch:
+                        if c.chunk_type == "paragraph":
+                            last_paragraph = c.content
+                    batch_units.append((section, batch_start, batch, preceding))
+
+            def _run_llm_batch(unit: tuple[str, int, list, str]) -> tuple[list, list]:
+                section, batch_start, batch, preceding = unit
+                chunks_block = preceding + "\n".join(
+                    f"{idx}. [{c.chunk_type.upper()}] {c.content}"
+                    for idx, c in enumerate(batch, start=1)
+                )
+
+                def _validate_batch(r: ChunkMatchBatch) -> None:
+                    for i, item in enumerate(r.results):
+                        if item.score in (1, 2) and not (
+                            item.advocacy_blurb and item.advocacy_blurb.strip()
+                        ):
+                            raise ValueError(
+                                f"result[{i}] has score={item.score} but advocacy_blurb is empty"
+                                " — populate it with a 1–2 sentence third-person advocacy statement"
+                            )
+
+                result = llm_parse_with_retry(
+                    get_llm_client(),
+                    model=settings.llm_model,
+                    messages=[
+                        {"role": "system", "content": prompt.SYSTEM},
+                        {
+                            "role": "user",
+                            "content": prompt.USER_TEMPLATE.format(
+                                extracted_profile=formatted_profile,
+                                section=section,
+                                chunks_block=chunks_block,
+                            ),
+                        },
+                    ],
+                    response_model=ChunkMatchBatch,
+                    temperature=prompt.TEMPERATURE,
+                    validate_fn=_validate_batch,
+                )
+                return batch, result.results
+
+            executor = ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency)
+            futures_map = {executor.submit(_run_llm_batch, unit): unit for unit in batch_units}
+            done, not_done = wait(list(futures_map.keys()), timeout=_CHUNK_SCORING_TIMEOUT_SECONDS)
+            executor.shutdown(wait=False)
+
+            for future in not_done:
+                unit = futures_map[future]
+                section, batch_start, batch, _ = unit
+                logger.warning(
+                    "refresh_job_chunks: LLM batch timed out job_id=%s section=%r", job_id, section
+                )
+                error_count += 1
+                for chunk in batch:
+                    result_map[str(chunk.id)] = ChunkMatchResult(
+                        score=-1, rationale="Not evaluated (scoring timeout)"
+                    )
+
+            for future in done:
+                unit = futures_map[future]
+                section, batch_start, batch, _ = unit
+                try:
+                    batch, batch_results = future.result()
+                except Exception:
+                    logger.exception(
+                        "refresh_job_chunks: LLM batch failed job_id=%s section=%r", job_id, section
+                    )
+                    error_count += 1
+                    batch_results = []
+
+                while len(batch_results) < len(batch):
+                    batch_results.append(
+                        ChunkMatchResult(score=-1, rationale="Not evaluated (batch error)")
+                    )
+
+                for chunk, match in zip(batch, batch_results):
+                    result_map[str(chunk.id)] = match
+
+        # Update chunks in-place
+        now = datetime.now(timezone.utc)
+        for chunk in scoreable:
+            match = result_map.get(str(chunk.id))
+            if match is None:
+                continue
+            chunk.match_score = match.score
+            chunk.match_rationale = match.rationale
+            chunk.advocacy_blurb = match.advocacy_blurb
+            chunk.experience_sources = match.experience_sources or []
+            chunk.should_render = match.should_render
+            chunk.enriched_at = now
+            chunk.scored_content = chunk.content
+
+        db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
+            {"enrichment_status": "complete"}
+        )
+        db.commit()
+
+        logger.info(
+            "refresh_job_chunks complete: job_id=%s chunks=%d errors=%d",
+            job_id,
+            len(scoreable),
+            error_count,
+        )
+
+    except Exception:
+        logger.exception("refresh_job_chunks failed for job_id=%s", job_id)
+        try:
+            db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
+                {"enrichment_status": "error"}
+            )
+            db.commit()
+        except Exception:
+            logger.exception(
+                "refresh_job_chunks: failed to set error status for tailoring_id=%s", tailoring_id
+            )
     finally:
         db.close()
 

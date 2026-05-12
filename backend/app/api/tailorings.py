@@ -121,7 +121,9 @@ def _serialize_chunk(c: JobChunk) -> dict:
         "experience_sources": c.experience_sources or [],
         "source_label": SOURCE_LABELS.get(c.experience_source) if c.experience_source else None,
         "should_render": c.should_render,
+        "is_requirement": c.is_requirement,
         "display_ready": is_display_ready(c),
+        "scored_content": c.scored_content,
     }
 
 
@@ -679,6 +681,224 @@ def get_tailoring_chunks(
         "enrichment_status": tailoring.enrichment_status,
         "chunks": [_serialize_chunk(c) for c in chunks],
     }
+
+
+class PatchChunkRequest(BaseModel):
+    content: str | None = None
+    should_render: bool | None = None
+    is_requirement: bool | None = None
+    section: str | None = None
+    position: int | None = None
+    chunk_type: str | None = None  # "bullet" | "paragraph" (header not user-editable)
+
+
+class CreateChunkRequest(BaseModel):
+    content: str
+    section: str
+    chunk_type: str = "bullet"
+
+
+class MergeChunksRequest(BaseModel):
+    primary_chunk_id: str
+    secondary_chunk_id: str
+
+
+class RenameGroupRequest(BaseModel):
+    old_section: str
+    new_section: str | None = None  # None = ungroup (sets section to null)
+
+
+def _get_tailoring_chunk(
+    tailoring_id: str, chunk_id: str, user: User, db: Session
+) -> tuple[Tailoring, JobChunk]:
+    """Return (tailoring, chunk) or raise 404. Verifies ownership."""
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+    chunk = (
+        db.query(JobChunk)
+        .filter(JobChunk.id == chunk_id, JobChunk.job_id == tailoring.job_id)
+        .first()
+    )
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+    return tailoring, chunk
+
+
+@router.patch("/tailorings/{tailoring_id}/chunks/{chunk_id}")
+def patch_chunk(
+    tailoring_id: str,
+    chunk_id: str,
+    body: PatchChunkRequest,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring, chunk = _get_tailoring_chunk(tailoring_id, chunk_id, user, db)
+    if body.content is not None:
+        chunk.content = body.content
+    if body.should_render is not None:
+        chunk.should_render = body.should_render
+    if body.is_requirement is not None:
+        chunk.is_requirement = body.is_requirement
+    if body.section is not None:
+        chunk.section = body.section
+    if body.position is not None:
+        chunk.position = body.position
+    if body.chunk_type is not None and body.chunk_type in ("bullet", "paragraph"):
+        chunk.chunk_type = body.chunk_type
+    db.commit()
+    db.refresh(chunk)
+    return _serialize_chunk(chunk)
+
+
+@router.delete("/tailorings/{tailoring_id}/chunks/{chunk_id}")
+def delete_chunk(
+    tailoring_id: str,
+    chunk_id: str,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring, chunk = _get_tailoring_chunk(tailoring_id, chunk_id, user, db)
+    db.delete(chunk)
+    db.commit()
+    return {"deleted": chunk_id}
+
+
+@router.post("/tailorings/{tailoring_id}/chunks")
+def create_chunk(
+    tailoring_id: str,
+    body: CreateChunkRequest,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    from sqlalchemy import func as sqlfunc
+
+    max_pos = (
+        db.query(sqlfunc.max(JobChunk.position))
+        .filter(JobChunk.job_id == tailoring.job_id)
+        .scalar()
+    ) or 0
+
+    chunk = JobChunk(
+        job_id=tailoring.job_id,
+        chunk_type=body.chunk_type,
+        content=body.content,
+        section=body.section,
+        position=max_pos + 1,
+        is_requirement=True,
+        should_render=True,
+    )
+    db.add(chunk)
+    db.commit()
+    db.refresh(chunk)
+    return _serialize_chunk(chunk)
+
+
+@router.post("/tailorings/{tailoring_id}/chunks/merge")
+def merge_chunks(
+    tailoring_id: str,
+    body: MergeChunksRequest,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring, primary = _get_tailoring_chunk(tailoring_id, body.primary_chunk_id, user, db)
+    secondary = (
+        db.query(JobChunk)
+        .filter(JobChunk.id == body.secondary_chunk_id, JobChunk.job_id == tailoring.job_id)
+        .first()
+    )
+    if not secondary:
+        raise HTTPException(status_code=404, detail="Secondary chunk not found")
+
+    primary.content = f"{primary.content}\n{secondary.content}"
+    db.delete(secondary)
+    db.commit()
+    db.refresh(primary)
+    return _serialize_chunk(primary)
+
+
+@router.post("/tailorings/{tailoring_id}/chunks/rename-group")
+def rename_group(
+    tailoring_id: str,
+    body: RenameGroupRequest,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    updated = (
+        db.query(JobChunk)
+        .filter(JobChunk.job_id == tailoring.job_id, JobChunk.section == body.old_section)
+        .update({"section": body.new_section})
+    )
+    db.commit()
+    return {"updated": updated, "new_section": body.new_section}
+
+
+@router.post("/tailorings/{tailoring_id}/refresh")
+def refresh_tailoring_chunks(
+    tailoring_id: str,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    if not experience:
+        raise HTTPException(status_code=422, detail="No experience found")
+
+    preferred = " ".join(
+        filter(None, [user.preferred_first_name, user.preferred_last_name])
+    ).strip()
+    candidate_name = preferred or user.name or user.email
+
+    tailoring.enrichment_status = "pending"
+    db.commit()
+
+    from app.services.chunk_matcher import refresh_job_chunks
+
+    background_tasks.add_task(
+        refresh_job_chunks,
+        tailoring.job_id,
+        tailoring_id,
+        experience.extracted_profile or {},
+        user.pronouns,
+        experience.id,
+        candidate_name,
+    )
+
+    return {"status": "refreshing"}
 
 
 class GapAnswerRequest(BaseModel):

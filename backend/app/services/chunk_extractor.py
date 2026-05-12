@@ -64,8 +64,9 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
                 i += 1
                 continue
 
-        # Bullet: - item, * item, • item, or 1. item
-        bullet_match = re.match(r"^[-*•]\s+(.+)", line) or re.match(r"^\d+\.\s+(.+)", line)
+        # Bullet: - item, * item, + item, • item, or 1. item
+        # (+) is a valid CommonMark bullet marker and is used by some job boards as pseudo-lists.
+        bullet_match = re.match(r"^[-*+•]\s+(.+)", line) or re.match(r"^\d+\.\s+(.+)", line)
         if bullet_match:
             content = bullet_match.group(1).strip()
             # Collect indented continuation lines
@@ -97,7 +98,7 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
             # Stop if we hit a header or bullet
             if (
                 re.match(r"^#{1,3}\s+", para_line)
-                or re.match(r"^[-*•]\s+", para_line)
+                or re.match(r"^[-*+•]\s+", para_line)
                 or re.match(r"^\d+\.\s+", para_line)
             ):
                 break
@@ -106,6 +107,9 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
 
         if para_lines:
             content = " ".join(para_lines)
+            # Strip leading Unicode bullet/arrow glyphs that appear verbatim in some
+            # job posting HTML (e.g. "▸ Build and operate…" inside a <p> tag).
+            content = re.sub(r"^[▪▸►▶◆◇◦·•‣⁃]\s*", "", content).strip()
             # Skip short paragraphs (less than 20 chars)
             if len(content) >= 20:
                 chunks.append(

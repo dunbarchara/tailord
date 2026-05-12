@@ -305,7 +305,11 @@ class JobChunk(Base):
     should_render: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    is_requirement: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scored_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Populated by experience_embedder.py after job chunk extraction.
     embedding = mapped_column(Vector(1536), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)

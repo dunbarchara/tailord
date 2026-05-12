@@ -169,7 +169,9 @@ export interface JobChunk {
   experience_sources: string[] | null  // new: prefer over experience_source; may be null for old records
   source_label: string | null
   should_render?: boolean  // undefined = treat as true (pre-enrichment or legacy records)
+  is_requirement: boolean     // false = user-marked as noise/excluded from re-scoring
   display_ready: boolean   // computed by backend: not a header, has a section, not noise
+  scored_content: string | null  // content at time of last scoring; null = scored before this field existed
 }
 
 export interface ChunksResponse {
