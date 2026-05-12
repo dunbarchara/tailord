@@ -19,7 +19,7 @@ export interface Tailoring {
   id: string
   title: string | null
   company: string | null
-  job_url: string
+  job_url: string | null
   generated_output: string | null
   generation_status: GenerationStatus
   generation_stage: string | null

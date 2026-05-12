@@ -125,8 +125,13 @@ def _serialize_chunk(c: JobChunk) -> dict:
     }
 
 
-async def _scrape_job_url(url: str) -> tuple[str, str]:
-    """Playwright-fetch a URL and return (html, job_markdown). Raises HTTPException on failure."""
+async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
+    """Playwright-fetch a URL and return (html, job_markdown, valid, reason).
+
+    Raises HTTPException only on hard Playwright failures (crash/timeout).
+    Soft validation failures are returned as (html, job_markdown, False, reason)
+    so the caller can decide whether to surface a warning or proceed anyway.
+    """
     try:
         html = await get_rendered_content(url)
         job_markdown = extract_markdown_content(html)
@@ -142,14 +147,12 @@ async def _scrape_job_url(url: str) -> tuple[str, str]:
             status_code=422,
             detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
         )
+    # Cap before validation so the validator sees the same text the LLM would.
+    job_markdown = truncate_to_tokens(job_markdown, max_tokens=12_000, model=settings.llm_model)
     valid, reason = validate_job_content(job_markdown, html=html)
     if not valid:
         logger.warning("validate_job_content failed for %s: %s", url, reason)
-        raise HTTPException(status_code=422, detail=reason)
-    # Cap job markdown to prevent context-length errors on very long postings.
-    # 12 000 tokens leaves ample room for system prompt + candidate profile.
-    job_markdown = truncate_to_tokens(job_markdown, max_tokens=12_000, model=settings.llm_model)
-    return html, job_markdown
+    return html, job_markdown, valid, reason or ""
 
 
 def _finalize_tailoring(
@@ -159,9 +162,10 @@ def _finalize_tailoring(
     html: str,
     extracted_profile: dict,
     candidate_name: str,
-    job_url: str,
+    job_url: str | None,
     pronouns: str | None = None,
     experience_id: uuid.UUID | None = None,
+    is_manual: bool = False,
 ) -> None:
     """
     Background task: extract the job, enrich chunks, derive ranked matches from chunk
@@ -170,6 +174,9 @@ def _finalize_tailoring(
     Creates its own DB session (request session is closed by the time this runs).
     Updates generation_stage as each step starts so the frontend can poll progress.
     Stages: extracting → enriching → generating
+
+    When is_manual=True, job extraction is skipped — extracted_job is already
+    pre-seeded on the Job record from company/title/description fields.
     """
     from app.clients.database import SessionLocal
 
@@ -191,22 +198,27 @@ def _finalize_tailoring(
         )
         db.commit()
 
-        try:
-            extracted_job = extract_job(job_markdown, html=html)
-        except Exception:
-            logger.exception("Job extraction failed for tailoring %s", tailoring_id)
-            tailoring.generation_status = "error"
-            tailoring.generation_stage = None
-            tailoring.generation_error = (
-                "We couldn't extract the job description. Try regenerating."
-            )
-            db.commit()
-            return
+        if is_manual:
+            # Manual path: company/title were pre-seeded; skip LLM extraction.
+            job = db.get(Job, job_id)
+            extracted_job = (job.extracted_job or {}) if job else {}
+        else:
+            try:
+                extracted_job = extract_job(job_markdown, html=html)
+            except Exception:
+                logger.exception("Job extraction failed for tailoring %s", tailoring_id)
+                tailoring.generation_status = "error"
+                tailoring.generation_stage = None
+                tailoring.generation_error = (
+                    "We couldn't extract the job description. Try regenerating."
+                )
+                db.commit()
+                return
 
-        job = db.get(Job, job_id)
-        if job:
-            job.extracted_job = extracted_job
-            db.commit()
+            job = db.get(Job, job_id)
+            if job:
+                job.extracted_job = extracted_job
+                db.commit()
 
         tailoring.generation_stage = "enriching"
         db.commit()
@@ -338,20 +350,24 @@ def _finalize_tailoring(
 
 
 async def _stream_tailoring(
-    job_url: str,
+    request: TailoringCreate,
     user: User,
     db: Session,
     background_tasks: BackgroundTasks,
     existing_tailoring: Tailoring | None = None,
 ) -> AsyncGenerator[str, None]:
     """
-    SSE generator: scrapes and extracts the job, creates DB records, emits a
-    `ready` event (so the frontend can redirect immediately), then schedules
+    SSE generator: scrapes (URL path) or uses manual input, creates DB records,
+    emits a `ready` event (so the frontend can redirect immediately), then schedules
     matching + generation as a background task.
 
-    Stage events: scraping → extracting → ready
-    Error events: on any failure before the background task is scheduled.
+    Stage events: scraping (URL path only) → ready
+    parse_warning: emitted when URL content fails validation but skip_validation=False.
+                   No DB records are created; frontend can retry with skip_validation=True
+                   or fill in manual fields.
+    Error events: on any hard failure before the background task is scheduled.
     """
+    is_manual = bool(request.description and request.description.strip())
     tailoring: Tailoring | None = None
     try:
         experience = (
@@ -393,15 +409,28 @@ async def _stream_tailoring(
             existing_job_id = str(existing_tailoring.job_id)
         db.commit()
 
-        # Stage: scraping — only synchronous phase before redirect
-        yield _sse("stage", "scraping")
-        try:
-            html, job_markdown = await _scrape_job_url(job_url)
-        except HTTPException as exc:
-            yield _sse("error", json.dumps({"detail": exc.detail}))
-            return
+        if is_manual:
+            # Manual path: use provided description directly, no scraping.
+            html = ""
+            job_markdown = truncate_to_tokens(
+                request.description, max_tokens=12_000, model=settings.llm_model
+            )
+        else:
+            # URL path: scrape and optionally validate.
+            yield _sse("stage", "scraping")
+            try:
+                html, job_markdown, valid, reason = await _scrape_job_url(request.job_url)
+            except HTTPException as exc:
+                yield _sse("error", json.dumps({"detail": exc.detail}))
+                return
 
-        # Job is valid — create DB records and redirect immediately.
+            if not valid and not request.skip_validation:
+                # Soft failure — surface warning to the user. No DB records created.
+                yield _sse("parse_warning", json.dumps({"reason": reason}))
+                return
+            # If not valid but skip_validation=True, continue with partial content.
+
+        # Create or reset DB records, then redirect immediately.
         # Extraction, matching, and generation all run in the background task.
         if existing_tailoring:
             # Re-fetch after commit so ORM attributes aren't expired
@@ -415,7 +444,17 @@ async def _stream_tailoring(
             db.commit()
             job_record = db.get(Job, existing_job_id)
         else:
-            job_record = Job(user_id=user.id, job_url=job_url)
+            job_record = Job(
+                user_id=user.id,
+                job_url=request.job_url or None,
+                raw_description=request.description or None,
+            )
+            if is_manual:
+                job_record.extracted_job = {
+                    "title": request.title,
+                    "company": request.company,
+                    "requirements": [],
+                }
             db.add(job_record)
             db.commit()
             db.refresh(job_record)
@@ -439,9 +478,10 @@ async def _stream_tailoring(
             html,
             extracted_profile,
             candidate_name,
-            job_url,
+            request.job_url,
             candidate_pronouns,
             experience_id,
+            is_manual,
         )
 
         yield _sse("ready", json.dumps({"id": str(tailoring.id)}))
@@ -482,15 +522,16 @@ async def create_tailoring(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    try:
-        _validate_job_url(body.job_url, is_local=settings.environment == "local")
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    if body.job_url:
+        try:
+            _validate_job_url(body.job_url, is_local=settings.environment == "local")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
     _check_tailoring_rate_limit(user.id, db)
     db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_create"))
     db.commit()
     return StreamingResponse(
-        _stream_tailoring(body.job_url, user, db, background_tasks),
+        _stream_tailoring(body, user, db, background_tasks),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
@@ -517,10 +558,19 @@ async def regenerate_tailoring(
     db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_regen"))
     db.commit()
 
+    # Reconstruct a request from stored job data.
+    # If raw_description is set it's a manual tailoring — skip re-scraping.
+    job = tailoring.job
+    regen_req = TailoringCreate.model_construct(
+        job_url=job.job_url if job else None,
+        description=job.raw_description if job else None,
+        company=job.extracted_job.get("company") if job and job.extracted_job else None,
+        title=job.extracted_job.get("title") if job and job.extracted_job else None,
+        skip_validation=True,
+    )
+
     return StreamingResponse(
-        _stream_tailoring(
-            tailoring.job.job_url, user, db, background_tasks, existing_tailoring=tailoring
-        ),
+        _stream_tailoring(regen_req, user, db, background_tasks, existing_tailoring=tailoring),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
