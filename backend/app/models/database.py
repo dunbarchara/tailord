@@ -118,6 +118,9 @@ class Tailoring(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"))
     generated_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured letter content — populated alongside generated_output on every generation.
+    # Null for tailorings created before this column was added (fall back to generated_output).
+    letter_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     # generation lifecycle: pending | generating | ready | error
     generation_status: Mapped[str] = mapped_column(String, default="ready", server_default="ready")

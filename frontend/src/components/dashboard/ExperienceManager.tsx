@@ -211,7 +211,7 @@ export function ExperienceManager({
   const scanningReposRef = useRef<Record<string, number>>({});
   const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [profileFields, setProfileFields] = useState({ yoe_override: '', headline: '', title: '', location: '', summary: '' });
+  const [profileFields, setProfileFields] = useState({ yoe_override: '', title: '', location: '', headline: '', summary: '', email: '', phone: '', linkedin: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileExpanded, setProfileExpanded] = useState(false);
 
@@ -237,10 +237,13 @@ export function ExperienceManager({
     const resume = record.extracted_profile?.resume;
     setProfileFields({
       yoe_override: corrections.yoe_override != null ? String(corrections.yoe_override) : '',
-      headline: corrections.headline ?? resume?.headline ?? '',
       title: corrections.title ?? resume?.title ?? '',
       location: corrections.location ?? resume?.location ?? '',
+      headline: corrections.headline ?? resume?.headline ?? '',
       summary: corrections.summary ?? resume?.summary ?? '',
+      email: corrections.email ?? resume?.email ?? '',
+      phone: corrections.phone ?? resume?.phone ?? '',
+      linkedin: corrections.linkedin ?? resume?.linkedin ?? '',
     });
   }, []);
 
@@ -661,10 +664,13 @@ export function ExperienceManager({
       const payload: Record<string, unknown> = {};
       const yoe = parseFloat(profileFields.yoe_override);
       if (profileFields.yoe_override !== '' && !isNaN(yoe)) payload.yoe_override = yoe;
-      if (profileFields.headline) payload.headline = profileFields.headline;
       if (profileFields.title) payload.title = profileFields.title;
       if (profileFields.location) payload.location = profileFields.location;
+      if (profileFields.headline) payload.headline = profileFields.headline;
       if (profileFields.summary) payload.summary = profileFields.summary;
+      if (profileFields.email) payload.email = profileFields.email;
+      if (profileFields.phone) payload.phone = profileFields.phone;
+      if (profileFields.linkedin) payload.linkedin = profileFields.linkedin;
 
       const res = await fetch('/api/experience', {
         method: 'PATCH',
@@ -1086,54 +1092,61 @@ export function ExperienceManager({
               </button>
               {profileExpanded && (
                 <>
-                  <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-text-secondary">Years of experience</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={profileFields.yoe_override}
-                        onChange={(e) => setProfileFields((p) => ({ ...p, yoe_override: e.target.value }))}
-                        placeholder="Auto-computed from resume"
-                        disabled={readOnly}
-                        className={inputCls}
-                      />
+                  <div className="mt-5 space-y-4">
+                    {/* Row 1: YoE · Title · Location */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-text-secondary">Years of experience</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={profileFields.yoe_override}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, yoe_override: e.target.value }))}
+                          placeholder="Auto-computed"
+                          disabled={readOnly}
+                          className={inputCls}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-text-secondary">Title</label>
+                        <input
+                          type="text"
+                          value={profileFields.title}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
+                          placeholder="e.g. Software Engineer"
+                          disabled={readOnly}
+                          className={inputCls}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-text-secondary">Location</label>
+                        <input
+                          type="text"
+                          value={profileFields.location}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
+                          placeholder="e.g. San Francisco, CA"
+                          disabled={readOnly}
+                          className={inputCls}
+                        />
+                      </div>
                     </div>
+
+                    {/* Row 2: Headline (full width) */}
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-medium text-text-secondary">Headline</label>
                       <input
                         type="text"
                         value={profileFields.headline}
                         onChange={(e) => setProfileFields((p) => ({ ...p, headline: e.target.value }))}
-                        placeholder="e.g. Senior Software Engineer"
+                        placeholder="e.g. Senior Software Engineer building developer tools"
                         disabled={readOnly}
                         className={inputCls}
                       />
                     </div>
+
+                    {/* Row 3: Summary (full width) */}
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-text-secondary">Title</label>
-                      <input
-                        type="text"
-                        value={profileFields.title}
-                        onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
-                        placeholder="e.g. Software Engineer"
-                        disabled={readOnly}
-                        className={inputCls}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-text-secondary">Location</label>
-                      <input
-                        type="text"
-                        value={profileFields.location}
-                        onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
-                        placeholder="e.g. San Francisco, CA"
-                        disabled={readOnly}
-                        className={inputCls}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5 md:col-span-2">
                       <label className="text-xs font-medium text-text-secondary">Summary</label>
                       <textarea
                         value={profileFields.summary}
@@ -1143,6 +1156,43 @@ export function ExperienceManager({
                         rows={3}
                         className={cn(inputCls, 'h-auto py-2 resize-none')}
                       />
+                    </div>
+
+                    {/* Row 4: Contact — Email · Phone · LinkedIn */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-text-secondary">Email</label>
+                        <input
+                          type="email"
+                          value={profileFields.email}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, email: e.target.value }))}
+                          placeholder="you@example.com"
+                          disabled={readOnly}
+                          className={inputCls}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-text-secondary">Phone</label>
+                        <input
+                          type="tel"
+                          value={profileFields.phone}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, phone: e.target.value }))}
+                          placeholder="+1 555 000 0000"
+                          disabled={readOnly}
+                          className={inputCls}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-medium text-text-secondary">LinkedIn</label>
+                        <input
+                          type="text"
+                          value={profileFields.linkedin}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, linkedin: e.target.value }))}
+                          placeholder="linkedin.com/in/username"
+                          disabled={readOnly}
+                          className={inputCls}
+                        />
+                      </div>
                     </div>
                   </div>
                   {!readOnly && (

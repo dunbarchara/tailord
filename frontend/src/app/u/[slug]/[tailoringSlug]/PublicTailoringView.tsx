@@ -5,12 +5,13 @@ import Link from 'next/link'
 import ReactMarkdown from 'react-markdown'
 import { cn } from '@/lib/utils'
 import { JobPosting } from '@/components/dashboard/JobPosting'
-import type { ChunksResponse } from '@/types'
+import type { ChunksResponse, LetterContent, AdvocacyStatement } from '@/types'
 
 interface PublicTailoringViewProps {
   letterPublic: boolean
   postingPublic: boolean
   generatedOutput: string
+  letterContent?: LetterContent | null
   chunksData: ChunksResponse | null
   title: string | null
   company: string | null
@@ -27,20 +28,77 @@ interface PublicTailoringViewProps {
 function stripBriefFooter(output: string): string {
   const lines = output.split('\n')
   let i = lines.length - 1
-  // Skip trailing blank lines
   while (i >= 0 && !lines[i].trim()) i--
-  // Strip the *Name · ...* contact line
   if (lines[i]?.trim().startsWith('*') && lines[i]?.trim().endsWith('*')) {
     i--
-    // Skip blank lines between hr and contact line
     while (i >= 0 && !lines[i].trim()) i--
-    // Strip the preceding --- hr if present
     if (/^[-*_]{3,}$/.test(lines[i]?.trim() ?? '')) {
       i--
     }
     return lines.slice(0, i + 1).join('\n').trimEnd()
   }
   return output
+}
+
+function SourceTags({ sources }: { sources: string[] }) {
+  if (!sources.length) return null
+  return (
+    <span className="text-xs text-text-tertiary ml-1">
+      {sources.map((s) => `[${s}]`).join(' ')}
+    </span>
+  )
+}
+
+function StructuredLetterBody({
+  statements,
+  closing,
+  company,
+  jobTitle,
+  jobUrl,
+  candidateName,
+  candidateEmail,
+}: {
+  statements: AdvocacyStatement[]
+  closing: string
+  company: string | null
+  jobTitle: string | null
+  jobUrl: string | null
+  candidateName: string | null
+  candidateEmail: string | null
+}) {
+  const firstName = candidateName?.split(' ')[0] ?? candidateName
+  const jobTitleDisplay = jobUrl
+    ? <a href={jobUrl} target="_blank" rel="noopener noreferrer">{jobTitle}</a>
+    : <span>{jobTitle}</span>
+
+  return (
+    <>
+      <p><strong>Hello {company},</strong></p>
+      <p>
+        Given the requirements in your {jobTitleDisplay} job posting, here are some reasons <strong>{candidateName}</strong> would be a strong fit for the role.
+      </p>
+      <hr />
+      {statements.map((stmt, i) => (
+        <div key={i}>
+          <p><strong>{stmt.header}</strong></p>
+          <p>
+            <ReactMarkdown components={{ p: ({ children }) => <>{children}</> }}>
+              {stmt.body}
+            </ReactMarkdown>
+            <SourceTags sources={stmt.sources} />
+          </p>
+        </div>
+      ))}
+      <hr />
+      <ReactMarkdown>{closing}</ReactMarkdown>
+      {candidateEmail && (
+        <p>
+          If you&apos;re interested in continuing the conversation, {firstName} can be reached at{' '}
+          <a href={`mailto:${candidateEmail}`}>{candidateEmail}</a>.
+        </p>
+      )}
+    </>
+  )
 }
 
 interface CandidateFooterProps {
@@ -111,6 +169,7 @@ export function PublicTailoringView({
   letterPublic,
   postingPublic,
   generatedOutput,
+  letterContent,
   chunksData,
   title,
   company,
@@ -130,7 +189,6 @@ export function PublicTailoringView({
 
   const showLetter = letterPublic && (!bothPublic || activeTab === 'letter')
   const showPosting = postingPublic && (!bothPublic || activeTab === 'posting')
-  const strippedOutput = stripBriefFooter(generatedOutput)
 
   const candidateFooterProps: CandidateFooterProps = {
     authorName, authorSlug, authorTitle, authorEmail, authorLinkedin, authorProfilePublic, sources,
@@ -165,16 +223,27 @@ export function PublicTailoringView({
       {/* Letter view */}
       {showLetter && (
         <main className="px-6 pt-10 mb-6 prose prose-sm max-w-none text-text-primary prose-headings:text-text-primary prose-headings:font-semibold prose-p:text-text-secondary prose-p:leading-relaxed prose-strong:text-text-primary prose-hr:border-border-subtle prose-hr:my-6 prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs prose-a:text-text-link prose-a:underline prose-a:underline-offset-2">
-          <ReactMarkdown
-            components={{
-              // Open all prose links in a new tab — they're external (job posting, LinkedIn, mailto)
-              a: ({ href, children }) => (
-                <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
-              ),
-            }}
-          >
-            {strippedOutput}
-          </ReactMarkdown>
+          {letterContent ? (
+            <StructuredLetterBody
+              statements={letterContent.advocacy_statements}
+              closing={letterContent.closing}
+              company={company}
+              jobTitle={title}
+              jobUrl={jobUrl}
+              candidateName={authorName}
+              candidateEmail={authorEmail}
+            />
+          ) : (
+            <ReactMarkdown
+              components={{
+                a: ({ href, children }) => (
+                  <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+                ),
+              }}
+            >
+              {stripBriefFooter(generatedOutput)}
+            </ReactMarkdown>
+          )}
         </main>
       )}
 

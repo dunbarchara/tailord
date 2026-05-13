@@ -288,7 +288,7 @@ def _finalize_tailoring(
         db.commit()
 
         try:
-            generated_output = generate_tailoring(
+            generated_output, letter_content = generate_tailoring(
                 extracted_profile,
                 extracted_job,
                 candidate_name,
@@ -308,6 +308,7 @@ def _finalize_tailoring(
 
         now = datetime.now(timezone.utc)
         tailoring.generated_output = generated_output
+        tailoring.letter_content = letter_content
         tailoring.model = settings.llm_model
         tailoring.generation_status = "ready"
         tailoring.generation_stage = None
@@ -629,12 +630,18 @@ def get_tailoring(
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
     job = tailoring.job
+    exp = db.query(Experience).filter(Experience.user_id == user.id).first()
+    resume_data = (exp.extracted_profile or {}).get("resume") or {} if exp else {}
     return {
         "id": str(tailoring.id),
         "title": job.extracted_job.get("title") if job.extracted_job else None,
         "company": job.extracted_job.get("company") if job.extracted_job else None,
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
+        "letter_content": tailoring.letter_content,
+        "author_email": resume_data.get("email") or None,
+        "author_title": resume_data.get("title") or None,
+        "author_linkedin": resume_data.get("linkedin") or None,
         "model": tailoring.model,
         "generation_status": tailoring.generation_status,
         "generation_stage": tailoring.generation_stage,
@@ -1260,6 +1267,7 @@ def get_public_tailoring(
         "company": job.extracted_job.get("company") if job and job.extracted_job else None,
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
+        "letter_content": tailoring.letter_content,
         "letter_public": tailoring.letter_public,
         "posting_public": tailoring.posting_public,
         "created_at": tailoring.created_at.isoformat(),

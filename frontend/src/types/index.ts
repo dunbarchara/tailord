@@ -21,6 +21,10 @@ export interface Tailoring {
   company: string | null
   job_url: string | null
   generated_output: string | null
+  letter_content?: LetterContent | null
+  author_email?: string | null
+  author_title?: string | null
+  author_linkedin?: string | null
   generation_status: GenerationStatus
   generation_stage: string | null
   generation_error: string | null
@@ -120,6 +124,20 @@ export interface ProfileCorrections {
   title?: string | null
   summary?: string | null
   location?: string | null
+  email?: string | null
+  phone?: string | null
+  linkedin?: string | null
+}
+
+export interface AdvocacyStatement {
+  header: string
+  body: string
+  sources: string[]
+}
+
+export interface LetterContent {
+  advocacy_statements: AdvocacyStatement[]
+  closing: string
 }
 
 export interface SourcedProfile {

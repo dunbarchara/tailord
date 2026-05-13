@@ -436,7 +436,7 @@ def generate_tailoring(
     ranked_matches: list[dict] | None = None,
     job_url: str | None = None,
     pronouns: str | None = None,
-) -> str:
+) -> tuple[str, dict]:
     company = extracted_job.get("company") or "the company"
     job_title = extracted_job.get("title") or "this role"
     resume = extracted_profile.get("resume") or {}
@@ -477,7 +477,7 @@ def generate_tailoring(
         validate_fn=_validate_tailoring,
     )
 
-    return _render_tailoring(
+    rendered = _render_tailoring(
         content=content,
         candidate_name=candidate_name,
         candidate_email=candidate_email,
@@ -487,3 +487,4 @@ def generate_tailoring(
         job_title=job_title,
         job_url=job_url,
     )
+    return rendered, content.model_dump()
