@@ -17,6 +17,10 @@ interface PublicTailoring {
   created_at: string
   author_slug: string | null
   author_name: string | null
+  sources?: {
+    has_resume: boolean
+    github_repos: Array<{ name: string; url: string }>
+  }
 }
 
 // cache() deduplicates the fetch across generateMetadata + the page component
@@ -111,7 +115,7 @@ export default async function PublicTailoringPage({
 
         {/* Footer */}
         <div className="px-6">
-          <footer className="pt-6 pb-6 border-t border-border-subtle text-center print:hidden">
+          <footer className="pt-6 pb-6 border-t border-border-subtle text-center print:hidden space-y-1.5">
             <p className="text-text-tertiary text-xs">
               {tailoring.author_slug && tailoring.author_name && (
                 <>
@@ -126,6 +130,25 @@ export default async function PublicTailoringPage({
                 Tailord
               </Link>
             </p>
+            {tailoring.sources && (tailoring.sources.has_resume || tailoring.sources.github_repos.length > 0) && (
+              <p className="text-text-disabled text-xs flex items-center justify-center flex-wrap gap-x-2 gap-y-1">
+                <span>Sources:</span>
+                {tailoring.sources.has_resume && (
+                  <span>📄 Resume</span>
+                )}
+                {tailoring.sources.github_repos.map((repo) => (
+                  <a
+                    key={repo.url}
+                    href={repo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-text-link hover:underline"
+                  >
+                    {repo.url.replace(/^https?:\/\//, '')}
+                  </a>
+                ))}
+              </p>
+            )}
           </footer>
         </div>
       </div>

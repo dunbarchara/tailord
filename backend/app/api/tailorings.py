@@ -1260,6 +1260,19 @@ def get_public_tailoring(
         else None,
     }
 
+    if author:
+        exp = db.query(Experience).filter(Experience.user_id == author.id).first()
+        has_resume = bool(exp and exp.s3_key)
+        github_repos_with_url = []
+        if exp and exp.github_repo_details and isinstance(exp.github_repo_details, dict):
+            for r in exp.github_repo_details.get("repos") or []:
+                if r.get("url"):
+                    github_repos_with_url.append({"name": r.get("name"), "url": r.get("url")})
+        response["sources"] = {
+            "has_resume": has_resume,
+            "github_repos": github_repos_with_url,
+        }
+
     if tailoring.posting_public:
         chunks = (
             db.query(JobChunk)

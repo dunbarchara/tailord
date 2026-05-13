@@ -136,6 +136,7 @@ class ProfileUpdate(BaseModel):
     education: list | None = None
     projects: list | None = None
     certifications: list | None = None
+    yoe_override: float | None = None
 
 
 def _experience_response(e: Experience) -> dict:
@@ -391,16 +392,11 @@ def update_profile(
     if not experience:
         raise HTTPException(status_code=404, detail="No experience found")
 
-    resume = {}
-    if experience.extracted_profile:
-        resume = dict(experience.extracted_profile.get("resume") or {})
-
-    update_data = body.model_dump(exclude_unset=True)
-    resume = {**resume, **update_data}
-
+    corrections = dict((experience.extracted_profile or {}).get("corrections") or {})
+    corrections.update(body.model_dump(exclude_unset=True, exclude_none=True))
     experience.extracted_profile = {
         **(experience.extracted_profile or {}),
-        "resume": resume,
+        "corrections": corrections,
     }
     experience.processed_at = datetime.now(timezone.utc)
     db.commit()

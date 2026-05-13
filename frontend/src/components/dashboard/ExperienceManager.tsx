@@ -8,7 +8,7 @@ import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
 import { cn, toastError, formatElapsed } from '@/lib/utils';
 import { ChunkedProfile } from '@/components/dashboard/ChunkedProfile';
-import type { ExperienceRecord, ExperienceChunksResponse, GitHubRepo } from '@/types';
+import type { ExperienceRecord, ExperienceChunksResponse, GitHubRepo, ProfileCorrections } from '@/types';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -211,6 +211,9 @@ export function ExperienceManager({
   const scanningReposRef = useRef<Record<string, number>>({});
   const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [profileFields, setProfileFields] = useState({ yoe_override: '', headline: '', title: '', location: '', summary: '' });
+  const [profileSaving, setProfileSaving] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -227,6 +230,18 @@ export function ExperienceManager({
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, [scanIsActive]);
+
+  const syncProfileFromRecord = useCallback((record: ExperienceRecord) => {
+    const corrections: ProfileCorrections = record.extracted_profile?.corrections ?? {};
+    const resume = record.extracted_profile?.resume;
+    setProfileFields({
+      yoe_override: corrections.yoe_override != null ? String(corrections.yoe_override) : '',
+      headline: corrections.headline ?? resume?.headline ?? '',
+      title: corrections.title ?? resume?.title ?? '',
+      location: corrections.location ?? resume?.location ?? '',
+      summary: corrections.summary ?? resume?.summary ?? '',
+    });
+  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current !== null) {
@@ -337,6 +352,7 @@ export function ExperienceManager({
 
         if (record.status === 'ready') {
           setUploadState({ phase: 'ready', record });
+          syncProfileFromRecord(record);
         } else if (record.status === 'processing' || record.status === 'pending') {
           if (record.last_process_requested_at) {
             const startTs = new Date(record.last_process_requested_at).getTime();
@@ -356,7 +372,7 @@ export function ExperienceManager({
     loadInitialState();
     return () => { stopPolling(); stopScanPolling(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startPolling, stopPolling, stopScanPolling, startScanPolling, updateScanningRepos]);
+  }, [startPolling, stopPolling, stopScanPolling, startScanPolling, updateScanningRepos, syncProfileFromRecord]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -421,6 +437,7 @@ export function ExperienceManager({
             } else if (currentEvent === 'ready') {
               const record = JSON.parse(data) as ExperienceRecord;
               setUploadState({ phase: 'ready', record });
+              syncProfileFromRecord(record);
               setProcessingStage(null);
               setChunksRefreshKey((k) => k + 1);
               if (record.github_username) {
@@ -632,6 +649,40 @@ export function ExperienceManager({
     if (updated) {
       setUploadState({ phase: 'ready', record: updated });
       setChunksRefreshKey((k) => k + 1);
+    }
+  };
+
+  /* ─── Profile signals ────────────────────────────────────────────────────── */
+
+  const handleProfileSave = async () => {
+    setProfileSaving(true);
+    try {
+      const payload: Record<string, unknown> = {};
+      const yoe = parseFloat(profileFields.yoe_override);
+      if (profileFields.yoe_override !== '' && !isNaN(yoe)) payload.yoe_override = yoe;
+      if (profileFields.headline) payload.headline = profileFields.headline;
+      if (profileFields.title) payload.title = profileFields.title;
+      if (profileFields.location) payload.location = profileFields.location;
+      if (profileFields.summary) payload.summary = profileFields.summary;
+
+      const res = await fetch('/api/experience', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toastError(err.detail ?? 'Failed to save profile signals');
+        return;
+      }
+      const updated = await res.json() as ExperienceRecord;
+      setUploadState({ phase: 'ready', record: updated });
+      // Don't re-sync fields — user just saved them, keep display stable
+      toast.success('Profile signals saved');
+    } catch {
+      toastError('Failed to save profile signals');
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -1011,6 +1062,89 @@ export function ExperienceManager({
               {!isInitialLoad && renderGithubControls()}
             </div>
           </div>
+
+          {/* Inferred Profile Signals */}
+          {uploadState.phase === 'ready' && (
+            <div className="mt-8 pb-8 border-b border-zinc-950/5 dark:border-white/5">
+              <div className="flex flex-col gap-1.5 mb-5">
+                <h2 className="text-sm font-medium text-text-primary">Inferred Profile</h2>
+                <p className="text-sm text-text-tertiary">
+                  These signals are used in generation — edit to correct any inaccuracies.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-text-secondary">Years of experience</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={profileFields.yoe_override}
+                    onChange={(e) => setProfileFields((p) => ({ ...p, yoe_override: e.target.value }))}
+                    placeholder="Auto-computed from resume"
+                    disabled={readOnly}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-text-secondary">Headline</label>
+                  <input
+                    type="text"
+                    value={profileFields.headline}
+                    onChange={(e) => setProfileFields((p) => ({ ...p, headline: e.target.value }))}
+                    placeholder="e.g. Senior Software Engineer"
+                    disabled={readOnly}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-text-secondary">Title</label>
+                  <input
+                    type="text"
+                    value={profileFields.title}
+                    onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
+                    placeholder="e.g. Software Engineer"
+                    disabled={readOnly}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-text-secondary">Location</label>
+                  <input
+                    type="text"
+                    value={profileFields.location}
+                    onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
+                    placeholder="e.g. San Francisco, CA"
+                    disabled={readOnly}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5 md:col-span-2">
+                  <label className="text-xs font-medium text-text-secondary">Summary</label>
+                  <textarea
+                    value={profileFields.summary}
+                    onChange={(e) => setProfileFields((p) => ({ ...p, summary: e.target.value }))}
+                    placeholder="Professional summary"
+                    disabled={readOnly}
+                    rows={3}
+                    className={cn(inputCls, 'h-auto py-2 resize-none')}
+                  />
+                </div>
+              </div>
+              {!readOnly && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={handleProfileSave}
+                    disabled={profileSaving}
+                    className={saveBtnCls}
+                  >
+                    {profileSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : 'Save signals'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Parsed experience */}
           <div className="mt-8">

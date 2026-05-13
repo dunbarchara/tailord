@@ -114,10 +114,19 @@ export interface GitHubRepoDetails {
   error_count: number
 }
 
+export interface ProfileCorrections {
+  yoe_override?: number | null
+  headline?: string | null
+  title?: string | null
+  summary?: string | null
+  location?: string | null
+}
+
 export interface SourcedProfile {
   resume?: ExtractedProfile
   github?: { repos: GitHubRepo[] }
   user_input?: { text: string }
+  corrections?: ProfileCorrections
 }
 
 export interface ExtractedProfile {

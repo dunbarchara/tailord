@@ -58,10 +58,25 @@ def _parse_duration_years(duration: str) -> float:
     return round(delta, 2)
 
 
+def _merge_intervals(intervals: list[tuple[date, date]]) -> list[tuple[date, date]]:
+    """Merge overlapping date intervals into non-overlapping spans."""
+    if not intervals:
+        return []
+    sorted_ivs = sorted(intervals, key=lambda iv: iv[0])
+    merged: list[tuple[date, date]] = [sorted_ivs[0]]
+    for start, end in sorted_ivs[1:]:
+        cur_start, cur_end = merged[-1]
+        if start <= cur_end:
+            merged[-1] = (cur_start, max(cur_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def _compute_profile_signals(sourced_profile: dict) -> str:
     """
     Pre-compute factual signals that LLMs routinely miscalculate:
-      - Total years of professional experience (summed across all roles)
+      - Total years of professional experience (overlap-aware merge of all roles)
       - Chronological role list
 
     Returns a compact string block prepended to the formatted profile so that
@@ -71,16 +86,29 @@ def _compute_profile_signals(sourced_profile: dict) -> str:
     resume = sourced_profile.get("resume") or {}
     roles = resume.get("work_experience") or []
 
-    total_years = 0.0
+    intervals: list[tuple[date, date]] = []
     role_lines = []
     for role in roles:
         title = role.get("title", "")
         company = role.get("company", "")
         duration = role.get("duration", "")
         years = _parse_duration_years(duration) if duration else 0.0
-        total_years += years
         label = f"{title} @ {company}" if company else title
         role_lines.append(f"  - {label} ({duration})" + (f" [{years:.1f} yrs]" if years else ""))
+        if duration:
+            parts = re.split(r"\s*[-–—]\s*|\s+to\s+", duration.strip(), maxsplit=1)
+            if len(parts) == 2:
+                start = _parse_duration_date(parts[0])
+                end = _parse_duration_date(parts[1])
+                if start and end and end >= start:
+                    intervals.append((start, end))
+
+    merged = _merge_intervals(intervals)
+    total_years = round(sum((end - start).days / 365.25 for start, end in merged), 2)
+
+    corrections = sourced_profile.get("corrections") or {}
+    if (override := corrections.get("yoe_override")) is not None:
+        total_years = override
 
     lines = [f"Total professional experience: {total_years:.1f} years"]
     if role_lines:
@@ -212,10 +240,16 @@ def _format_sourced_profile(
     """
     sections = []
 
+    corrections = sourced_profile.get("corrections") or {}
+
     if candidate_name or pronouns:
         candidate_lines = []
         if candidate_name:
             candidate_lines.append(f"Name: {candidate_name}")
+        resume_data = sourced_profile.get("resume") or {}
+        effective_headline = corrections.get("headline") or resume_data.get("headline")
+        if effective_headline:
+            candidate_lines.append(f"Headline: {effective_headline}")
         if pronouns:
             candidate_lines.append(
                 f"Pronouns: {pronouns} — use these when referring to the candidate in third person."
@@ -225,10 +259,18 @@ def _format_sourced_profile(
     signals = _compute_profile_signals(sourced_profile)
     sections.append(f"[COMPUTED SIGNALS — treat as ground truth]\n{signals}")
 
-    known_keys = {"resume", "github", "user_input"}
+    known_keys = {"resume", "github", "user_input", "corrections"}
 
     if resume := sourced_profile.get("resume"):
-        sections.append(f"[Source: Resume]\n{_fmt_resume_prose(resume)}")
+        if corrections:
+            correctable = ("title", "summary", "location", "headline")
+            merged_resume = {
+                **resume,
+                **{k: v for k, v in corrections.items() if k in correctable and v is not None},
+            }
+            sections.append(f"[Source: Resume]\n{_fmt_resume_prose(merged_resume)}")
+        else:
+            sections.append(f"[Source: Resume]\n{_fmt_resume_prose(resume)}")
 
     if github := sourced_profile.get("github"):
         sections.append(f"[Source: GitHub]\n{_fmt_github_prose(github)}")
