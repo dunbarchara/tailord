@@ -14,16 +14,17 @@ async function getUserContext() {
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string; chunkId: string }> },
 ) {
   const user = await getUserContext()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id, chunkId } = await params
+  const body = await req.json().catch(() => ({}))
   return proxyToBackendWithUser(
     `tailorings/${id}/chunks/${chunkId}/rescore`,
     user,
-    { method: 'POST' },
+    { method: 'POST', body: JSON.stringify(body) },
   )
 }

@@ -278,7 +278,7 @@ def _run_fixture_llm(fixture: dict, profiles: dict[str, EvalCandidateProfile]) -
             {"role": "system", "content": prompt.SYSTEM},
             {
                 "role": "user",
-                "content": prompt.USER_TEMPLATE.format(
+                "content": prompt.format_user_template(
                     extracted_profile=formatted_profile,
                     section=section,
                     chunks_block=chunks_block,
@@ -441,7 +441,7 @@ def _run_fixture_vector(
                 {"role": "system", "content": prompt.SYSTEM},
                 {
                     "role": "user",
-                    "content": prompt.USER_TEMPLATE_VECTOR.format(
+                    "content": prompt.format_user_template_vector(
                         candidate_header=candidate_header,
                         job_requirement=f"[{c['chunk_type'].upper()}] {c['content']}",
                         grouped_context=grouped_context,

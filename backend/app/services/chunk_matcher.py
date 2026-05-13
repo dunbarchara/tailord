@@ -129,6 +129,7 @@ def _score_chunk_vector(
     experience_id: uuid.UUID,
     candidate_header: str,
     k: int,
+    force_score: bool = False,
 ) -> tuple[ChunkMatchResult, list[float]]:
     """
     Score a single job chunk using vector pre-selection.
@@ -170,6 +171,7 @@ def _score_chunk_vector(
                 " — populate it with a 1–2 sentence third-person advocacy statement"
             )
 
+    force_score_note = prompt.FORCE_SCORE_NOTE if force_score else ""
     result = llm_parse_with_retry(
         get_llm_client(),
         model=settings.llm_model,
@@ -177,11 +179,12 @@ def _score_chunk_vector(
             {"role": "system", "content": prompt.SYSTEM},
             {
                 "role": "user",
-                "content": prompt.USER_TEMPLATE_VECTOR.format(
+                "content": prompt.format_user_template_vector(
                     candidate_header=candidate_header,
                     job_requirement=f"[{chunk_type.upper()}] {chunk_content}",
                     grouped_context=grouped_context,
                     k=len(top_k_chunks),
+                    force_score_note=force_score_note,
                 ),
             },
         ],
@@ -367,7 +370,7 @@ def enrich_job_chunks(
                         {"role": "system", "content": prompt.SYSTEM},
                         {
                             "role": "user",
-                            "content": prompt.USER_TEMPLATE.format(
+                            "content": prompt.format_user_template(
                                 extracted_profile=formatted_profile,
                                 section=section,
                                 chunks_block=chunks_block,
@@ -504,6 +507,7 @@ def re_enrich_single_chunk(
     pronouns: str | None = None,
     experience_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
+    force_score: bool = False,
 ) -> None:
     """
     Re-score one JobChunk against an updated profile.
@@ -538,6 +542,7 @@ def re_enrich_single_chunk(
                 experience_id,
                 candidate_header,
                 k,
+                force_score=force_score,
             )
             # Opportunistically update the chunk's embedding if it was missing
             if chunk.embedding is None and new_embedding is not None:
@@ -548,6 +553,7 @@ def re_enrich_single_chunk(
 
             section = chunk.section or "General"
             chunks_block = f"1. [{chunk.chunk_type.upper()}] {chunk.content}"
+            force_score_note = prompt.FORCE_SCORE_NOTE if force_score else ""
 
             def _validate_single(r: ChunkMatchBatch) -> None:
                 if not r.results:
@@ -568,10 +574,11 @@ def re_enrich_single_chunk(
                     {"role": "system", "content": prompt.SYSTEM},
                     {
                         "role": "user",
-                        "content": prompt.USER_TEMPLATE.format(
+                        "content": prompt.format_user_template(
                             extracted_profile=formatted_profile,
                             section=section,
                             chunks_block=chunks_block,
+                            force_score_note=force_score_note,
                         ),
                     },
                 ],
@@ -748,7 +755,7 @@ def refresh_job_chunks(
                         {"role": "system", "content": prompt.SYSTEM},
                         {
                             "role": "user",
-                            "content": prompt.USER_TEMPLATE.format(
+                            "content": prompt.format_user_template(
                                 extracted_profile=formatted_profile,
                                 section=section,
                                 chunks_block=chunks_block,
