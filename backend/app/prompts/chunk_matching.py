@@ -113,6 +113,13 @@ Correct output:
 {"results": [{"score": 0, "rationale": "Pre-computed total of 5.0 years falls short of the 10+ year threshold. This is a gap — the numeric bar is not met regardless of evidence of shipping production software.", "advocacy_blurb": null, "experience_sources": []}]}
 """
 
+FORCE_SCORE_NOTE = (
+    "\nMANUAL SCORE OVERRIDE: The user has explicitly requested a score for this chunk. "
+    "Do NOT return -1. Even if this chunk is not a traditional requirement, evaluate how "
+    "relevant or aligned the candidate's background is to this content. "
+    "Return 0 if there is no meaningful connection, 1 for adjacent relevance, 2 for direct alignment."
+)
+
 USER_TEMPLATE = """
 CANDIDATE PROFILE:
 {extracted_profile}
@@ -121,7 +128,7 @@ SECTION: {section}
 
 CHUNKS:
 {chunks_block}
-
+{force_score_note}
 Score each chunk. Return a JSON object with exactly as many results as chunks:
 {{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false}}]}}
 """
@@ -137,7 +144,7 @@ JOB REQUIREMENT:
 
 RELEVANT EXPERIENCE (top-{k} results by semantic similarity):
 {grouped_context}
-
+{force_score_note}
 Score this single requirement. Return a JSON object with exactly one result:
 {{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false}}]}}
 """

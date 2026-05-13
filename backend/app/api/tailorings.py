@@ -7,7 +7,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -708,6 +708,10 @@ class RenameGroupRequest(BaseModel):
     new_section: str | None = None  # None = ungroup (sets section to null)
 
 
+class RescoreRequest(BaseModel):
+    force_score: bool = False
+
+
 def _get_tailoring_chunk(
     tailoring_id: str, chunk_id: str, user: User, db: Session
 ) -> tuple[Tailoring, JobChunk]:
@@ -990,6 +994,7 @@ def submit_gap_answer(
 def rescore_chunk(
     tailoring_id: str,
     chunk_id: str,
+    body: RescoreRequest = Body(default=RescoreRequest()),
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -1019,12 +1024,18 @@ def rescore_chunk(
     ).strip()
     candidate_name = preferred or user.name or user.email
 
+    # Promote to requirement so future Refresh All includes this chunk
+    if not chunk.is_requirement:
+        chunk.is_requirement = True
+        db.commit()
+
     re_enrich_single_chunk(
         str(chunk.id),
         experience.extracted_profile or {},
         user.pronouns,
         experience.id,
         candidate_name,
+        force_score=body.force_score,
     )
 
     # re_enrich_single_chunk commits via its own session — re-query for fresh data
@@ -1041,6 +1052,9 @@ def rescore_chunk(
         "source_label": SOURCE_LABELS.get(chunk.experience_source)
         if chunk.experience_source
         else None,
+        "is_requirement": chunk.is_requirement,
+        "should_render": chunk.should_render,
+        "display_ready": is_display_ready(chunk),
     }
 
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Eye, EyeOff, FolderMinus, FolderPlus, Info, Loader2, Plus, Trash2, Unlink } from 'lucide-react';
+import { Eye, EyeOff, FolderMinus, FolderPlus, Info, Loader2, Plus, Sparkles, Trash2, Unlink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { groupBySection, groupChunksForAnalysis, scoreBarColor } from '@/lib/chunks';
 import type { ChunksResponse, JobChunk } from '@/types';
@@ -55,6 +55,7 @@ function ChunkItem({
   editMode,
   isHidden,
   availableSections,
+  tailoringId,
   onChunkUpdate,
   onChunkDelete,
   onSectionPending,
@@ -69,6 +70,7 @@ function ChunkItem({
   editMode?: boolean;
   isHidden?: boolean;
   availableSections: string[];
+  tailoringId?: string;
   onChunkUpdate?: (chunk: JobChunk) => void;
   onChunkDelete?: (chunkId: string) => void;
   /** Signals intent to move to a new section — SectionBlock decides what else moves. */
@@ -90,6 +92,7 @@ function ChunkItem({
   const [draftContent, setDraftContent] = useState(chunk.content);
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [newGroupDraft, setNewGroupDraft] = useState('');
+  const [rescoring, setRescoring] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -119,6 +122,35 @@ function ChunkItem({
     setNewGroupDraft('');
     if (newSection !== chunk.section) {
       onSectionPending?.(chunk, newSection);
+    }
+  }
+
+  async function handleRescore() {
+    if (!tailoringId || rescoring) return;
+    setRescoring(true);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}/chunks/${chunk.id}/rescore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_score: true }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onChunkUpdate?.({
+          ...chunk,
+          match_score: data.match_score,
+          match_rationale: data.match_rationale,
+          advocacy_blurb: data.advocacy_blurb,
+          experience_source: data.experience_source,
+          experience_sources: data.experience_sources,
+          source_label: data.source_label,
+          is_requirement: data.is_requirement,
+          should_render: data.should_render,
+          display_ready: data.display_ready,
+        });
+      }
+    } finally {
+      setRescoring(false);
     }
   }
 
@@ -314,6 +346,20 @@ function ChunkItem({
       >
         {chunk.is_requirement ? 'Requirement' : 'Not a req.'}
       </button>
+      {tailoringId && chunk.chunk_type !== 'header' && (chunk.match_score === null || chunk.match_score === -1) && (
+        <button
+          type="button"
+          onClick={handleRescore}
+          disabled={rescoring}
+          title="Score this chunk against your experience"
+          className="h-5 px-1.5 rounded text-[10px] inline-flex items-center gap-0.5 border border-border-subtle text-text-disabled hover:text-text-secondary hover:border-border-default transition-colors disabled:opacity-40"
+        >
+          {rescoring
+            ? <Loader2 className="h-3 w-3 animate-spin" />
+            : <Sparkles className="h-3 w-3" />}
+          {rescoring ? 'Scoring…' : 'Score'}
+        </button>
+      )}
       <button
         type="button"
         onClick={handleDelete}
@@ -430,6 +476,7 @@ function SectionBlock({
   onSelect,
   editMode,
   availableSections,
+  tailoringId,
   onChunkUpdate,
   onChunkDelete,
   onChunkCreate,
@@ -444,6 +491,7 @@ function SectionBlock({
   onSelect?: (id: string | null) => void;
   editMode?: boolean;
   availableSections: string[];
+  tailoringId?: string;
   onChunkUpdate?: (chunk: JobChunk) => void;
   onChunkDelete?: (chunkId: string) => void;
   onChunkCreate?: (chunk: JobChunk) => void;
@@ -599,6 +647,7 @@ function SectionBlock({
           editMode={editMode}
           isHidden={chunk.should_render === false || !chunk.display_ready}
           availableSections={availableSections}
+          tailoringId={tailoringId}
           onChunkUpdate={onChunkUpdate}
           onChunkDelete={onChunkDelete}
           onSectionPending={editMode ? handleSectionPending : undefined}
@@ -668,6 +717,7 @@ export function JobPosting({
   data, error, title, company, jobUrl, authorName, publicMode, hideHeader,
   generationReady, selectedId, onSelect,
   editMode, showHidden,
+  tailoringId,
   onChunkUpdate, onChunkDelete, onChunkCreate, onSectionRename,
 }: JobPostingProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -748,6 +798,7 @@ export function JobPosting({
             onSelect={onSelect}
             editMode={editMode}
             availableSections={availableSections}
+            tailoringId={tailoringId}
             onChunkUpdate={onChunkUpdate}
             onChunkDelete={onChunkDelete}
             onChunkCreate={handleChunkCreate}
@@ -766,6 +817,7 @@ export function JobPosting({
           setExpandedId={setExpandedId}
           editMode={editMode}
           availableSections={availableSections}
+          tailoringId={tailoringId}
           onChunkUpdate={onChunkUpdate}
           onChunkDelete={onChunkDelete}
           onChunkCreate={handleChunkCreate}
