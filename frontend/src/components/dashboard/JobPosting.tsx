@@ -88,8 +88,11 @@ function ChunkItem({
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [editingContent, setEditingContent] = useState(false);
   const [draftContent, setDraftContent] = useState(chunk.content);
+
+  useEffect(() => {
+    setDraftContent(chunk.content);
+  }, [chunk.content]);
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [newGroupDraft, setNewGroupDraft] = useState('');
   const [rescoring, setRescoring] = useState(false);
@@ -166,35 +169,27 @@ function ChunkItem({
   }
 
   function handleContentBlur() {
-    setEditingContent(false);
     const trimmed = draftContent.trim();
     if (trimmed && trimmed !== chunk.content) {
       applyChunkEdit({ content: trimmed });
     }
   }
 
-  const body = editMode && editingContent ? (
+  const body = editMode ? (
     <textarea
-      autoFocus
       rows={3}
       value={draftContent}
       onChange={e => setDraftContent(e.target.value)}
       onBlur={handleContentBlur}
-      className="w-full resize-none rounded border border-border-focus bg-surface-elevated px-2 py-1 text-sm text-text-primary focus:outline-none"
+      className="w-full resize-none rounded border border-border-default bg-surface-elevated px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-border-focus transition-colors"
     />
   ) : chunk.chunk_type === 'bullet' ? (
-    <div
-      className={cn('flex gap-2 text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}
-      onClick={editMode ? () => { setDraftContent(chunk.content); setEditingContent(true); } : undefined}
-    >
+    <div className={cn('flex gap-2 text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}>
       <span className="text-text-tertiary flex-shrink-0 mt-0.5">·</span>
       <span><InlineMarkdown text={chunk.content} /></span>
     </div>
   ) : (
-    <p
-      className={cn('text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}
-      onClick={editMode ? () => { setDraftContent(chunk.content); setEditingContent(true); } : undefined}
-    >
+    <p className={cn('text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}>
       <InlineMarkdown text={chunk.content} />
     </p>
   );

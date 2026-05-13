@@ -23,6 +23,8 @@ interface AnalysisViewProps {
   generationReady?: boolean;
   readOnly?: boolean;
   editMode?: boolean;
+  jobDraft?: { title: string; company: string } | null;
+  onJobDraftChange?: (draft: { title: string; company: string }) => void;
   onChunkUpdate?: (chunk: JobChunk) => void;
   onChunkDelete?: (chunkId: string) => void;
   onChunkCreate?: (chunk: JobChunk) => void;
@@ -642,6 +644,55 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
   );
 }
 
+/* ─── Job properties panel (edit mode) ──────────────────────────────────── */
+
+function JobPropertiesPanel({
+  jobDraft,
+  onJobDraftChange,
+}: {
+  jobDraft: { title: string; company: string };
+  onJobDraftChange?: (draft: { title: string; company: string }) => void;
+}) {
+  const inputCls =
+    'w-full rounded-md border border-border-default bg-surface-base px-3 py-2 text-sm ' +
+    'text-text-primary placeholder:text-text-disabled ' +
+    'focus:outline-none focus:border-border-focus transition-colors';
+
+  return (
+    <div className="flex-1 flex flex-col px-4 pt-8 pb-8 min-h-0">
+      <p className="text-xs text-text-tertiary uppercase tracking-wider mb-4 mt-2">
+        Job Details
+      </p>
+      <div className="space-y-4">
+        <div>
+          <p className="text-[11px] font-medium text-text-disabled uppercase tracking-wider mb-1.5">
+            Position
+          </p>
+          <input
+            type="text"
+            value={jobDraft.title}
+            onChange={(e) => onJobDraftChange?.({ ...jobDraft, title: e.target.value })}
+            placeholder="Job title"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <p className="text-[11px] font-medium text-text-disabled uppercase tracking-wider mb-1.5">
+            Company
+          </p>
+          <input
+            type="text"
+            value={jobDraft.company}
+            onChange={(e) => onJobDraftChange?.({ ...jobDraft, company: e.target.value })}
+            placeholder="Company name"
+            className={inputCls}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── AnalysisView ───────────────────────────────────────────────────────── */
 
 export function AnalysisView({
@@ -658,6 +709,8 @@ export function AnalysisView({
   generationReady,
   readOnly,
   editMode,
+  jobDraft,
+  onJobDraftChange,
   onChunkUpdate,
   onChunkDelete,
   onChunkCreate,
@@ -801,8 +854,13 @@ export function AnalysisView({
         </div>
 
         {/* Right panel — 2/5 */}
-        <div className="w-2/5 flex flex-col overflow-y-auto">
-          {selectedChunk ? (
+        <div className="w-2/5 flex flex-col overflow-y-auto border-l border-border-subtle">
+          {editMode && jobDraft ? (
+            <JobPropertiesPanel
+              jobDraft={jobDraft}
+              onJobDraftChange={onJobDraftChange}
+            />
+          ) : selectedChunk ? (
             <ChunkContextPanel
               chunk={selectedChunk}
               tailoringId={tailoringId}

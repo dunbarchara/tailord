@@ -300,7 +300,15 @@ async def trigger_process(
             existing_profile = experience.extracted_profile or {}
             corrections = existing_profile.get("corrections") or {}
             if corrections:
-                correctable = ("title", "headline", "summary", "location")
+                correctable = (
+                    "title",
+                    "headline",
+                    "summary",
+                    "location",
+                    "email",
+                    "phone",
+                    "linkedin",
+                )
                 profile = {
                     **profile,
                     **{k: v for k, v in corrections.items() if k in correctable and v is not None},
@@ -409,13 +417,20 @@ def update_profile(
 
     existing = experience.extracted_profile or {}
     corrections = dict(existing.get("corrections") or {})
-    corrections.update(body.model_dump(exclude_unset=True, exclude_none=True))
 
-    # Also apply text corrections directly into the resume block so all consumers
-    # (profile tab, public profile, etc.) see the corrected values without needing
-    # to know about the corrections layer.
+    # None means "clear this correction" — remove the key so the field falls back to extracted.
+    # Unset fields (not in the request at all) are left untouched.
+    for k, v in body.model_dump(exclude_unset=True).items():
+        if v is None:
+            corrections.pop(k, None)
+        else:
+            corrections[k] = v
+
+    # Apply text corrections into the resume block so all consumers see corrected values
+    # without needing to know about the corrections layer. Cleared fields (absent from
+    # corrections) are not overwritten — the raw extracted value is preserved.
     resume = dict(existing.get("resume") or {})
-    correctable = ("title", "headline", "summary", "location")
+    correctable = ("title", "headline", "summary", "location", "email", "phone", "linkedin")
     resume.update({k: v for k, v in corrections.items() if k in correctable and v is not None})
 
     experience.extracted_profile = {

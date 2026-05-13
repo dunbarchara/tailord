@@ -153,6 +153,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   const prevEnrichmentStatusRef = useRef<string | null | undefined>(undefined);
   const [gapAnalysisSettled, setGapAnalysisSettled] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [jobDraft, setJobDraft] = useState<{ title: string; company: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [draftChunks, setDraftChunks] = useState<JobChunk[] | null>(null);
@@ -506,11 +507,13 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     if (!chunksData) return;
     originalChunksRef.current = chunksData.chunks;
     setDraftChunks([...chunksData.chunks]);
+    setJobDraft({ title: tailoring.title ?? '', company: tailoring.company ?? '' });
     setEditMode(true);
   }
 
   function handleDiscard() {
     setDraftChunks(null);
+    setJobDraft(null);
     setEditMode(false);
   }
 
@@ -565,6 +568,29 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         }),
       ];
 
+      // Patch job title/company if changed
+      if (jobDraft) {
+        const titleChanged = jobDraft.title !== (tailoring.title ?? '');
+        const companyChanged = jobDraft.company !== (tailoring.company ?? '');
+        if (titleChanged || companyChanged) {
+          const patch: Record<string, string | null> = {};
+          if (titleChanged) patch.title = jobDraft.title || null;
+          if (companyChanged) patch.company = jobDraft.company || null;
+          calls.push(
+            fetch(`/api/tailorings/${tailoringId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(patch),
+            }).then(async (r) => {
+              if (r.ok) {
+                const data = await r.json();
+                setTailoring((prev) => prev ? { ...prev, title: data.title, company: data.company } : prev);
+              }
+            })
+          );
+        }
+      }
+
       if (calls.length > 0) await Promise.all(calls);
 
       // Refetch to get canonical server state (IDs for created chunks, etc.)
@@ -575,6 +601,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
       }
 
       setDraftChunks(null);
+      setJobDraft(null);
       setEditMode(false);
       toast.success('Changes saved.');
     } catch {
@@ -692,13 +719,13 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         {/* Left: title / company / debug pill */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-sm font-medium text-text-primary tracking-[-0.1px] truncate max-w-[200px]">
-            {tailoring.title ?? 'Tailoring'}
+            {(editMode && jobDraft ? jobDraft.title : tailoring.title) ?? 'Tailoring'}
           </span>
-          {tailoring.company && (
+          {(editMode ? jobDraft?.company : tailoring.company) && (
             <>
               <span className="text-text-tertiary shrink-0 text-sm">/</span>
               <span className="text-sm font-medium text-text-tertiary tracking-[-0.1px] truncate max-w-[160px]">
-                {tailoring.company}
+                {editMode && jobDraft ? jobDraft.company : tailoring.company}
               </span>
             </>
           )}
@@ -1080,6 +1107,8 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                 generationReady={tailoring.generation_status === 'ready'}
                 readOnly={readOnly}
                 editMode={editMode}
+                jobDraft={editMode ? jobDraft : null}
+                onJobDraftChange={(draft) => setJobDraft(draft)}
                 onChunkUpdate={handleChunkUpdate}
                 onChunkDelete={handleChunkDelete}
                 onChunkCreate={handleChunkCreate}

@@ -690,6 +690,51 @@ def get_tailoring_chunks(
     }
 
 
+class TailoringJobUpdate(BaseModel):
+    title: str | None = None
+    company: str | None = None
+
+
+@router.patch("/tailorings/{tailoring_id}")
+def update_tailoring_job(
+    tailoring_id: str,
+    body: TailoringJobUpdate,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Patch the job's extracted title and/or company for a tailoring.
+
+    Only fields included in the request body are updated. Updates the Job row's
+    extracted_job JSON directly so all surfaces that read from it reflect the change
+    immediately (header, dashboard card, public page) without regeneration.
+    """
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    job = tailoring.job
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    updates = body.model_dump(exclude_unset=True)
+    if updates:
+        extracted = dict(job.extracted_job or {})
+        extracted.update(updates)
+        job.extracted_job = extracted
+        db.commit()
+
+    extracted_job = job.extracted_job or {}
+    return {
+        "title": extracted_job.get("title"),
+        "company": extracted_job.get("company"),
+    }
+
+
 class PatchChunkRequest(BaseModel):
     content: str | None = None
     should_render: bool | None = None

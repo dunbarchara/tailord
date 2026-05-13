@@ -34,6 +34,17 @@ export async function POST(
   return proxyStreamToBackendWithUser(`tailorings/${id}/regenerate`, user)
 }
 
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getUserContext()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { id } = await params
+  const body = await req.text()
+  return proxyToBackendWithUser(`tailorings/${id}`, user, { method: 'PATCH', body })
+}
+
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }

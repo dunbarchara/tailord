@@ -8,7 +8,7 @@ ones. The caller is responsible for committing.
 Chunking strategy
 -----------------
 resume      → walk extracted_profile["resume"]:
-              summary          → 1 chunk (claim_type=other)
+              summary          → skipped (always present in _format_sourced_profile context; embedding would crowd top-K)
               work_experience  → 1 chunk per bullet (claim_type=work_experience, date_range=duration)
               skills.technical → 1 chunk per skill (claim_type=skill)
               skills.soft      → 1 chunk per skill (claim_type=skill)
@@ -17,7 +17,7 @@ resume      → walk extracted_profile["resume"]:
               certifications   → 1 chunk per cert (claim_type=other)
 
 github      → walk enriched repo in extracted_profile["github"]["repos"]:
-              readme_summary   → 1 chunk (claim_type=project, source_ref=repo_name)
+              readme_summary   → skipped (always in _fmt_github_prose context; embedding would crowd top-K)
               detected_stack[] → 1 chunk per item (claim_type=skill, source_ref=repo_name)
               (call once per repo, passing source_ref=repo_name)
 
@@ -59,17 +59,8 @@ def _resume_chunks(profile: dict) -> list[dict]:
     """
     chunks: list[dict] = []
 
-    summary = (profile.get("summary") or "").strip()
-    if summary:
-        chunks.append(
-            {
-                "claim_type": "other",
-                "content": summary,
-                "group_key": None,
-                "date_range": None,
-                "technologies": None,
-            }
-        )
+    # summary intentionally skipped — it is always present in _format_sourced_profile baseline
+    # context and would crowd out specific bullets in cosine similarity top-K retrieval.
 
     for job in profile.get("work_experience") or []:
         date_range = (job.get("duration") or "").strip() or None
@@ -158,17 +149,8 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
     chunks: list[dict] = []
     repo_name = (repo.get("name") or "").strip() or None
 
-    summary = (repo.get("readme_summary") or "").strip()
-    if summary:
-        chunks.append(
-            {
-                "claim_type": "project",
-                "content": summary,
-                "group_key": repo_name,
-                "date_range": None,
-                "technologies": None,
-            }
-        )
+    # readme_summary intentionally skipped — always present in _fmt_github_prose baseline
+    # context and would crowd out experience_claims in cosine similarity top-K retrieval.
 
     for item in repo.get("detected_stack") or []:
         item = item.strip()
