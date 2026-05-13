@@ -1272,6 +1272,11 @@ def get_public_tailoring(
             "has_resume": has_resume,
             "github_repos": github_repos_with_url,
         }
+        resume_data = (exp.extracted_profile or {}).get("resume") or {} if exp else {}
+        response["author_title"] = resume_data.get("title") or None
+        response["author_email"] = resume_data.get("email") or None
+        response["author_linkedin"] = resume_data.get("linkedin") or None
+        response["author_profile_public"] = bool(author.profile_public)
 
     if tailoring.posting_public:
         chunks = (

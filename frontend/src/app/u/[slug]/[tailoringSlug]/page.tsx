@@ -17,6 +17,10 @@ interface PublicTailoring {
   created_at: string
   author_slug: string | null
   author_name: string | null
+  author_title: string | null
+  author_email: string | null
+  author_linkedin: string | null
+  author_profile_public: boolean
   sources?: {
     has_resume: boolean
     github_repos: Array<{ name: string; url: string }>
@@ -98,6 +102,7 @@ export default async function PublicTailoringPage({
             title={tailoring.title}
             jobUrl={tailoring.job_url}
             authorName={tailoring.author_name}
+            authorUrl={tailoring.author_profile_public && tailoring.author_slug ? `/u/${tailoring.author_slug}` : null}
             className="pt-12 print:pt-6"
           />
         </div>
@@ -111,44 +116,24 @@ export default async function PublicTailoringPage({
           title={tailoring.title}
           company={tailoring.company}
           jobUrl={tailoring.job_url}
+          authorName={tailoring.author_name}
+          authorSlug={tailoring.author_slug}
+          authorTitle={tailoring.author_title}
+          authorEmail={tailoring.author_email}
+          authorLinkedin={tailoring.author_linkedin}
+          authorProfilePublic={tailoring.author_profile_public ?? false}
+          sources={tailoring.sources}
         />
 
         {/* Footer */}
         <div className="px-6">
-          <footer className="pt-6 pb-6 border-t border-border-subtle text-center print:hidden space-y-1.5">
+          <footer className="pt-6 pb-6 border-t border-border-subtle text-center print:hidden">
             <p className="text-text-tertiary text-xs">
-              {tailoring.author_slug && tailoring.author_name && (
-                <>
-                  <Link href={`/u/${tailoring.author_slug}`} className="text-text-link hover:underline">
-                    {tailoring.author_name}
-                  </Link>
-                  {' · '}
-                </>
-              )}
               Generated with{' '}
-              <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
+              <Link href="/" className="text-text-link hover:underline">
                 Tailord
               </Link>
             </p>
-            {tailoring.sources && (tailoring.sources.has_resume || tailoring.sources.github_repos.length > 0) && (
-              <p className="text-text-disabled text-xs flex items-center justify-center flex-wrap gap-x-2 gap-y-1">
-                <span>Sources:</span>
-                {tailoring.sources.has_resume && (
-                  <span>📄 Resume</span>
-                )}
-                {tailoring.sources.github_repos.map((repo) => (
-                  <a
-                    key={repo.url}
-                    href={repo.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-text-link hover:underline"
-                  >
-                    {repo.url.replace(/^https?:\/\//, '')}
-                  </a>
-                ))}
-              </p>
-            )}
           </footer>
         </div>
       </div>

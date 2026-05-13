@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Upload, Pencil, FileText, Trash2, Loader2, AlertCircle, X, RefreshCw, GitBranch, ArrowUpRight,
+  Upload, Pencil, FileText, Trash2, Loader2, AlertCircle, X, RefreshCw, GitBranch, ArrowUpRight, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { LuGithub } from 'react-icons/lu';
 import { toast } from 'sonner';
@@ -213,6 +213,7 @@ export function ExperienceManager({
 
   const [profileFields, setProfileFields] = useState({ yoe_override: '', headline: '', title: '', location: '', summary: '' });
   const [profileSaving, setProfileSaving] = useState(false);
+  const [profileExpanded, setProfileExpanded] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1066,82 +1067,97 @@ export function ExperienceManager({
           {/* Inferred Profile Signals */}
           {uploadState.phase === 'ready' && (
             <div className="mt-8 pb-8 border-b border-zinc-950/5 dark:border-white/5">
-              <div className="flex flex-col gap-1.5 mb-5">
-                <h2 className="text-sm font-medium text-text-primary">Inferred Profile</h2>
-                <p className="text-sm text-text-tertiary">
-                  These signals are used in generation — edit to correct any inaccuracies.
-                </p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium text-text-secondary">Years of experience</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={profileFields.yoe_override}
-                    onChange={(e) => setProfileFields((p) => ({ ...p, yoe_override: e.target.value }))}
-                    placeholder="Auto-computed from resume"
-                    disabled={readOnly}
-                    className={inputCls}
-                  />
+              <button
+                type="button"
+                onClick={() => setProfileExpanded((v) => !v)}
+                className="flex w-full items-start justify-between gap-3 text-left"
+              >
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-sm font-medium text-text-primary">Inferred Profile</h2>
+                  <p className="text-sm text-text-tertiary">
+                    {profileExpanded
+                      ? 'These signals are used in generation — edit to correct any inaccuracies.'
+                      : 'Expand to review inferred signals — years of experience, title, location, and more.'}
+                  </p>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium text-text-secondary">Headline</label>
-                  <input
-                    type="text"
-                    value={profileFields.headline}
-                    onChange={(e) => setProfileFields((p) => ({ ...p, headline: e.target.value }))}
-                    placeholder="e.g. Senior Software Engineer"
-                    disabled={readOnly}
-                    className={inputCls}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium text-text-secondary">Title</label>
-                  <input
-                    type="text"
-                    value={profileFields.title}
-                    onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
-                    placeholder="e.g. Software Engineer"
-                    disabled={readOnly}
-                    className={inputCls}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium text-text-secondary">Location</label>
-                  <input
-                    type="text"
-                    value={profileFields.location}
-                    onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
-                    placeholder="e.g. San Francisco, CA"
-                    disabled={readOnly}
-                    className={inputCls}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5 md:col-span-2">
-                  <label className="text-xs font-medium text-text-secondary">Summary</label>
-                  <textarea
-                    value={profileFields.summary}
-                    onChange={(e) => setProfileFields((p) => ({ ...p, summary: e.target.value }))}
-                    placeholder="Professional summary"
-                    disabled={readOnly}
-                    rows={3}
-                    className={cn(inputCls, 'h-auto py-2 resize-none')}
-                  />
-                </div>
-              </div>
-              {!readOnly && (
-                <div className="mt-4">
-                  <button
-                    type="button"
-                    onClick={handleProfileSave}
-                    disabled={profileSaving}
-                    className={saveBtnCls}
-                  >
-                    {profileSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : 'Save signals'}
-                  </button>
-                </div>
+                <span className="mt-0.5 shrink-0 text-text-tertiary">
+                  {profileExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </span>
+              </button>
+              {profileExpanded && (
+                <>
+                  <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-text-secondary">Years of experience</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={profileFields.yoe_override}
+                        onChange={(e) => setProfileFields((p) => ({ ...p, yoe_override: e.target.value }))}
+                        placeholder="Auto-computed from resume"
+                        disabled={readOnly}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-text-secondary">Headline</label>
+                      <input
+                        type="text"
+                        value={profileFields.headline}
+                        onChange={(e) => setProfileFields((p) => ({ ...p, headline: e.target.value }))}
+                        placeholder="e.g. Senior Software Engineer"
+                        disabled={readOnly}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-text-secondary">Title</label>
+                      <input
+                        type="text"
+                        value={profileFields.title}
+                        onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
+                        placeholder="e.g. Software Engineer"
+                        disabled={readOnly}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-text-secondary">Location</label>
+                      <input
+                        type="text"
+                        value={profileFields.location}
+                        onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
+                        placeholder="e.g. San Francisco, CA"
+                        disabled={readOnly}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5 md:col-span-2">
+                      <label className="text-xs font-medium text-text-secondary">Summary</label>
+                      <textarea
+                        value={profileFields.summary}
+                        onChange={(e) => setProfileFields((p) => ({ ...p, summary: e.target.value }))}
+                        placeholder="Professional summary"
+                        disabled={readOnly}
+                        rows={3}
+                        className={cn(inputCls, 'h-auto py-2 resize-none')}
+                      />
+                    </div>
+                  </div>
+                  {!readOnly && (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={handleProfileSave}
+                        disabled={profileSaving}
+                        className={saveBtnCls}
+                      >
+                        {profileSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : 'Save signals'}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

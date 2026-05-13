@@ -5,10 +5,11 @@ interface TailoringHeaderProps {
   title: string | null;
   jobUrl?: string | null;
   authorName?: string | null;
+  authorUrl?: string | null;
   className?: string;
 }
 
-export function TailoringHeader({ company, title, jobUrl, authorName, className }: TailoringHeaderProps) {
+export function TailoringHeader({ company, title, jobUrl, authorName, authorUrl, className }: TailoringHeaderProps) {
   const hasSubtitle = company || authorName;
 
   return (
@@ -17,7 +18,13 @@ export function TailoringHeader({ company, title, jobUrl, authorName, className 
         <p className="text-xs font-medium uppercase tracking-wider mb-1">
           {company && <span className="text-text-tertiary">{company}</span>}
           {company && authorName && <span className="text-text-tertiary"> · </span>}
-          {authorName && <span className="text-text-secondary">{authorName}</span>}
+          {authorName && authorUrl ? (
+            <>
+              <a href={authorUrl} className="text-text-tertiary hover:text-text-primary hover:underline">{authorName} <span className="text-text-disabled">→</span></a>
+            </>
+          ) : authorName ? (
+            <span className="text-text-secondary">{authorName}</span>
+          ) : null}
         </p>
       )}
       <h1 className="text-xl font-semibold text-text-primary">
