@@ -8,7 +8,7 @@ page apply identical filtering and labelling logic.
 
 import re
 
-_NOISE_PATTERN = re.compile(r"^(\[.+\]\(.+\)|!\[.*\]\(.+\))$")
+_NOISE_PATTERN = re.compile(r"^(\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\))$")
 
 SOURCE_LABELS: dict[str, str] = {
     "resume": "Resume",

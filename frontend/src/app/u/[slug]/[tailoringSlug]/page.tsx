@@ -1,6 +1,8 @@
 import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+
+export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
 import type { ChunksResponse, JobChunk } from '@/types'
 import { PublicTailoringView } from './PublicTailoringView'
@@ -17,6 +19,14 @@ interface PublicTailoring {
   created_at: string
   author_slug: string | null
   author_name: string | null
+  author_title: string | null
+  author_email: string | null
+  author_linkedin: string | null
+  author_profile_public: boolean
+  sources?: {
+    has_resume: boolean
+    github_repos: Array<{ name: string; url: string }>
+  }
 }
 
 // cache() deduplicates the fetch across generateMetadata + the page component
@@ -94,6 +104,7 @@ export default async function PublicTailoringPage({
             title={tailoring.title}
             jobUrl={tailoring.job_url}
             authorName={tailoring.author_name}
+            authorUrl={tailoring.author_profile_public && tailoring.author_slug ? `/u/${tailoring.author_slug}` : null}
             className="pt-12 print:pt-6"
           />
         </div>
@@ -107,22 +118,21 @@ export default async function PublicTailoringPage({
           title={tailoring.title}
           company={tailoring.company}
           jobUrl={tailoring.job_url}
+          authorName={tailoring.author_name}
+          authorSlug={tailoring.author_slug}
+          authorTitle={tailoring.author_title}
+          authorEmail={tailoring.author_email}
+          authorLinkedin={tailoring.author_linkedin}
+          authorProfilePublic={tailoring.author_profile_public ?? false}
+          sources={tailoring.sources}
         />
 
         {/* Footer */}
         <div className="px-6">
           <footer className="pt-6 pb-6 border-t border-border-subtle text-center print:hidden">
             <p className="text-text-tertiary text-xs">
-              {tailoring.author_slug && tailoring.author_name && (
-                <>
-                  <Link href={`/u/${tailoring.author_slug}`} className="text-text-link hover:underline">
-                    {tailoring.author_name}
-                  </Link>
-                  {' · '}
-                </>
-              )}
               Generated with{' '}
-              <Link href="/" target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">
+              <Link href="/" className="text-text-link hover:underline">
                 Tailord
               </Link>
             </p>

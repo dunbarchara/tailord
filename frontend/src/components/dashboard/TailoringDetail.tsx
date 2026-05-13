@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw,
   Lock, Globe, Link as LinkIcon, ChevronDown, Info,
+  Pencil, RefreshCw,
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import { toast } from 'sonner';
@@ -26,7 +27,7 @@ import { DebugPanel } from '@/components/dashboard/DebugPanel';
 import { AdvocacyLetter } from '@/components/dashboard/AdvocacyLetter';
 import { GenerationView } from '@/components/dashboard/GenerationView';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
-import type { Tailoring, ChunksResponse, ExperienceChunk } from '@/types';
+import type { Tailoring, ChunksResponse, ExperienceChunk, JobChunk } from '@/types';
 
 const POLL_INTERVAL = 3000;
 
@@ -46,6 +47,13 @@ const textBtnCls =
   'text-sm font-normal tracking-[-0.1px] ' +
   'hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary ' +
   'transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
+
+// Primary save button (edit mode)
+const saveBtnCls =
+  'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[10px] ' +
+  'bg-brand-primary border border-brand-primary text-white ' +
+  'text-sm font-normal tracking-[-0.1px] ' +
+  'hover:opacity-90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 
 // Vertical divider between button groups
 function ToolDivider() {
@@ -144,6 +152,12 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   // when enrichment settles, keeping the sidebar spinner alive through the enrichment phase.
   const prevEnrichmentStatusRef = useRef<string | null | undefined>(undefined);
   const [gapAnalysisSettled, setGapAnalysisSettled] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [draftChunks, setDraftChunks] = useState<JobChunk[] | null>(null);
+  const originalChunksRef = useRef<JobChunk[]>([]);
+  const [savingEdits, setSavingEdits] = useState(false);
 
   useEffect(() => {
     // When initialTailoring is provided (demo/readOnly mode), skip the API fetch.
@@ -273,10 +287,10 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     fetchChunks();
     interval = setInterval(fetchChunks, POLL_INTERVAL);
     return () => { if (interval) clearInterval(interval); };
-    // Intentional: restart chunks polling only on generation_status transitions.
+    // Intentional: restart chunks polling only on generation_status transitions or manual refresh.
     // router is stable across renders in Next.js.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tailoringId, tailoring?.generation_status, initialChunks]);
+  }, [tailoringId, tailoring?.generation_status, initialChunks, refreshKey]);
 
   // Fetch gap responses from experience chunks once tailoring is ready.
   useEffect(() => {
@@ -467,6 +481,109 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     }
   }
 
+  async function handleRefreshAll() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetch(`/api/tailorings/${tailoringId}/refresh`, { method: 'POST' });
+      // Optimistically mark as pending so chunks polling restarts
+      setChunksData(prev => prev ? { ...prev, enrichment_status: 'pending' } : null);
+      prevEnrichmentStatusRef.current = undefined;
+      setRefreshKey(k => k + 1);
+    } catch {
+      setRefreshing(false);
+    }
+  }
+
+  // Clear refreshing flag once enrichment settles after a manual refresh
+  useEffect(() => {
+    if (refreshing && (chunksData?.enrichment_status === 'complete' || chunksData?.enrichment_status === 'error')) {
+      setRefreshing(false);
+    }
+  }, [refreshing, chunksData?.enrichment_status]);
+
+  function enterEditMode() {
+    if (!chunksData) return;
+    originalChunksRef.current = chunksData.chunks;
+    setDraftChunks([...chunksData.chunks]);
+    setEditMode(true);
+  }
+
+  function handleDiscard() {
+    setDraftChunks(null);
+    setEditMode(false);
+  }
+
+  async function handleSaveChanges() {
+    if (!draftChunks || savingEdits) return;
+    setSavingEdits(true);
+    try {
+      const originalMap = new Map(originalChunksRef.current.map(c => [c.id, c]));
+      const draftSet = new Set(draftChunks.map(c => c.id));
+
+      const deleted = originalChunksRef.current.filter(c => !draftSet.has(c.id));
+      const created = draftChunks.filter(c => c.id.startsWith('tmp-'));
+      const modified = draftChunks.filter(c => {
+        if (c.id.startsWith('tmp-')) return false;
+        const orig = originalMap.get(c.id);
+        if (!orig) return false;
+        return (
+          c.content !== orig.content ||
+          c.should_render !== orig.should_render ||
+          c.is_requirement !== orig.is_requirement ||
+          c.section !== orig.section ||
+          c.position !== orig.position ||
+          c.chunk_type !== orig.chunk_type
+        );
+      });
+
+      const calls: Promise<unknown>[] = [
+        ...deleted.map(c =>
+          fetch(`/api/tailorings/${tailoringId}/chunks/${c.id}`, { method: 'DELETE' })
+        ),
+        ...created.map(c =>
+          fetch(`/api/tailorings/${tailoringId}/chunks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: c.content, section: c.section, chunk_type: c.chunk_type }),
+          })
+        ),
+        ...modified.map(c => {
+          const orig = originalMap.get(c.id)!;
+          const patch: Record<string, unknown> = {};
+          if (c.content !== orig.content) patch.content = c.content;
+          if (c.should_render !== orig.should_render) patch.should_render = c.should_render;
+          if (c.is_requirement !== orig.is_requirement) patch.is_requirement = c.is_requirement;
+          if (c.section !== orig.section) patch.section = c.section;
+          if (c.position !== orig.position) patch.position = c.position;
+          if (c.chunk_type !== orig.chunk_type) patch.chunk_type = c.chunk_type;
+          return fetch(`/api/tailorings/${tailoringId}/chunks/${c.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch),
+          });
+        }),
+      ];
+
+      if (calls.length > 0) await Promise.all(calls);
+
+      // Refetch to get canonical server state (IDs for created chunks, etc.)
+      const res = await fetch(`/api/tailorings/${tailoringId}/chunks`);
+      if (res.ok) {
+        const fresh: ChunksResponse = await res.json();
+        setChunksData(fresh);
+      }
+
+      setDraftChunks(null);
+      setEditMode(false);
+      toast.success('Changes saved.');
+    } catch {
+      toastError('Failed to save changes.');
+    } finally {
+      setSavingEdits(false);
+    }
+  }
+
   const handleCopy = () => {
     if (!tailoring) return;
     if (activeTab === 'analysis' && chunksData) {
@@ -485,6 +602,28 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
+
+  function handleChunkUpdate(updatedChunk: JobChunk) {
+    setDraftChunks(prev => prev
+      ? prev.map(c => c.id === updatedChunk.id ? updatedChunk : c)
+      : null
+    );
+  }
+
+  function handleChunkDelete(chunkId: string) {
+    setDraftChunks(prev => prev ? prev.filter(c => c.id !== chunkId) : null);
+  }
+
+  function handleChunkCreate(newChunk: JobChunk) {
+    setDraftChunks(prev => prev ? [...prev, newChunk] : null);
+  }
+
+  function handleSectionRename(oldSection: string, newSection: string | null) {
+    setDraftChunks(prev => prev
+      ? prev.map(c => c.section === oldSection ? { ...c, section: newSection } : c)
+      : null
+    );
+  }
 
   if (loading) {
     return (
@@ -538,6 +677,11 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   const anyPublic = letterOn || postingOn;
 
   const canCopy = activeTab === 'letter' && !!tailoring.generated_output;
+
+  // In edit mode, show draft data to child components; otherwise show server-fetched data.
+  const displayChunksData = (editMode && draftChunks && chunksData)
+    ? { ...chunksData, chunks: draftChunks }
+    : chunksData;
 
   return (
     <div className="h-full flex flex-col bg-surface-elevated">
@@ -705,6 +849,53 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
               </div>
             </PopoverContent>
           </Popover>
+
+          {/* Edit mode controls — analysis tab only */}
+          {activeTab === 'analysis' && !showGenerationView && !readOnly && (
+            editMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSaveChanges}
+                  disabled={savingEdits}
+                  className={saveBtnCls}
+                >
+                  {savingEdits && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Save changes
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDiscard}
+                  disabled={savingEdits}
+                  className={textBtnCls}
+                >
+                  Discard
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={enterEditMode}
+                  title="Edit chunks"
+                  className={iconBtnCls}
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRefreshAll}
+                  disabled={refreshing || chunksData?.enrichment_status !== 'complete'}
+                  title="Re-score all requirements"
+                  className={iconBtnCls}
+                >
+                  {refreshing
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <RefreshCw className="h-4 w-4" />}
+                </button>
+              </>
+            )
+          )}
 
           <ToolDivider />
 
@@ -876,7 +1067,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             )}
             {activeTab === 'analysis' && (
               <AnalysisView
-                data={chunksData}
+                data={displayChunksData}
                 error={effectiveChunksError}
                 title={tailoring.title}
                 company={tailoring.company}
@@ -888,6 +1079,11 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                 partialResponses={partialResponses}
                 generationReady={tailoring.generation_status === 'ready'}
                 readOnly={readOnly}
+                editMode={editMode}
+                onChunkUpdate={handleChunkUpdate}
+                onChunkDelete={handleChunkDelete}
+                onChunkCreate={handleChunkCreate}
+                onSectionRename={handleSectionRename}
               />
             )}
             {activeTab === 'debug' && (

@@ -19,7 +19,7 @@ export interface Tailoring {
   id: string
   title: string | null
   company: string | null
-  job_url: string
+  job_url: string | null
   generated_output: string | null
   generation_status: GenerationStatus
   generation_stage: string | null
@@ -114,10 +114,19 @@ export interface GitHubRepoDetails {
   error_count: number
 }
 
+export interface ProfileCorrections {
+  yoe_override?: number | null
+  headline?: string | null
+  title?: string | null
+  summary?: string | null
+  location?: string | null
+}
+
 export interface SourcedProfile {
   resume?: ExtractedProfile
   github?: { repos: GitHubRepo[] }
   user_input?: { text: string }
+  corrections?: ProfileCorrections
 }
 
 export interface ExtractedProfile {
@@ -169,7 +178,9 @@ export interface JobChunk {
   experience_sources: string[] | null  // new: prefer over experience_source; may be null for old records
   source_label: string | null
   should_render?: boolean  // undefined = treat as true (pre-enrichment or legacy records)
+  is_requirement: boolean     // false = user-marked as noise/excluded from re-scoring
   display_ready: boolean   // computed by backend: not a header, has a section, not noise
+  scored_content: string | null  // content at time of last scoring; null = scored before this field existed
 }
 
 export interface ChunksResponse {

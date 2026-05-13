@@ -13,28 +13,28 @@ async function getUserContext() {
   }
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const user = await getUserContext()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { id } = await params
-  return proxyToBackendWithUser(`tailorings/${id}/chunks`, user, { method: 'GET' })
-}
-
-export async function POST(
+export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string; chunkId: string }> },
 ) {
   const user = await getUserContext()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { id } = await params
+  const { id, chunkId } = await params
   const body = await req.text()
-  return proxyToBackendWithUser(`tailorings/${id}/chunks`, user, {
-    method: 'POST',
+  return proxyToBackendWithUser(`tailorings/${id}/chunks/${chunkId}`, user, {
+    method: 'PATCH',
     body,
   })
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string; chunkId: string }> },
+) {
+  const user = await getUserContext()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id, chunkId } = await params
+  return proxyToBackendWithUser(`tailorings/${id}/chunks/${chunkId}`, user, { method: 'DELETE' })
 }

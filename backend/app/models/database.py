@@ -99,7 +99,8 @@ class Job(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
-    job_url: Mapped[str] = mapped_column(String)
+    job_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_job: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -304,7 +305,11 @@ class JobChunk(Base):
     should_render: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    is_requirement: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scored_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Populated by experience_embedder.py after job chunk extraction.
     embedding = mapped_column(Vector(1536), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)

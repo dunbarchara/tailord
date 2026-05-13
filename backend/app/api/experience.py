@@ -136,6 +136,7 @@ class ProfileUpdate(BaseModel):
     education: list | None = None
     projects: list | None = None
     certifications: list | None = None
+    yoe_override: float | None = None
 
 
 def _experience_response(e: Experience) -> dict:
@@ -293,8 +294,23 @@ async def trigger_process(
 
             profile = await anyio.to_thread.run_sync(lambda: extract_profile(normalized))
 
+            # Preserve non-resume keys (github, corrections, user_input, etc.) across reprocessing.
+            # Re-apply any saved corrections to the freshly extracted resume so the user's
+            # manual overrides aren't silently discarded when they re-upload.
+            existing_profile = experience.extracted_profile or {}
+            corrections = existing_profile.get("corrections") or {}
+            if corrections:
+                correctable = ("title", "headline", "summary", "location")
+                profile = {
+                    **profile,
+                    **{k: v for k, v in corrections.items() if k in correctable and v is not None},
+                }
+
             experience.raw_resume_text = normalized
-            experience.extracted_profile = {"resume": profile}
+            experience.extracted_profile = {
+                **{k: v for k, v in existing_profile.items() if k != "resume"},
+                "resume": profile,
+            }
             experience.status = "ready"
             experience.processed_at = datetime.now(timezone.utc)
             db.commit()
@@ -391,15 +407,20 @@ def update_profile(
     if not experience:
         raise HTTPException(status_code=404, detail="No experience found")
 
-    resume = {}
-    if experience.extracted_profile:
-        resume = dict(experience.extracted_profile.get("resume") or {})
+    existing = experience.extracted_profile or {}
+    corrections = dict(existing.get("corrections") or {})
+    corrections.update(body.model_dump(exclude_unset=True, exclude_none=True))
 
-    update_data = body.model_dump(exclude_unset=True)
-    resume = {**resume, **update_data}
+    # Also apply text corrections directly into the resume block so all consumers
+    # (profile tab, public profile, etc.) see the corrected values without needing
+    # to know about the corrections layer.
+    resume = dict(existing.get("resume") or {})
+    correctable = ("title", "headline", "summary", "location")
+    resume.update({k: v for k, v in corrections.items() if k in correctable and v is not None})
 
     experience.extracted_profile = {
-        **(experience.extracted_profile or {}),
+        **existing,
+        "corrections": corrections,
         "resume": resume,
     }
     experience.processed_at = datetime.now(timezone.utc)
