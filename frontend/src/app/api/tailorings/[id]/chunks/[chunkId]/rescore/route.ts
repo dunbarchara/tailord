@@ -25,6 +25,6 @@ export async function POST(
   return proxyToBackendWithUser(
     `tailorings/${id}/chunks/${chunkId}/rescore`,
     user,
-    { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } },
+    { method: 'POST', body: JSON.stringify(body) },
   )
 }
