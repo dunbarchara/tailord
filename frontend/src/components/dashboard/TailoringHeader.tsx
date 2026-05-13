@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 interface TailoringHeaderProps {
@@ -19,9 +20,7 @@ export function TailoringHeader({ company, title, jobUrl, authorName, authorUrl,
           {company && <span className="text-text-tertiary">{company}</span>}
           {company && authorName && <span className="text-text-tertiary"> · </span>}
           {authorName && authorUrl ? (
-            <>
-              <a href={authorUrl} className="text-text-tertiary hover:text-text-primary hover:underline">{authorName} <span className="text-text-disabled">→</span></a>
-            </>
+            <Link href={authorUrl} className="text-text-tertiary hover:text-text-primary hover:underline">{authorName} <span className="text-text-disabled">→</span></Link>
           ) : authorName ? (
             <span className="text-text-secondary">{authorName}</span>
           ) : null}

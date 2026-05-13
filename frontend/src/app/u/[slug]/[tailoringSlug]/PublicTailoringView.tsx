@@ -165,7 +165,16 @@ export function PublicTailoringView({
       {/* Letter view */}
       {showLetter && (
         <main className="px-6 pt-10 mb-6 prose prose-sm max-w-none text-text-primary prose-headings:text-text-primary prose-headings:font-semibold prose-p:text-text-secondary prose-p:leading-relaxed prose-strong:text-text-primary prose-hr:border-border-subtle prose-hr:my-6 prose-em:text-text-tertiary prose-em:not-italic prose-em:text-xs prose-a:text-text-link prose-a:underline prose-a:underline-offset-2">
-          <ReactMarkdown>{strippedOutput}</ReactMarkdown>
+          <ReactMarkdown
+            components={{
+              // Open all prose links in a new tab — they're external (job posting, LinkedIn, mailto)
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+              ),
+            }}
+          >
+            {strippedOutput}
+          </ReactMarkdown>
         </main>
       )}
 

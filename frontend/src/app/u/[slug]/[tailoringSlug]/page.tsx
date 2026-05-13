@@ -1,6 +1,8 @@
 import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+
+export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
 import type { ChunksResponse, JobChunk } from '@/types'
 import { PublicTailoringView } from './PublicTailoringView'
