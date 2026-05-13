@@ -1120,7 +1120,7 @@ def get_tailoring_debug_info(
         candidate_header = _build_candidate_header(
             _cname, user.pronouns if hasattr(user, "pronouns") else None
         )
-        sample_user_message = chunk_prompt.USER_TEMPLATE_VECTOR.format(
+        sample_user_message = chunk_prompt.format_user_template_vector(
             candidate_header=candidate_header,
             job_requirement=f"[{first.chunk_type.upper()}] {first.content}",
             grouped_context=(
@@ -1136,7 +1136,7 @@ def get_tailoring_debug_info(
             f"{i}. [{c.chunk_type.upper()}] {c.content}" for i, c in enumerate(batch, start=1)
         )
         first_section = batch[0].section or "General"
-        sample_user_message = chunk_prompt.USER_TEMPLATE.format(
+        sample_user_message = chunk_prompt.format_user_template(
             extracted_profile=formatted_profile,
             section=first_section,
             chunks_block=sample_chunks_block,

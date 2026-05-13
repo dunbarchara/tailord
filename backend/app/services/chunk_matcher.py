@@ -179,7 +179,7 @@ def _score_chunk_vector(
             {"role": "system", "content": prompt.SYSTEM},
             {
                 "role": "user",
-                "content": prompt.USER_TEMPLATE_VECTOR.format(
+                "content": prompt.format_user_template_vector(
                     candidate_header=candidate_header,
                     job_requirement=f"[{chunk_type.upper()}] {chunk_content}",
                     grouped_context=grouped_context,
@@ -370,11 +370,10 @@ def enrich_job_chunks(
                         {"role": "system", "content": prompt.SYSTEM},
                         {
                             "role": "user",
-                            "content": prompt.USER_TEMPLATE.format(
+                            "content": prompt.format_user_template(
                                 extracted_profile=formatted_profile,
                                 section=section,
                                 chunks_block=chunks_block,
-                                force_score_note="",
                             ),
                         },
                     ],
@@ -575,7 +574,7 @@ def re_enrich_single_chunk(
                     {"role": "system", "content": prompt.SYSTEM},
                     {
                         "role": "user",
-                        "content": prompt.USER_TEMPLATE.format(
+                        "content": prompt.format_user_template(
                             extracted_profile=formatted_profile,
                             section=section,
                             chunks_block=chunks_block,
@@ -756,11 +755,10 @@ def refresh_job_chunks(
                         {"role": "system", "content": prompt.SYSTEM},
                         {
                             "role": "user",
-                            "content": prompt.USER_TEMPLATE.format(
+                            "content": prompt.format_user_template(
                                 extracted_profile=formatted_profile,
                                 section=section,
                                 chunks_block=chunks_block,
-                                force_score_note="",
                             ),
                         },
                     ],
