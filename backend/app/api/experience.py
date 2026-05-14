@@ -46,7 +46,7 @@ from app.services.experience_processor import (
     _normalize_resume_text,
     extract_text,
 )
-from app.services.gap_analyzer import _build_job_context, _generate_partial_question
+from app.services.gap_analyzer import _build_job_context, _generate_question
 from app.services.profile_extractor import extract_profile
 
 router = APIRouter()
@@ -1150,7 +1150,8 @@ def create_gap_response(
                 candidate_name=candidate_name,
                 pronouns=user.pronouns,
             )
-            pq = _generate_partial_question(
+            pq = _generate_question(
+                "partial",
                 requirement=updated_chunk.content,
                 match_rationale=updated_chunk.match_rationale or "",
                 formatted_profile=formatted_profile,

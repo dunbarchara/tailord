@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
@@ -108,7 +109,8 @@ def run_gap_analysis(tailoring_id: str) -> None:
         gaps_with_questions: list[ProfileGapWithChunk] = []
         for chunk in gap_chunks:
             try:
-                result = _generate_gap_question(
+                result = _generate_question(
+                    "gap",
                     requirement=chunk.content,
                     match_rationale=chunk.match_rationale or "",
                     formatted_profile=formatted_profile,
@@ -133,7 +135,8 @@ def run_gap_analysis(tailoring_id: str) -> None:
         partials_with_questions: list[ProfileGapWithChunk] = []
         for chunk in partial_chunks:
             try:
-                result = _generate_partial_question(
+                result = _generate_question(
+                    "partial",
                     requirement=chunk.content,
                     match_rationale=chunk.match_rationale or "",
                     formatted_profile=formatted_profile,
@@ -200,22 +203,24 @@ def _build_job_context(extracted_job: dict) -> str:
     return "\n".join(lines) if lines else "this role"
 
 
-def _generate_gap_question(
+def _generate_question(
+    mode: Literal["gap", "partial"],
     requirement: str,
     match_rationale: str,
     formatted_profile: str,
     job_context: str,
 ) -> GapQuestion:
     """
-    Single-responsibility LLM call: given one confirmed gap requirement and the
-    candidate's profile, generate a targeted follow-up question.
+    Single-responsibility LLM call: generate a targeted follow-up question for one
+    scored requirement.
 
-    The requirement has already been scored 0 by the chunk matcher — this function
-    only generates the question; it does not re-score or validate the gap.
+    mode="gap"     — requirement scored 0; asks for gap-filling experience evidence.
+    mode="partial" — requirement scored 1; asks for a path-to-strong clarification.
 
-    Structurally identical to _generate_partial_question; they differ only in
-    prompt templates (SYSTEM/USER_TEMPLATE vs PARTIAL_SYSTEM/PARTIAL_USER_TEMPLATE).
+    The prompt templates differ between modes; everything else is identical.
     """
+    sys_prompt = prompt.SYSTEM if mode == "gap" else prompt.PARTIAL_SYSTEM
+    user_template = prompt.USER_TEMPLATE if mode == "gap" else prompt.PARTIAL_USER_TEMPLATE
 
     def _validate(r: GapQuestion) -> None:
         if not r.question_for_candidate.strip():
@@ -225,10 +230,10 @@ def _generate_gap_question(
         get_llm_client(),
         model=settings.llm_model,
         messages=[
-            {"role": "system", "content": prompt.SYSTEM},
+            {"role": "system", "content": sys_prompt},
             {
                 "role": "user",
-                "content": prompt.USER_TEMPLATE.format(
+                "content": user_template.format(
                     requirement=requirement,
                     match_rationale=match_rationale,
                     job_context=job_context,
@@ -242,43 +247,17 @@ def _generate_gap_question(
     )
 
 
-def _generate_partial_question(
+def _generate_gap_question(
     requirement: str,
     match_rationale: str,
     formatted_profile: str,
     job_context: str,
 ) -> GapQuestion:
-    """
-    Single-responsibility LLM call: given one partial-match requirement and the
-    candidate's profile, generate a targeted path-to-strong question.
-
-    The requirement has already been scored 1 by the chunk matcher — this function
-    only generates the question; it does not re-score.
-
-    Structurally identical to _generate_gap_question; they differ only in
-    prompt templates (PARTIAL_SYSTEM/PARTIAL_USER_TEMPLATE vs SYSTEM/USER_TEMPLATE).
-    """
-
-    def _validate(r: GapQuestion) -> None:
-        if not r.question_for_candidate.strip():
-            raise ValueError("question_for_candidate is empty")
-
-    return llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": prompt.PARTIAL_SYSTEM},
-            {
-                "role": "user",
-                "content": prompt.PARTIAL_USER_TEMPLATE.format(
-                    requirement=requirement,
-                    match_rationale=match_rationale,
-                    job_context=job_context,
-                    formatted_profile=formatted_profile,
-                ),
-            },
-        ],
-        response_model=GapQuestion,
-        temperature=prompt.TEMPERATURE,
-        validate_fn=_validate,
+    """Compatibility shim — delegates to _generate_question("gap", ...)."""
+    return _generate_question(
+        "gap",
+        requirement=requirement,
+        match_rationale=match_rationale,
+        formatted_profile=formatted_profile,
+        job_context=job_context,
     )
