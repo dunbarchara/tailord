@@ -111,6 +111,12 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
     persist structured profile to DB. Creates its own DB session since the request
     session is closed by the time background tasks run.
     """
+    import time as _time
+
+    from app.metrics import EXPERIENCE_PROCESSING_DURATION_MS, EXPERIENCE_PROCESSING_TOTAL
+
+    _start = _time.perf_counter()
+
     logger.info(
         "process_experience start: experience_id=%s storage_key=%s filename=%s",
         experience_id,
@@ -159,12 +165,16 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
             experience.processed_at = datetime.now(timezone.utc)
             db.commit()
             logger.info("process_experience complete: experience_id=%s", experience_id)
+            EXPERIENCE_PROCESSING_TOTAL.labels(status="success").inc()
+            EXPERIENCE_PROCESSING_DURATION_MS.observe(int((_time.perf_counter() - _start) * 1000))
 
         except Exception as e:
             logger.exception("process_experience failed for experience_id=%s: %s", experience_id, e)
             experience.status = "error"
             experience.error_message = _friendly_processing_error(e)
             db.commit()
+            EXPERIENCE_PROCESSING_TOTAL.labels(status="error").inc()
+            EXPERIENCE_PROCESSING_DURATION_MS.observe(int((_time.perf_counter() - _start) * 1000))
 
     finally:
         db.close()

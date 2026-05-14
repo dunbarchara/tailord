@@ -25,6 +25,10 @@ class CorrelationIdMiddleware:
             await self._app(scope, receive, send)
             return
 
+        if scope.get("path") == "/metrics":
+            await self._app(scope, receive, send)
+            return
+
         headers = dict(scope.get("headers", []))
         raw = headers.get(b"x-correlation-id", b"")
         correlation_id = raw.decode("utf-8") if raw else str(uuid.uuid4())

@@ -226,6 +226,16 @@ def _finalize_tailoring(
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(correlation_id=correlation_id, tailoring_id=tailoring_id)
 
+    from app.metrics import (
+        TAILORING_ACTIVE_GENERATIONS,
+        TAILORING_GENERATION_DURATION_MS,
+        TAILORING_GENERATIONS_TOTAL,
+        TAILORING_PHASE_DURATION_MS,
+    )
+
+    TAILORING_ACTIVE_GENERATIONS.inc()
+    _generation_success = False
+
     overall_start = time.perf_counter()
     phase_durations: dict[str, int] = {}
 
@@ -239,6 +249,10 @@ def _finalize_tailoring(
         tailoring = db.get(Tailoring, tailoring_id)
         if not tailoring:
             logger.error("tailoring_not_found")
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
             return
 
         tailoring.generation_started_at = datetime.now(timezone.utc)
@@ -284,6 +298,10 @@ def _finalize_tailoring(
                     "We couldn't extract the job description. Try regenerating."
                 )
                 db.commit()
+                TAILORING_ACTIVE_GENERATIONS.dec()
+                TAILORING_GENERATIONS_TOTAL.labels(
+                    status="error", matching_mode=settings.matching_mode
+                ).inc()
                 return
 
             job = db.get(Job, job_id)
@@ -292,6 +310,9 @@ def _finalize_tailoring(
                 db.commit()
 
         phase_durations["extract_job"] = int((time.perf_counter() - phase_start) * 1000)
+        TAILORING_PHASE_DURATION_MS.labels(phase="extract_job").observe(
+            phase_durations["extract_job"]
+        )
         _write_debug_log(
             tailoring_id,
             "phase_complete",
@@ -326,6 +347,10 @@ def _finalize_tailoring(
                 db.commit()
         except Exception:
             pass
+        TAILORING_ACTIVE_GENERATIONS.dec()
+        TAILORING_GENERATIONS_TOTAL.labels(
+            status="error", matching_mode=settings.matching_mode
+        ).inc()
         return
     finally:
         db.close()
@@ -347,6 +372,9 @@ def _finalize_tailoring(
         enrich_error = str(exc)
 
     phase_durations["enrich_chunks"] = int((time.perf_counter() - phase_start) * 1000)
+    TAILORING_PHASE_DURATION_MS.labels(phase="enrich_chunks").observe(
+        phase_durations["enrich_chunks"]
+    )
     if enrich_error:
         _write_debug_log(
             tailoring_id,
@@ -385,6 +413,10 @@ def _finalize_tailoring(
         tailoring = db.get(Tailoring, tailoring_id)
         if not tailoring:
             logger.error("tailoring_not_found_after_enrichment")
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
             return
 
         tailoring.generation_stage = "generating"
@@ -415,9 +447,16 @@ def _finalize_tailoring(
                 "Tailoring generation failed. You can retry by regenerating."
             )
             db.commit()
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
             return
 
         phase_durations["generate_tailoring"] = int((time.perf_counter() - phase_start) * 1000)
+        TAILORING_PHASE_DURATION_MS.labels(phase="generate_tailoring").observe(
+            phase_durations["generate_tailoring"]
+        )
         _write_debug_log(
             tailoring_id,
             "phase_complete",
@@ -445,6 +484,7 @@ def _finalize_tailoring(
             delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
             tailoring.generation_duration_ms = int(delta_ms)
         db.commit()
+        _generation_success = True
 
         total_duration_ms = int((time.perf_counter() - overall_start) * 1000)
         logger.info(
@@ -499,9 +539,18 @@ def _finalize_tailoring(
                 "error_message": "Gap analysis failed",
             },
         )
+        TAILORING_ACTIVE_GENERATIONS.dec()
+        TAILORING_GENERATIONS_TOTAL.labels(
+            status="success" if _generation_success else "error",
+            matching_mode=settings.matching_mode,
+        ).inc()
+        TAILORING_GENERATION_DURATION_MS.observe(int((time.perf_counter() - overall_start) * 1000))
         return
 
     phase_durations["gap_analysis"] = int((time.perf_counter() - phase_start) * 1000)
+    TAILORING_PHASE_DURATION_MS.labels(phase="gap_analysis").observe(
+        phase_durations["gap_analysis"]
+    )
     _write_debug_log(
         tailoring_id,
         "phase_complete",
@@ -511,6 +560,12 @@ def _finalize_tailoring(
         },
     )
     logger.info("phase_complete", phase="gap_analysis", duration_ms=phase_durations["gap_analysis"])
+    TAILORING_ACTIVE_GENERATIONS.dec()
+    TAILORING_GENERATIONS_TOTAL.labels(
+        status="success" if _generation_success else "error",
+        matching_mode=settings.matching_mode,
+    ).inc()
+    TAILORING_GENERATION_DURATION_MS.observe(int((time.perf_counter() - overall_start) * 1000))
 
 
 async def _stream_tailoring(

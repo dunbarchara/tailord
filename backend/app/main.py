@@ -1,13 +1,25 @@
+import re
 import time
 
 import structlog
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from prometheus_client import make_asgi_app
 
 from app.api import admin, experience, notion, tailorings, users
 from app.clients.llm_client import validate_llm_config
 from app.logging import setup_logging
+from app.metrics import HTTP_REQUEST_DURATION_MS, HTTP_REQUESTS_TOTAL
 from app.middleware.correlation import CorrelationIdMiddleware
+
+_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
+)
+
+
+def _normalize_path(path: str) -> str:
+    return _UUID_RE.sub("{id}", path)
+
 
 _req_logger = structlog.get_logger("app.requests")
 
@@ -28,6 +40,10 @@ class _RequestLoggingMiddleware:
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        if scope.get("path") == "/metrics":
             await self._app(scope, receive, send)
             return
 
@@ -55,6 +71,11 @@ class _RequestLoggingMiddleware:
                 status_code=status_code[0],
                 duration_ms=duration_ms,
             )
+            norm_path = _normalize_path(path)
+            HTTP_REQUESTS_TOTAL.labels(
+                method=method, endpoint=norm_path, status_code=str(status_code[0])
+            ).inc()
+            HTTP_REQUEST_DURATION_MS.labels(method=method, endpoint=norm_path).observe(duration_ms)
 
 
 def create_app() -> FastAPI:
@@ -66,6 +87,8 @@ def create_app() -> FastAPI:
         title="Tailord API",
         version="1.0.0",
     )
+
+    app.mount("/metrics", make_asgi_app())
 
     # Middleware runs in reverse registration order (last registered = outermost).
     # We want: CorrelationId (outermost) → RequestLogging → app handlers.

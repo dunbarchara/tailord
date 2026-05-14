@@ -128,6 +128,17 @@ def llm_parse(
     )
     logger.debug("llm_parse_response", raw_content=raw_content)
 
+    from app.metrics import LLM_CALL_DURATION_MS, LLM_TOKENS_TOTAL
+
+    prompt_type = response_model.__name__
+    LLM_CALL_DURATION_MS.labels(model=model, prompt_type=prompt_type).observe(int(elapsed * 1000))
+    LLM_TOKENS_TOTAL.labels(model=model, prompt_type=prompt_type, direction="input").inc(
+        usage.prompt_tokens
+    )
+    LLM_TOKENS_TOTAL.labels(model=model, prompt_type=prompt_type, direction="output").inc(
+        usage.completion_tokens
+    )
+
     if finish_reason == "length":
         raise LLMTruncationError(
             f"LLM response truncated (finish_reason=length) for schema={response_model.__name__}, model={model}"
@@ -184,6 +195,16 @@ def llm_generate(
     )
     logger.debug("llm_generate_response", content=content)
 
+    from app.metrics import LLM_CALL_DURATION_MS, LLM_TOKENS_TOTAL
+
+    LLM_CALL_DURATION_MS.labels(model=model, prompt_type=label).observe(int(elapsed * 1000))
+    LLM_TOKENS_TOTAL.labels(model=model, prompt_type=label, direction="input").inc(
+        usage.prompt_tokens
+    )
+    LLM_TOKENS_TOTAL.labels(model=model, prompt_type=label, direction="output").inc(
+        usage.completion_tokens
+    )
+
     if finish_reason == "length":
         raise LLMTruncationError(
             f"LLM response truncated (finish_reason=length) for label={label}, model={model}"
@@ -229,6 +250,9 @@ def llm_parse_with_retry(
                     schema=response_model.__name__,
                     error=str(exc),
                 )
+                from app.metrics import LLM_RETRIES_TOTAL
+
+                LLM_RETRIES_TOTAL.labels(model=model, prompt_type=response_model.__name__).inc()
                 current_messages = current_messages + [
                     {
                         "role": "user",
@@ -245,5 +269,10 @@ def llm_parse_with_retry(
                     schema=response_model.__name__,
                     error=str(last_exc),
                 )
+                from app.metrics import LLM_ERRORS_TOTAL
+
+                LLM_ERRORS_TOTAL.labels(
+                    model=model, prompt_type=response_model.__name__, error_type="unknown"
+                ).inc()
 
     raise last_exc

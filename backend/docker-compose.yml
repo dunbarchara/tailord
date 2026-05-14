@@ -33,6 +33,25 @@ services:
         az storage cors add --services b --methods PUT GET DELETE --origins 'http://localhost:3000' --allowed-headers '*' --exposed-headers '*' --max-age 3600
       "
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   azurite_data:
