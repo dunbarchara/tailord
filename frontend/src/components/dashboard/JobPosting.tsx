@@ -378,6 +378,9 @@ function ChunkItem({
 
   if (onSelect) {
     const isSelected = selectedId === chunk.id;
+    // Non-edit mode: the whole row is an interactive toggle. role="button" + keyboard
+    // handler make it accessible without converting to <button> (which would conflict
+    // with nested interactive children rendered in edit mode).
     return (
       <div
         className={cn(
@@ -386,7 +389,10 @@ function ChunkItem({
           isSelected ? 'bg-surface-sunken' : (!editMode && 'hover:bg-surface-sunken/50'),
           isHidden && 'opacity-60',
         )}
+        role={!editMode ? 'button' : undefined}
+        tabIndex={!editMode ? 0 : undefined}
         onClick={!editMode ? () => onSelect(isSelected ? null : chunk.id) : undefined}
+        onKeyDown={!editMode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(isSelected ? null : chunk.id); } } : undefined}
       >
         {barColor && <div className={cn('absolute top-0 bottom-0 -left-3 w-1 rounded-sm', barColor)} />}
         {body}
@@ -405,7 +411,10 @@ function ChunkItem({
         isExpanded ? 'translate-x-0.5' : (!editMode && 'hover:translate-x-0.5'),
         isHidden && 'opacity-60',
       )}
+      role={!editMode ? 'button' : undefined}
+      tabIndex={!editMode ? 0 : undefined}
       onClick={!editMode ? () => setExpandedId(isExpanded ? null : chunk.id) : undefined}
+      onKeyDown={!editMode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(isExpanded ? null : chunk.id); } } : undefined}
     >
       <div className={cn(
         'absolute top-0 bottom-0 -left-3 rounded-sm transition-all duration-200',
@@ -607,7 +616,10 @@ function SectionBlock({
               isUnsectioned ? 'text-text-disabled italic' : 'text-text-primary',
               editMode && !isUnsectioned && 'cursor-text hover:text-text-link',
             )}
+            role={editMode && !isUnsectioned ? 'button' : undefined}
+            tabIndex={editMode && !isUnsectioned ? 0 : undefined}
             onClick={editMode && !isUnsectioned ? () => { setSectionDraft(section); setEditingSection(true); } : undefined}
+            onKeyDown={editMode && !isUnsectioned ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSectionDraft(section); setEditingSection(true); } } : undefined}
           >
             {stripMarkdown(displaySection)}
           </h2>

@@ -69,7 +69,8 @@ export async function generateMetadata({
 function SectionHeader({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
     <div className="flex items-center gap-3 mb-8">
-      <Icon className="h-4 w-4 text-text-tertiary flex-shrink-0" />
+      {/* aria-hidden: icon is decorative — the text label conveys the section name */}
+      <Icon aria-hidden="true" className="h-4 w-4 text-text-tertiary flex-shrink-0" />
       <span className="text-[10px] uppercase tracking-widest text-text-tertiary font-medium flex-shrink-0">{label}</span>
       <div className="flex-1 h-px bg-border-subtle" />
     </div>

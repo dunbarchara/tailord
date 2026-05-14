@@ -129,6 +129,7 @@ export function ProfileSidebar({
                 <a
                   key={id}
                   href={`#${id}`}
+                  aria-current={isActive ? 'true' : undefined}
                   onClick={(e) => {
                     e.preventDefault();
                     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });

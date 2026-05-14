@@ -54,40 +54,45 @@ export function GenerationView({ tailoring, regenSsePhase, gapAnalysisSettled, e
         Generating your Tailoring — this could take a minute…
       </h2>
 
-      {/* SSE phase — scraping during regeneration */}
-      {regenSsePhase && (
-        <div className="flex items-center gap-2.5 text-sm text-text-secondary">
-          <Loader2 className="h-4 w-4 text-brand-primary animate-spin shrink-0" />
-          {regenSsePhase === 'scraping' ? 'Fetching job posting...' : 'Updating...'}
-        </div>
-      )}
+      {/* Live region announces progress updates to screen readers */}
+      <div role="status" aria-live="polite" aria-label="Generation progress">
 
-      {/* Backend phases */}
-      {!regenSsePhase && visiblePhases.length > 0 && (
-        <div className="space-y-2">
-          {visiblePhases.map(({ key, label, done, running }) => (
-            <div key={key} className="flex items-center gap-2.5 text-sm">
-              {done
-                ? <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
-                : <Loader2 className="h-4 w-4 text-brand-primary animate-spin shrink-0" />}
-              <span className="text-text-secondary">
-                {label}{running ? '...' : ''}
-                {running && elapsed > 0 && (
-                  <span className="text-text-tertiary"> · {formatElapsed(elapsed)}</span>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+        {/* SSE phase — scraping during regeneration */}
+        {regenSsePhase && (
+          <div className="flex items-center gap-2.5 text-sm text-text-secondary">
+            <Loader2 aria-hidden="true" className="h-4 w-4 text-brand-primary animate-spin shrink-0" />
+            {regenSsePhase === 'scraping' ? 'Fetching job posting...' : 'Updating...'}
+          </div>
+        )}
 
-      {/* Fallback — before any stage is known */}
-      {!regenSsePhase && visiblePhases.length === 0 && (
-        <div className="flex items-center gap-2.5 text-sm text-text-secondary">
-          <Loader2 className="h-4 w-4 text-brand-primary animate-spin shrink-0" />
-          <span>Generating tailoring...</span>
-        </div>
-      )}
+        {/* Backend phases */}
+        {!regenSsePhase && visiblePhases.length > 0 && (
+          <div className="space-y-2">
+            {visiblePhases.map(({ key, label, done, running }) => (
+              <div key={key} className="flex items-center gap-2.5 text-sm">
+                {done
+                  ? <CheckCircle2 aria-hidden="true" className="h-4 w-4 text-success shrink-0" />
+                  : <Loader2 aria-hidden="true" className="h-4 w-4 text-brand-primary animate-spin shrink-0" />}
+                <span className="text-text-secondary">
+                  {label}{running ? '...' : ''}
+                  {running && elapsed > 0 && (
+                    <span className="text-text-tertiary"> · {formatElapsed(elapsed)}</span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Fallback — before any stage is known */}
+        {!regenSsePhase && visiblePhases.length === 0 && (
+          <div className="flex items-center gap-2.5 text-sm text-text-secondary">
+            <Loader2 aria-hidden="true" className="h-4 w-4 text-brand-primary animate-spin shrink-0" />
+            <span>Generating tailoring...</span>
+          </div>
+        )}
+
+      </div>
 
     </div>
   );

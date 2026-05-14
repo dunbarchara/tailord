@@ -298,9 +298,9 @@ export function NewTailoringForm() {
                     </div>
                   </div>
 
-                  {/* Parse warning banner */}
+                  {/* Parse warning banner — role="alert" announces this to screen readers when it appears */}
                   {parseWarning && (
-                    <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3">
+                    <div role="alert" className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3">
                       <TriangleAlert className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-text-primary">
@@ -338,10 +338,13 @@ export function NewTailoringForm() {
                     <button
                       type="button"
                       onClick={() => setManualExpanded((v) => !v)}
+                      aria-expanded={manualExpanded}
+                      aria-controls="manual-input-section"
                       disabled={isProcessing}
                       className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <ChevronDown
+                        aria-hidden="true"
                         className={`h-4 w-4 transition-transform duration-200 ${manualExpanded ? 'rotate-180' : ''}`}
                       />
                       Or enter manually
@@ -349,6 +352,7 @@ export function NewTailoringForm() {
 
                     {manualExpanded && (
                       <div
+                        id="manual-input-section"
                         className={`mt-3 space-y-3 rounded-xl border p-4 ${
                           parseWarning
                             ? 'border-warning/40 bg-warning-bg/40'
@@ -428,9 +432,9 @@ export function NewTailoringForm() {
                     </div>
                   )}
 
-                  {/* Error state */}
+                  {/* Error state — role="alert" announces this to screen readers when it appears */}
                   {formState === 'error' && (
-                    <div className="flex items-start gap-3 rounded-xl border border-error/30 bg-error-bg px-4 py-3">
+                    <div role="alert" className="flex items-start gap-3 rounded-xl border border-error/30 bg-error-bg px-4 py-3">
                       <AlertCircle className="h-4 w-4 text-error shrink-0 mt-0.5" />
                       <div>
                         <p className="text-sm font-medium text-text-primary">Unable to create tailoring</p>

@@ -746,10 +746,12 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             </span>
           )}
           {!showGenerationView && !generationFailed && (
-            <>
+            <div role="tablist" aria-label="View" className="flex items-center gap-1.5">
               {/* Analysis pill */}
               <button
+                role="tab"
                 type="button"
+                aria-selected={activeTab === 'analysis'}
                 onClick={() => setActiveTab('analysis')}
                 className={cn(
                   'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
@@ -762,12 +764,14 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
               </button>
 
               {/* Text divider */}
-              <span className="text-border-strong text-sm select-none">|</span>
+              <span aria-hidden="true" className="text-border-strong text-sm select-none">|</span>
 
               {/* Posting + Letter joined pill */}
               <div className="flex rounded-[8px] border border-border-default overflow-hidden">
                 <button
+                  role="tab"
                   type="button"
+                  aria-selected={activeTab === 'posting'}
                   onClick={() => setActiveTab('posting')}
                   className={cn(
                     'px-3 h-7 text-sm font-normal tracking-[-0.1px] border-r border-border-default transition-colors whitespace-nowrap',
@@ -779,7 +783,9 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                   Posting
                 </button>
                 <button
+                  role="tab"
                   type="button"
+                  aria-selected={activeTab === 'letter'}
                   onClick={() => setActiveTab('letter')}
                   className={cn(
                     'px-3 h-7 text-sm font-normal tracking-[-0.1px] transition-colors whitespace-nowrap',
@@ -795,9 +801,11 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
               {/* Debug tab — only when ?debug=1 */}
               {isDebug && (
                 <>
-                  <span className="text-border-strong text-sm select-none">|</span>
+                  <span aria-hidden="true" className="text-border-strong text-sm select-none">|</span>
                   <button
+                    role="tab"
                     type="button"
+                    aria-selected={activeTab === 'debug'}
                     onClick={() => setActiveTab('debug')}
                     className={cn(
                       'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
@@ -810,7 +818,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                   </button>
                 </>
               )}
-            </>
+            </div>
           )}
         </div>
 
@@ -822,12 +830,13 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             type="button"
             onClick={handleCopy}
             disabled={showGenerationView || !canCopy}
+            aria-label={copied ? 'Copied!' : 'Copy content'}
             title={copied ? 'Copied!' : 'Copy content'}
             className={cn(iconBtnCls, copied && 'text-success hover:text-success')}
           >
             {copied
-              ? <CheckCircle2 className="h-4 w-4" />
-              : <Copy className="h-4 w-4" />}
+              ? <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+              : <Copy aria-hidden="true" className="h-4 w-4" />}
           </button>
 
           {/* Notion */}
@@ -835,11 +844,12 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             <PopoverTrigger asChild>
               <button
                 type="button"
+                aria-label={readOnly ? 'Sign in to export to Notion' : 'Export to Notion'}
                 title={readOnly ? 'Sign in to export to Notion' : 'Export to Notion'}
                 disabled={readOnly || showGenerationView || generationFailed}
                 className={iconBtnCls}
               >
-                <SiNotion className="h-4 w-4" />
+                <SiNotion aria-hidden="true" className="h-4 w-4" />
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" sideOffset={6} className="w-72 p-0 rounded-2xl border-border-subtle shadow-lg overflow-hidden">
@@ -904,21 +914,23 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                 <button
                   type="button"
                   onClick={enterEditMode}
+                  aria-label="Edit requirements"
                   title="Edit chunks"
                   className={iconBtnCls}
                 >
-                  <Pencil className="h-4 w-4" />
+                  <Pencil aria-hidden="true" className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
                   onClick={handleRefreshAll}
                   disabled={refreshing || chunksData?.enrichment_status !== 'complete'}
+                  aria-label="Re-score all requirements"
                   title="Re-score all requirements"
                   className={iconBtnCls}
                 >
                   {refreshing
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <RefreshCw className="h-4 w-4" />}
+                    ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                    : <RefreshCw aria-hidden="true" className="h-4 w-4" />}
                 </button>
               </>
             )
@@ -931,12 +943,13 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             type="button"
             onClick={() => !readOnly && setShowRegenConfirm(true)}
             disabled={readOnly || regenerating || showGenerationView}
+            aria-label={readOnly ? 'Sign in to regenerate' : regenerating ? 'Regenerating…' : 'Regenerate tailoring'}
             title={readOnly ? 'Sign in to regenerate' : regenerating ? 'Regenerating…' : 'Regenerate'}
             className={iconBtnCls}
           >
             {regenerating
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <RotateCcw className="h-4 w-4" />}
+              ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              : <RotateCcw aria-hidden="true" className="h-4 w-4" />}
           </button>
 
           <ToolDivider />
@@ -982,11 +995,12 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                       type="button"
                       onClick={handleCopyLink}
                       className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
+                      aria-label={copiedLink ? 'Link copied' : 'Copy share link'}
                       title="Copy link"
                     >
                       {copiedLink
-                        ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                        : <Copy className="h-3.5 w-3.5" />}
+                        ? <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 text-success" />
+                        : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </div>

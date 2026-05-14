@@ -31,6 +31,9 @@ function _parseDate(token: string): Date | null {
   return null;
 }
 
+// computeYoE: parses duration strings (e.g. "Mar 2020 – Present") from each role,
+// builds date intervals, merges overlapping ones (handles concurrent roles correctly),
+// then returns the total accumulated years as a float.
 function computeYoE(workExperience: Array<{ duration?: string | null }>): number {
   const intervals: Array<[Date, Date]> = [];
   for (const role of workExperience) {
@@ -44,6 +47,7 @@ function computeYoE(workExperience: Array<{ duration?: string | null }>): number
   }
   if (!intervals.length) return 0;
   const sorted = [...intervals].sort((a, b) => a[0].getTime() - b[0].getTime());
+  // Merge overlapping intervals so concurrent roles don't double-count time
   const merged: Array<[Date, Date]> = [sorted[0]];
   for (const [s, e] of sorted.slice(1)) {
     const last = merged[merged.length - 1];
@@ -159,18 +163,22 @@ function MintBtn({
   onClick,
   danger,
   disabled,
+  ariaLabel,
 }: {
   icon: React.ReactNode;
   label?: string;
   onClick?: () => void;
   danger?: boolean;
   disabled?: boolean;
+  /** Required when no visible label is provided (icon-only mode) */
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={ariaLabel}
       className={cn(
         'inline-flex items-center justify-center whitespace-nowrap rounded-[10px] border transition-colors',
         'outline-none focus-visible:ring-2 [&_svg:not([class*="size-"])]:size-3.5',
@@ -1143,8 +1151,9 @@ export function ExperienceManager({
                     {/* Row 1: Contact — Email · Phone · LinkedIn */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-medium text-text-secondary">Email</label>
+                        <label htmlFor="profile-email" className="text-xs font-medium text-text-secondary">Email</label>
                         <input
+                          id="profile-email"
                           type="email"
                           value={profileFields.email}
                           onChange={(e) => setProfileFields((p) => ({ ...p, email: e.target.value }))}
@@ -1154,8 +1163,9 @@ export function ExperienceManager({
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-medium text-text-secondary">Phone</label>
+                        <label htmlFor="profile-phone" className="text-xs font-medium text-text-secondary">Phone</label>
                         <input
+                          id="profile-phone"
                           type="tel"
                           value={profileFields.phone}
                           onChange={(e) => setProfileFields((p) => ({ ...p, phone: e.target.value }))}
@@ -1165,8 +1175,9 @@ export function ExperienceManager({
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-medium text-text-secondary">LinkedIn</label>
+                        <label htmlFor="profile-linkedin" className="text-xs font-medium text-text-secondary">LinkedIn</label>
                         <input
+                          id="profile-linkedin"
                           type="text"
                           value={profileFields.linkedin}
                           onChange={(e) => setProfileFields((p) => ({ ...p, linkedin: e.target.value }))}
@@ -1179,8 +1190,9 @@ export function ExperienceManager({
                     {/* Row 2: YoE · Title · Location */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-medium text-text-secondary">Years of experience</label>
+                        <label htmlFor="profile-yoe" className="text-xs font-medium text-text-secondary">Years of experience</label>
                         <input
+                          id="profile-yoe"
                           type="number"
                           min="0"
                           step="0.5"
@@ -1196,8 +1208,9 @@ export function ExperienceManager({
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-medium text-text-secondary">Title</label>
+                        <label htmlFor="profile-title" className="text-xs font-medium text-text-secondary">Title</label>
                         <input
+                          id="profile-title"
                           type="text"
                           value={profileFields.title}
                           onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
@@ -1207,8 +1220,9 @@ export function ExperienceManager({
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-medium text-text-secondary">Location</label>
+                        <label htmlFor="profile-location" className="text-xs font-medium text-text-secondary">Location</label>
                         <input
+                          id="profile-location"
                           type="text"
                           value={profileFields.location}
                           onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
@@ -1221,8 +1235,9 @@ export function ExperienceManager({
 
                     {/* Row 3: Headline (full width) */}
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-text-secondary">Headline</label>
+                      <label htmlFor="profile-headline" className="text-xs font-medium text-text-secondary">Headline</label>
                       <input
+                        id="profile-headline"
                         type="text"
                         value={profileFields.headline}
                         onChange={(e) => setProfileFields((p) => ({ ...p, headline: e.target.value }))}
@@ -1234,8 +1249,9 @@ export function ExperienceManager({
 
                     {/* Row 4: Summary (full width) */}
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-text-secondary">Summary</label>
+                      <label htmlFor="profile-summary" className="text-xs font-medium text-text-secondary">Summary</label>
                       <textarea
+                        id="profile-summary"
                         value={profileFields.summary}
                         onChange={(e) => setProfileFields((p) => ({ ...p, summary: e.target.value }))}
                         placeholder="Professional summary"
