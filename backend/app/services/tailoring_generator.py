@@ -2,11 +2,15 @@ import json
 import re
 from datetime import date
 
+import structlog
+
 from app.clients.llm_client import get_llm_client
 from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import tailoring as prompt
 from app.schemas.llm_outputs import TailoringContent
+
+logger = structlog.get_logger(__name__)
 
 _MONTH_ABBR = {
     "jan": 1,
@@ -108,8 +112,12 @@ def _compute_profile_signals(sourced_profile: dict) -> str:
 
     corrections = sourced_profile.get("corrections") or {}
     if (override := corrections.get("yoe_override")) is not None:
+        logger.debug(
+            "compute_profile_signals: yoe_override applied", computed=total_years, override=override
+        )
         total_years = override
 
+    logger.debug("compute_profile_signals: result", total_years=total_years, roles=len(role_lines))
     lines = [f"Total professional experience: {total_years:.1f} years"]
     if role_lines:
         lines.append("Roles (chronological):")
@@ -392,6 +400,9 @@ def _render_tailoring(
     ]
 
     # Advocacy sections
+    logger.debug(
+        "_render_tailoring: advocacy_statement_count", count=len(content.advocacy_statements)
+    )
     for stmt in content.advocacy_statements:
         source_tag = " ".join(f"[{s}]" for s in stmt.sources) if stmt.sources else ""
         body = f"{stmt.body} *{source_tag}*".strip()
@@ -439,6 +450,12 @@ def generate_tailoring(
 ) -> tuple[str, dict]:
     company = extracted_job.get("company") or "the company"
     job_title = extracted_job.get("title") or "this role"
+    logger.debug(
+        "generate_tailoring: start",
+        company=company,
+        job_title=job_title,
+        profile_sources=list(extracted_profile.keys()),
+    )
     resume = extracted_profile.get("resume") or {}
     candidate_email: str | None = resume.get("email") or None
     candidate_linkedin: str | None = resume.get("linkedin") or None
