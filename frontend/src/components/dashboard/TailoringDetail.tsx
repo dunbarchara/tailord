@@ -504,7 +504,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   }, [refreshing, chunksData?.enrichment_status]);
 
   function enterEditMode() {
-    if (!chunksData) return;
+    if (!chunksData || !tailoring) return;
     originalChunksRef.current = chunksData.chunks;
     setDraftChunks([...chunksData.chunks]);
     setJobDraft({ title: tailoring.title ?? '', company: tailoring.company ?? '' });
@@ -569,7 +569,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
       ];
 
       // Patch job title/company if changed
-      if (jobDraft) {
+      if (jobDraft && tailoring) {
         const titleChanged = jobDraft.title !== (tailoring.title ?? '');
         const companyChanged = jobDraft.company !== (tailoring.company ?? '');
         if (titleChanged || companyChanged) {

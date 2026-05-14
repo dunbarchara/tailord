@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded_at": "2026-05-13",
+  "recorded_at": "2026-05-14",
   "llm_model": "gpt-5.4-mini",
   "embedding_model": "text-embedding-3-small",
   "k": 8,

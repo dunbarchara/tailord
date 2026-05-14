@@ -20,6 +20,7 @@ output "appinsights_connection_string" {
 resource "azurerm_key_vault_secret" "appinsights_connection_string" {
   name         = "appinsights-connection-string"
   value        = azurerm_application_insights.tailord.connection_string
+  content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
 
   depends_on = [azurerm_key_vault_access_policy.terraform]

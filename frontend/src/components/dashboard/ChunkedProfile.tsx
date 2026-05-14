@@ -58,7 +58,7 @@ interface TableRowProps {
 
 function TableRow({
   content,
-  isGroupHeader = false,
+  isGroupHeader: _isGroupHeader = false,
   context,
   isExpanded,
   onExpand,
