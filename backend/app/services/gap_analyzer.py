@@ -60,10 +60,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
 
         extracted_profile = user.experience.extracted_profile
         pronouns = user.pronouns or None
-        preferred = " ".join(
-            filter(None, [user.preferred_first_name, user.preferred_last_name])
-        ).strip()
-        candidate_name = preferred or user.name or user.email
+        candidate_name = user.candidate_name
 
         formatted_profile = _format_sourced_profile(
             extracted_profile, candidate_name=candidate_name, pronouns=pronouns

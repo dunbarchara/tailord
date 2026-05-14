@@ -51,6 +51,14 @@ class User(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    @property
+    def candidate_name(self) -> str:
+        """Resolved display name for LLM prompts. Always returns a non-empty string."""
+        preferred = " ".join(
+            filter(None, [self.preferred_first_name, self.preferred_last_name])
+        ).strip()
+        return preferred or self.name or self.email
+
     experience: Mapped["Experience | None"] = relationship(
         "Experience", back_populates="user", uselist=False
     )

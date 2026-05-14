@@ -657,10 +657,7 @@ async def _stream_tailoring(
         # sit idle-in-transaction for the entire scraping duration (5–15s).
         extracted_profile = experience.extracted_profile
         experience_id = experience.id
-        preferred = " ".join(
-            filter(None, [user.preferred_first_name, user.preferred_last_name])
-        ).strip()
-        candidate_name = preferred or user.name or user.email
+        candidate_name = user.candidate_name
         candidate_pronouns = user.pronouns or None
         if existing_tailoring:
             existing_tailoring_id = str(existing_tailoring.id)

@@ -1122,10 +1122,7 @@ def create_gap_response(
     embed_experience_chunks(experience.id, db)
 
     # Re-score the requirement synchronously — user is waiting for the result
-    preferred = " ".join(
-        filter(None, [user.preferred_first_name, user.preferred_last_name])
-    ).strip()
-    candidate_name = preferred or user.name or user.email
+    candidate_name = user.candidate_name
     re_enrich_single_chunk(
         str(job_chunk_uuid),
         experience.extracted_profile or {},
@@ -1145,10 +1142,7 @@ def create_gap_response(
             job = db.query(Job).filter(Job.id == tailoring.job_id).first()
             extracted_job = (job.extracted_job or {}) if job else {}
             job_context = _build_job_context(extracted_job)
-            preferred = " ".join(
-                filter(None, [user.preferred_first_name, user.preferred_last_name])
-            ).strip()
-            candidate_name = preferred or user.name or user.email
+            candidate_name = user.candidate_name
             from app.services.tailoring_generator import _format_sourced_profile
 
             formatted_profile = _format_sourced_profile(
