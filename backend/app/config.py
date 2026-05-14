@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     github_app_private_key: str | None = None  # PEM content
     github_app_private_key_path: str | None = None  # Path to .pem file
 
+    # ── Observability / Tracing ───────────────────────────────────────────────
+    # otel_endpoint: OTLP gRPC target for local Tempo (docker-compose).
+    # applicationinsights_connection_string: injected by Terraform in staging/production.
+    otel_endpoint: str = "http://localhost:4317"
+    applicationinsights_connection_string: str = ""
+
     # ── Notion OAuth ──────────────────────────────────────────────────────────
     notion_client_id: str | None = None
     notion_client_secret: str | None = None

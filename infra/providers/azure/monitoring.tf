@@ -1,4 +1,31 @@
 # -----------------------------
+# APPLICATION INSIGHTS
+# -----------------------------
+resource "azurerm_application_insights" "tailord" {
+  name                = "${var.project_name}-appinsights"
+  resource_group_name = azurerm_resource_group.tailord.name
+  location            = azurerm_resource_group.tailord.location
+  workspace_id        = azurerm_log_analytics_workspace.tailord.id
+  application_type    = "web"
+  tags                = local.tags
+}
+
+output "appinsights_connection_string" {
+  value     = azurerm_application_insights.tailord.connection_string
+  sensitive = true
+}
+
+# Store connection string in Key Vault so it can be injected into the backend
+# Container App as a secret (pattern mirrors existing secrets in main.tf).
+resource "azurerm_key_vault_secret" "appinsights_connection_string" {
+  name         = "appinsights-connection-string"
+  value        = azurerm_application_insights.tailord.connection_string
+  key_vault_id = azurerm_key_vault.tailord.id
+
+  depends_on = [azurerm_key_vault_access_policy.terraform]
+}
+
+# -----------------------------
 # LOG ANALYTICS WORKSPACE
 # -----------------------------
 resource "azurerm_log_analytics_workspace" "tailord" {

@@ -11,6 +11,9 @@ from app.clients.llm_client import validate_llm_config
 from app.logging import setup_logging
 from app.metrics import HTTP_REQUEST_DURATION_MS, HTTP_REQUESTS_TOTAL
 from app.middleware.correlation import CorrelationIdMiddleware
+from app.telemetry import setup_telemetry
+
+setup_telemetry()
 
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
@@ -94,6 +97,12 @@ def create_app() -> FastAPI:
     # We want: CorrelationId (outermost) → RequestLogging → app handlers.
     app.add_middleware(_RequestLoggingMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
+
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+    FastAPIInstrumentor().instrument_app(app)
+    SQLAlchemyInstrumentor().instrument()
 
     @app.get("/health", include_in_schema=False)
     async def health() -> JSONResponse:

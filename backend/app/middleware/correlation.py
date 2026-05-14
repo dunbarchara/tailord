@@ -38,6 +38,18 @@ class CorrelationIdMiddleware:
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 
+        # Inject OTel trace_id / span_id so every log line can be cross-referenced
+        # with Tempo traces (local) or Application Insights (staging/production).
+        from opentelemetry import trace as otel_trace
+
+        span = otel_trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx.is_valid:
+            structlog.contextvars.bind_contextvars(
+                trace_id=format(ctx.trace_id, "032x"),
+                span_id=format(ctx.span_id, "016x"),
+            )
+
         async def send_with_header(message):
             if message["type"] == "http.response.start":
                 headers_list = list(message.get("headers", []))

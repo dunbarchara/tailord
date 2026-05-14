@@ -64,61 +64,74 @@ def llm_parse(
     - DEBUG: full request messages and full response content (set LOG_LEVEL=DEBUG to enable)
     """
     from app.core.model_config import JsonMode, get_capabilities
+    from app.telemetry import get_tracer as _get_tracer
 
     caps = get_capabilities(model)
     mode = caps.json_mode
+    prompt_type = response_model.__name__
 
     logger.debug(
         "llm_parse_request",
         model=model,
         mode=mode.value,
-        schema=response_model.__name__,
+        schema=prompt_type,
         temperature=temperature if caps.supports_temperature else "n/a",
         messages=_format_messages(messages),
     )
 
-    start = time.perf_counter()
+    with _get_tracer("tailord.llm").start_as_current_span("llm.call") as span:
+        span.set_attribute("llm.model", model)
+        span.set_attribute("llm.prompt_type", prompt_type)
 
-    if mode == JsonMode.JSON_SCHEMA:
-        parse_kwargs: dict = dict(model=model, messages=messages, response_format=response_model)
-        if caps.supports_temperature:
-            parse_kwargs["temperature"] = temperature
-        completion = client.beta.chat.completions.parse(**parse_kwargs)
-        elapsed = time.perf_counter() - start
-        message = completion.choices[0].message
-        usage = completion.usage
-        finish_reason = completion.choices[0].finish_reason
+        start = time.perf_counter()
 
-        if message.refusal:
-            logger.warning(
-                "llm_refusal",
-                model=model,
-                schema=response_model.__name__,
-                latency_ms=int(elapsed * 1000),
-                reason=message.refusal,
+        if mode == JsonMode.JSON_SCHEMA:
+            parse_kwargs: dict = dict(
+                model=model, messages=messages, response_format=response_model
             )
-            raise LLMRefusalError(message.refusal)
+            if caps.supports_temperature:
+                parse_kwargs["temperature"] = temperature
+            completion = client.beta.chat.completions.parse(**parse_kwargs)
+            elapsed = time.perf_counter() - start
+            message = completion.choices[0].message
+            usage = completion.usage
+            finish_reason = completion.choices[0].finish_reason
 
-        result = message.parsed
-        raw_content = message.content
+            if message.refusal:
+                logger.warning(
+                    "llm_refusal",
+                    model=model,
+                    schema=prompt_type,
+                    latency_ms=int(elapsed * 1000),
+                    reason=message.refusal,
+                )
+                raise LLMRefusalError(message.refusal)
 
-    else:
-        kwargs: dict = dict(model=model, messages=messages)
-        if caps.supports_temperature:
-            kwargs["temperature"] = temperature
-        if mode == JsonMode.JSON_OBJECT:
-            kwargs["response_format"] = {"type": "json_object"}
-        resp = client.chat.completions.create(**kwargs)
-        elapsed = time.perf_counter() - start
-        usage = resp.usage
-        finish_reason = resp.choices[0].finish_reason
-        raw_content = resp.choices[0].message.content
-        result = response_model.model_validate_json(strip_json_fences(raw_content))
+            result = message.parsed
+            raw_content = message.content
+
+        else:
+            kwargs: dict = dict(model=model, messages=messages)
+            if caps.supports_temperature:
+                kwargs["temperature"] = temperature
+            if mode == JsonMode.JSON_OBJECT:
+                kwargs["response_format"] = {"type": "json_object"}
+            resp = client.chat.completions.create(**kwargs)
+            elapsed = time.perf_counter() - start
+            usage = resp.usage
+            finish_reason = resp.choices[0].finish_reason
+            raw_content = resp.choices[0].message.content
+            result = response_model.model_validate_json(strip_json_fences(raw_content))
+
+        span.set_attribute("llm.input_tokens", usage.prompt_tokens)
+        span.set_attribute("llm.output_tokens", usage.completion_tokens)
+        span.set_attribute("llm.finish_reason", finish_reason)
+        span.set_attribute("llm.latency_ms", int(elapsed * 1000))
 
     logger.info(
         "llm_call_complete",
         model=model,
-        schema=response_model.__name__,
+        schema=prompt_type,
         mode=mode.value,
         input_tokens=usage.prompt_tokens,
         output_tokens=usage.completion_tokens,
@@ -130,7 +143,6 @@ def llm_parse(
 
     from app.metrics import LLM_CALL_DURATION_MS, LLM_TOKENS_TOTAL
 
-    prompt_type = response_model.__name__
     LLM_CALL_DURATION_MS.labels(model=model, prompt_type=prompt_type).observe(int(elapsed * 1000))
     LLM_TOKENS_TOTAL.labels(model=model, prompt_type=prompt_type, direction="input").inc(
         usage.prompt_tokens
@@ -141,7 +153,7 @@ def llm_parse(
 
     if finish_reason == "length":
         raise LLMTruncationError(
-            f"LLM response truncated (finish_reason=length) for schema={response_model.__name__}, model={model}"
+            f"LLM response truncated (finish_reason=length) for schema={prompt_type}, model={model}"
         )
 
     return result
@@ -161,6 +173,7 @@ def llm_generate(
     Use this for tasks that return unstructured text rather than JSON.
     """
     from app.core.model_config import get_capabilities
+    from app.telemetry import get_tracer as _get_tracer
 
     caps = get_capabilities(model)
 
@@ -172,16 +185,25 @@ def llm_generate(
         messages=_format_messages(messages),
     )
 
-    start = time.perf_counter()
-    gen_kwargs: dict = dict(model=model, messages=messages)
-    if caps.supports_temperature:
-        gen_kwargs["temperature"] = temperature
-    resp = client.chat.completions.create(**gen_kwargs)
-    elapsed = time.perf_counter() - start
+    with _get_tracer("tailord.llm").start_as_current_span("llm.call") as span:
+        span.set_attribute("llm.model", model)
+        span.set_attribute("llm.prompt_type", label)
 
-    usage = resp.usage
-    finish_reason = resp.choices[0].finish_reason
-    content = resp.choices[0].message.content
+        start = time.perf_counter()
+        gen_kwargs: dict = dict(model=model, messages=messages)
+        if caps.supports_temperature:
+            gen_kwargs["temperature"] = temperature
+        resp = client.chat.completions.create(**gen_kwargs)
+        elapsed = time.perf_counter() - start
+
+        usage = resp.usage
+        finish_reason = resp.choices[0].finish_reason
+        content = resp.choices[0].message.content
+
+        span.set_attribute("llm.input_tokens", usage.prompt_tokens)
+        span.set_attribute("llm.output_tokens", usage.completion_tokens)
+        span.set_attribute("llm.finish_reason", finish_reason)
+        span.set_attribute("llm.latency_ms", int(elapsed * 1000))
 
     logger.info(
         "llm_call_complete",

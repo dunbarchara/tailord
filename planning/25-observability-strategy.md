@@ -1,6 +1,6 @@
 # Observability Strategy — Tailord Platform
 
-**Status**: Layer 2 complete — Layer 3 (dashboards + alerting) next
+**Status**: All 4 layers complete
 **Scope**: Backend (FastAPI), Frontend (Next.js), Infrastructure (Azure Container Apps + PostgreSQL)
 **Last updated**: 2026-05-13 (Day 23)
 
@@ -10,8 +10,8 @@
 |-------|-------------|--------|
 | 1 | Structured JSON logging, correlation IDs, TailoringDebugLog | **Done** (Day 23) |
 | 2 | Prometheus metrics, `/metrics` endpoint, Azure Managed Grafana | **Done** (Day 23) |
-| 3 | Dashboards (5), alert rules in Terraform | Pending |
-| 4 | OpenTelemetry distributed tracing → Application Insights | Pending |
+| 3 | Dashboards (5), alert rules in Terraform | **Done** (Day 23) |
+| 4 | OpenTelemetry distributed tracing → Application Insights | **Done** (Day 23) |
 
 ### Layer 1 — What was built (Day 23)
 
