@@ -1,3 +1,14 @@
+"""
+Storage abstraction layer.
+
+All app code must interact with storage through StorageClient — never import
+azure.storage or boto3 directly outside of storage_azure.py and storage_aws.py.
+
+Provider is selected at runtime via settings.storage_provider ("azure" | "aws").
+Both provider implementations are kept as dependencies so the same Docker image
+runs on either cloud without code changes (see CLAUDE.md § Cloud Portability).
+"""
+
 from abc import ABC, abstractmethod
 
 from app.config import settings

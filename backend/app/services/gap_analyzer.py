@@ -215,6 +215,9 @@ def _generate_gap_question(
 
     The requirement has already been scored 0 by the chunk matcher — this function
     only generates the question; it does not re-score or validate the gap.
+
+    Structurally identical to _generate_partial_question; they differ only in
+    prompt templates (SYSTEM/USER_TEMPLATE vs PARTIAL_SYSTEM/PARTIAL_USER_TEMPLATE).
     """
 
     def _validate(r: GapQuestion) -> None:
@@ -254,6 +257,9 @@ def _generate_partial_question(
 
     The requirement has already been scored 1 by the chunk matcher — this function
     only generates the question; it does not re-score.
+
+    Structurally identical to _generate_gap_question; they differ only in
+    prompt templates (PARTIAL_SYSTEM/PARTIAL_USER_TEMPLATE vs SYSTEM/USER_TEMPLATE).
     """
 
     def _validate(r: GapQuestion) -> None:

@@ -5,6 +5,10 @@ from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import requirement_matching as prompt
 from app.schemas.matching import RequirementMatchList
+
+# _format_sourced_profile lives in tailoring_generator but is shared across
+# requirement_matcher, chunk_matcher, and gap_analyzer. The leading underscore
+# is historical — it's effectively a shared utility. See planning doc on refactoring.
 from app.services.tailoring_generator import _format_sourced_profile
 
 logger = logging.getLogger(__name__)

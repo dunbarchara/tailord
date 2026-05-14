@@ -208,12 +208,12 @@ class LlmTriggerLog(Base):
 
 class TailoringDebugLog(Base):
     """
-    One row per notable generation event. Level 3 scaffolding — table exists, nothing writes yet.
+    One row per notable generation event. Written via _write_debug_log() in tailorings.py.
 
     Intended use: per-batch chunk matching results, token counts, latency per pipeline step,
     validation retry counts. Provides the raw signal the eval pipeline will aggregate.
 
-    event_type values (planned): 'chunk_batch' | 'generation_complete' | 'validation_retry' | 'error'
+    event_type values: 'generation_complete' | (planned) 'chunk_batch' | 'validation_retry' | 'error'
     """
 
     __tablename__ = "tailoring_debug_logs"

@@ -31,7 +31,15 @@ EMBEDDING_TIMEOUT_SECONDS = 30
 
 
 def _use_managed_identity() -> bool:
-    """True in staging/production when no explicit API key is configured."""
+    """True in staging/production when no explicit API key is configured.
+
+    Note: checks llm_api_key (not embedding_api_key) — the intent is that if a
+    real LLM API key is set, we're not in a managed-identity Azure environment and
+    the embedding endpoint should also use a key. In practice, staging/production
+    uses Azure AI Foundry with managed identity for both LLM and embedding calls,
+    so neither key is set. If you need to split them, see the base URL resolution
+    logic in get_embedding_client().
+    """
     return settings.environment in ("staging", "production") and not settings.llm_api_key
 
 
