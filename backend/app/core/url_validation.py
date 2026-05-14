@@ -1,8 +1,5 @@
 import ipaddress
-from typing import Optional
 from urllib.parse import urlparse
-
-from pydantic import BaseModel, model_validator
 
 # ── SSRF protection for job_url ───────────────────────────────────────────────
 #
@@ -47,7 +44,7 @@ _SSRF_LOOPBACK_NETWORKS = [
 ]
 
 
-def _validate_job_url(url: str, is_local: bool) -> None:
+def validate_job_url(url: str, is_local: bool) -> None:
     try:
         parsed = urlparse(url)
     except Exception:
@@ -80,52 +77,3 @@ def _validate_job_url(url: str, is_local: bool) -> None:
         if "internal" in str(exc) or "not allowed" in str(exc):
             raise
         # host is not an IP literal — fine, it's a regular hostname
-
-
-class ProfileInput(BaseModel):
-    resume_text: str
-    github_username: str
-
-
-class JobInput(BaseModel):
-    job_url: str
-
-
-class GenerateInput(BaseModel):
-    job_id: str
-
-
-class GeneratedOutput(BaseModel):
-    content: str
-
-
-class TailoringCreate(BaseModel):
-    job_url: str | None = None
-    company: str | None = None
-    title: str | None = None
-    description: str | None = None
-    skip_validation: bool = False
-
-    @model_validator(mode="after")
-    def check_input(self) -> "TailoringCreate":
-        has_url = bool(self.job_url and self.job_url.strip())
-        has_manual = bool(self.company and self.title and self.description)
-        if not has_url and not has_manual:
-            raise ValueError("Provide a job URL or fill in company, title, and description.")
-        return self
-
-
-class TailoringResponse(BaseModel):
-    id: str
-    title: Optional[str]
-    company: Optional[str]
-    job_url: str
-    generated_output: str
-    created_at: str
-
-
-class TailoringListItem(BaseModel):
-    id: str
-    title: Optional[str]
-    company: Optional[str]
-    created_at: str

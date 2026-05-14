@@ -22,6 +22,7 @@ from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
 from app.core.playwright_helper import get_rendered_content
 from app.core.token_utils import truncate_to_tokens
+from app.core.url_validation import validate_job_url
 from app.models.database import (
     Experience,
     Job,
@@ -31,7 +32,7 @@ from app.models.database import (
     TailoringDebugLog,
     User,
 )
-from app.models.mvp_schemas import TailoringCreate, _validate_job_url
+from app.schemas.tailoring_schemas import TailoringCreate
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
 from app.services.gap_analyzer import run_gap_analysis
@@ -788,7 +789,7 @@ async def create_tailoring(
 ):
     if body.job_url:
         try:
-            _validate_job_url(body.job_url, is_local=settings.environment == "local")
+            validate_job_url(body.job_url, is_local=settings.environment == "local")
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
     _check_tailoring_rate_limit(user.id, db)
