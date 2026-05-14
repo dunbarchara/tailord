@@ -84,6 +84,22 @@ def setup_logging() -> None:
         file_handler.setFormatter(formatter)
         handlers.append(file_handler)
 
+        json_formatter = structlog.stdlib.ProcessorFormatter(
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.JSONRenderer(),
+            ],
+            foreign_pre_chain=_shared_processors,
+        )
+        json_file_handler = RotatingFileHandler(
+            log_dir / "app.jsonl",
+            maxBytes=5 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        json_file_handler.setFormatter(json_formatter)
+        handlers.append(json_file_handler)
+
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     handlers.append(console_handler)

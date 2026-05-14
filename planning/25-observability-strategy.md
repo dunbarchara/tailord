@@ -720,14 +720,24 @@ Requires Prometheus infrastructure (local: Docker sidecar; production: Azure Man
 
 ### Layer 3: Dashboards and Alerting
 
-Builds on Layer 1 (logs) and Layer 2 (metrics).
+Builds on Layer 1 (logs) and Layer 2 (metrics). Build and validate locally first, then port JSON to Azure.
 
-1. Build Tailoring Pipeline dashboard (Prometheus + Log Analytics data sources)
-2. Build Per-Tailoring Debug dashboard (Log Analytics KQL + Grafana PostgreSQL data source for TailoringDebugLog)
-3. Build User Activity dashboard (PostgreSQL data source)
-4. Define alert rules in Terraform — all 8 alerts from Section 9
-5. Provision `azurerm_monitor_action_group` with email notification
-6. Test each alert by triggering the condition manually in staging
+**Local LGTM stack first:**
+1. Extend `docker-compose.yml` with Loki + Promtail (log aggregation) and Tempo (traces)
+2. Add Grafana provisioning config — datasources + dashboard JSON loaded at startup, no manual UI config
+3. Build all dashboards locally against the LGTM stack (Prometheus, Loki, Tempo, PostgreSQL)
+
+**Dashboards (5):**
+4. Platform Health — request rate, error rate, P95 latency, active generations, container metrics
+5. LLM Observability — call rate, token consumption, cost estimate, error/retry rates
+6. Tailoring Pipeline — generation rate, success/error breakdown, phase duration stacked bar
+7. Per-Tailoring Debug — log timeline, phase Gantt, LLM calls table (PostgreSQL → TailoringDebugLog)
+8. User Activity (admin) — tailorings per day, active users, uploads (PostgreSQL direct)
+
+**Alerting (Azure Monitor native — no Grafana Standard tier needed):**
+9. `azurerm_monitor_action_group` with email notification
+10. Define all 8 alert rules in Terraform (see Section 9)
+11. Test each alert by triggering the condition manually in staging
 
 ### Layer 4: Distributed Tracing
 

@@ -1,0 +1,139 @@
+{
+  "uid": "tailord-tailoring-pipeline",
+  "title": "Tailoring Pipeline",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Generation Rate by Status",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(tailoring_generations_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Success Rate % (1h)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(tailoring_generations_total{status=\"success\"}[1h])) / sum(rate(tailoring_generations_total[1h]))",
+          "legendFormat": "Success %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "title": "Total Generation P95 (1h)",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(tailoring_generation_duration_ms_bucket[1h])) by (le))",
+          "legendFormat": "P95 ms"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30000 },
+              { "color": "red", "value": 60000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "title": "Phase P95 Durations",
+      "type": "bargauge",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 4 },
+      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(tailoring_phase_duration_ms_bucket[5m])) by (le, phase))",
+          "legendFormat": "{{phase}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "horizontal" }
+    },
+    {
+      "id": 5,
+      "title": "Matching Mode Distribution (24h)",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(tailoring_generations_total[24h])) by (matching_mode)",
+          "legendFormat": "{{matching_mode}}"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "title": "Experience Processing Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(experience_processing_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": []
+      }
+    }
+  ]
+}

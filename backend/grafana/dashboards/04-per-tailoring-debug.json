@@ -1,0 +1,74 @@
+{
+  "uid": "tailord-per-tailoring-debug",
+  "title": "Per-Tailoring Debug",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "tailoring_id",
+        "label": "Tailoring ID",
+        "type": "textbox",
+        "current": { "value": "" },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Tailoring Metadata",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT id, generation_status, generation_stage, generation_duration_ms, model, created_at, generated_at FROM tailorings WHERE id = '$tailoring_id'::uuid",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "footer": { "show": false } }
+    },
+    {
+      "id": 2,
+      "title": "Log Timeline",
+      "description": "Azure: replace with Log Analytics datasource, KQL: ContainerAppConsoleLogs_CL | where log_s contains tailoring_id",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 12 },
+      "datasource": { "uid": "loki-local", "type": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"tailord-backend\"} | json | tailoring_id = `$tailoring_id`",
+          "legendFormat": ""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Ascending"
+      }
+    },
+    {
+      "id": 3,
+      "title": "TailoringDebugLog Events",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT created_at, event_type, payload FROM tailoring_debug_logs WHERE tailoring_id = '$tailoring_id'::uuid ORDER BY created_at ASC",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "footer": { "show": false } }
+    }
+  ]
+}
