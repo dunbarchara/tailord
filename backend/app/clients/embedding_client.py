@@ -23,24 +23,11 @@ import logging
 
 from openai import OpenAI
 
-from app.config import settings
+from app.config import settings, use_managed_identity
 
 logger = logging.getLogger(__name__)
 
 EMBEDDING_TIMEOUT_SECONDS = 30
-
-
-def _use_managed_identity() -> bool:
-    """True in staging/production when no explicit API key is configured.
-
-    Note: checks llm_api_key (not embedding_api_key) — the intent is that if a
-    real LLM API key is set, we're not in a managed-identity Azure environment and
-    the embedding endpoint should also use a key. In practice, staging/production
-    uses Azure AI Foundry with managed identity for both LLM and embedding calls,
-    so neither key is set. If you need to split them, see the base URL resolution
-    logic in get_embedding_client().
-    """
-    return settings.environment in ("staging", "production") and not settings.llm_api_key
 
 
 def get_embedding_client() -> OpenAI:
@@ -62,7 +49,7 @@ def get_embedding_client() -> OpenAI:
     else:
         base_url = settings.llm_base_url  # same endpoint as LLM (Azure AI Foundry)
 
-    if _use_managed_identity():
+    if use_managed_identity():
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         token_provider = get_bearer_token_provider(

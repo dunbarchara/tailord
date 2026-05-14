@@ -88,3 +88,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def use_managed_identity() -> bool:
+    """True when running in Azure with Managed Identity (no explicit API key set).
+    Both LLM and embedding clients use this — the check is intentionally keyed on
+    llm_api_key because in staging/production neither key is set and MI handles both.
+    """
+    return settings.environment in ("staging", "production") and not settings.llm_api_key

@@ -2,7 +2,7 @@ import logging
 
 from openai import OpenAI
 
-from app.config import settings
+from app.config import settings, use_managed_identity
 
 logger = logging.getLogger(__name__)
 
@@ -10,13 +10,6 @@ logger = logging.getLogger(__name__)
 # external cancellation mechanism, so without this they can hang indefinitely if
 # the endpoint is slow or unreachable.
 LLM_TIMEOUT_SECONDS = 120
-
-
-def _use_managed_identity() -> bool:
-    """True in staging/production when no explicit API key is set.
-    Local dev always uses the direct path (local model or OpenAI key).
-    An explicit LLM_API_KEY always overrides managed identity regardless of environment."""
-    return settings.environment in ("staging", "production") and not settings.llm_api_key
 
 
 def validate_llm_config() -> None:
@@ -47,7 +40,7 @@ def get_llm_client() -> OpenAI:
        LLM_BASE_URL set to a local endpoint. LLM_API_KEY omitted or set to a
        placeholder. Uses the generic OpenAI client.
     """
-    if _use_managed_identity():
+    if use_managed_identity():
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         token_provider = get_bearer_token_provider(
