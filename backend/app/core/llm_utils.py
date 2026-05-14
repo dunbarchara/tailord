@@ -1,11 +1,11 @@
-import logging
 import time
 from collections.abc import Callable
 from typing import Type, TypeVar
 
+import structlog
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -69,12 +69,12 @@ def llm_parse(
     mode = caps.json_mode
 
     logger.debug(
-        "llm_parse request | model=%s mode=%s schema=%s temperature=%s\n\n%s",
-        model,
-        mode.value,
-        response_model.__name__,
-        temperature if caps.supports_temperature else "n/a (unsupported)",
-        _format_messages(messages),
+        "llm_parse_request",
+        model=model,
+        mode=mode.value,
+        schema=response_model.__name__,
+        temperature=temperature if caps.supports_temperature else "n/a",
+        messages=_format_messages(messages),
     )
 
     start = time.perf_counter()
@@ -91,11 +91,11 @@ def llm_parse(
 
         if message.refusal:
             logger.warning(
-                "llm_parse refusal | model=%s schema=%s latency=%.2fs reason=%s",
-                model,
-                response_model.__name__,
-                elapsed,
-                message.refusal,
+                "llm_refusal",
+                model=model,
+                schema=response_model.__name__,
+                latency_ms=int(elapsed * 1000),
+                reason=message.refusal,
             )
             raise LLMRefusalError(message.refusal)
 
@@ -116,17 +116,17 @@ def llm_parse(
         result = response_model.model_validate_json(strip_json_fences(raw_content))
 
     logger.info(
-        "llm_parse | model=%s schema=%s mode=%s tokens=%d+%d=%d finish=%s latency=%.2fs",
-        model,
-        response_model.__name__,
-        mode.value,
-        usage.prompt_tokens,
-        usage.completion_tokens,
-        usage.total_tokens,
-        finish_reason,
-        elapsed,
+        "llm_call_complete",
+        model=model,
+        schema=response_model.__name__,
+        mode=mode.value,
+        input_tokens=usage.prompt_tokens,
+        output_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+        finish_reason=finish_reason,
+        latency_ms=int(elapsed * 1000),
     )
-    logger.debug("llm_parse response | raw content:\n%s", raw_content)
+    logger.debug("llm_parse_response", raw_content=raw_content)
 
     if finish_reason == "length":
         raise LLMTruncationError(
@@ -154,11 +154,11 @@ def llm_generate(
     caps = get_capabilities(model)
 
     logger.debug(
-        "llm_generate request | model=%s label=%s temperature=%s\n\n%s",
-        model,
-        label,
-        temperature if caps.supports_temperature else "n/a (unsupported)",
-        _format_messages(messages),
+        "llm_generate_request",
+        model=model,
+        label=label,
+        temperature=temperature if caps.supports_temperature else "n/a",
+        messages=_format_messages(messages),
     )
 
     start = time.perf_counter()
@@ -173,17 +173,16 @@ def llm_generate(
     content = resp.choices[0].message.content
 
     logger.info(
-        "llm_generate | model=%s label=%s temp=%s tokens=%d+%d=%d finish=%s latency=%.2fs",
-        model,
-        label,
-        temperature if caps.supports_temperature else "n/a",
-        usage.prompt_tokens,
-        usage.completion_tokens,
-        usage.total_tokens,
-        finish_reason,
-        elapsed,
+        "llm_call_complete",
+        model=model,
+        label=label,
+        input_tokens=usage.prompt_tokens,
+        output_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+        finish_reason=finish_reason,
+        latency_ms=int(elapsed * 1000),
     )
-    logger.debug("llm_generate response | content:\n%s", content)
+    logger.debug("llm_generate_response", content=content)
 
     if finish_reason == "length":
         raise LLMTruncationError(
@@ -224,11 +223,11 @@ def llm_parse_with_retry(
             last_exc = exc
             if attempt < max_retries:
                 logger.warning(
-                    "llm_parse_with_retry: attempt %d/%d failed schema=%s: %s — retrying",
-                    attempt + 1,
-                    max_retries + 1,
-                    response_model.__name__,
-                    exc,
+                    "llm_retry",
+                    attempt=attempt + 1,
+                    max_attempts=max_retries + 1,
+                    schema=response_model.__name__,
+                    error=str(exc),
                 )
                 current_messages = current_messages + [
                     {
@@ -241,9 +240,10 @@ def llm_parse_with_retry(
                 ]
             else:
                 logger.error(
-                    "llm_parse_with_retry: all %d attempts failed schema=%s",
-                    max_retries + 1,
-                    response_model.__name__,
+                    "llm_error",
+                    attempts=max_retries + 1,
+                    schema=response_model.__name__,
+                    error=str(last_exc),
                 )
 
     raise last_exc

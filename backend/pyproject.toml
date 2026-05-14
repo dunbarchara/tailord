@@ -30,6 +30,7 @@ dependencies = [
   "pyjwt[crypto]>=2.12.1",
   "tiktoken>=0.7.0",
   "pgvector>=0.3.0",
+  "structlog>=25.0.0",
 ]
 
 [tool.uv]
