@@ -212,6 +212,7 @@ function ChunkItem({
         >
           <div className="p-2 border-b border-border-subtle">
             <input
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
               autoFocus
               value={newGroupDraft}
               onChange={e => setNewGroupDraft(e.target.value)}
@@ -599,6 +600,7 @@ function SectionBlock({
       <div className="flex items-center gap-2 mb-3 pb-1 border-b border-border-subtle">
         {editMode && !isUnsectioned && editingSection ? (
           <input
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
             autoFocus
             value={sectionDraft}
             onChange={e => setSectionDraft(e.target.value)}
@@ -676,6 +678,7 @@ function SectionBlock({
           {addingChunk ? (
             <div className="space-y-1.5">
               <textarea
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                 autoFocus
                 rows={2}
                 placeholder="New requirement…"
@@ -844,6 +847,7 @@ export function JobPosting({
           {showAddSection ? (
             <div className="flex items-center gap-2">
               <input
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                 autoFocus
                 value={addingSectionName}
                 onChange={e => setAddingSectionName(e.target.value)}

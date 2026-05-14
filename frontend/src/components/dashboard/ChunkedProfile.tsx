@@ -433,6 +433,7 @@ function SkillsTable({
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
                   >
                     <input
+                      // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                       autoFocus
                       value={editingPillValue}
                       onChange={(e) => setEditingPillValue(e.target.value)}
@@ -570,6 +571,7 @@ function InlineSkillsRow({
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
                 >
                   <input
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                     autoFocus
                     value={editingPillValue}
                     onChange={(e) => setEditingPillValue(e.target.value)}

@@ -26,6 +26,9 @@ const eslintConfig = defineConfig([
       // not on page load — downgrade from error to warn so the intent is visible but
       // doesn't block the build.
       "jsx-a11y/no-autofocus": "warn",
+
+      // Respect the _name convention for intentionally unused destructured values.
+      "@typescript-eslint/no-unused-vars": ["error", { "varsIgnorePattern": "^_", "argsIgnorePattern": "^_" }],
     },
   },
   // Override default ignores of eslint-config-next.
