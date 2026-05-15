@@ -1,10 +1,10 @@
 import json
-import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import anyio
+import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
@@ -50,7 +50,7 @@ from app.services.gap_analyzer import _build_job_context, _generate_question
 from app.services.profile_extractor import extract_profile
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
 

@@ -1,10 +1,9 @@
-import logging
-
+import structlog
 from openai import OpenAI
 
 from app.config import settings, use_managed_identity
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Hard ceiling on any single LLM call. Background tasks run in a thread with no
 # external cancellation mechanism, so without this they can hang indefinitely if

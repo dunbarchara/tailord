@@ -24,15 +24,15 @@ github      → walk enriched repo in extracted_profile["github"]["repos"]:
 user_input  → entire user_input_text as one chunk (claim_type=other)
 """
 
-import logging
 import uuid
 from datetime import datetime, timezone
 
+import structlog
 from sqlalchemy.orm import Session
 
 from app.models.database import Experience, ExperienceChunk
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------

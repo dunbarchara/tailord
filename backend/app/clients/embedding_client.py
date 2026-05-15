@@ -19,13 +19,12 @@ Leave LLM_API_KEY unset — LM Studio does not need a real key. This way your
 Azure Foundry / production key never leaves its intended endpoint.
 """
 
-import logging
-
+import structlog
 from openai import OpenAI
 
 from app.config import settings, use_managed_identity
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 EMBEDDING_TIMEOUT_SECONDS = 30
 

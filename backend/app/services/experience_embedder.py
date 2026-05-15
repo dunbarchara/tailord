@@ -24,16 +24,16 @@ All functions are non-fatal: per-chunk failures are logged as warnings and
 skipped. The pipeline continues regardless of embedding errors.
 """
 
-import logging
 import uuid
 
+import structlog
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.clients.embedding_client import embed_text
 from app.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def embed_experience_chunks(experience_id: uuid.UUID, db: Session) -> None:

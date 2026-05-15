@@ -1,6 +1,7 @@
-import logging
 import uuid
 from datetime import datetime, timezone
+
+import structlog
 
 from app.clients.github_client import GitHubClient
 from app.clients.llm_client import get_llm_client
@@ -9,7 +10,7 @@ from app.core.llm_utils import llm_parse_with_retry
 from app.prompts.github_enrichment import SYSTEM, TEMPERATURE, USER_TEMPLATE
 from app.schemas.llm_outputs import GitHubRepoEnrichment
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _format_languages(languages: dict[str, int]) -> str:

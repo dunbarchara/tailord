@@ -1,4 +1,4 @@
-import logging
+import structlog
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
@@ -10,7 +10,7 @@ from app.services.profile_formatter import format_sourced_profile
 # Backward-compat shim — tests patch this name at this module path.
 _format_sourced_profile = format_sourced_profile
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def match_requirements(

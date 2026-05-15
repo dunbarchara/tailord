@@ -1,12 +1,12 @@
-import logging
 from datetime import datetime, timedelta, timezone
 
+import structlog
 from azure.storage.blob import BlobSasPermissions, BlobServiceClient, generate_blob_sas
 
 from app.clients.storage_client import StorageClient
 from app.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class AzureStorageClient(StorageClient):

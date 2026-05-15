@@ -1,13 +1,14 @@
-import logging
 import re
 import uuid
 from datetime import datetime, timezone
+
+import structlog
 
 from app.clients.storage_client import get_storage_client
 from app.models.database import Experience
 from app.services.profile_extractor import extract_profile
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _friendly_processing_error(exc: Exception) -> str:
