@@ -3,6 +3,27 @@ import { env } from './env'
 import { logger } from './logger'
 import { NextResponse } from 'next/server'
 
+function parseErrorDetail(text: string): string {
+  try {
+    const parsed = JSON.parse(text)
+    if (typeof parsed?.detail === 'string') return parsed.detail
+  } catch {}
+  return text
+}
+
+function buildUserHeaders(user: UserContext, correlationId: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-API-Key': env.apiKey,
+    'X-User-Id': user.userId,
+    'X-User-Email': user.userEmail,
+    'X-Correlation-Id': correlationId,
+  }
+  if (user.userName) headers['X-User-Name'] = user.userName
+  if (user.userImage) headers['X-User-Image'] = user.userImage
+  return headers
+}
+
 export async function proxyToBackend(
   endpoint: string,
   body: string
@@ -21,12 +42,7 @@ export async function proxyToBackend(
     })
 
     if (!res.ok) {
-      const text = await res.text()
-      let detail: string = text
-      try {
-        const parsed = JSON.parse(text)
-        if (typeof parsed?.detail === 'string') detail = parsed.detail
-      } catch {}
+      const detail = parseErrorDetail(await res.text())
       logger.error('Backend error', { method: 'POST', endpoint, status: res.status, detail, correlation_id: correlationId })
       return NextResponse.json(
         { error: `Backend error: ${res.status}`, detail },
@@ -66,19 +82,7 @@ export async function proxyToBackendWithUser(
   const correlationId = randomUUID()
 
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-API-Key': env.apiKey,
-      'X-User-Id': user.userId,
-      'X-User-Email': user.userEmail,
-      'X-Correlation-Id': correlationId,
-    }
-    if (user.userName) {
-      headers['X-User-Name'] = user.userName
-    }
-    if (user.userImage) {
-      headers['X-User-Image'] = user.userImage
-    }
+    const headers = buildUserHeaders(user, correlationId)
 
     logger.debug('Backend request', { method, endpoint, userId: user.userId, correlation_id: correlationId })
 
@@ -89,12 +93,7 @@ export async function proxyToBackendWithUser(
     })
 
     if (!res.ok) {
-      const text = await res.text()
-      let detail: string = text
-      try {
-        const parsed = JSON.parse(text)
-        if (typeof parsed?.detail === 'string') detail = parsed.detail
-      } catch {}
+      const detail = parseErrorDetail(await res.text())
       logger.error('Backend error', { method, endpoint, status: res.status, detail, userId: user.userId, correlation_id: correlationId })
       return NextResponse.json(
         { error: `Backend error: ${res.status}`, detail },
@@ -130,20 +129,7 @@ export async function proxyStreamToBackendWithUser(
   body?: string,
 ): Promise<Response> {
   const correlationId = randomUUID()
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-API-Key': env.apiKey,
-    'X-User-Id': user.userId,
-    'X-User-Email': user.userEmail,
-    'X-Correlation-Id': correlationId,
-  }
-  if (user.userName) {
-    headers['X-User-Name'] = user.userName
-  }
-  if (user.userImage) {
-    headers['X-User-Image'] = user.userImage
-  }
+  const headers = buildUserHeaders(user, correlationId)
 
   logger.debug('Backend stream request', { endpoint, userId: user.userId, correlation_id: correlationId })
 
@@ -155,12 +141,7 @@ export async function proxyStreamToBackendWithUser(
     })
 
     if (!res.ok) {
-      const text = await res.text()
-      let detail: string = text
-      try {
-        const parsed = JSON.parse(text)
-        if (typeof parsed?.detail === 'string') detail = parsed.detail
-      } catch {}
+      const detail = parseErrorDetail(await res.text())
       logger.error('Backend stream error', { endpoint, status: res.status, detail, userId: user.userId, correlation_id: correlationId })
       return new Response(
         JSON.stringify({ error: `Backend error: ${res.status}`, detail }),

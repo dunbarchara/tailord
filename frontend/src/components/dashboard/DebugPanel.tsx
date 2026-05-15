@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Copy, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
-import { ChunkAnalysis, chunksToMarkdown } from '@/components/dashboard/ChunkAnalysis';
+import { RequirementAnalysis, chunksToMarkdown } from '@/components/dashboard/RequirementAnalysis';
 import type { ChunksResponse, GapAnalysis } from '@/types';
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -220,7 +220,7 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
         label="Chunk Analysis"
         onCopy={() => chunksData ? chunksToMarkdown(chunksData, title, company) : '(no chunk data)'}
       >
-        <ChunkAnalysis data={chunksData} error={chunksError} jobUrl={jobUrl} />
+        <RequirementAnalysis data={chunksData} error={chunksError} jobUrl={jobUrl} />
       </DebugSection>
 
       {/* Profile */}

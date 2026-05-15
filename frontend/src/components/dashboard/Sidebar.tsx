@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, tailoringLabel } from '@/lib/utils';
 import type { TailoringListItem } from '@/types';
 
 /* ─── Icons ──────────────────────────────────────────────────────────────── */
@@ -162,14 +162,6 @@ function SearchBar({
 }
 
 /* ─── Tailoring list item ────────────────────────────────────────────────── */
-
-function tailoringLabel(t: TailoringListItem): string {
-  if (t.title) return t.title;
-  if (t.job_url) {
-    try { return new URL(t.job_url).hostname.replace(/^www\./, ''); } catch {}
-  }
-  return 'Untitled';
-}
 
 function SpinningLoader({ className }: { className?: string }) {
   return <Loader2 className={cn(className, 'animate-spin')} />;

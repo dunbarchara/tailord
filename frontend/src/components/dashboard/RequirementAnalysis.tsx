@@ -7,7 +7,7 @@ import { groupChunksForAnalysis } from '@/lib/chunks';
 import type { ChunksResponse, JobChunk } from '@/types';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
 
-interface ChunkAnalysisProps {
+interface RequirementAnalysisProps {
   data: ChunksResponse | null;
   error: string | null;
   jobUrl?: string | null;
@@ -189,7 +189,7 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
 }
 
 
-export function ChunkAnalysis({ data, error, jobUrl }: ChunkAnalysisProps) {
+export function RequirementAnalysis({ data, error, jobUrl }: RequirementAnalysisProps) {
 
   if (error) return <TailoringErrorState message={error} jobUrl={jobUrl} />;
 

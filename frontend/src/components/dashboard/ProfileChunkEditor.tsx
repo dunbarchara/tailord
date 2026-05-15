@@ -899,9 +899,9 @@ function formatWorkGroupKey(group: WorkExperienceGroup): string {
   return label || 'Unknown role';
 }
 
-/* ─── ChunkedProfile ─────────────────────────────────────────────────────── */
+/* ─── ProfileChunkEditor ─────────────────────────────────────────────────── */
 
-export function ChunkedProfile({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceChunksResponse; readOnly?: boolean }) {
+export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceChunksResponse; readOnly?: boolean }) {
   const [data, setData] = useState<ExperienceChunksResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
 

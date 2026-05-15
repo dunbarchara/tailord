@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import {
-  Upload, Pencil, FileText, Trash2, Loader2, AlertCircle, X, RefreshCw, GitBranch, ArrowUpRight, ChevronDown, ChevronUp,
-} from 'lucide-react';
-import { LuGithub } from 'react-icons/lu';
+import { Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn, toastError, formatElapsed } from '@/lib/utils';
-import { ChunkedProfile } from '@/components/dashboard/ChunkedProfile';
+import { cn, toastError } from '@/lib/utils';
+import { ProfileChunkEditor } from '@/components/dashboard/ProfileChunkEditor';
+import { ResumeUploadSection } from '@/components/dashboard/ResumeUploadSection';
+import type { UploadPhase } from '@/components/dashboard/ResumeUploadSection';
+import { GitHubSection } from '@/components/dashboard/GitHubSection';
+import type { GithubState } from '@/components/dashboard/GitHubSection';
 import type { ExperienceRecord, ExperienceChunksResponse, GitHubRepo, ProfileCorrections } from '@/types';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -58,31 +59,7 @@ function computeYoE(workExperience: Array<{ duration?: string | null }>): number
   return Math.round((totalMs / (365.25 * 24 * 60 * 60 * 1000)) * 10) / 10;
 }
 
-function formatRelativeDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins} minutes ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return '1 day ago';
-  if (diffDays < 30) return `${diffDays} days ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 /* ─── Types ─────────────────────────────────────────────────────────────── */
-
-type UploadPhase =
-  | { phase: 'loading' }
-  | { phase: 'idle' }
-  | { phase: 'uploading'; filename: string }
-  | { phase: 'processing'; filename: string; experienceId: string }
-  | { phase: 'ready'; record: ExperienceRecord }
-  | { phase: 'error'; message: string };
-
-type GithubState = 'idle' | 'fetching' | 'saving' | 'saved' | 'removing' | 'error';
 
 const CONFIRM_CONFIGS = {
   'resume-remove': {
@@ -114,10 +91,6 @@ const CONFIRM_CONFIGS = {
 
 type ConfirmAction = keyof typeof CONFIRM_CONFIGS;
 
-const PROCESS_STAGE_LABELS: Record<string, string> = {
-  extracting: 'Extracting text',
-  analyzing: 'Analyzing profile',
-};
 const PROCESS_STAGES = ['extracting', 'analyzing'] as const;
 
 /* ─── Shared styles ─────────────────────────────────────────────────────── */
@@ -141,87 +114,6 @@ const outlineBtnCls =
   'border border-border-default bg-surface-elevated text-text-secondary ' +
   'hover:bg-surface-base hover:border-border-strong hover:text-text-primary ' +
   'transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-
-/* ─── Live badge (Mintlify pill style) ───────────────────────────────────── */
-
-function LiveBadge({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center w-fit font-medium bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 gap-[3px] text-xs leading-none rounded-full py-1 px-2">
-      <span className="flex items-center justify-center size-3">
-        <span className="size-1.5 bg-current rounded-full" />
-      </span>
-      {label}
-    </span>
-  );
-}
-
-/* ─── Mintlify-style button ──────────────────────────────────────────────── */
-
-function MintBtn({
-  icon,
-  label,
-  onClick,
-  danger,
-  disabled,
-  ariaLabel,
-}: {
-  icon: React.ReactNode;
-  label?: string;
-  onClick?: () => void;
-  danger?: boolean;
-  disabled?: boolean;
-  /** Required when no visible label is provided (icon-only mode) */
-  ariaLabel?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={ariaLabel}
-      className={cn(
-        'inline-flex items-center justify-center whitespace-nowrap rounded-[10px] border transition-colors',
-        'outline-none focus-visible:ring-2 [&_svg:not([class*="size-"])]:size-3.5',
-        label
-          ? 'gap-1.5 h-8 px-2.5 text-sm font-normal tracking-[-0.1px]'
-          : 'size-8',
-        danger
-          ? 'text-text-secondary bg-surface-elevated border-border-subtle text-red-600 border-red-300 dark:border-red-800 hover:border-red-300 hover:bg-red-50 hover:text-error dark:hover:border-red-800 dark:hover:bg-red-950/20'
-          : 'text-text-secondary bg-surface-elevated border-border-subtle hover:border-border-default hover:bg-surface-sunken hover:text-text-primary',
-        disabled && 'opacity-40 cursor-not-allowed pointer-events-none',
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
-/* ─── Toggle switch ──────────────────────────────────────────────────────── */
-
-function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={onChange}
-      className={cn(
-        'relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent',
-        'transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2',
-        checked ? 'bg-zinc-900 dark:bg-white' : 'bg-border-default',
-      )}
-    >
-      <span
-        className={cn(
-          'pointer-events-none inline-block h-3 w-3 rounded-full bg-white dark:bg-zinc-900',
-          'shadow transform transition duration-200 ease-in-out',
-          checked ? 'translate-x-3' : 'translate-x-0',
-        )}
-      />
-    </button>
-  );
-}
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
@@ -747,312 +639,6 @@ export function ExperienceManager({
     }
   };
 
-  /* ─── Resume section: per-section helpers ───────────────────────────────── */
-
-  const resumeHasFile =
-    uploadState.phase === 'ready' && !!uploadState.record.filename;
-
-  const resumeSubtext = (() => {
-    switch (uploadState.phase) {
-      case 'loading':
-      case 'error': return null;
-      case 'uploading':
-      case 'processing':
-      case 'idle': return 'Upload a PDF, DOCX, or TXT file to get started';
-      case 'ready':
-        if (!uploadState.record.filename) return 'Upload a PDF, DOCX, or TXT file to get started';
-        return `Last updated ${formatRelativeDate(uploadState.record.processed_at) ?? ''}`;
-    }
-  })();
-
-  const resumeCard = (() => {
-    switch (uploadState.phase) {
-      case 'loading':
-      case 'idle': return null;
-      case 'uploading':
-        return (
-          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
-            <div>
-              <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
-              <p className="text-xs text-text-disabled">Uploading…</p>
-            </div>
-          </div>
-        );
-      case 'processing': {
-        const overallStart = stageStartedAt[PROCESS_STAGES[0]];
-        const elapsed = overallStart ? Math.floor((Date.now() - overallStart) / 1000) : 0;
-        const label = processingStage ? (PROCESS_STAGE_LABELS[processingStage] ?? processingStage) : 'Processing';
-        return (
-          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-            <Loader2 className="h-4 w-4 text-text-tertiary animate-spin flex-shrink-0" />
-            <div>
-              <p className="text-sm text-text-secondary truncate">{uploadState.filename}</p>
-              <p className="text-xs text-text-disabled">
-                {label}…{overallStart ? ` ${formatElapsed(elapsed)}` : ''}
-              </p>
-            </div>
-          </div>
-        );
-      }
-      case 'ready':
-        if (!uploadState.record.filename) return null;
-        return (
-          <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-            <FileText className="h-4 w-4 text-text-tertiary flex-shrink-0" />
-            <div>
-              <p className="text-sm text-text-secondary truncate">{uploadState.record.filename}</p>
-              <p className="text-xs text-text-disabled">Processed</p>
-            </div>
-          </div>
-        );
-      case 'error':
-        return (
-          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-red-50/60 dark:bg-red-950/10 border border-error/20 w-fit min-w-xs">
-            <AlertCircle className="h-4 w-4 text-error flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="text-sm text-error">Processing failed</p>
-              <p className="text-xs text-text-tertiary truncate">{uploadState.message}</p>
-            </div>
-          </div>
-        );
-    }
-  })();
-
-  const resumeControls = (() => {
-    const uploadBtn = (
-      <button
-        type="button"
-        onClick={() => !readOnly && fileInputRef.current?.click()}
-        disabled={readOnly}
-        className={cn(
-          'flex items-center gap-3 px-3 py-3 rounded-xl border border-dashed border-border-default text-left w-fit min-w-xs transition-colors',
-          readOnly ? 'opacity-50 cursor-not-allowed' : 'hover:border-border-strong hover:bg-surface-sunken',
-        )}
-      >
-        <Upload className="h-4 w-4 text-text-tertiary flex-shrink-0" />
-        <div>
-          <p className="text-sm text-text-secondary">Click to upload</p>
-          <p className="text-xs text-text-disabled">PDF, DOCX, or TXT</p>
-        </div>
-      </button>
-    );
-    switch (uploadState.phase) {
-      case 'loading':
-      case 'uploading': return null;
-      case 'idle': return uploadBtn;
-      case 'processing':
-        return (
-          <div className="flex flex-wrap items-center gap-2">
-            <MintBtn icon={<X />} label="Cancel" onClick={handleRemove} danger disabled={readOnly} />
-          </div>
-        );
-      case 'ready':
-        if (!uploadState.record.filename) return uploadBtn;
-        return (
-          <div className="flex flex-wrap items-center gap-2">
-            <MintBtn icon={<RefreshCw />} label="Replace" onClick={() => setConfirmDialog('resume-replace')} disabled={readOnly} />
-            <MintBtn icon={<Trash2 />} label="Delete" onClick={() => setConfirmDialog('resume-remove')} danger disabled={readOnly} />
-          </div>
-        );
-      case 'error':
-        return (
-          <div className="flex flex-wrap items-center gap-2">
-            <MintBtn icon={<Upload />} label="Try again" onClick={() => fileInputRef.current?.click()} disabled={readOnly} />
-            <MintBtn icon={<X />} label="Clear" onClick={handleRemove} danger disabled={readOnly} />
-          </div>
-        );
-    }
-  })();
-
-  /* ─── GitHub card content ────────────────────────────────────────────────── */
-
-  const githubConnected = !!connectedGithub;
-  const isInitialLoad = uploadState.phase === 'loading';
-
-  const renderGithubControls = () => {
-    // ── Connected ────────────────────────────────────────────────────────────
-    if (githubConnected && !githubEditing && connectedGithub) {
-      const repos = connectedGithub.repos;
-      const username = connectedGithub.username;
-      return (
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-2">
-            <a
-              href={`https://github.com/${username}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex items-center gap-2 w-fit"
-            >
-              <LuGithub className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
-              <span className="text-sm font-medium text-text-primary group-hover:opacity-80">{username}</span>
-              <ArrowUpRight className="size-3 text-text-tertiary" />
-            </a>
-            <div className="flex flex-col gap-2 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-              <span className="text-sm text-text-tertiary">
-                {repos.length} repo{repos.length !== 1 ? 's' : ''} linked
-              </span>
-              {repos.map((r) => {
-                const scanStart = scanningRepos[r.name];
-                const isScanning = !!scanStart;
-                const elapsed = scanStart ? Math.floor((Date.now() - scanStart) / 1000) : 0;
-                return (
-                  <div key={r.name} className="group flex items-center gap-2">
-                    <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <a
-                        href={`https://github.com/${username}/${r.name}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-text-primary hover:opacity-80"
-                      >
-                        {r.name}
-                      </a>
-                      {isScanning ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-text-disabled ml-1.5">
-                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                          Scanning… {formatElapsed(elapsed)}
-                        </span>
-                      ) : r.scanned_at ? (
-                        <span className="text-xs text-text-disabled ml-1.5">
-                          · scanned {formatRelativeDate(r.scanned_at)}
-                        </span>
-                      ) : null}
-                    </div>
-                    {!isScanning && !readOnly && (
-                      <button
-                        type="button"
-                        title="Re-scan this repository"
-                        onClick={() => setRescanConfirm(r.name)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-surface-sunken text-text-tertiary hover:text-text-secondary"
-                      >
-                        <RefreshCw className="size-3" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <MintBtn
-              icon={<Pencil />}
-              label="Modify"
-              onClick={handleGithubModify}
-              disabled={readOnly}
-            />
-            <MintBtn
-              icon={githubState === 'removing' ? <Loader2 className="animate-spin" /> : <X />}
-              label="Disconnect"
-              onClick={() => setConfirmDialog('github-remove')}
-              danger
-              disabled={readOnly || githubState === 'removing'}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    // ── Step 2: repo selection ───────────────────────────────────────────────
-    if (previewRepos !== null || githubState === 'fetching') {
-      const previewUsername = parseGithubUsername(githubUrl);
-      return (
-        <div className="flex flex-col gap-3">
-          <a
-            href={`https://github.com/${encodeURIComponent(previewUsername)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group flex items-center gap-2 w-fit"
-          >
-            <LuGithub className="h-3.5 w-3.5 text-text-tertiary flex-shrink-0" />
-            <span className="text-sm font-medium text-text-primary group-hover:opacity-80">{previewUsername}</span>
-            <ArrowUpRight className="size-3 text-text-tertiary" />
-          </a>
-
-          <div className="flex flex-col gap-0 px-3 py-3 rounded-xl bg-surface-elevated border w-fit min-w-xs">
-            {githubState === 'fetching' ? (
-              <div className="flex items-center gap-2 py-3 justify-center text-xs text-text-tertiary">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />Fetching repos…
-              </div>
-            ) : previewRepos!.length === 0 ? (
-              <p className="text-xs text-text-disabled py-2">No public repos found</p>
-            ) : (
-              <>
-                <span className="text-sm text-text-tertiary mb-2">
-                  {previewRepos!.length} repo{previewRepos!.length !== 1 ? 's' : ''} found
-                </span>
-                {previewRepos!.map((r) => (
-                  <div key={r.name} className="flex items-center gap-3 py-1.5">
-                    <Toggle checked={selectedRepoNames.has(r.name)} onChange={() => toggleRepo(r.name)} />
-                    <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
-                    <div className="flex items-center gap-1 flex-1 min-w-0">
-                      <a
-                        href={`https://github.com/${encodeURIComponent(previewUsername)}/${encodeURIComponent(r.name)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-text-primary hover:opacity-80 truncate"
-                      >
-                        {r.name}
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-          {githubState === 'error' && githubError && (
-            <p className="text-xs text-error">{githubError}</p>
-          )}
-          {previewRepos !== null && previewRepos.length > 0 && (
-            <label className="flex gap-2.5 cursor-pointer">
-              <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} className="h-3.5 w-3.5 my-1 flex-shrink-0 accent-brand-primary cursor-pointer" />
-              <span className="text-xs text-text-secondary leading-relaxed">
-                I confirm the selected repositories are representative of my engineering work. For repos with multiple contributors, Tailord treats the codebase as indicative of my experience.
-              </span>
-            </label>
-          )}
-          {(() => {
-            const hasNoChange = githubEditing &&
-              selectedRepoNames.size === previouslyConnectedRepos.size &&
-              [...selectedRepoNames].every((n) => previouslyConnectedRepos.has(n));
-            const connectDisabled = selectedRepoNames.size === 0 || !acknowledged || githubState === 'saving' || githubState === 'fetching' || hasNoChange;
-            return (
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={handleGithubConnect} disabled={readOnly || connectDisabled} className={saveBtnCls}>
-                  {githubState === 'saving' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Connecting…</> : `Connect (${selectedRepoNames.size} repo${selectedRepoNames.size !== 1 ? 's' : ''})`}
-                </button>
-                <button type="button" onClick={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); if (githubEditing) setGithubEditing(false); }} className={outlineBtnCls}>
-                  Cancel
-                </button>
-              </div>
-            );
-          })()}
-        </div>
-      );
-    }
-
-    // ── Step 1: username input ───────────────────────────────────────────────
-    return (
-      <form onSubmit={readOnly ? (e) => e.preventDefault() : handleGithubFetch} className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-xs">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <LuGithub className="h-4 w-4 text-text-tertiary" />
-            </div>
-            <input type="text" value={githubUrl} onChange={(e) => { setGithubUrl(e.target.value); setGithubState('idle'); setGithubError(null); }} placeholder="github.com/username or username" disabled={readOnly} className={cn(inputCls, 'pl-9')} />
-          </div>
-          <button type="submit" disabled={readOnly || !githubUrl.trim()} className={saveBtnCls}>
-            Connect
-          </button>
-        </div>
-        {githubState === 'error' && githubError && <p className="text-xs text-error">{githubError}</p>}
-        {githubEditing && (
-          <button type="button" onClick={() => { setGithubEditing(false); setGithubState('idle'); setGithubError(null); resetGithubPreview(); }} className={cn(outlineBtnCls, 'w-fit')}>Cancel</button>
-        )}
-      </form>
-    );
-  };
-
   /* ─── Render ─────────────────────────────────────────────────────────────── */
 
   return (
@@ -1082,46 +668,40 @@ export function ExperienceManager({
 
           {/* Source sections — two-column grid */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-12 pb-6 border-b border-zinc-950/5 dark:border-white/5">
-            {/* Resume */}
-            <div className="flex flex-col gap-5">
-              {/* 1. Header */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2 h-6">
-                  <h2 className="text-sm font-medium text-text-primary">Resume Upload</h2>
-                  <span className={resumeHasFile ? 'flex items-center' : 'invisible'}>
-                    <LiveBadge label="Uploaded" />
-                  </span>
-                </div>
-                {/* 2. Subtext */}
-                {resumeSubtext && (
-                  <p className="text-sm text-text-tertiary">{resumeSubtext}</p>
-                )}
-              </div>
-              {/* 3. Card */}
-              {resumeCard}
-              {/* 4. Controls */}
-              {resumeControls}
-            </div>
-
-            {/* GitHub */}
-            <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2 h-6">
-                  <h2 className="text-sm font-medium text-text-primary">GitHub Connection</h2>
-                  <span className={githubConnected ? 'flex items-center' : 'invisible'}>
-                    <LiveBadge label="Connected" />
-                  </span>
-                </div>
-                {!isInitialLoad && (
-                  <p className="text-sm text-text-tertiary">
-                    {githubConnected
-                      ? 'Signals are derived from your connected repositories'
-                      : 'Import your public repositories to enrich your experience'}
-                  </p>
-                )}
-              </div>
-              {!isInitialLoad && renderGithubControls()}
-            </div>
+            <ResumeUploadSection
+              uploadState={uploadState}
+              processingStage={processingStage}
+              stageStartedAt={stageStartedAt}
+              readOnly={readOnly}
+              onUploadClick={() => fileInputRef.current?.click()}
+              onCancelProcessing={handleRemove}
+              onReplace={() => setConfirmDialog('resume-replace')}
+              onRemove={() => setConfirmDialog('resume-remove')}
+            />
+            <GitHubSection
+              isInitialLoad={uploadState.phase === 'loading'}
+              connectedGithub={connectedGithub}
+              githubEditing={githubEditing}
+              githubUrl={githubUrl}
+              githubState={githubState}
+              githubError={githubError}
+              previewRepos={previewRepos}
+              selectedRepoNames={selectedRepoNames}
+              acknowledged={acknowledged}
+              previouslyConnectedRepos={previouslyConnectedRepos}
+              scanningRepos={scanningRepos}
+              readOnly={readOnly}
+              onGithubUrlChange={(url) => { setGithubUrl(url); setGithubState('idle'); setGithubError(null); }}
+              onGithubFetch={handleGithubFetch}
+              onGithubConnect={handleGithubConnect}
+              onGithubModify={handleGithubModify}
+              onDisconnectRequest={() => setConfirmDialog('github-remove')}
+              onToggleRepo={toggleRepo}
+              onAcknowledgeChange={setAcknowledged}
+              onCancelEdit={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); if (githubEditing) setGithubEditing(false); }}
+              onRescanRequest={setRescanConfirm}
+              parseUsername={parseGithubUsername}
+            />
           </div>
 
           {/* Inferred Profile Signals */}
@@ -1281,7 +861,7 @@ export function ExperienceManager({
 
           {/* Parsed experience */}
           <div className="mt-8">
-            <ChunkedProfile refreshKey={chunksRefreshKey} initialData={initialChunks} readOnly={readOnly} />
+            <ProfileChunkEditor refreshKey={chunksRefreshKey} initialData={initialChunks} readOnly={readOnly} />
           </div>
 
         </div>

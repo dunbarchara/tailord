@@ -6,19 +6,8 @@ import { CheckCircle, XCircle } from "lucide-react"
 import Image from "next/image"
 import { Header } from "@/components/Header"
 import { IconCheck } from "@/components/ui/icons"
+import { formatRelativeDate } from "@/lib/utils"
 import type { AdminUser } from "./page"
-
-/* ─── Helpers ─────────────────────────────────────────────────────────────── */
-
-function formatRelativeDate(iso: string): string {
-  const date = new Date(iso)
-  const diffDays = Math.floor((Date.now() - date.getTime()) / 86_400_000)
-  if (diffDays === 0) return "Today"
-  if (diffDays === 1) return "Yesterday"
-  if (diffDays < 7) return `${diffDays}d ago`
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-}
 
 /* ─── Status badge ────────────────────────────────────────────────────────── */
 

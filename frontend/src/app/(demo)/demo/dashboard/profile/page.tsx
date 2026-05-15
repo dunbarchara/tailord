@@ -1,13 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import {
-  Lock, Settings, ChevronDown,
-  AlignLeft, Briefcase, GraduationCap, Layers, FolderOpen, Mail,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Lock, Settings, ChevronDown, AlignLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ProfileSidebar } from '@/components/profile/ProfileSidebar';
+import {
+  SectionHeader, ExperienceSection, EducationSection, SkillsSection, ProjectsSection, ContactSection,
+} from '@/components/profile/ProfileSections';
 import { getMockUser, getMockExperience } from '@/mock/loader';
 
 const textBtnCls =
@@ -15,16 +14,6 @@ const textBtnCls =
   'bg-surface-elevated border border-border-default text-text-secondary ' +
   'text-sm font-normal tracking-[-0.1px] ' +
   'transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
-
-function SectionHeader({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-8">
-      <Icon className="h-4 w-4 text-text-tertiary flex-shrink-0" />
-      <span className="text-[10px] uppercase tracking-widest text-text-tertiary font-medium flex-shrink-0">{label}</span>
-      <div className="flex-1 h-px bg-border-subtle" />
-    </div>
-  );
-}
 
 export default function DemoProfilePage() {
   const user = getMockUser();
@@ -37,8 +26,12 @@ export default function DemoProfilePage() {
   const hasSummary = !!resume?.summary;
   const hasExperience = (resume?.work_experience?.length ?? 0) > 0;
   const hasEducation = (resume?.education?.length ?? 0) > 0;
-  const hasSkills = (resume?.skills?.technical?.length ?? 0) > 0 || (resume?.skills?.soft?.length ?? 0) > 0;
+  const hasSkills =
+    (resume?.skills?.technical?.length ?? 0) > 0 ||
+    (resume?.skills?.soft?.length ?? 0) > 0 ||
+    (resume?.certifications?.length ?? 0) > 0;
   const hasProjects = (resume?.projects?.length ?? 0) > 0;
+  const hasContact = !!(resume?.email || resume?.phone);
 
   const navSections = [
     hasSummary && { id: 'about', label: 'About' },
@@ -46,6 +39,7 @@ export default function DemoProfilePage() {
     hasEducation && { id: 'education', label: 'Education' },
     hasSkills && { id: 'skills', label: 'Skills' },
     hasProjects && { id: 'projects', label: 'Projects' },
+    hasContact && { id: 'contact', label: 'Contact' },
   ].filter(Boolean) as Array<{ id: string; label: string }>;
 
   return (
@@ -92,126 +86,14 @@ export default function DemoProfilePage() {
                       <p className="text-sm text-text-secondary leading-relaxed">{resume.summary}</p>
                     </section>
                   )}
-
-                  {hasExperience && (
-                    <section id="experience" className="mb-16">
-                      <SectionHeader icon={Briefcase} label="Experience" />
-                      <div className="space-y-8">
-                        {resume.work_experience.map((job, i) => (
-                          <div key={i}>
-                            <p className="text-sm font-semibold text-text-primary">{job.title}</p>
-                            <p className="text-xs text-text-secondary mt-0.5">
-                              {job.company}
-                              {(job.location || job.duration) && (
-                                <span className="text-text-tertiary">
-                                  {job.location && ` · ${job.location}`}
-                                  {job.duration && ` · ${job.duration}`}
-                                </span>
-                              )}
-                            </p>
-                            {job.bullets?.length > 0 && (
-                              <ul className="mt-2.5 space-y-1.5">
-                                {job.bullets.map((b, j) => (
-                                  <li key={j} className="flex gap-2 text-xs text-text-secondary">
-                                    <span className="text-text-tertiary flex-shrink-0 mt-0.5">·</span>
-                                    <span>{b}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-
-                  {hasEducation && (
-                    <section id="education" className="mb-16">
-                      <SectionHeader icon={GraduationCap} label="Education" />
-                      <div className="space-y-5">
-                        {resume.education.map((edu, i) => (
-                          <div key={i}>
-                            <p className="text-sm font-semibold text-text-primary">{edu.degree}</p>
-                            <p className="text-xs text-text-secondary mt-0.5">
-                              {edu.institution}
-                              {(edu.location || edu.year) && (
-                                <span className="text-text-tertiary">
-                                  {edu.location && `, ${edu.location}`}
-                                  {edu.year && ` · ${edu.year}`}
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-
+                  {hasExperience && <ExperienceSection jobs={resume.work_experience} />}
+                  {hasEducation && <EducationSection education={resume.education} />}
                   {hasSkills && (
-                    <section id="skills" className="mb-16">
-                      <SectionHeader icon={Layers} label="Skills" />
-                      <div className="space-y-5">
-                        {resume.skills.technical?.length > 0 && (
-                          <div>
-                            <p className="text-[10px] uppercase tracking-widest text-text-disabled mb-2">Technical</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {resume.skills.technical.map((s, i) => (
-                                <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-surface-elevated border border-border-subtle text-text-secondary">
-                                  {s}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {resume.skills.soft?.length > 0 && (
-                          <div>
-                            <p className="text-[10px] uppercase tracking-widest text-text-disabled mb-2">Soft Skills</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {resume.skills.soft.map((s, i) => (
-                                <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-surface-sunken border border-border-subtle text-text-tertiary">
-                                  {s}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </section>
+                    <SkillsSection skills={resume.skills} certifications={resume.certifications ?? []} />
                   )}
-
-                  {hasProjects && (
-                    <section id="projects" className="mb-16">
-                      <SectionHeader icon={FolderOpen} label="Projects" />
-                      <div className="space-y-6">
-                        {resume.projects.map((project, i) => (
-                          <div key={i}>
-                            <p className="text-sm font-semibold text-text-primary">{project.name}</p>
-                            {project.description && (
-                              <p className="text-xs text-text-secondary mt-1 leading-relaxed">{project.description}</p>
-                            )}
-                            {project.technologies?.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {project.technologies.map((t, j) => (
-                                  <span key={j} className="px-2 py-0.5 rounded text-xs bg-surface-sunken border border-border-subtle text-text-tertiary font-mono">
-                                    {t}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-
-                  {resume.email && (
-                    <section id="contact" className="mb-16">
-                      <SectionHeader icon={Mail} label="Contact" />
-                      <a href={`mailto:${resume.email}`} className="flex items-center gap-3 text-sm text-text-secondary hover:text-text-primary transition-colors group">
-                        <Mail className="h-4 w-4 text-text-tertiary flex-shrink-0" />
-                        <span>{resume.email}</span>
-                      </a>
-                    </section>
+                  {hasProjects && <ProjectsSection projects={resume.projects} />}
+                  {(resume.email || resume.phone) && (
+                    <ContactSection email={resume.email} phone={resume.phone} />
                   )}
                 </>
               )}

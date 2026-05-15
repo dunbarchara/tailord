@@ -1,14 +1,7 @@
 import Link from 'next/link';
 import { Plus, FileText, ArrowRight } from 'lucide-react';
 import type { TailoringListItem } from '@/types';
-
-function tailoringLabel(t: TailoringListItem): string {
-  if (t.title) return t.title;
-  if (t.job_url) {
-    try { return new URL(t.job_url).hostname.replace(/^www\./, ''); } catch {}
-  }
-  return 'Untitled';
-}
+import { tailoringLabel } from '@/lib/utils';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });

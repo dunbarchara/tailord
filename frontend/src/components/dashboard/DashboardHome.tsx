@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { TailoringListItem } from '@/types';
 import { IconCheck, IconWorkflows } from '@/components/ui/icons';
+import { tailoringLabel, formatRelativeDate } from '@/lib/utils';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -16,24 +17,6 @@ function buildGreeting(displayName: string | null): string {
   const period = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   const firstName = displayName?.split(' ')[0] ?? null;
   return `Good ${period}${firstName ? `, ${firstName}` : ''}`;
-}
-
-function tailoringLabel(t: TailoringListItem): string {
-  if (t.title) return t.title;
-  if (t.job_url) {
-    try { return new URL(t.job_url).hostname.replace(/^www\./, ''); } catch {}
-  }
-  return 'Untitled';
-}
-
-function formatRelativeDate(iso: string): string {
-  const date = new Date(iso);
-  const diffDays = Math.floor((Date.now() - date.getTime()) / 86_400_000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays}d ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 /* ─── Status badge ───────────────────────────────────────────────────────── */
