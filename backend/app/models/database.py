@@ -73,7 +73,7 @@ class Experience(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), unique=True
     )
-    s3_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
     filename: Mapped[str | None] = mapped_column(String, nullable=True)
     # status: pending | processing | ready | error
     status: Mapped[str] = mapped_column(String, default="pending")

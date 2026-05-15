@@ -79,7 +79,7 @@ def _clear_resume_fields(e: Experience, db: Session) -> None:
 
     Also deletes associated resume ExperienceChunk rows. Does not commit.
     """
-    e.s3_key = None
+    e.storage_key = None
     e.filename = None
     e.raw_resume_text = None
     e.error_message = None
@@ -181,13 +181,15 @@ def get_upload_url(
 
     if existing:
         # Clean up old file but preserve GitHub data on the existing row
-        if existing.s3_key:
+        if existing.storage_key:
             try:
-                get_storage_client().delete_object(existing.s3_key)
+                get_storage_client().delete_object(existing.storage_key)
             except Exception:
-                logger.warning("Storage cleanup failed for key=%s — continuing", existing.s3_key)
+                logger.warning(
+                    "Storage cleanup failed for key=%s — continuing", existing.storage_key
+                )
         _clear_resume_fields(existing, db)
-        existing.s3_key = storage_key
+        existing.storage_key = storage_key
         existing.filename = body.filename
         existing.status = "pending"
         existing.uploaded_at = datetime.now(timezone.utc)
@@ -195,7 +197,7 @@ def get_upload_url(
     else:
         experience = Experience(
             user_id=user.id,
-            s3_key=storage_key,
+            storage_key=storage_key,
             filename=body.filename,
             status="pending",
         )
@@ -236,7 +238,7 @@ async def trigger_process(
         db.query(Experience)
         .filter(
             Experience.user_id == user.id,
-            Experience.s3_key == body.storage_key,
+            Experience.storage_key == body.storage_key,
         )
         .first()
     )
@@ -385,12 +387,12 @@ def delete_experience(
     if not e:
         raise HTTPException(status_code=404, detail="No experience found")
 
-    if e.s3_key:
+    if e.storage_key:
         try:
-            get_storage_client().delete_object(e.s3_key)
+            get_storage_client().delete_object(e.storage_key)
         except Exception:
             logger.warning(
-                "delete_experience: storage delete failed for key=%s — continuing", e.s3_key
+                "delete_experience: storage delete failed for key=%s — continuing", e.storage_key
             )
 
     if _has_non_resume_sources(e):
@@ -558,7 +560,7 @@ def set_github(
     else:
         experience = Experience(
             user_id=user.id,
-            s3_key=None,
+            storage_key=None,
             filename=None,
             status="ready",
             github_username=body.github_username,
@@ -698,7 +700,7 @@ def _ensure_experience(user: User, db: Session) -> Experience:
     if not experience:
         experience = Experience(
             user_id=user.id,
-            s3_key=None,
+            storage_key=None,
             filename=None,
             status="ready",
             processed_at=datetime.now(timezone.utc),

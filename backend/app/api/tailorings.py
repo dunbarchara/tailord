@@ -1579,7 +1579,7 @@ def get_public_tailoring(
 
     if author:
         exp = db.query(Experience).filter(Experience.user_id == author.id).first()
-        has_resume = bool(exp and exp.s3_key)
+        has_resume = bool(exp and exp.storage_key)
         github_repos_with_url = []
         if exp and exp.github_repo_details and isinstance(exp.github_repo_details, dict):
             for r in exp.github_repo_details.get("repos") or []:
