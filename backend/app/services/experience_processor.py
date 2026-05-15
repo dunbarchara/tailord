@@ -26,6 +26,7 @@ def _friendly_processing_error(exc: Exception) -> str:
 _BULLET_MARKER = re.compile(r"^[•\-\*]\s*$")
 _BULLET_START = re.compile(r"^[•\-\*]\s+\S")
 _SECTION_HEADER = re.compile(r"^[A-Z][A-Za-z\s]{0,30}$")
+_TERMINAL_PUNCT = re.compile(r"[.!?:]\s*$")
 
 
 def _normalize_resume_text(text: str) -> str:
@@ -60,23 +61,35 @@ def _normalize_resume_text(text: str) -> str:
         merged.append(line)
         i += 1
 
-    # Pass 2: join wrapped continuation lines back onto their bullet
+    # Pass 2: join wrapped continuation lines back onto their bullet.
+    # A blank-line-separated fragment is joined when EITHER:
+    #   (a) it starts lowercase  — mid-sentence conjunction/preposition
+    #   (b) the previous bullet ends without terminal punctuation — incomplete sentence
+    # This handles pdfminer inserting blank lines mid-bullet (e.g. long lines with
+    # parentheticals ending in ')' rather than '.').
     joined: list[str] = []
+    pending_blanks: list[str] = []
     for line in merged:
         stripped = line.strip()
         if not stripped:
-            joined.append("")
+            pending_blanks.append("")
             continue
-        if (
+        prev_complete = bool(_TERMINAL_PUNCT.search(joined[-1])) if joined else True
+        is_continuation = (
             joined
-            and joined[-1].strip()
             and _BULLET_START.match(joined[-1].lstrip())
             and not _BULLET_START.match(stripped)
             and not _SECTION_HEADER.match(stripped)
-        ):
+            and (stripped[0].islower() or not prev_complete)
+        )
+        if is_continuation:
             joined[-1] = joined[-1].rstrip() + " " + stripped
+            pending_blanks = []
         else:
+            joined.extend(pending_blanks)
+            pending_blanks = []
             joined.append(line)
+    joined.extend(pending_blanks)
 
     # Pass 3: collapse 3+ blank lines → 2, collapse runs of spaces within lines
     normalized = re.sub(r"\n{3,}", "\n\n", "\n".join(joined))
