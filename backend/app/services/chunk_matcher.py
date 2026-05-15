@@ -28,6 +28,34 @@ BATCH_SIZE = (
 # background when the HTTP timeout eventually fires.
 _CHUNK_SCORING_TIMEOUT_SECONDS = 300  # 5 minutes
 
+
+# ---------------------------------------------------------------------------
+# Module-level validators (replace identical inline closures)
+# ---------------------------------------------------------------------------
+
+
+def _validate_chunk_batch(r: ChunkMatchBatch) -> None:
+    """Validate that all scored chunks with score>=1 have an advocacy_blurb."""
+    for i, item in enumerate(r.results):
+        if item.score in (1, 2) and not (item.advocacy_blurb and item.advocacy_blurb.strip()):
+            raise ValueError(
+                f"result[{i}] has score={item.score} but advocacy_blurb is empty"
+                " — populate it with a 1–2 sentence third-person advocacy statement"
+            )
+
+
+def _validate_single_chunk(r: ChunkMatchBatch) -> None:
+    """Validate a single-chunk batch result."""
+    if not r.results:
+        raise ValueError("results list is empty — score the chunk")
+    item = r.results[0]
+    if item.score in (1, 2) and not (item.advocacy_blurb and item.advocacy_blurb.strip()):
+        raise ValueError(
+            f"score={item.score} but advocacy_blurb is empty"
+            " — populate it with a 1–2 sentence third-person advocacy statement"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Vector-path helpers
 # ---------------------------------------------------------------------------
@@ -164,16 +192,6 @@ def _score_chunk_vector(
 
     grouped_context = _build_grouped_context(top_k_chunks)
 
-    def _validate_single(r: ChunkMatchBatch) -> None:
-        if not r.results:
-            raise ValueError("results list is empty — score the chunk")
-        item = r.results[0]
-        if item.score in (1, 2) and not (item.advocacy_blurb and item.advocacy_blurb.strip()):
-            raise ValueError(
-                f"score={item.score} but advocacy_blurb is empty"
-                " — populate it with a 1–2 sentence third-person advocacy statement"
-            )
-
     force_score_note = prompt.FORCE_SCORE_NOTE if force_score else ""
     result = llm_parse_with_retry(
         get_llm_client(),
@@ -193,7 +211,7 @@ def _score_chunk_vector(
         ],
         response_model=ChunkMatchBatch,
         temperature=prompt.TEMPERATURE,
-        validate_fn=_validate_single,
+        validate_fn=_validate_single_chunk,
     )
 
     raw = (
@@ -355,17 +373,6 @@ def enrich_job_chunks(
                     f"{idx}. [{c.chunk_type.upper()}] {c.content}"
                     for idx, c in enumerate(batch, start=1)
                 )
-
-                def _validate_batch(r: ChunkMatchBatch) -> None:
-                    for i, item in enumerate(r.results):
-                        if item.score in (1, 2) and not (
-                            item.advocacy_blurb and item.advocacy_blurb.strip()
-                        ):
-                            raise ValueError(
-                                f"result[{i}] has score={item.score} but advocacy_blurb is empty"
-                                " — populate it with a 1–2 sentence third-person advocacy statement"
-                            )
-
                 result = llm_parse_with_retry(
                     get_llm_client(),
                     model=settings.llm_model,
@@ -382,7 +389,7 @@ def enrich_job_chunks(
                     ],
                     response_model=ChunkMatchBatch,
                     temperature=prompt.TEMPERATURE,
-                    validate_fn=_validate_batch,
+                    validate_fn=_validate_chunk_batch,
                 )
                 return batch, result.results
 
@@ -558,18 +565,6 @@ def re_enrich_single_chunk(
             chunks_block = f"1. [{chunk.chunk_type.upper()}] {chunk.content}"
             force_score_note = prompt.FORCE_SCORE_NOTE if force_score else ""
 
-            def _validate_single(r: ChunkMatchBatch) -> None:
-                if not r.results:
-                    raise ValueError("results list is empty — score the chunk")
-                item = r.results[0]
-                if item.score in (1, 2) and not (
-                    item.advocacy_blurb and item.advocacy_blurb.strip()
-                ):
-                    raise ValueError(
-                        f"score={item.score} but advocacy_blurb is empty"
-                        " — populate it with a 1–2 sentence third-person advocacy statement"
-                    )
-
             result = llm_parse_with_retry(
                 get_llm_client(),
                 model=settings.llm_model,
@@ -587,7 +582,7 @@ def re_enrich_single_chunk(
                 ],
                 response_model=ChunkMatchBatch,
                 temperature=prompt.TEMPERATURE,
-                validate_fn=_validate_single,
+                validate_fn=_validate_single_chunk,
             )
 
             match = (
@@ -740,17 +735,6 @@ def refresh_job_chunks(
                     f"{idx}. [{c.chunk_type.upper()}] {c.content}"
                     for idx, c in enumerate(batch, start=1)
                 )
-
-                def _validate_batch(r: ChunkMatchBatch) -> None:
-                    for i, item in enumerate(r.results):
-                        if item.score in (1, 2) and not (
-                            item.advocacy_blurb and item.advocacy_blurb.strip()
-                        ):
-                            raise ValueError(
-                                f"result[{i}] has score={item.score} but advocacy_blurb is empty"
-                                " — populate it with a 1–2 sentence third-person advocacy statement"
-                            )
-
                 result = llm_parse_with_retry(
                     get_llm_client(),
                     model=settings.llm_model,
@@ -767,7 +751,7 @@ def refresh_job_chunks(
                     ],
                     response_model=ChunkMatchBatch,
                     temperature=prompt.TEMPERATURE,
-                    validate_fn=_validate_batch,
+                    validate_fn=_validate_chunk_batch,
                 )
                 return batch, result.results
 
