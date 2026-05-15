@@ -1,14 +1,14 @@
-"""Unit tests for gap_analyzer._generate_gap_question and run_gap_analysis.
+"""Unit tests for gap_analyzer._generate_question and run_gap_analysis.
 
 run_gap_analysis creates its own DB session, so SessionLocal is patched at
-app.clients.database.SessionLocal. _format_sourced_profile is also patched
+app.clients.database.SessionLocal. format_sourced_profile is also patched
 to isolate the gap logic from the profile formatting layer.
 """
 
 from unittest.mock import MagicMock, patch
 
 from app.schemas.gaps import GapQuestion
-from app.services.gap_analyzer import _generate_gap_question, run_gap_analysis
+from app.services.gap_analyzer import _generate_question, run_gap_analysis
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -47,18 +47,19 @@ def _ready_tailoring(chunks_for_query):
 
 
 # ---------------------------------------------------------------------------
-# _generate_gap_question
+# _generate_question
 # ---------------------------------------------------------------------------
 
 
-def test_generate_gap_question_returns_llm_result():
+def test_generate_question_gap_returns_llm_result():
     mock_result = GapQuestion(
         question_for_candidate="Do you have Python experience?",
         context="Python is core to this backend role",
     )
     with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_result):
         with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
-            result = _generate_gap_question(
+            result = _generate_question(
+                "gap",
                 requirement="Python 3+ experience",
                 match_rationale="No Python evidence found",
                 formatted_profile="Senior engineer, 5 years Python",
@@ -69,17 +70,18 @@ def test_generate_gap_question_returns_llm_result():
     assert result.context == "Python is core to this backend role"
 
 
-def test_generate_gap_question_includes_requirement_in_prompt():
+def test_generate_question_gap_includes_requirement_in_prompt():
     mock_result = GapQuestion(question_for_candidate="Q?", context="ctx")
     with patch(
         "app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_result
     ) as mock_llm:
         with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
-            _generate_gap_question(
-                "Kubernetes orchestration",
-                "No K8s evidence found",
-                "some profile",
-                "DevOps Engineer at Acme Corp",
+            _generate_question(
+                "gap",
+                requirement="Kubernetes orchestration",
+                match_rationale="No K8s evidence found",
+                formatted_profile="some profile",
+                job_context="DevOps Engineer at Acme Corp",
             )
 
     messages = mock_llm.call_args.kwargs["messages"]
@@ -101,7 +103,7 @@ def test_run_gap_analysis_zero_gaps_empty_result():
         with patch("app.services.gap_analyzer.llm_parse_with_retry") as mock_llm:
             with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
                 with patch(
-                    "app.services.gap_analyzer._format_sourced_profile",
+                    "app.services.gap_analyzer.format_sourced_profile",
                     return_value="formatted profile",
                 ):
                     run_gap_analysis("fake-tailoring-id")
@@ -137,7 +139,7 @@ def test_run_gap_analysis_sourced_count_excludes_score_zero():
         with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_gap_q):
             with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
                 with patch(
-                    "app.services.gap_analyzer._format_sourced_profile",
+                    "app.services.gap_analyzer.format_sourced_profile",
                     return_value="formatted profile",
                 ):
                     run_gap_analysis("fake-tailoring-id")
@@ -167,7 +169,7 @@ def test_run_gap_analysis_gap_content_in_output():
         with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_gap_q):
             with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
                 with patch(
-                    "app.services.gap_analyzer._format_sourced_profile",
+                    "app.services.gap_analyzer.format_sourced_profile",
                     return_value="formatted profile",
                 ):
                     run_gap_analysis("fake-tailoring-id")

@@ -25,7 +25,7 @@ def _client_patch():
 
 def _profile_patch():
     return patch(
-        "app.services.requirement_matcher._format_sourced_profile",
+        "app.services.requirement_matcher.format_sourced_profile",
         return_value="formatted profile",
     )
 

@@ -5,29 +5,9 @@ from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import tailoring as prompt
 from app.schemas.llm_outputs import TailoringContent
-from app.services.profile_formatter import (
-    build_ranked_matches_from_chunks,
-    compute_profile_signals,
-    fmt_github_prose,
-    fmt_resume_prose,
-    format_sourced_profile,
-    parse_duration_date,
-    parse_duration_years,
-    strip_city,
-)
+from app.services.profile_formatter import format_sourced_profile
 
 logger = structlog.get_logger(__name__)
-
-# Backward-compat shims — callers should migrate to profile_formatter imports.
-_MONTH_ABBR = None  # no longer defined here; see profile_formatter._MONTH_ABBR
-_parse_duration_date = parse_duration_date
-_parse_duration_years = parse_duration_years
-_compute_profile_signals = compute_profile_signals
-_fmt_resume_prose = fmt_resume_prose
-_fmt_github_prose = fmt_github_prose
-_format_sourced_profile = format_sourced_profile
-_build_ranked_matches_from_chunks = build_ranked_matches_from_chunks
-_strip_city = strip_city
 
 
 def _format_ranked_matches(matches: list[dict]) -> str:

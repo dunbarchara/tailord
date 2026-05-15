@@ -9,9 +9,6 @@ from app.prompts import gap_analysis as prompt
 from app.schemas.gaps import GapAnalysis, GapQuestion, ProfileGapWithChunk
 from app.services.profile_formatter import format_sourced_profile
 
-# Backward-compat shim — tests patch this name at this module path.
-_format_sourced_profile = format_sourced_profile
-
 logger = structlog.get_logger(__name__)
 
 
@@ -67,7 +64,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
         pronouns = user.pronouns or None
         candidate_name = user.candidate_name
 
-        formatted_profile = _format_sourced_profile(
+        formatted_profile = format_sourced_profile(
             extracted_profile, candidate_name=candidate_name, pronouns=pronouns
         )
 
@@ -248,20 +245,4 @@ def _generate_question(
         response_model=GapQuestion,
         temperature=prompt.TEMPERATURE,
         validate_fn=_validate,
-    )
-
-
-def _generate_gap_question(
-    requirement: str,
-    match_rationale: str,
-    formatted_profile: str,
-    job_context: str,
-) -> GapQuestion:
-    """Compatibility shim — delegates to _generate_question("gap", ...)."""
-    return _generate_question(
-        "gap",
-        requirement=requirement,
-        match_rationale=match_rationale,
-        formatted_profile=formatted_profile,
-        job_context=job_context,
     )

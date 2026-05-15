@@ -7,9 +7,6 @@ from app.prompts import requirement_matching as prompt
 from app.schemas.matching import RequirementMatchList
 from app.services.profile_formatter import format_sourced_profile
 
-# Backward-compat shim — tests patch this name at this module path.
-_format_sourced_profile = format_sourced_profile
-
 logger = structlog.get_logger(__name__)
 
 
@@ -33,7 +30,7 @@ def match_requirements(
         lines.append(f"[PREFERRED] {req}")
     requirements_block = "\n".join(lines)
 
-    formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
+    formatted_profile = format_sourced_profile(extracted_profile, pronouns=pronouns)
 
     def _validate(r: RequirementMatchList) -> None:
         if not r.matches:

@@ -1,8 +1,9 @@
-import logging
 import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
+
+import structlog
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
@@ -12,10 +13,7 @@ from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
 from app.services.chunk_extractor import extract_chunks
 from app.services.profile_formatter import format_sourced_profile
 
-# Backward-compat shim — tests patch this name at this module path.
-_format_sourced_profile = format_sourced_profile
-
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 BATCH_SIZE = (
     3  # Smaller batches reduce output token count — advocacy_blurb roughly doubles output length
@@ -339,7 +337,7 @@ def enrich_job_chunks(
 
         else:
             # LLM path: full profile, batched per section
-            formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
+            formatted_profile = format_sourced_profile(extracted_profile, pronouns=pronouns)
 
             section_map: OrderedDict[str, list] = OrderedDict()
             for chunk in chunks:
@@ -559,7 +557,7 @@ def re_enrich_single_chunk(
                 chunk.embedding = new_embedding
                 chunk.embedding_model = settings.embedding_model
         else:
-            formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
+            formatted_profile = format_sourced_profile(extracted_profile, pronouns=pronouns)
 
             section = chunk.section or "General"
             chunks_block = f"1. [{chunk.chunk_type.upper()}] {chunk.content}"
@@ -707,7 +705,7 @@ def refresh_job_chunks(
                     )
 
         else:
-            formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
+            formatted_profile = format_sourced_profile(extracted_profile, pronouns=pronouns)
 
             section_map: dict[str, list] = {}
             for chunk in scoreable:
