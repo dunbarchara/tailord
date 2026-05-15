@@ -37,11 +37,8 @@ from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
 from app.services.gap_analyzer import run_gap_analysis
 from app.services.job_extractor import extract_job
-from app.services.tailoring_generator import (
-    _build_ranked_matches_from_chunks,
-    _format_sourced_profile,
-    generate_tailoring,
-)
+from app.services.profile_formatter import build_ranked_matches_from_chunks, format_sourced_profile
+from app.services.tailoring_generator import generate_tailoring
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -282,7 +279,7 @@ def _finalize_tailoring(
                 tailoring.generation_stage = "extracting"
                 # Snapshot the exact formatted profile passed to the LLM so the debug panel
                 # always shows what the model actually saw, regardless of later experience edits.
-                tailoring.profile_snapshot = _format_sourced_profile(
+                tailoring.profile_snapshot = format_sourced_profile(
                     extracted_profile, candidate_name=candidate_name, pronouns=pronouns
                 )
                 db.commit()
@@ -430,7 +427,7 @@ def _finalize_tailoring(
         ranked_matches: list[dict] = []
         try:
             with SessionLocal() as chunk_db:
-                ranked_matches = _build_ranked_matches_from_chunks(uuid.UUID(job_id), chunk_db)
+                ranked_matches = build_ranked_matches_from_chunks(uuid.UUID(job_id), chunk_db)
         except Exception:
             logger.exception("ranked_matches_failed")
 
@@ -1387,7 +1384,7 @@ def get_tailoring_debug_info(
     else:
         experience = db.query(Experience).filter(Experience.user_id == user.id).first()
         extracted_profile = (experience.extracted_profile if experience else None) or {}
-        formatted_profile = _format_sourced_profile(
+        formatted_profile = format_sourced_profile(
             extracted_profile,
             candidate_name=user.name,
             pronouns=user.pronouns if hasattr(user, "pronouns") else None,

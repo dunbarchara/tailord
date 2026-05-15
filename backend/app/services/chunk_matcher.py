@@ -10,7 +10,10 @@ from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
 from app.services.chunk_extractor import extract_chunks
-from app.services.tailoring_generator import _format_sourced_profile
+from app.services.profile_formatter import format_sourced_profile
+
+# Backward-compat shim — tests patch this name at this module path.
+_format_sourced_profile = format_sourced_profile
 
 logger = logging.getLogger(__name__)
 

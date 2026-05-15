@@ -1143,9 +1143,9 @@ def create_gap_response(
             extracted_job = (job.extracted_job or {}) if job else {}
             job_context = _build_job_context(extracted_job)
             candidate_name = user.candidate_name
-            from app.services.tailoring_generator import _format_sourced_profile
+            from app.services.profile_formatter import format_sourced_profile
 
-            formatted_profile = _format_sourced_profile(
+            formatted_profile = format_sourced_profile(
                 experience.extracted_profile or {},
                 candidate_name=candidate_name,
                 pronouns=user.pronouns,
