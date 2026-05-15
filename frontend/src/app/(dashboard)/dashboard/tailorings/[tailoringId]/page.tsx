@@ -1,5 +1,7 @@
 import { TailoringDetail } from '@/components/dashboard/TailoringDetail';
 
+export const dynamic = 'force-dynamic';
+
 export default async function TailoringPage({
   params,
 }: {

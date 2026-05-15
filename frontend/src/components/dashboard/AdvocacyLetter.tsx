@@ -139,7 +139,15 @@ export function AdvocacyLetter({ tailoring, authorName }: AdvocacyLetterProps) {
         />
       ) : tailoring.generated_output ? (
         <div className={proseCls}>
-          <ReactMarkdown>{tailoring.generated_output}</ReactMarkdown>
+          <ReactMarkdown
+            components={{
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+              ),
+            }}
+          >
+            {tailoring.generated_output}
+          </ReactMarkdown>
         </div>
       ) : null}
     </div>
