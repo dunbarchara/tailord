@@ -75,15 +75,6 @@ def setup_logging() -> None:
     if settings.environment == "local":
         log_dir = Path(settings.log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = RotatingFileHandler(
-            log_dir / "app.log",
-            maxBytes=5 * 1024 * 1024,
-            backupCount=5,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(formatter)
-        handlers.append(file_handler)
-
         json_formatter = structlog.stdlib.ProcessorFormatter(
             processors=[
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,

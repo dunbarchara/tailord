@@ -13,10 +13,10 @@ interface GenerationViewProps {
 
 export function GenerationView({ tailoring, regenSsePhase, gapAnalysisSettled, elapsed }: GenerationViewProps) {
   const stage = tailoring.generation_stage;
-  const generationComplete = tailoring.generation_status === 'ready';
+  const advocacyLetterComplete = tailoring.generation_status === 'ready';
 
-  const extractingDone = stage === 'enriching' || stage === 'generating' || generationComplete;
-  const enrichingDone = stage === 'generating' || generationComplete;
+  const extractingDone = stage === 'enriching' || stage === 'generating' || advocacyLetterComplete;
+  const enrichingDone = stage === 'generating' || advocacyLetterComplete;
 
   const phases = [
     {
@@ -33,15 +33,15 @@ export function GenerationView({ tailoring, regenSsePhase, gapAnalysisSettled, e
     },
     {
       key: 'generating',
-      label: 'Writing your tailoring',
-      done: generationComplete,
+      label: 'Writing advocacy letter',
+      done: advocacyLetterComplete,
       running: stage === 'generating',
     },
     {
       key: 'gap-analysis',
       label: 'Analyzing gaps',
       done: gapAnalysisSettled,
-      running: generationComplete && !gapAnalysisSettled,
+      running: stage === 'generating',
     },
   ];
 

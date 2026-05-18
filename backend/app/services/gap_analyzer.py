@@ -29,33 +29,25 @@ def run_gap_analysis(tailoring_id: str) -> None:
     from app.clients.database import SessionLocal
     from app.models.database import JobChunk, Tailoring
 
-    logger.info("run_gap_analysis: start tailoring_id=%s", tailoring_id)
+    logger.info("run_gap_analysis_start", tailoring_id=tailoring_id)
 
     db = SessionLocal()
     try:
         tailoring = db.query(Tailoring).filter(Tailoring.id == tailoring_id).first()
         if not tailoring:
-            logger.warning("run_gap_analysis: tailoring %s not found", tailoring_id)
-            return
-
-        if tailoring.generation_status != "ready":
-            logger.info(
-                "run_gap_analysis: skipping tailoring %s (status=%s)",
-                tailoring_id,
-                tailoring.generation_status,
-            )
+            logger.warning("run_gap_analysis_not_found", tailoring_id=tailoring_id)
             return
 
         job = tailoring.job
         if not job:
-            logger.info("run_gap_analysis: no job for tailoring %s", tailoring_id)
+            logger.info("run_gap_analysis_no_job", tailoring_id=tailoring_id)
             tailoring.gap_analysis_status = "complete"
             db.commit()
             return
 
         user = tailoring.user
         if not user or not user.experience or not user.experience.extracted_profile:
-            logger.info("run_gap_analysis: no experience profile for tailoring %s", tailoring_id)
+            logger.info("run_gap_analysis_no_experience", tailoring_id=tailoring_id)
             tailoring.gap_analysis_status = "complete"
             db.commit()
             return
@@ -85,8 +77,8 @@ def run_gap_analysis(tailoring_id: str) -> None:
 
         if not all_scored_chunks:
             logger.info(
-                "run_gap_analysis: no scored chunks for tailoring %s — enrichment may not have run yet",
-                tailoring_id,
+                "run_gap_analysis_no_scored_chunks",
+                tailoring_id=tailoring_id,
             )
             tailoring.gap_analysis_status = "complete"
             db.commit()
@@ -98,12 +90,12 @@ def run_gap_analysis(tailoring_id: str) -> None:
         partial_chunks = [c for c in all_scored_chunks if c.match_score == 1 and c.should_render]
 
         logger.info(
-            "run_gap_analysis: tailoring=%s total_scored=%d sourced=%d gaps=%d partials=%d",
-            tailoring_id,
-            len(all_scored_chunks),
-            sourced_count,
-            len(gap_chunks),
-            len(partial_chunks),
+            "run_gap_analysis_scoring_summary",
+            tailoring_id=tailoring_id,
+            total_scored=len(all_scored_chunks),
+            sourced_count=sourced_count,
+            gap_count=len(gap_chunks),
+            partial_count=len(partial_chunks),
         )
 
         # One focused LLM call per gap chunk — single responsibility: question generation only
@@ -128,8 +120,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
                 )
             except Exception:
                 logger.exception(
-                    "run_gap_analysis: question generation failed for chunk %s — skipping",
-                    chunk.id,
+                    "run_gap_analysis_question_failed", chunk_id=str(chunk.id), mode="gap"
                 )
 
         # One focused LLM call per partial chunk — path-to-strong question generation
@@ -154,8 +145,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
                 )
             except Exception:
                 logger.exception(
-                    "run_gap_analysis: partial question generation failed for chunk %s — skipping",
-                    chunk.id,
+                    "run_gap_analysis_question_failed", chunk_id=str(chunk.id), mode="partial"
                 )
 
         gap_analysis = GapAnalysis(
@@ -169,19 +159,20 @@ def run_gap_analysis(tailoring_id: str) -> None:
         db.commit()
 
         logger.info(
-            "run_gap_analysis: complete tailoring=%s gaps_with_questions=%d sourced=%d unsourced=%d",
-            tailoring_id,
-            len(gaps_with_questions),
-            sourced_count,
-            len(gap_chunks),
+            "run_gap_analysis_complete",
+            tailoring_id=tailoring_id,
+            gaps_with_questions=len(gaps_with_questions),
+            partials_with_questions=len(partials_with_questions),
+            sourced_count=sourced_count,
+            unsourced_count=len(gap_chunks),
         )
 
     except Exception:
-        logger.exception("run_gap_analysis failed for tailoring %s", tailoring_id)
+        logger.exception("run_gap_analysis_failed", tailoring_id=tailoring_id)
         try:
             tailoring = db.get(Tailoring, tailoring_id)
             if tailoring:
-                tailoring.gap_analysis_status = "complete"
+                tailoring.gap_analysis_status = "error"
                 db.commit()
         except Exception:
             pass

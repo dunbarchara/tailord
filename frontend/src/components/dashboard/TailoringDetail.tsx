@@ -164,7 +164,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     // When initialTailoring is provided (demo/readOnly mode), skip the API fetch.
     if (initialTailoring) {
       setTailoring(initialTailoring);
-      if (initialTailoring.gap_analysis_status === 'complete') setGapAnalysisSettled(true);
+      if (initialTailoring.gap_analysis_status === 'complete' || initialTailoring.gap_analysis_status === 'error') setGapAnalysisSettled(true);
       setLoading(false);
       return;
     }
@@ -184,7 +184,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
           userRes.ok ? userRes.json() : null,
         ]);
         setTailoring(tailoringData);
-        if (tailoringData.gap_analysis_status === 'complete') {
+        if (tailoringData.gap_analysis_status === 'complete' || tailoringData.gap_analysis_status === 'error') {
           setGapAnalysisSettled(true);
         }
         if (tailoringData.generation_status === 'error') {
@@ -325,7 +325,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         }
         const data = await res.json();
         setTailoring(data);
-        if (data.gap_analysis_status === 'complete') {
+        if (data.gap_analysis_status === 'complete' || data.gap_analysis_status === 'error') {
           setGapAnalysisSettled(true);
           if (interval) clearInterval(interval);
         }
@@ -1107,27 +1107,50 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
               />
             )}
             {activeTab === 'analysis' && (
-              <AnalysisView
-                data={displayChunksData}
-                error={effectiveChunksError}
-                title={tailoring.title}
-                company={tailoring.company}
-                jobUrl={tailoring.job_url}
-                authorName={userName}
-                tailoringId={readOnly ? undefined : tailoring.id}
-                gapAnalysis={tailoring.gap_analysis}
-                gapResponses={gapResponses}
-                partialResponses={partialResponses}
-                generationReady={tailoring.generation_status === 'ready'}
-                readOnly={readOnly}
-                editMode={editMode}
-                jobDraft={editMode ? jobDraft : null}
-                onJobDraftChange={(draft) => setJobDraft(draft)}
-                onChunkUpdate={handleChunkUpdate}
-                onChunkDelete={handleChunkDelete}
-                onChunkCreate={handleChunkCreate}
-                onSectionRename={handleSectionRename}
-              />
+              <>
+                {!readOnly && tailoring.gap_analysis_status === 'error' && (
+                  <div className="mx-6 mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-error-bg border border-error/30 text-sm text-text-primary">
+                    <AlertCircle className="h-4 w-4 text-error shrink-0" />
+                    <span className="flex-1 text-text-secondary">
+                      Gap analysis failed — questions may be missing.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setGapAnalysisSettled(false);
+                        const res = await fetch(`/api/tailorings/${tailoring.id}/retry-gap`, { method: 'POST' });
+                        if (!res.ok) {
+                          setGapAnalysisSettled(true);
+                        }
+                      }}
+                      className={textBtnCls}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                <AnalysisView
+                  data={displayChunksData}
+                  error={effectiveChunksError}
+                  title={tailoring.title}
+                  company={tailoring.company}
+                  jobUrl={tailoring.job_url}
+                  authorName={userName}
+                  tailoringId={readOnly ? undefined : tailoring.id}
+                  gapAnalysis={tailoring.gap_analysis}
+                  gapResponses={gapResponses}
+                  partialResponses={partialResponses}
+                  generationReady={tailoring.generation_status === 'ready'}
+                  readOnly={readOnly}
+                  editMode={editMode}
+                  jobDraft={editMode ? jobDraft : null}
+                  onJobDraftChange={(draft) => setJobDraft(draft)}
+                  onChunkUpdate={handleChunkUpdate}
+                  onChunkDelete={handleChunkDelete}
+                  onChunkCreate={handleChunkCreate}
+                  onSectionRename={handleSectionRename}
+                />
+              </>
             )}
             {activeTab === 'debug' && (
               <DebugPanel

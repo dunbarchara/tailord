@@ -1,3 +1,4 @@
+import time
 import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -217,7 +218,7 @@ def _score_chunk_vector(
         if result.results
         else ChunkMatchResult(score=-1, rationale="Not evaluated")
     )
-    logger.debug("_score_chunk_vector: retrieved %d top-k chunks", len(top_k_chunks))
+    logger.debug("top_k_chunks_retrieved", count=len(top_k_chunks))
     annotated = ChunkMatchResult(
         score=raw.score,
         rationale=raw.rationale,
@@ -255,7 +256,7 @@ def enrich_job_chunks(
     from app.clients.database import SessionLocal
     from app.models.database import JobChunk, Tailoring
 
-    logger.info("enrich_job_chunks start: job_id=%s mode=%s", job_id, settings.matching_mode)
+    logger.info("enrich_job_chunks_start", job_id=str(job_id), mode=settings.matching_mode)
 
     db = SessionLocal()
     try:
@@ -263,9 +264,16 @@ def enrich_job_chunks(
         db.query(JobChunk).filter(JobChunk.job_id == job_id).delete()
         db.commit()
 
+        t0 = time.perf_counter()
         chunks = extract_chunks(job_markdown)
+        logger.info(
+            "chunks_extracted",
+            job_id=str(job_id),
+            chunk_count=len(chunks),
+            duration_ms=int((time.perf_counter() - t0) * 1000),
+        )
         if not chunks:
-            logger.info("enrich_job_chunks: no chunks extracted for job_id=%s", job_id)
+            logger.info("enrich_no_chunks", job_id=str(job_id))
             _set_enrichment_status(db, Tailoring, job_id, "complete")
             db.commit()
             return
@@ -290,7 +298,11 @@ def enrich_job_chunks(
             scoreable = [c for c in chunks if c.chunk_type != "header"]
             batch_count += len(scoreable)
 
+            _log_ctx = structlog.contextvars.get_contextvars()
+
             def _score_one_vector(chunk):
+                structlog.contextvars.clear_contextvars()
+                structlog.contextvars.bind_contextvars(**_log_ctx)
                 return chunk, _score_chunk_vector(
                     chunk.content,
                     chunk.chunk_type,
@@ -309,9 +321,10 @@ def enrich_job_chunks(
             for future in not_done:
                 chunk = futures_map[future]
                 logger.warning(
-                    "enrich_job_chunks: vector scoring timed out job_id=%s position=%d",
-                    job_id,
-                    chunk.position,
+                    "chunk_scoring_timeout",
+                    job_id=str(job_id),
+                    position=chunk.position,
+                    mode="vector",
                 )
                 error_count += 1
                 result_map[chunk.position] = ChunkMatchResult(
@@ -326,9 +339,10 @@ def enrich_job_chunks(
                     embedding_map[chunk.position] = embedding
                 except Exception:
                     logger.exception(
-                        "enrich_job_chunks: vector scoring failed job_id=%s position=%d",
-                        job_id,
-                        chunk.position,
+                        "chunk_scoring_failed",
+                        job_id=str(job_id),
+                        position=chunk.position,
+                        mode="vector",
                     )
                     error_count += 1
                     result_map[chunk.position] = ChunkMatchResult(
@@ -365,7 +379,11 @@ def enrich_job_chunks(
 
             batch_count += len(batch_units)
 
+            _log_ctx = structlog.contextvars.get_contextvars()
+
             def _run_llm_batch(unit: tuple[str, int, list, str]) -> tuple[list, list]:
+                structlog.contextvars.clear_contextvars()
+                structlog.contextvars.bind_contextvars(**_log_ctx)
                 section, batch_start, batch, preceding = unit
                 chunks_block = preceding + "\n".join(
                     f"{idx}. [{c.chunk_type.upper()}] {c.content}"
@@ -400,10 +418,11 @@ def enrich_job_chunks(
                 unit = futures_map[future]
                 section, batch_start, batch, _ = unit
                 logger.warning(
-                    "enrich_job_chunks: LLM batch timed out job_id=%s section=%r batch_start=%d",
-                    job_id,
-                    section,
-                    batch_start,
+                    "chunk_scoring_timeout",
+                    job_id=str(job_id),
+                    section=section,
+                    batch_start=batch_start,
+                    mode="llm",
                 )
                 error_count += 1
                 for chunk in batch:
@@ -418,10 +437,11 @@ def enrich_job_chunks(
                     batch, batch_results = future.result()
                 except Exception:
                     logger.exception(
-                        "enrich_job_chunks: LLM batch failed for job_id=%s section=%r batch_start=%d",
-                        job_id,
-                        section,
-                        batch_start,
+                        "chunk_scoring_failed",
+                        job_id=str(job_id),
+                        section=section,
+                        batch_start=batch_start,
+                        mode="llm",
                     )
                     error_count += 1
                     batch_results = []
@@ -484,29 +504,35 @@ def enrich_job_chunks(
 
         from app.services.experience_embedder import embed_job_chunks
 
+        t0 = time.perf_counter()
         embed_job_chunks(job_id, db)  # no-op for chunks already embedded in vector mode
+        logger.info(
+            "chunks_embeddings_complete",
+            job_id=str(job_id),
+            duration_ms=int((time.perf_counter() - t0) * 1000),
+        )
 
         logger.info(
-            "enrich_job_chunks complete: job_id=%s mode=%s chunks=%d batches=%d errors=%d",
-            job_id,
-            "vector" if use_vector else "llm",
-            len(chunks),
-            batch_count,
-            error_count,
+            "enrich_job_chunks_complete",
+            job_id=str(job_id),
+            mode="vector" if use_vector else "llm",
+            chunk_count=len(chunks),
+            batch_count=batch_count,
+            error_count=error_count,
         )
 
     except Exception:
-        logger.exception("enrich_job_chunks failed for job_id=%s", job_id)
+        logger.exception("enrich_job_chunks_failed", job_id=str(job_id))
         try:
             from app.models.database import Tailoring as _Tailoring
 
             _set_enrichment_status(db, _Tailoring, job_id, "error")
             db.commit()
         except Exception:
-            logger.exception("enrich_job_chunks: failed to set error status for job_id=%s", job_id)
+            logger.exception("enrich_job_chunks_status_update_failed", job_id=str(job_id))
     finally:
         db.close()
-        logger.debug("enrich_job_chunks: DB session closed for job_id=%s", job_id)
+        logger.debug("enrich_job_chunks_session_closed", job_id=str(job_id))
 
 
 def re_enrich_single_chunk(
@@ -527,15 +553,13 @@ def re_enrich_single_chunk(
     from app.clients.database import SessionLocal
     from app.models.database import JobChunk
 
-    logger.info(
-        "re_enrich_single_chunk: start chunk_id=%s mode=%s", chunk_id, settings.matching_mode
-    )
+    logger.info("re_enrich_single_chunk_start", chunk_id=chunk_id, mode=settings.matching_mode)
 
     db = SessionLocal()
     try:
         chunk = db.get(JobChunk, chunk_id)
         if not chunk:
-            logger.warning("re_enrich_single_chunk: chunk %s not found", chunk_id)
+            logger.warning("re_enrich_single_chunk_not_found", chunk_id=chunk_id)
             return
 
         use_vector = settings.matching_mode == "vector" and experience_id is not None
@@ -599,14 +623,10 @@ def re_enrich_single_chunk(
         chunk.scored_content = chunk.content
         db.commit()
 
-        logger.info(
-            "re_enrich_single_chunk: complete chunk_id=%s new_score=%d",
-            chunk_id,
-            match.score,
-        )
+        logger.info("re_enrich_single_chunk_complete", chunk_id=chunk_id, new_score=match.score)
 
     except Exception:
-        logger.exception("re_enrich_single_chunk failed for chunk_id=%s", chunk_id)
+        logger.exception("re_enrich_single_chunk_failed", chunk_id=chunk_id)
     finally:
         db.close()
 
@@ -631,10 +651,10 @@ def refresh_job_chunks(
     from app.models.database import JobChunk, Tailoring
 
     logger.info(
-        "refresh_job_chunks start: job_id=%s tailoring_id=%s mode=%s",
-        job_id,
-        tailoring_id,
-        settings.matching_mode,
+        "refresh_job_chunks_start",
+        job_id=str(job_id),
+        tailoring_id=tailoring_id,
+        mode=settings.matching_mode,
     )
 
     db = SessionLocal()
@@ -645,7 +665,7 @@ def refresh_job_chunks(
         scoreable = [c for c in chunks if c.is_requirement and c.chunk_type != "header"]
 
         if not scoreable:
-            logger.info("refresh_job_chunks: no scoreable chunks for job_id=%s", job_id)
+            logger.info("refresh_job_chunks_no_scoreable", job_id=str(job_id))
             db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
                 {"enrichment_status": "complete"}
             )
@@ -661,7 +681,11 @@ def refresh_job_chunks(
             candidate_header = _build_candidate_header(candidate_name, pronouns)
             k = settings.vector_top_k
 
+            _log_ctx = structlog.contextvars.get_contextvars()
+
             def _score_one_vector(chunk):
+                structlog.contextvars.clear_contextvars()
+                structlog.contextvars.bind_contextvars(**_log_ctx)
                 return chunk, _score_chunk_vector(
                     chunk.content,
                     chunk.chunk_type,
@@ -679,9 +703,10 @@ def refresh_job_chunks(
             for future in not_done:
                 chunk = futures_map[future]
                 logger.warning(
-                    "refresh_job_chunks: vector scoring timed out job_id=%s chunk_id=%s",
-                    job_id,
-                    chunk.id,
+                    "chunk_scoring_timeout",
+                    job_id=str(job_id),
+                    chunk_id=str(chunk.id),
+                    mode="vector",
                 )
                 error_count += 1
                 result_map[str(chunk.id)] = ChunkMatchResult(
@@ -695,9 +720,10 @@ def refresh_job_chunks(
                     result_map[str(chunk.id)] = match
                 except Exception:
                     logger.exception(
-                        "refresh_job_chunks: vector scoring failed job_id=%s chunk_id=%s",
-                        job_id,
-                        chunk.id,
+                        "chunk_scoring_failed",
+                        job_id=str(job_id),
+                        chunk_id=str(chunk.id),
+                        mode="vector",
                     )
                     error_count += 1
                     result_map[str(chunk.id)] = ChunkMatchResult(
@@ -727,7 +753,11 @@ def refresh_job_chunks(
                             last_paragraph = c.content
                     batch_units.append((section, batch_start, batch, preceding))
 
+            _log_ctx = structlog.contextvars.get_contextvars()
+
             def _run_llm_batch(unit: tuple[str, int, list, str]) -> tuple[list, list]:
+                structlog.contextvars.clear_contextvars()
+                structlog.contextvars.bind_contextvars(**_log_ctx)
                 section, batch_start, batch, preceding = unit
                 chunks_block = preceding + "\n".join(
                     f"{idx}. [{c.chunk_type.upper()}] {c.content}"
@@ -762,7 +792,10 @@ def refresh_job_chunks(
                 unit = futures_map[future]
                 section, batch_start, batch, _ = unit
                 logger.warning(
-                    "refresh_job_chunks: LLM batch timed out job_id=%s section=%r", job_id, section
+                    "chunk_scoring_timeout",
+                    job_id=str(job_id),
+                    section=section,
+                    mode="llm",
                 )
                 error_count += 1
                 for chunk in batch:
@@ -777,7 +810,10 @@ def refresh_job_chunks(
                     batch, batch_results = future.result()
                 except Exception:
                     logger.exception(
-                        "refresh_job_chunks: LLM batch failed job_id=%s section=%r", job_id, section
+                        "chunk_scoring_failed",
+                        job_id=str(job_id),
+                        section=section,
+                        mode="llm",
                     )
                     error_count += 1
                     batch_results = []
@@ -810,23 +846,21 @@ def refresh_job_chunks(
         db.commit()
 
         logger.info(
-            "refresh_job_chunks complete: job_id=%s chunks=%d errors=%d",
-            job_id,
-            len(scoreable),
-            error_count,
+            "refresh_job_chunks_complete",
+            job_id=str(job_id),
+            chunk_count=len(scoreable),
+            error_count=error_count,
         )
 
     except Exception:
-        logger.exception("refresh_job_chunks failed for job_id=%s", job_id)
+        logger.exception("refresh_job_chunks_failed", job_id=str(job_id))
         try:
             db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
                 {"enrichment_status": "error"}
             )
             db.commit()
         except Exception:
-            logger.exception(
-                "refresh_job_chunks: failed to set error status for tailoring_id=%s", tailoring_id
-            )
+            logger.exception("refresh_job_chunks_status_update_failed", tailoring_id=tailoring_id)
     finally:
         db.close()
 

@@ -40,7 +40,7 @@ export interface Tailoring {
   chunk_batch_count: number | null
   chunk_error_count: number | null
   gap_analysis?: GapAnalysis | null
-  gap_analysis_status?: 'pending' | 'complete'
+  gap_analysis_status?: 'pending' | 'complete' | 'error'
   created_at: string
 }
 
