@@ -30,6 +30,28 @@ class Project(BaseModel):
     technologies: list[str] = []
 
 
+class ExtractedStructure(BaseModel):
+    """Step 1 output — raw structured extraction, no prose generation."""
+
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    location: str | None = None
+    work_experience: list[WorkExperience] = []
+    skills: ProfileSkills = ProfileSkills()
+    education: list[Education] = []
+    projects: list[Project] = []
+    certifications: list[str] = []
+
+
+class ProfileIdentity(BaseModel):
+    """Step 2 output — generated prose fields only."""
+
+    title: str | None = None
+    headline: str | None = None
+    summary: str = ""
+
+
 class ExtractedProfile(BaseModel):
     email: str | None = None
     phone: str | None = None

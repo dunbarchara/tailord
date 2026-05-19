@@ -33,7 +33,7 @@ def _normalize_resume_text(text: str) -> str:
     """
     Normalize raw text extracted from a PDF resume to improve LLM parsing quality.
 
-    Fixes two common pypdf artifacts:
+    Fixes two common PDF extraction artifacts:
     1. Orphaned bullet markers — a bare '•' on its own line, with its content on
        the next non-empty line. Joins them into a single bullet line.
     2. Wrapped bullet continuations — a single bullet whose text wraps across
@@ -65,7 +65,7 @@ def _normalize_resume_text(text: str) -> str:
     # A blank-line-separated fragment is joined when EITHER:
     #   (a) it starts lowercase  — mid-sentence conjunction/preposition
     #   (b) the previous bullet ends without terminal punctuation — incomplete sentence
-    # This handles pdfminer inserting blank lines mid-bullet (e.g. long lines with
+    # This handles extractors inserting blank lines mid-bullet (e.g. long lines with
     # parentheticals ending in ')' rather than '.').
     joined: list[str] = []
     pending_blanks: list[str] = []
@@ -101,11 +101,19 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
 
     if ext == "pdf":
-        from io import BytesIO
+        import fitz  # pymupdf
 
-        from pdfminer.high_level import extract_text as pdfminer_extract
-
-        return pdfminer_extract(BytesIO(file_bytes))
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        page_texts = []
+        for page in doc:
+            blocks = page.get_text("blocks")
+            # Filter to text blocks only (type 0), sort top-to-bottom then left-to-right
+            text_blocks = sorted(
+                (b for b in blocks if b[6] == 0),
+                key=lambda b: (b[1], b[0]),
+            )
+            page_texts.append("\n".join(b[4].strip() for b in text_blocks if b[4].strip()))
+        return "\n\n".join(page_texts)
 
     elif ext in ("doc", "docx"):
         from io import BytesIO

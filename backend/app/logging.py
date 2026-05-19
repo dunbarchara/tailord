@@ -100,8 +100,6 @@ def setup_logging() -> None:
     # Silence noisy loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
-    # pdfminer emits debug traces for every PDF token — overwhelming in Loki
-    logging.getLogger("pdfminer").setLevel(logging.WARNING)
     # httpcore/httpx log every HTTP request at DEBUG level (OpenAI SDK traffic)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
