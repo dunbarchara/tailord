@@ -4,6 +4,42 @@ Reference documentation for the core operational flows in Tailord. Each flow cov
 all phases, steps, and responsibilities — including concurrency behavior and what is
 observable in logs, metrics, and traces.
 
+## LLM call fields reference
+
+Every `llm_call_complete` log event (and its corresponding `llm_parse_request` /
+`llm_parse_response` debug events) carries three identity fields:
+
+| Field | What it is | Example |
+|-------|------------|---------|
+| `prompt_name` | Human-readable constant from the prompt module. Distinguishes calls that share a response schema but use different prompts. | `tailoring_generation`, `chunk_match_vector_single` |
+| `call_id` | 12-char hex UUID. Correlates the request log, optional refusal log, response log, and completion log for a single LLM call. | `a3f8c2d19b04` |
+| `schema` | Pydantic response model class name. Stable identifier for the output contract. | `TailoringContent`, `ChunkMatchBatch` |
+
+Prometheus metrics `LLM_CALL_DURATION_MS` and `LLM_TOKENS_TOTAL` both carry a
+`prompt_type` label populated from `prompt_name`. Prefer filtering PromQL by
+`prompt_type` over `schema` to distinguish vector vs. batch scoring calls.
+
+### prompt_name values by flow
+
+| prompt_name | schema | Flow |
+|-------------|--------|------|
+| `job_extraction` | `ExtractedJob` | Tailoring — Phase 1 |
+| `chunk_match_vector_single` | `ChunkMatchBatch` | Tailoring — Phase 2, vector single-chunk |
+| `chunk_match_vector_batch` | `ChunkMatchBatch` | Tailoring — Phase 2, vector batch |
+| `chunk_match_batch` | `ChunkMatchBatch` | Tailoring — Phase 2, LLM batch |
+| `chunk_match_single` | `ChunkMatchBatch` | Tailoring — Phase 2, LLM single / re-score |
+| `tailoring_generation` | `TailoringContent` | Tailoring — Phase 3 |
+| `profile_prose_generation` | `ProfileIdentity` | Tailoring — Phase 3 (profile header) |
+| `gap_question` | `GapQuestion` | Tailoring — Phase 4 (gap chunks) |
+| `partial_match_question` | `GapQuestion` | Tailoring — Phase 4 (partial chunks) + gap response |
+| `resume_structure_extraction` | `ExtractedStructure` | Experience — resume analyzing stage (first call) |
+| `profile_prose_generation` | `ProfileIdentity` | Experience — resume analyzing stage (second call; generates prose from structured extraction) |
+| `github_repo_enrichment` | `GitHubRepoEnrichment` | Experience — GitHub enrichment |
+| `user_input_parsing` | `ParsedClaims` | Experience — user input parse preview |
+| `requirement_matching` | *(internal)* | Requirement matcher (standalone scoring) |
+
+---
+
 Tags used in flow diagrams:
 - `[SEQ]` — sequential, waits for previous step to complete
 - `[PAR]` — parallel, dispatched concurrently via ThreadPoolExecutor
@@ -226,7 +262,7 @@ set to `"error"` and the frontend shows a retry banner with
 | `chunks_extracted` | Phase 2 | `chunk_count`, `duration_ms` |
 | `chunks_embeddings_complete` | Phase 2 | `duration_ms` |
 | `enrich_job_chunks_complete` | Phase 2 | `chunk_count`, `batch_count`, `error_count`, `mode` |
-| `llm_call_complete` | all LLM phases | `schema`, `input_tokens`, `output_tokens`, `latency_ms` |
+| `llm_call_complete` | all LLM phases | `prompt_name`, `call_id`, `schema`, `input_tokens`, `output_tokens`, `latency_ms` |
 | `run_gap_analysis_scoring_summary` | Phase 4 | `total_scored`, `sourced_count`, `gap_count`, `partial_count` |
 | `phase_error` | any | `phase`, `error_message` |
 
@@ -342,11 +378,13 @@ POST /experience/process   (SSE stream)
 │   └── emit SSE stage="extracting"
 │
 ├── STAGE: analyzing
-│   ├── extract_profile(raw_text) → ExtractedProfile                             [SEQ · LLM]
-│   │   └── LLM call → schema: ExtractedProfile
-│   │       outputs: email, phone, linkedin, title, headline, summary,
-│   │               work_experience[], skills{}, education[], projects[],
-│   │               certifications[]
+│   ├── extract_profile(raw_text) → ExtractedStructure                           [SEQ · LLM]
+│   │   └── LLM call 1 → schema: ExtractedStructure  (prompt: resume_structure_extraction)
+│   │       outputs: work_experience[], skills{}, education[], projects[],
+│   │               certifications[], contact fields
+│   ├── generate_identity(structured) → ProfileIdentity                          [SEQ · LLM]
+│   │   └── LLM call 2 → schema: ProfileIdentity  (prompt: profile_prose_generation)
+│   │       outputs: headline, summary (prose generated from structured data)
 │   ├── apply profile corrections (extracted_profile["corrections"]) if present  [SEQ]
 │   │   └── correction fields (yoe_override, headline, title, etc.) overwrite
 │   │       corresponding resume profile fields
@@ -389,12 +427,20 @@ for debug and regeneration use.
 
 #### Stage 2 — `analyzing`
 
-One LLM call via `llm_parse_with_retry` with `response_model=ExtractedProfile`. The
-full normalised resume text is included in the prompt.
+Two sequential LLM calls:
 
-Corrections stored in `extracted_profile["corrections"]` are applied immediately after
-LLM extraction: fields like `yoe_override`, `headline`, `title`, `location`, and contact
-fields overwrite what the LLM produced.
+1. **`resume_structure_extraction`** (`ExtractedStructure`) — extracts structured data
+   from the raw resume text: work experience entries, skills, education, projects,
+   certifications, and contact fields.
+
+2. **`profile_prose_generation`** (`ProfileIdentity`) — takes the structured extraction
+   as input and generates natural-language prose fields: `headline` and `summary`. Kept
+   as a separate call so the prose is grounded in the structured data, not hallucinated
+   directly from resume text.
+
+Corrections stored in `extracted_profile["corrections"]` are applied after both LLM
+calls: fields like `yoe_override`, `headline`, `title`, `location`, and contact fields
+overwrite the generated output.
 
 The merged result is persisted as `extracted_profile["resume"]` and `experience.status`
 is set to `"ready"`.
@@ -423,7 +469,8 @@ Embeddings are required for vector-mode tailoring generation.
 | `phase_complete` | extracting / analyzing | `phase`, `duration_ms` |
 | `resume_chunks_extracted` | chunking | `chunk_count`, `duration_ms` |
 | `processing_complete` | summary | `total_duration_ms`, `phase_durations` |
-| `llm_call_complete` | analyzing | `schema=ExtractedProfile`, `input_tokens`, `output_tokens`, `latency_ms` |
+| `llm_call_complete` | analyzing (call 1) | `prompt_name=resume_structure_extraction`, `call_id`, `schema=ExtractedStructure`, `input_tokens`, `output_tokens`, `latency_ms` |
+| `llm_call_complete` | analyzing (call 2) | `prompt_name=profile_prose_generation`, `call_id`, `schema=ProfileIdentity`, `input_tokens`, `output_tokens`, `latency_ms` |
 | `embed_experience_chunks_complete` | background | `embedded`, `total`, `duration_ms` |
 | `processing_error` | any | exception traceback |
 
@@ -446,26 +493,30 @@ histogram_quantile(0.95, rate(experience_phase_duration_ms_bucket{phase="analyzi
 POST /experience/process
 └── experience.phase.extracting
 └── experience.phase.analyzing
-    └── llm.call  (schema=ExtractedProfile)
+    ├── llm.call  (schema=ExtractedStructure, prompt=resume_structure_extraction)
+    └── llm.call  (schema=ProfileIdentity, prompt=profile_prose_generation)
 └── experience.phase.chunking
 ```
 
 #### All log lines for one processing run
 
+Use `correlation_id` to isolate a specific run (returned in the `POST /experience/process`
+response headers). Use `user_id` to see all experience events for a user.
+
 ```logql
-{job="tailord-backend"} | json | experience_id = "<id>"
+{job="tailord-backend"} | json | correlation_id = "<correlation_id>"
 ```
 
 #### Phase breakdown
 
 ```logql
-{job="tailord-backend"} | json | experience_id = "<id>" | event = "phase_complete"
+{job="tailord-backend"} | json | correlation_id = "<correlation_id>" | event = "phase_complete"
 ```
 
 #### Processing summary
 
 ```logql
-{job="tailord-backend"} | json | experience_id = "<id>" | event = "processing_complete"
+{job="tailord-backend"} | json | correlation_id = "<correlation_id>" | event = "processing_complete"
 ```
 
 ---
@@ -556,9 +607,10 @@ failure leaves `extracted_profile["github"]` partially populated.
 
 #### Chunking + Embedding
 
-Each enriched repo becomes one `ExperienceChunk`. The chunk content is a formatted
-summary including stack, domain, readme summary, and confidence level — designed to
-be semantically rich enough for vector similarity against job requirements.
+The LLM produces a list of claims for each repo (skills and prose experience bullets).
+These are filtered to keep only high-confidence, non-redundant claims, and each surviving
+claim becomes one `ExperienceChunk`. A single repo typically produces several to tens of
+chunks depending on its complexity — not a fixed one-per-repo count.
 
 `embed_experience_chunks` is called synchronously at the end of the background task
 (not as a further nested background task).
@@ -574,7 +626,7 @@ be semantically rich enough for vector similarity against job requirements.
 | `github_repo_enrichment_complete` | `repo_name`, `confidence`, `duration_ms` |
 | `github_repo_enrichment_failed` | `repo_name`, `duration_ms` |
 | `github_enrichment_complete` | `repo_count`, `error_count`, `chunk_count`, `duration_ms` |
-| `llm_call_complete` | `schema=GitHubRepoEnrichment`, `latency_ms` (one per repo) |
+| `llm_call_complete` | `prompt_name=github_repo_enrichment`, `call_id`, `schema=GitHubRepoEnrichment`, `latency_ms` (one per repo) |
 | `embed_experience_chunks_complete` | `embedded`, `total`, `duration_ms` |
 
 #### Prometheus metrics
@@ -600,22 +652,22 @@ background_task.experience.github_enrichment     ← root span (no HTTP parent)
           └── llm.call  (schema=GitHubRepoEnrichment)
 ```
 
-#### All enrichment logs for one experience
+#### All enrichment logs for one run
 
 ```logql
-{job="tailord-backend"} | json | experience_id = "<id>"
+{job="tailord-backend"} | json | correlation_id = "<correlation_id>"
 ```
 
 #### Per-repo timing
 
 ```logql
-{job="tailord-backend"} | json | experience_id = "<id>" | event = "github_repo_enrichment_complete"
+{job="tailord-backend"} | json | correlation_id = "<correlation_id>" | event = "github_repo_enrichment_complete"
 ```
 
 #### Enrichment summary
 
 ```logql
-{job="tailord-backend"} | json | experience_id = "<id>" | event = "github_enrichment_complete"
+{job="tailord-backend"} | json | correlation_id = "<correlation_id>" | event = "github_enrichment_complete"
 ```
 
 ---
@@ -684,7 +736,7 @@ the new chunks have no embedding vector and are not searchable in vector mode.
 
 | Event | Notable fields |
 |-------|----------------|
-| `llm_call_complete` | `schema=ParsedClaims`, `latency_ms` (parse preview only) |
+| `llm_call_complete` | `prompt_name=user_input_parsing`, `call_id`, `schema=ParsedClaims`, `latency_ms` (parse preview only) |
 | `embed_experience_chunks_complete` | `chunk_count`, `duration_ms` |
 
 ---
@@ -783,8 +835,8 @@ is returned inline in the response — no DB poll needed.
 |-------|----------------|
 | `gap_response_complete` | `job_chunk_id`, `new_score`, `duration_ms`, `partial_question_generated` |
 | `re_enrich_single_chunk_complete` | `chunk_id`, `old_score`, `new_score` |
-| `llm_call_complete` | `schema=ChunkMatchBatch`, `latency_ms` (re-scoring) |
-| `llm_call_complete` | `schema=GapQuestion`, `latency_ms` (partial question, if generated) |
+| `llm_call_complete` | `prompt_name=chunk_match_vector_single` or `chunk_match_single`, `call_id`, `schema=ChunkMatchBatch`, `latency_ms` (re-scoring) |
+| `llm_call_complete` | `prompt_name=partial_match_question`, `call_id`, `schema=GapQuestion`, `latency_ms` (partial question, if generated) |
 
 #### Prometheus metrics
 
@@ -816,7 +868,7 @@ POST /experience/gap-response
 
 ```logql
 {job="tailord-backend"} | json | tailoring_id = "<id>" | event = "llm_call_complete"
-  | schema =~ "ChunkMatchBatch|GapQuestion"
+  | prompt_name =~ "chunk_match_vector_single|chunk_match_single|partial_match_question"
 ```
 
 ---
