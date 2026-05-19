@@ -69,3 +69,30 @@ EXPERIENCE_PROCESSING_DURATION_MS = Histogram(
     "Experience processing duration in milliseconds",
     buckets=[500, 1000, 5000, 10000, 30000, 60000],
 )
+
+# --- Experience processing — phase-level ---
+EXPERIENCE_PHASE_DURATION_MS = Histogram(
+    "experience_phase_duration_ms",
+    "Duration of each experience processing phase in milliseconds",
+    ["phase"],  # extracting | analyzing | chunking
+    buckets=[100, 500, 1000, 5000, 10000, 30000, 60000],
+)
+
+# --- GitHub enrichment ---
+GITHUB_ENRICHMENT_TOTAL = Counter(
+    "github_enrichment_total",
+    "GitHub enrichment completions",
+    ["status"],  # success | error | partial
+)
+GITHUB_ENRICHMENT_DURATION_MS = Histogram(
+    "github_enrichment_duration_ms",
+    "Total GitHub enrichment duration in milliseconds",
+    buckets=[1000, 5000, 10000, 30000, 60000, 120000],
+)
+
+# --- Gap response ---
+GAP_RESPONSE_DURATION_MS = Histogram(
+    "gap_response_duration_ms",
+    "Gap response + re-scoring duration in milliseconds",
+    buckets=[500, 1000, 2000, 5000, 10000],
+)

@@ -1,10 +1,12 @@
 import json
 import re
+import time as _time
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import anyio
 import structlog
+import structlog.contextvars
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
@@ -18,6 +20,12 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.llm_utils import llm_parse_with_retry
+from app.metrics import (
+    EXPERIENCE_PHASE_DURATION_MS,
+    EXPERIENCE_PROCESSING_DURATION_MS,
+    EXPERIENCE_PROCESSING_TOTAL,
+    GAP_RESPONSE_DURATION_MS,
+)
 from app.models.database import (
     Experience,
     ExperienceChunk,
@@ -48,9 +56,11 @@ from app.services.experience_processor import (
 )
 from app.services.gap_analyzer import _build_job_context, _generate_question
 from app.services.profile_extractor import extract_profile
+from app.telemetry import get_tracer as _get_tracer
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+_exp_tracer = _get_tracer("tailord.experience")
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
 
@@ -166,7 +176,6 @@ def get_upload_url(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    logger.info("get_upload_url: user=%s filename=%s", user.id, body.filename)
     ext = body.filename.rsplit(".", 1)[-1].lower() if "." in body.filename else ""
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -177,7 +186,6 @@ def get_upload_url(
     existing = db.query(Experience).filter(Experience.user_id == user.id).first()
 
     storage_key = f"users/{user.google_sub}/{uuid.uuid4()}.{ext}"
-    logger.debug("Assigned storage_key=%s", storage_key)
 
     if existing:
         # Clean up old file but preserve GitHub data on the existing row
@@ -185,9 +193,7 @@ def get_upload_url(
             try:
                 get_storage_client().delete_object(existing.storage_key)
             except Exception:
-                logger.warning(
-                    "Storage cleanup failed for key=%s — continuing", existing.storage_key
-                )
+                logger.warning("storage_cleanup_failed", storage_key=existing.storage_key)
         _clear_resume_fields(existing, db)
         existing.storage_key = storage_key
         existing.filename = body.filename
@@ -208,7 +214,7 @@ def get_upload_url(
     try:
         upload_url = get_storage_client().generate_upload_url(storage_key)
     except Exception as exc:
-        logger.exception("generate_upload_url failed for experience_id=%s", experience.id)
+        logger.exception("generate_upload_url_failed", experience_id=str(experience.id))
         experience.status = "error"
         experience.error_message = "Failed to prepare upload. Please try again."
         db.commit()
@@ -216,7 +222,7 @@ def get_upload_url(
             status_code=500, detail="Failed to prepare upload. Please try again."
         ) from exc
 
-    logger.info("get_upload_url complete: experience_id=%s", experience.id)
+    logger.info("upload_url_created", experience_id=str(experience.id))
 
     return {
         "upload_url": upload_url,
@@ -233,7 +239,6 @@ async def trigger_process(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    logger.info("trigger_process: user=%s storage_key=%s", user.id, body.storage_key)
     experience = (
         db.query(Experience)
         .filter(
@@ -254,7 +259,7 @@ async def trigger_process(
             remaining = max(
                 1, int((cooldown_end - datetime.now(timezone.utc)).total_seconds() / 60) + 1
             )
-            logger.warning("Experience process cooldown active: user=%s", user.id)
+            logger.warning("experience_process_cooldown", user_id=str(user.id))
             raise HTTPException(
                 status_code=429,
                 detail=f"Please wait {remaining} minute(s) before re-processing your experience.",
@@ -270,75 +275,132 @@ async def trigger_process(
 
     async def _stream():
         completed = False
+        overall_start = _time.perf_counter()
+        phase_durations: dict[str, int] = {}
         try:
+            # --- extracting ---
+            _phase_start = _time.perf_counter()
             yield "event: stage\ndata: extracting\n\n"
 
-            file_bytes = await anyio.to_thread.run_sync(
-                lambda: get_storage_client().download_bytes(storage_key)
+            with _exp_tracer.start_as_current_span(
+                "experience.phase.extracting",
+                attributes={"experience.id": str(experience.id)},
+            ):
+                file_bytes = await anyio.to_thread.run_sync(
+                    lambda: get_storage_client().download_bytes(storage_key)
+                )
+
+                if len(file_bytes) > _MAX_RESUME_BYTES:
+                    mb = len(file_bytes) / 1024 / 1024
+                    logger.warning("file_too_large", size_mb=round(mb, 1))
+                    experience.status = "error"
+                    experience.error_message = (
+                        f"File is too large ({mb:.1f} MB). Please upload a file under 10 MB."
+                    )
+                    db.commit()
+                    yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+                    completed = True
+                    return
+
+                text = await anyio.to_thread.run_sync(lambda: extract_text(file_bytes, filename))
+                normalized = _normalize_resume_text(text)
+
+            phase_durations["extracting"] = int((_time.perf_counter() - _phase_start) * 1000)
+            EXPERIENCE_PHASE_DURATION_MS.labels(phase="extracting").observe(
+                phase_durations["extracting"]
+            )
+            logger.info(
+                "phase_complete", phase="extracting", duration_ms=phase_durations["extracting"]
             )
 
-            if len(file_bytes) > _MAX_RESUME_BYTES:
-                mb = len(file_bytes) / 1024 / 1024
-                logger.warning("File too large: %.1f MB user=%s", mb, user.id)
-                experience.status = "error"
-                experience.error_message = (
-                    f"File is too large ({mb:.1f} MB). Please upload a file under 10 MB."
-                )
-                db.commit()
-                yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
-                completed = True
-                return
-
-            text = await anyio.to_thread.run_sync(lambda: extract_text(file_bytes, filename))
-            normalized = _normalize_resume_text(text)
-
+            # --- analyzing ---
+            _phase_start = _time.perf_counter()
             yield "event: stage\ndata: analyzing\n\n"
 
-            profile = await anyio.to_thread.run_sync(lambda: extract_profile(normalized))
+            with _exp_tracer.start_as_current_span("experience.phase.analyzing"):
+                profile = await anyio.to_thread.run_sync(lambda: extract_profile(normalized))
 
-            # Preserve non-resume keys (github, corrections, user_input, etc.) across reprocessing.
-            # Re-apply any saved corrections to the freshly extracted resume so the user's
-            # manual overrides aren't silently discarded when they re-upload.
-            existing_profile = experience.extracted_profile or {}
-            corrections = existing_profile.get("corrections") or {}
-            if corrections:
-                correctable = (
-                    "title",
-                    "headline",
-                    "summary",
-                    "location",
-                    "email",
-                    "phone",
-                    "linkedin",
-                )
-                profile = {
-                    **profile,
-                    **{k: v for k, v in corrections.items() if k in correctable and v is not None},
+                # Preserve non-resume keys (github, corrections, user_input, etc.) across reprocessing.
+                # Re-apply any saved corrections to the freshly extracted resume so the user's
+                # manual overrides aren't silently discarded when they re-upload.
+                existing_profile = experience.extracted_profile or {}
+                corrections = existing_profile.get("corrections") or {}
+                if corrections:
+                    correctable = (
+                        "title",
+                        "headline",
+                        "summary",
+                        "location",
+                        "email",
+                        "phone",
+                        "linkedin",
+                    )
+                    profile = {
+                        **profile,
+                        **{
+                            k: v
+                            for k, v in corrections.items()
+                            if k in correctable and v is not None
+                        },
+                    }
+
+                experience.raw_resume_text = normalized
+                experience.extracted_profile = {
+                    **{k: v for k, v in existing_profile.items() if k != "resume"},
+                    "resume": profile,
                 }
+                experience.status = "ready"
+                experience.processed_at = datetime.now(timezone.utc)
+                db.commit()
+                db.refresh(experience)
 
-            experience.raw_resume_text = normalized
-            experience.extracted_profile = {
-                **{k: v for k, v in existing_profile.items() if k != "resume"},
-                "resume": profile,
-            }
-            experience.status = "ready"
-            experience.processed_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(experience)
-
-            chunk_count = chunk_resume(db, experience)
-            db.commit()
-            background_tasks.add_task(embed_experience_chunks_task, experience.id)
-            logger.info(
-                "trigger_process SSE complete: experience_id=%s chunks=%d",
-                experience.id,
-                chunk_count,
+            phase_durations["analyzing"] = int((_time.perf_counter() - _phase_start) * 1000)
+            EXPERIENCE_PHASE_DURATION_MS.labels(phase="analyzing").observe(
+                phase_durations["analyzing"]
             )
+            logger.info(
+                "phase_complete", phase="analyzing", duration_ms=phase_durations["analyzing"]
+            )
+
+            # --- chunking ---
+            _phase_start = _time.perf_counter()
+            with _exp_tracer.start_as_current_span("experience.phase.chunking"):
+                chunk_count = chunk_resume(db, experience)
+                db.commit()
+                _ctx = structlog.contextvars.get_contextvars()
+                background_tasks.add_task(
+                    embed_experience_chunks_task,
+                    experience.id,
+                    user_id=_ctx.get("user_id"),
+                    correlation_id=_ctx.get("correlation_id"),
+                )
+
+            phase_durations["chunking"] = int((_time.perf_counter() - _phase_start) * 1000)
+            EXPERIENCE_PHASE_DURATION_MS.labels(phase="chunking").observe(
+                phase_durations["chunking"]
+            )
+            logger.info(
+                "resume_chunks_extracted",
+                chunk_count=chunk_count,
+                duration_ms=phase_durations["chunking"],
+            )
+
+            # --- summary ---
+            total_duration_ms = int((_time.perf_counter() - overall_start) * 1000)
+            EXPERIENCE_PROCESSING_TOTAL.labels(status="success").inc()
+            EXPERIENCE_PROCESSING_DURATION_MS.observe(total_duration_ms)
+            logger.info(
+                "processing_complete",
+                total_duration_ms=total_duration_ms,
+                phase_durations=phase_durations,
+            )
+
             yield f"event: ready\ndata: {json.dumps(_experience_response(experience))}\n\n"
             completed = True
 
         except Exception as exc:
-            logger.exception("trigger_process SSE failed: %s", exc)
+            EXPERIENCE_PROCESSING_TOTAL.labels(status="error").inc()
+            logger.exception("processing_error")
             experience.status = "error"
             experience.error_message = _friendly_processing_error(exc)
             db.commit()
@@ -346,10 +408,7 @@ async def trigger_process(
             completed = True
         finally:
             if not completed and experience.status == "processing":
-                logger.warning(
-                    "trigger_process SSE interrupted (client disconnect?): experience_id=%s",
-                    experience.id,
-                )
+                logger.warning("processing_interrupted")
                 experience.status = "error"
                 experience.error_message = "Processing was interrupted. Please try again."
                 try:
@@ -369,7 +428,7 @@ def get_experience(
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
 ):
-    logger.debug("get_experience: user=%s", user.id)
+    logger.debug("get_experience")
     e = user.experience
     if not e:
         return None
@@ -382,7 +441,6 @@ def delete_experience(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    logger.info("delete_experience: user=%s", user.id)
     e = user.experience
     if not e:
         raise HTTPException(status_code=404, detail="No experience found")
@@ -391,9 +449,7 @@ def delete_experience(
         try:
             get_storage_client().delete_object(e.storage_key)
         except Exception:
-            logger.warning(
-                "delete_experience: storage delete failed for key=%s — continuing", e.storage_key
-            )
+            logger.warning("storage_delete_failed", storage_key=e.storage_key)
 
     if _has_non_resume_sources(e):
         # Other sources exist — clear only the file upload fields
@@ -403,7 +459,7 @@ def delete_experience(
         db.delete(e)
 
     db.commit()
-    logger.info("delete_experience: complete for user=%s", user.id)
+    logger.info("delete_experience_complete")
 
 
 @router.patch("/experience/profile")
@@ -443,7 +499,7 @@ def update_profile(
     experience.processed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(experience)
-    logger.info("update_profile: user=%s", user.id)
+    logger.info("update_profile_complete")
     return _experience_response(experience)
 
 
@@ -498,18 +554,17 @@ def set_github(
             for r in (experience.github_repos or [])
         ]
         db.commit()
+        _ctx = structlog.contextvars.get_contextvars()
         background_tasks.add_task(
             enrich_github_repos,
             github_username=body.github_username,
             experience_id=experience.id,
             repo_names=body.rescan_repo_names,
             merge_with_existing=True,
+            user_id=_ctx.get("user_id"),
+            correlation_id=_ctx.get("correlation_id"),
         )
-        logger.info(
-            "set_github: queued rescan for user=%s repos=%s",
-            user.id,
-            body.rescan_repo_names,
-        )
+        logger.info("github_rescan_queued", repo_count=len(body.rescan_repo_names or []))
         return {
             "experience_id": str(experience.id),
             "status": experience.status,
@@ -586,16 +641,17 @@ def set_github(
         for r in (experience.github_repos or [])
     ]
     db.commit()
+    _ctx = structlog.contextvars.get_contextvars()
     background_tasks.add_task(
         enrich_github_repos,
         github_username=body.github_username,
         experience_id=experience.id,
         repo_names=repo_names_to_enrich,
         merge_with_existing=additions_only,
+        user_id=_ctx.get("user_id"),
+        correlation_id=_ctx.get("correlation_id"),
     )
-    logger.info(
-        "set_github: queued enrichment for user=%s username=%s", user.id, body.github_username
-    )
+    logger.info("github_enrichment_queued", github_username=body.github_username)
 
     return {
         "experience_id": str(experience.id),
@@ -643,7 +699,7 @@ def remove_user_input(
         } or None
     deleted = delete_user_input_chunks(db, experience.id)
     db.commit()
-    logger.info("remove_user_input: deleted %d chunks for user=%s", deleted, user.id)
+    logger.info("user_input_removed", chunk_count=deleted)
 
 
 # ---------------------------------------------------------------------------
@@ -762,10 +818,14 @@ def persist_user_input_chunks(
         experience.status = "ready"
 
     db.commit()
-    background_tasks.add_task(embed_experience_chunks_task, experience.id)
-    logger.info(
-        "persist_user_input_chunks: created %d chunks for user=%s", len(chunks_text), user.id
+    _ctx = structlog.contextvars.get_contextvars()
+    background_tasks.add_task(
+        embed_experience_chunks_task,
+        experience.id,
+        user_id=_ctx.get("user_id"),
+        correlation_id=_ctx.get("correlation_id"),
     )
+    logger.info("user_input_chunks_persisted", chunk_count=len(chunks_text))
     return {"experience_id": str(experience.id), "chunk_ids": created_ids}
 
 
@@ -967,7 +1027,7 @@ def update_experience_chunk(
     db.refresh(chunk)
     if body.content is not None:
         background_tasks.add_task(re_embed_chunk, chunk.id)
-    logger.info("update_experience_chunk: chunk=%s user=%s", chunk.id, user.id)
+    logger.info("update_experience_chunk", chunk_id=str(chunk.id))
     return _serialize_exp_chunk(chunk)
 
 
@@ -1001,7 +1061,7 @@ def delete_experience_chunk(
 
     db.delete(chunk)
     db.commit()
-    logger.info("delete_experience_chunk: chunk=%s user=%s", chunk_uuid, user.id)
+    logger.info("delete_experience_chunk", chunk_id=str(chunk_uuid))
 
 
 # ---------------------------------------------------------------------------
@@ -1060,6 +1120,9 @@ def create_gap_response(
         raise HTTPException(status_code=404, detail="Job chunk not found")
 
     experience = _ensure_experience(user, db)
+
+    structlog.contextvars.bind_contextvars(tailoring_id=body.tailoring_id)
+    _gap_start = _time.perf_counter()
 
     # Upsert: reuse any existing response chunk for this job_chunk_id regardless of source type
     existing_gap_chunks = (
@@ -1120,57 +1183,65 @@ def create_gap_response(
         db.add(gap_chunk)
     db.commit()
 
-    # Embed synchronously — must complete before re_enrich so the new vector is retrievable
-    embed_experience_chunks(experience.id, db)
+    with _exp_tracer.start_as_current_span(
+        "experience.gap_response",
+        attributes={
+            "tailoring.id": body.tailoring_id,
+            "job_chunk.id": body.job_chunk_id,
+        },
+    ):
+        # Embed synchronously — must complete before re_enrich so the new vector is retrievable
+        embed_experience_chunks(experience.id, db)
 
-    # Re-score the requirement synchronously — user is waiting for the result
-    candidate_name = user.candidate_name
-    re_enrich_single_chunk(
-        str(job_chunk_uuid),
-        experience.extracted_profile or {},
-        user.pronouns,
-        experience.id,
-        candidate_name,
-    )
+        # Re-score the requirement synchronously — user is waiting for the result
+        candidate_name = user.candidate_name
+        re_enrich_single_chunk(
+            str(job_chunk_uuid),
+            experience.extracted_profile or {},
+            user.pronouns,
+            experience.id,
+            candidate_name,
+        )
 
-    # re_enrich_single_chunk committed via its own session — re-query for updated score
-    updated_chunk = db.query(JobChunk).filter(JobChunk.id == job_chunk_uuid).first()
+        # re_enrich_single_chunk committed via its own session — re-query for updated score
+        updated_chunk = db.query(JobChunk).filter(JobChunk.id == job_chunk_uuid).first()
 
-    # If the re-score landed at partial (1), generate a path-to-strong question on the spot
-    partial_question: str | None = None
-    partial_context: str | None = None
-    if updated_chunk and updated_chunk.match_score == 1:
-        try:
-            job = db.query(Job).filter(Job.id == tailoring.job_id).first()
-            extracted_job = (job.extracted_job or {}) if job else {}
-            job_context = _build_job_context(extracted_job)
-            candidate_name = user.candidate_name
-            from app.services.profile_formatter import format_sourced_profile
+        # If the re-score landed at partial (1), generate a path-to-strong question on the spot
+        partial_question: str | None = None
+        partial_context: str | None = None
+        if updated_chunk and updated_chunk.match_score == 1:
+            try:
+                job = db.query(Job).filter(Job.id == tailoring.job_id).first()
+                extracted_job = (job.extracted_job or {}) if job else {}
+                job_context = _build_job_context(extracted_job)
+                candidate_name = user.candidate_name
+                from app.services.profile_formatter import format_sourced_profile
 
-            formatted_profile = format_sourced_profile(
-                experience.extracted_profile or {},
-                candidate_name=candidate_name,
-                pronouns=user.pronouns,
-            )
-            pq = _generate_question(
-                "partial",
-                requirement=updated_chunk.content,
-                match_rationale=updated_chunk.match_rationale or "",
-                formatted_profile=formatted_profile,
-                job_context=job_context,
-            )
-            partial_question = pq.question_for_candidate
-            partial_context = pq.context
-        except Exception:
-            logger.warning(
-                "On-demand partial question generation failed for chunk %s", job_chunk_uuid
-            )
+                formatted_profile = format_sourced_profile(
+                    experience.extracted_profile or {},
+                    candidate_name=candidate_name,
+                    pronouns=user.pronouns,
+                )
+                pq = _generate_question(
+                    "partial",
+                    requirement=updated_chunk.content,
+                    match_rationale=updated_chunk.match_rationale or "",
+                    formatted_profile=formatted_profile,
+                    job_context=job_context,
+                )
+                partial_question = pq.question_for_candidate
+                partial_context = pq.context
+            except Exception:
+                logger.warning("partial_question_failed", job_chunk_id=str(job_chunk_uuid))
 
+    duration_ms = int((_time.perf_counter() - _gap_start) * 1000)
+    GAP_RESPONSE_DURATION_MS.observe(duration_ms)
     logger.info(
-        "create_gap_response: chunk=%s user=%s new_score=%s",
-        gap_chunk.id,
-        user.id,
-        updated_chunk.match_score if updated_chunk else None,
+        "gap_response_complete",
+        job_chunk_id=body.job_chunk_id,
+        new_score=updated_chunk.match_score if updated_chunk else None,
+        duration_ms=duration_ms,
+        partial_question_generated=partial_question is not None,
     )
     return {
         "chunk_id": str(gap_chunk.id),

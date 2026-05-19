@@ -234,6 +234,194 @@ fires after all 4 background phases and includes `phase_durations` for all of th
 
 ---
 
+## Experience flows — pipeline reference
+
+See `reflections/platform-flows.md` for full flow diagrams and phase reference for all
+experience flows. Summary below.
+
+---
+
+### Resume Upload & Processing
+
+Three stages: `extracting` (blob download + text extraction) → `analyzing` (LLM profile
+extraction) → `chunking` (resume → ExperienceChunk rows). The SSE stream closes after
+chunking is complete; embedding runs as a background task.
+
+Each stage emits a `phase_complete` event with `duration_ms`. A `processing_complete`
+summary event fires at the end with `total_duration_ms` and a `phase_durations` breakdown.
+
+#### Key log events
+
+| Event | Stage | Notable fields |
+|-------|-------|----------------|
+| `phase_complete` | extracting / analyzing | `phase`, `duration_ms` |
+| `resume_chunks_extracted` | chunking | `chunk_count`, `duration_ms` |
+| `processing_complete` | summary | `total_duration_ms`, `phase_durations` |
+| `llm_call_complete` | analyzing | `schema=ExtractedProfile`, `input_tokens`, `output_tokens`, `latency_ms` |
+| `embed_experience_chunks_complete` | background | `embedded`, `total`, `duration_ms` |
+
+#### Pull all logs for a processing run
+
+```logql
+{job="tailord-backend"} | json | experience_id = "<id>"
+```
+
+#### Phase breakdown
+
+```logql
+{job="tailord-backend"} | json | experience_id = "<id>" | event = "phase_complete"
+```
+
+#### Processing summary
+
+```logql
+{job="tailord-backend"} | json | experience_id = "<id>" | event = "processing_complete"
+```
+
+#### Find the profile extraction LLM call
+
+```logql
+{job="tailord-backend"} | json | experience_id = "<id>" | event = "llm_call_complete"
+```
+
+Expand the result — look for `schema = "ExtractedProfile"`. Fields: `input_tokens`,
+`output_tokens`, `latency_ms`. This is the single most expensive call in the resume
+flow and the first place to look if processing is slow.
+
+---
+
+### GitHub Enrichment
+
+Background task. Fetches metadata per repo from the GitHub API, then calls the LLM
+once per repo to produce `GitHubRepoEnrichment`. Each enriched repo becomes one or
+more `ExperienceChunk` rows. Runs after `POST /experience/github`.
+
+`experience_id` and `github_username` are bound as contextvars at the top of the
+background task, so all log lines — including `llm_call_complete` from `llm_utils.py`
+— carry these fields automatically.
+
+#### Key log events
+
+| Event | Notable fields |
+|-------|----------------|
+| `github_repo_enrichment_complete` | `repo_name`, `confidence`, `duration_ms` |
+| `github_repo_enrichment_failed` | `repo_name`, `duration_ms` (per-repo error) |
+| `github_enrichment_complete` | `repo_count`, `error_count`, `chunk_count`, `duration_ms` |
+| `llm_call_complete` | `schema=GitHubRepoEnrichment`, `latency_ms` (one per repo) |
+| `embed_experience_chunks_complete` | `embedded`, `total`, `duration_ms` |
+
+#### See per-repo timing
+
+```logql
+{job="tailord-backend"} | json | experience_id = "<id>" | event = "github_repo_enrichment_complete"
+```
+
+Each line has `repo_name`, `confidence`, and `duration_ms`. Confidence `low` means
+the repo had little signal (no readme, no manifest). A high `duration_ms` here usually
+means a slow LLM call, not a slow GitHub API call.
+
+#### Check for partial enrichment failures
+
+```logql
+{job="tailord-backend"} | json | experience_id = "<id>" | event = "github_enrichment_complete"
+```
+
+Expand the single result line — `error_count > 0` means some repos were skipped.
+Individual repo failures appear as `github_repo_enrichment_failed` events with `repo_name`
+and the exception traceback.
+
+---
+
+### User Input (Manual Claims)
+
+Simple flow. Parse preview is optional and stateless. Persist writes chunks, embedding
+runs as a background task.
+
+#### Key log events
+
+| Event | Notable fields |
+|-------|----------------|
+| `llm_call_complete` | `schema=ParsedClaims`, `latency_ms` (parse preview only — no write) |
+| `embed_experience_chunks_complete` | `chunk_count`, `duration_ms` |
+
+Note: `ParsedClaims` only fires if the user triggered the preview parse. Most users
+paste short text and go straight to persist, so this log event may be absent.
+
+---
+
+### Gap Response / Re-scoring
+
+The most operationally interesting experience flow. A user answering a gap question
+triggers two synchronous LLM calls in a single request: one to re-score the job chunk
+with the new evidence, and optionally one more to generate a partial follow-up question
+if the score moved to 1.
+
+`tailoring_id` and `experience_id` are bound as contextvars at the start of the handler,
+so all `llm_call_complete` events from `re_enrich_single_chunk` and `_generate_question`
+carry these fields automatically — no manual propagation needed.
+
+#### Key log events
+
+| Event | Notable fields |
+|-------|----------------|
+| `gap_response_complete` | `job_chunk_id`, `new_score`, `duration_ms`, `partial_question_generated` |
+| `re_enrich_single_chunk_complete` | `chunk_id`, `old_score`, `new_score` |
+| `llm_call_complete` | `schema=ChunkMatchBatch`, `latency_ms` — the re-scoring call |
+| `llm_call_complete` | `schema=GapQuestion`, `latency_ms` — partial question (only when score moves 0→1) |
+
+#### See re-scoring outcome for a tailoring
+
+```logql
+{job="tailord-backend"} | json | tailoring_id = "<id>" | event = "re_enrich_single_chunk_complete"
+```
+
+Each line shows `old_score` → `new_score` for one job chunk. Score values:
+- `0` = gap (no evidence)
+- `1` = partial (some evidence, not strong)
+- `2` = strong match
+
+#### Gap response summary for a tailoring
+
+```logql
+{job="tailord-backend"} | json | tailoring_id = "<id>" | event = "gap_response_complete"
+```
+
+`partial_question_generated=true` means the answer moved the score to 1 and a follow-up
+path-to-strong question was generated on demand.
+
+#### LLM calls attributed to gap responses
+
+```logql
+{job="tailord-backend"} | json | tailoring_id = "<id>" | event = "llm_call_complete"
+  | schema =~ "ChunkMatchBatch|GapQuestion"
+```
+
+---
+
+### Experience flows — logging coverage
+
+| Step | Logged? | Notes |
+|------|---------|-------|
+| Resume text extraction | `phase_complete` ✓ | `phase=extracting`, `duration_ms` |
+| Resume LLM profile extraction | `phase_complete` ✓ + `llm_call_complete` ✓ | `phase=analyzing`, `schema=ExtractedProfile` |
+| Resume chunking | `resume_chunks_extracted` ✓ | `chunk_count`, `duration_ms` |
+| Processing end-to-end | `processing_complete` ✓ | `total_duration_ms`, `phase_durations` |
+| Experience embedding (resume/user_input) | `embed_experience_chunks_complete` ✓ | `embedded`, `total`, `duration_ms` |
+| GitHub per-repo enrichment | `github_repo_enrichment_complete` ✓ | `repo_name`, `confidence`, `duration_ms` |
+| GitHub per-repo failure | `github_repo_enrichment_failed` ✓ | `repo_name`, traceback |
+| GitHub enrichment summary | `github_enrichment_complete` ✓ | `repo_count`, `error_count`, `chunk_count`, `duration_ms` |
+| GitHub LLM call per repo | `llm_call_complete` ✓ | `schema=GitHubRepoEnrichment` (auto-carried via contextvar) |
+| GitHub embedding | `embed_experience_chunks_complete` ✓ | |
+| User input parse (preview) | `llm_call_complete` ✓ | `schema=ParsedClaims` (only if triggered) |
+| Gap response chunk upsert | *(no structured event — pure DB write)* | |
+| Gap response end-to-end | `gap_response_complete` ✓ | `job_chunk_id`, `new_score`, `duration_ms` |
+| Gap response re-scoring LLM | `llm_call_complete` ✓ | `schema=ChunkMatchBatch` (auto-carried via contextvar) |
+| Gap response re-score outcome | `re_enrich_single_chunk_complete` ✓ | `old_score`, `new_score` |
+| Partial question on-demand | `llm_call_complete` ✓ | `schema=GapQuestion` (only when score→1) |
+| Profile corrections write | *(no structured event)* | Pure DB write, no LLM |
+
+---
+
 ## Questions from the walkthrough doc
 
 These are questions posed in `planning/26-observability-walkthrough.md` as checkpoints.

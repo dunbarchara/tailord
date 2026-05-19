@@ -614,6 +614,7 @@ def re_enrich_single_chunk(
             )
 
         now = datetime.now(timezone.utc)
+        old_score = chunk.match_score
         chunk.match_score = match.score
         chunk.match_rationale = match.rationale
         chunk.advocacy_blurb = match.advocacy_blurb
@@ -623,7 +624,12 @@ def re_enrich_single_chunk(
         chunk.scored_content = chunk.content
         db.commit()
 
-        logger.info("re_enrich_single_chunk_complete", chunk_id=chunk_id, new_score=match.score)
+        logger.info(
+            "re_enrich_single_chunk_complete",
+            chunk_id=chunk_id,
+            old_score=old_score,
+            new_score=match.score,
+        )
 
     except Exception:
         logger.exception("re_enrich_single_chunk_failed", chunk_id=chunk_id)

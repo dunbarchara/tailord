@@ -5,9 +5,7 @@ from app.config import settings
 
 DATABASE_URL = settings.database_url
 
-# echo=True logs every SQL statement at INFO level — useful for local debugging
-# but very noisy (and potentially exposes query params) in staging/production.
-engine = create_engine(DATABASE_URL, echo=settings.environment == "local")
+engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(bind=engine)
 

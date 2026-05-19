@@ -217,7 +217,7 @@ def chunk_resume(db: Session, experience: Experience) -> int:
     """
     profile = (experience.extracted_profile or {}).get("resume") or {}
     if not profile:
-        logger.debug("chunk_resume: no resume profile for experience=%s — skipping", experience.id)
+        logger.debug("chunk_resume_skipped_no_profile")
         return 0
 
     _delete_chunks(db, experience.id, "resume")
@@ -237,7 +237,7 @@ def chunk_resume(db: Session, experience: Experience) -> int:
             )
         )
 
-    logger.debug("chunk_resume: created %d chunks for experience=%s", len(raw), experience.id)
+    logger.debug("chunk_resume_complete", chunk_count=len(raw))
     return len(raw)
 
 
@@ -252,11 +252,7 @@ def chunk_github_repo(db: Session, experience: Experience, repo_name: str) -> in
     repos = github_profile.get("repos") or []
     repo = next((r for r in repos if r.get("name") == repo_name), None)
     if not repo:
-        logger.debug(
-            "chunk_github_repo: repo=%s not found in profile for experience=%s",
-            repo_name,
-            experience.id,
-        )
+        logger.debug("chunk_github_repo_not_found", repo_name=repo_name)
         return 0
 
     _delete_chunks(db, experience.id, "github", source_ref=repo_name)
@@ -276,12 +272,7 @@ def chunk_github_repo(db: Session, experience: Experience, repo_name: str) -> in
             )
         )
 
-    logger.debug(
-        "chunk_github_repo: created %d chunks for experience=%s repo=%s",
-        len(raw),
-        experience.id,
-        repo_name,
-    )
+    logger.debug("chunk_github_repo_complete", chunk_count=len(raw), repo_name=repo_name)
     return len(raw)
 
 

@@ -100,3 +100,15 @@ def setup_logging() -> None:
     # Silence noisy loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
+    # pdfminer emits debug traces for every PDF token — overwhelming in Loki
+    logging.getLogger("pdfminer").setLevel(logging.WARNING)
+    # httpcore/httpx log every HTTP request at DEBUG level (OpenAI SDK traffic)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    # SQLAlchemy logs every SQL statement + bound parameters at INFO — contains PII
+    # (resume text in INSERT params, embedding vectors in UPDATE params)
+    logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.WARNING)
+    # Azure SDK + urllib3 log full HTTP request/response headers per blob operation
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
