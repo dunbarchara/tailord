@@ -12,7 +12,7 @@ USER_TEMPLATE = """Fill in this JSON template using information from the resume 
 Rules:
 - Keep all keys exactly as shown.
 - Replace empty strings and arrays with extracted values.
-- Add one object per role to work_experience, one per project, one per degree.
+- Add one object per role to work_experience, one per degree.
 - For work_experience, extract every bullet point verbatim — do not summarise, skip, or truncate any bullet. Each bullet must be plain text with no leading bullet character (•, -, *, –, etc.).
 - For work_experience title: use the explicit job title if given. If no title is stated (e.g. a sub-team or division is listed), infer the most appropriate title from context (e.g. "Software Engineer").
 - For work_experience company: include the employer and team/division if relevant (e.g. "Microsoft – Azure IoT Solutions").
@@ -27,6 +27,7 @@ Rules:
 - For phone, extract the candidate's phone number if present. Leave null if not found.
 - For linkedin, extract the LinkedIn profile URL or handle if present (e.g. "linkedin.com/in/username"). Leave null if not found.
 - For location, extract the candidate's city and state or country (e.g. "New York, NY"). Leave null if not found.
+- For projects: only populate from an explicitly labeled "Projects", "Side Projects", or "Personal Projects" section. Do NOT infer or extract projects from work experience bullets, even if a bullet describes a named system or product. If no such section exists, return [].
 - If a field has no data, leave it as "", null, or [].
 - Return only the JSON object. No explanation, no code fences.
 
@@ -41,7 +42,7 @@ JSON TEMPLATE:
   ],
   "skills": {{"technical": [], "soft": []}},
   "education": [{{"degree": "", "institution": "", "location": null, "year": "", "distinction": null}}],
-  "projects": [{{"name": "", "description": "", "technologies": []}}],
+  "projects": [],
   "certifications": []
 }}
 
