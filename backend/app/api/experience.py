@@ -745,6 +745,7 @@ def parse_user_input(
         ],
         response_model=ParsedClaims,
         temperature=parse_prompt.TEMPERATURE,
+        prompt_name=parse_prompt.PROMPT_NAME,
     )
     claims = [c.strip() for c in result.claims if c.strip()]
     if not claims:

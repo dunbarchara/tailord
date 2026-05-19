@@ -1,3 +1,8 @@
+PROMPT_NAME_VECTOR_SINGLE = "chunk_match_vector_single"
+PROMPT_NAME_VECTOR_BATCH = "chunk_match_vector_batch"
+PROMPT_NAME_BATCH = "chunk_match_batch"
+PROMPT_NAME_SINGLE = "chunk_match_single"
+
 TEMPERATURE = 0.1
 
 SYSTEM = """

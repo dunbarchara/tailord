@@ -52,6 +52,7 @@ def match_requirements(
         response_model=RequirementMatchList,
         temperature=prompt.TEMPERATURE,
         validate_fn=_validate,
+        prompt_name=prompt.PROMPT_NAME,
     )
 
     matches = [m.model_dump() for m in result.matches if m.score >= 1]

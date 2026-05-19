@@ -236,4 +236,5 @@ def _generate_question(
         response_model=GapQuestion,
         temperature=prompt.TEMPERATURE,
         validate_fn=_validate,
+        prompt_name=prompt.PROMPT_NAME if mode == "gap" else prompt.PARTIAL_PROMPT_NAME,
     )

@@ -1,3 +1,5 @@
+PROMPT_NAME = "github_repo_enrichment"
+
 TEMPERATURE = 0.1
 
 SYSTEM = """

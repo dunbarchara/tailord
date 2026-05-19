@@ -160,6 +160,7 @@ def _score_chunk_vector(
     candidate_header: str,
     k: int,
     force_score: bool = False,
+    prompt_name: str | None = None,
 ) -> tuple[ChunkMatchResult, list[float]]:
     """
     Score a single job chunk using vector pre-selection.
@@ -211,6 +212,7 @@ def _score_chunk_vector(
         response_model=ChunkMatchBatch,
         temperature=prompt.TEMPERATURE,
         validate_fn=_validate_single_chunk,
+        prompt_name=prompt_name or prompt.PROMPT_NAME_VECTOR_SINGLE,
     )
 
     raw = (
@@ -310,6 +312,7 @@ def enrich_job_chunks(
                     experience_id,
                     candidate_header,
                     k,
+                    prompt_name=prompt.PROMPT_NAME_VECTOR_BATCH,
                 )
 
             executor = ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency)
@@ -406,6 +409,7 @@ def enrich_job_chunks(
                     response_model=ChunkMatchBatch,
                     temperature=prompt.TEMPERATURE,
                     validate_fn=_validate_chunk_batch,
+                    prompt_name=prompt.PROMPT_NAME_BATCH,
                 )
                 return batch, result.results
 
@@ -575,6 +579,7 @@ def re_enrich_single_chunk(
                 candidate_header,
                 k,
                 force_score=force_score,
+                prompt_name=prompt.PROMPT_NAME_VECTOR_SINGLE,
             )
             # Opportunistically update the chunk's embedding if it was missing
             if chunk.embedding is None and new_embedding is not None:
@@ -605,6 +610,7 @@ def re_enrich_single_chunk(
                 response_model=ChunkMatchBatch,
                 temperature=prompt.TEMPERATURE,
                 validate_fn=_validate_single_chunk,
+                prompt_name=prompt.PROMPT_NAME_SINGLE,
             )
 
             match = (
@@ -699,6 +705,7 @@ def refresh_job_chunks(
                     experience_id,
                     candidate_header,
                     k,
+                    prompt_name=prompt.PROMPT_NAME_VECTOR_BATCH,
                 )
 
             executor = ThreadPoolExecutor(max_workers=settings.chunk_scorer_concurrency)
@@ -786,6 +793,7 @@ def refresh_job_chunks(
                     response_model=ChunkMatchBatch,
                     temperature=prompt.TEMPERATURE,
                     validate_fn=_validate_chunk_batch,
+                    prompt_name=prompt.PROMPT_NAME_BATCH,
                 )
                 return batch, result.results
 

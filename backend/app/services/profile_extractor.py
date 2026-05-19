@@ -93,6 +93,7 @@ def extract_profile(text: str) -> dict:
         response_model=ExtractedStructure,
         temperature=extraction_prompt.TEMPERATURE,
         validate_fn=_validate_structure,
+        prompt_name=extraction_prompt.PROMPT_NAME,
     )
 
     # Compute YoE from extracted date intervals, pre-format for prose
@@ -116,6 +117,7 @@ def extract_profile(text: str) -> dict:
         response_model=ProfileIdentity,
         temperature=identity_prompt.TEMPERATURE,
         validate_fn=_validate_identity,
+        prompt_name=identity_prompt.PROMPT_NAME,
     )
 
     # Merge into ExtractedProfile-compatible dict (unchanged public contract)

@@ -166,6 +166,7 @@ def generate_tailoring(
         response_model=TailoringContent,
         temperature=prompt.TEMPERATURE,
         validate_fn=_validate_tailoring,
+        prompt_name=prompt.PROMPT_NAME,
     )
 
     rendered = _render_tailoring(

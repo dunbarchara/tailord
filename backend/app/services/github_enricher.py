@@ -10,7 +10,7 @@ from app.clients.llm_client import get_llm_client
 from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.metrics import GITHUB_ENRICHMENT_DURATION_MS, GITHUB_ENRICHMENT_TOTAL
-from app.prompts.github_enrichment import SYSTEM, TEMPERATURE, USER_TEMPLATE
+from app.prompts.github_enrichment import PROMPT_NAME, SYSTEM, TEMPERATURE, USER_TEMPLATE
 from app.schemas.llm_outputs import GitHubRepoEnrichment
 from app.telemetry import get_tracer as _get_tracer
 
@@ -63,6 +63,7 @@ def _llm_enrich_repo(
         ],
         response_model=GitHubRepoEnrichment,
         temperature=TEMPERATURE,
+        prompt_name=PROMPT_NAME,
     )
 
 

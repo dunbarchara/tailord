@@ -78,6 +78,7 @@ def extract_job(job_markdown: str, html: str | None = None) -> dict:
         ],
         response_model=ExtractedJob,
         temperature=prompt.TEMPERATURE,
+        prompt_name=prompt.PROMPT_NAME,
     )
     data = result.model_dump()
 

@@ -1,3 +1,5 @@
+PROMPT_NAME = "profile_prose_generation"
+
 TEMPERATURE = 0.3
 
 SYSTEM = """

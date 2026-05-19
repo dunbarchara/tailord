@@ -1,3 +1,5 @@
+PROMPT_NAME = "resume_structure_extraction"
+
 TEMPERATURE = 0.1
 
 SYSTEM = """
