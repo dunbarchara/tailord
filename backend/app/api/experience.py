@@ -340,7 +340,7 @@ async def trigger_process(
                         **{
                             k: v
                             for k, v in corrections.items()
-                            if k in correctable and v is not None
+                            if k in correctable and v is not None and v != ""
                         },
                     }
 
@@ -479,7 +479,7 @@ def update_profile(
     # None means "clear this correction" — remove the key so the field falls back to extracted.
     # Unset fields (not in the request at all) are left untouched.
     for k, v in body.model_dump(exclude_unset=True).items():
-        if v is None:
+        if v is None or v == "":
             corrections.pop(k, None)
         else:
             corrections[k] = v
@@ -489,7 +489,9 @@ def update_profile(
     # corrections) are not overwritten — the raw extracted value is preserved.
     resume = dict(existing.get("resume") or {})
     correctable = ("title", "headline", "summary", "location", "email", "phone", "linkedin")
-    resume.update({k: v for k, v in corrections.items() if k in correctable and v is not None})
+    resume.update(
+        {k: v for k, v in corrections.items() if k in correctable and v is not None and v != ""}
+    )
 
     experience.extracted_profile = {
         **existing,

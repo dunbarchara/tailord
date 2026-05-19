@@ -75,7 +75,7 @@ export function NewTailoringForm() {
   useEffect(() => {
     fetch('/api/tailorings')
       .then((r) => r.json())
-      .then((data) => Array.isArray(data) ? setTailorings(data) : [])
+      .then((data) => setTailorings(data?.tailorings ?? []))
       .catch(() => {});
   }, []);
 

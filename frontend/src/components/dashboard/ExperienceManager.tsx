@@ -178,13 +178,13 @@ export function ExperienceManager({
     const resume = record.extracted_profile?.resume;
     const fields = {
       yoe_override: corrections.yoe_override != null ? String(corrections.yoe_override) : '',
-      title: corrections.title ?? resume?.title ?? '',
-      location: corrections.location ?? resume?.location ?? '',
-      headline: corrections.headline ?? resume?.headline ?? '',
-      summary: corrections.summary ?? resume?.summary ?? '',
-      email: corrections.email ?? resume?.email ?? '',
-      phone: corrections.phone ?? resume?.phone ?? '',
-      linkedin: corrections.linkedin ?? resume?.linkedin ?? '',
+      title: corrections.title || resume?.title || '',
+      location: corrections.location || resume?.location || '',
+      headline: corrections.headline || resume?.headline || '',
+      summary: corrections.summary || resume?.summary || '',
+      email: corrections.email || resume?.email || '',
+      phone: corrections.phone || resume?.phone || '',
+      linkedin: corrections.linkedin || resume?.linkedin || '',
     };
     setProfileFields(fields);
     setProfileFieldsInitial(fields);
