@@ -23,7 +23,7 @@ resource "azurerm_key_vault_secret" "appinsights_connection_string" {
   content_type = "text/plain"
   key_vault_id = azurerm_key_vault.tailord.id
 
-  depends_on = [azurerm_key_vault_access_policy.terraform]
+  depends_on = [azurerm_role_assignment.kv_secrets_officer]
 }
 
 # -----------------------------
@@ -55,7 +55,7 @@ resource "azurerm_dashboard_grafana" "main" {
   name                = "${var.project_name}-grafana"
   resource_group_name = azurerm_resource_group.tailord.name
   location            = azurerm_resource_group.tailord.location
-  grafana_major_version = 10
+  grafana_major_version = 12
   azure_monitor_workspace_integrations {
     resource_id = azurerm_monitor_workspace.main.id
   }
