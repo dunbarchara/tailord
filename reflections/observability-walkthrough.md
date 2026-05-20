@@ -495,9 +495,19 @@ Prometheus to have scraped any data.
 
 **Goal:** understand what Prometheus actually scrapes from the app.
 
+First, make a request to a real endpoint — `/metrics` itself is excluded from
+`_RequestLoggingMiddleware` and won't generate any observations:
+
 ```bash
-curl http://localhost:8000/metrics | grep http_request_duration_ms
+curl -s http://localhost:8000/health
+curl -s http://localhost:8000/metrics | grep http_request_duration_ms
 ```
+
+**Why the first curl matters:** labeled metrics (`http_request_duration_ms` uses
+`["method", "endpoint"]` labels) only appear in `/metrics` output once at least one
+label combination has been observed. Before any request is made, there are no time series
+to emit and the metric block is completely absent. Unlabeled metrics like
+`tailoring_active_generations` always appear, even with a default value of `0`.
 
 You will see three families of lines for the histogram:
 
