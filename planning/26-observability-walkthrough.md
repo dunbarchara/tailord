@@ -117,11 +117,118 @@ couldn't correlate them with the HTTP request that triggered the generation.
 - [ ] Grep `logs/app.jsonl` for that ID and confirm all phase logs carry it.
 - [ ] Check the HTTP response headers — is `X-Correlation-Id` present?
 
-### Questions to bring to our conversation
-- Why do we clear contextvars at the start of each request rather than just overwriting?
-- What happens to logs from a third-party library that uses `logging.getLogger` rather than
-  `structlog.get_logger`? (Hint: look at `foreign_pre_chain` in `logging.py`.)
-- Why does the background task need to re-bind context explicitly?
+### Questions and answers
+
+**Q: Why do we clear contextvars at the start of each request rather than just overwriting?**
+
+`structlog.contextvars` stores all bound keys in a single `ContextVar` dict.
+If you only overwrote `correlation_id`, any other keys bound earlier on the same async
+context would survive into the new request. For example: a background task running on
+the same event loop might have previously bound `tailoring_id`. If the next inbound
+request only overwrites `correlation_id`, that stale `tailoring_id` would appear on every
+log line for the new request. `clear_contextvars()` wipes the entire dict first, so the
+new request starts with a known-empty slate before binding its own keys.
+
+---
+
+**Q: What happens to logs from a third-party library that uses `logging.getLogger` rather than `structlog.get_logger`?**
+
+Third-party libraries (uvicorn, SQLAlchemy, the OpenAI SDK, etc.) emit stdlib `LogRecord`
+objects that propagate up to the root logger. The root logger's handler is a
+`ProcessorFormatter`. When `ProcessorFormatter.format()` receives a record, it checks
+whether it was produced by structlog (it carries a special internal marker from
+`wrap_for_formatter`) or is "foreign" (everything else). For foreign records it runs
+`foreign_pre_chain` — which is the same `_shared_processors` list used in the structlog
+pipeline, including `merge_contextvars`. That means a third-party log line emitted during
+a request automatically picks up the current `correlation_id`, gets a timestamp, and is
+rendered in the same JSON format as first-party structlog lines. The silenced loggers in
+`logging.py` (`httpx`, `sqlalchemy.engine.Engine`, etc.) are set to WARNING not because
+the bridge doesn't work but because their INFO/DEBUG output is too noisy or contains PII.
+
+---
+
+**Q: Why does the background task need to re-bind context explicitly?**
+
+FastAPI's `BackgroundTasks` runs each task after the response has been sent, in the same
+event loop. When the middleware coroutine that bound `correlation_id` finishes sending the
+response, its contextvar scope ends — mutations made inside that coroutine are not
+automatically visible to code running in a different async scope afterward. The background
+task starts with a fresh (or parent-inherited) context that doesn't include the keys the
+middleware bound. Re-binding at the top of `_finalize_tailoring` — with both
+`correlation_id` and `tailoring_id` — ensures every log line from the background work
+carries both IDs and can be correlated back to the originating HTTP request.
+
+---
+
+**Q: Why can't thread pool workers just inherit context automatically?**
+
+They do inherit it — once. When `executor.submit(fn)` is called, Python copies the
+current context into the new thread. The problem is that thread pools *reuse* threads.
+After a worker thread finishes task A (which may have bound extra keys like `tailoring_id`
+from a previous submit), the thread's contextvars from that task persist in memory.
+When the pool reuses that same thread for task B (a different tailoring, different
+request), it would start with task A's stale context still in place.
+
+The pattern in `chunk_matcher.py` handles this explicitly:
+
+```python
+_log_ctx = structlog.contextvars.get_contextvars()   # capture caller's context once
+
+def _score_one_vector(chunk):
+    structlog.contextvars.clear_contextvars()         # wipe whatever leaked from the thread's last task
+    structlog.contextvars.bind_contextvars(**_log_ctx) # re-apply the correct caller context
+    ...
+```
+
+`_log_ctx` is captured in the submitting thread before any futures are submitted, so it
+holds the right `correlation_id` and `tailoring_id` for this tailoring. Each worker then
+clears and re-applies it fresh, regardless of what that thread was doing previously.
+
+---
+
+**Q: What is the practical difference between Loki labels and JSON fields, and what would break if you made `correlation_id` a label?**
+
+Loki's storage model is stream-based. Every unique combination of label values defines a
+**stream**, and all log lines for that stream are stored together in sequence on disk.
+Labels like `{job="tailord-backend", level="ERROR"}` let Loki look up the exact stream
+without touching any log content — that's fast.
+
+`correlation_id` is high-cardinality: every HTTP request gets a unique value. Promoting
+it to a label would create a new stream per request. With thousands of requests, Loki
+would maintain thousands of streams in memory, blow up its index, and degrade ingestion
+throughput. This is called label cardinality explosion and is the most common way to
+misuse Loki.
+
+Instead, `correlation_id` lives as a JSON field, queried with a content filter:
+`{job="tailord-backend"} | json | correlation_id = "abc123"`. Loki fetches the relevant
+streams by label (just `job`), then scans the content within those streams and filters.
+It is a full scan within the stream, but at this scale the streams stay small enough that
+this is fast in practice.
+
+Rule of thumb: labels for things you always filter by (job, level, logger — a handful of
+values), JSON fields for things that identify specific events (correlation_id, tailoring_id,
+prompt_name — unbounded values).
+
+---
+
+**Q: What did the `app.jsonl*` glob in Promtail cause on each rotation, and why does removing the glob fix it?**
+
+`RotatingFileHandler` works by renaming: when `app.jsonl` hits 5 MB, Python renames it
+to `app.jsonl.1` (shifting existing backups up), then opens a fresh `app.jsonl`. From
+that moment, `app.jsonl.1` is a new path that Promtail has never seen. Promtail tracks
+file positions by file path in `/tmp/positions.yaml`. Finding no entry for `app.jsonl.1`,
+it treats it as a newly created runtime file and starts reading from position 0 —
+re-shipping every line that was already shipped when the file was named `app.jsonl`.
+Those lines land in Loki a second time with identical timestamps. Loki does not
+deduplicate across ingestion windows, so both copies persist.
+
+Removing the glob — `__path__: /var/log/tailord/app.jsonl` — means Promtail never
+discovers the backup files. After a rotation it detects that `app.jsonl` is now shorter
+than its stored offset (the new file starts at 0 bytes), treats this as truncation,
+resets its position to 0, and begins reading the new file cleanly. A small window of
+lines written just before the rotation and not yet shipped by Promtail may be missed, but
+for local dev observability that is an acceptable trade-off. The backup files are local
+disk rollover only; Loki is the durable log store.
 
 ---
 
