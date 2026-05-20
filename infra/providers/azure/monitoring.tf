@@ -35,7 +35,7 @@ resource "azurerm_log_analytics_workspace" "tailord" {
   location            = azurerm_resource_group.tailord.location
   sku                 = "PerGB2018"
   retention_in_days   = 30
-  daily_quota_gb      = 0.5
+  daily_quota_gb      = 2
   tags                = local.tags
 }
 
@@ -112,7 +112,7 @@ resource "azurerm_monitor_metric_alert" "memory_pressure" {
 
   criteria {
     metric_namespace = "microsoft.app/containerapps"
-    metric_name      = "MemoryWorkingSetBytes"
+    metric_name      = "WorkingSetBytes"
     aggregation      = "Average"
     operator         = "GreaterThan"
     threshold        = 900000000
