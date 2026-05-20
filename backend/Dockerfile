@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Install system dependencies (curl for healthchecks, build-essential for native extensions)
-RUN apt-get update && apt-get install -y \
+# 20260519 – adding `&& apt-get upgrade -y ` to patch 'CVE-2026-33845' 'CVE-2026-42010' and unblock trivy CI scan
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     curl \
     ca-certificates \
     build-essential \
