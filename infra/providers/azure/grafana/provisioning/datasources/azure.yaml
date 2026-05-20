@@ -1,0 +1,25 @@
+apiVersion: 1
+# NOTE: Azure Managed Grafana does not support file-mounted provisioning.
+# Configure via Grafana UI after provisioning, or via the grafana/grafana
+# Terraform provider (grafana_data_source resource — not yet in infra stack).
+# This file is the authoritative checklist.
+
+datasources:
+  - name: "Azure Monitor (Prometheus)"
+    type: grafana-azure-monitor-datasource
+    uid: azure-monitor-prod
+    # Auto-configured via azurerm_dashboard_grafana.main azure_monitor_workspace_integrations
+    # Use PromQL identical to local dashboards 1-3
+
+  - name: "Log Analytics"
+    type: grafana-azure-data-explorer-datasource
+    uid: log-analytics-prod
+    # Workspace: azurerm_log_analytics_workspace.tailord.workspace_id
+    # Used by dashboard 4 log panel (replace loki-local LogQL with KQL)
+
+  - name: "PostgreSQL (prod)"
+    type: postgres
+    uid: postgres-prod
+    # url: <azurerm_postgresql_flexible_server.tailord.fqdn>:5432
+    # database: tailord_prod  |  user: tailord  |  sslmode: require
+    # Used by dashboards 4 and 5 — SQL queries identical to local

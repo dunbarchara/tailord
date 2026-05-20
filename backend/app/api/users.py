@@ -186,13 +186,13 @@ def delete_user(
     """
     # 1. Delete uploaded resume file from storage
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if experience and experience.s3_key:
+    if experience and experience.storage_key:
         try:
-            get_storage_client().delete_object(experience.s3_key)
+            get_storage_client().delete_object(experience.storage_key)
         except Exception:
             logger.warning(
                 "Failed to delete storage object %s for user %s — continuing",
-                experience.s3_key,
+                experience.storage_key,
                 user.id,
             )
 

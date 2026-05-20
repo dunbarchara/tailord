@@ -1,3 +1,5 @@
+PROMPT_NAME = "requirement_matching"
+
 TEMPERATURE = 0.1
 
 SYSTEM = """

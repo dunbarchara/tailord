@@ -1,3 +1,5 @@
+PROMPT_NAME = "tailoring_generation"
+
 TEMPERATURE = 0.3
 
 SYSTEM = """

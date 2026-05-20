@@ -153,6 +153,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   const prevEnrichmentStatusRef = useRef<string | null | undefined>(undefined);
   const [gapAnalysisSettled, setGapAnalysisSettled] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [jobDraft, setJobDraft] = useState<{ title: string; company: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [draftChunks, setDraftChunks] = useState<JobChunk[] | null>(null);
@@ -163,7 +164,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     // When initialTailoring is provided (demo/readOnly mode), skip the API fetch.
     if (initialTailoring) {
       setTailoring(initialTailoring);
-      if (initialTailoring.gap_analysis_status === 'complete') setGapAnalysisSettled(true);
+      if (initialTailoring.gap_analysis_status === 'complete' || initialTailoring.gap_analysis_status === 'error') setGapAnalysisSettled(true);
       setLoading(false);
       return;
     }
@@ -183,7 +184,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
           userRes.ok ? userRes.json() : null,
         ]);
         setTailoring(tailoringData);
-        if (tailoringData.gap_analysis_status === 'complete') {
+        if (tailoringData.gap_analysis_status === 'complete' || tailoringData.gap_analysis_status === 'error') {
           setGapAnalysisSettled(true);
         }
         if (tailoringData.generation_status === 'error') {
@@ -324,7 +325,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         }
         const data = await res.json();
         setTailoring(data);
-        if (data.gap_analysis_status === 'complete') {
+        if (data.gap_analysis_status === 'complete' || data.gap_analysis_status === 'error') {
           setGapAnalysisSettled(true);
           if (interval) clearInterval(interval);
         }
@@ -503,14 +504,16 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   }, [refreshing, chunksData?.enrichment_status]);
 
   function enterEditMode() {
-    if (!chunksData) return;
+    if (!chunksData || !tailoring) return;
     originalChunksRef.current = chunksData.chunks;
     setDraftChunks([...chunksData.chunks]);
+    setJobDraft({ title: tailoring.title ?? '', company: tailoring.company ?? '' });
     setEditMode(true);
   }
 
   function handleDiscard() {
     setDraftChunks(null);
+    setJobDraft(null);
     setEditMode(false);
   }
 
@@ -565,6 +568,29 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         }),
       ];
 
+      // Patch job title/company if changed
+      if (jobDraft && tailoring) {
+        const titleChanged = jobDraft.title !== (tailoring.title ?? '');
+        const companyChanged = jobDraft.company !== (tailoring.company ?? '');
+        if (titleChanged || companyChanged) {
+          const patch: Record<string, string | null> = {};
+          if (titleChanged) patch.title = jobDraft.title || null;
+          if (companyChanged) patch.company = jobDraft.company || null;
+          calls.push(
+            fetch(`/api/tailorings/${tailoringId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(patch),
+            }).then(async (r) => {
+              if (r.ok) {
+                const data = await r.json();
+                setTailoring((prev) => prev ? { ...prev, title: data.title, company: data.company } : prev);
+              }
+            })
+          );
+        }
+      }
+
       if (calls.length > 0) await Promise.all(calls);
 
       // Refetch to get canonical server state (IDs for created chunks, etc.)
@@ -575,6 +601,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
       }
 
       setDraftChunks(null);
+      setJobDraft(null);
       setEditMode(false);
       toast.success('Changes saved.');
     } catch {
@@ -692,13 +719,13 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         {/* Left: title / company / debug pill */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-sm font-medium text-text-primary tracking-[-0.1px] truncate max-w-[200px]">
-            {tailoring.title ?? 'Tailoring'}
+            {(editMode && jobDraft ? jobDraft.title : tailoring.title) ?? 'Tailoring'}
           </span>
-          {tailoring.company && (
+          {(editMode ? jobDraft?.company : tailoring.company) && (
             <>
               <span className="text-text-tertiary shrink-0 text-sm">/</span>
               <span className="text-sm font-medium text-text-tertiary tracking-[-0.1px] truncate max-w-[160px]">
-                {tailoring.company}
+                {editMode && jobDraft ? jobDraft.company : tailoring.company}
               </span>
             </>
           )}
@@ -719,10 +746,12 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             </span>
           )}
           {!showGenerationView && !generationFailed && (
-            <>
+            <div role="tablist" aria-label="View" className="flex items-center gap-1.5">
               {/* Analysis pill */}
               <button
+                role="tab"
                 type="button"
+                aria-selected={activeTab === 'analysis'}
                 onClick={() => setActiveTab('analysis')}
                 className={cn(
                   'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
@@ -735,12 +764,14 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
               </button>
 
               {/* Text divider */}
-              <span className="text-border-strong text-sm select-none">|</span>
+              <span aria-hidden="true" className="text-border-strong text-sm select-none">|</span>
 
               {/* Posting + Letter joined pill */}
               <div className="flex rounded-[8px] border border-border-default overflow-hidden">
                 <button
+                  role="tab"
                   type="button"
+                  aria-selected={activeTab === 'posting'}
                   onClick={() => setActiveTab('posting')}
                   className={cn(
                     'px-3 h-7 text-sm font-normal tracking-[-0.1px] border-r border-border-default transition-colors whitespace-nowrap',
@@ -752,7 +783,9 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                   Posting
                 </button>
                 <button
+                  role="tab"
                   type="button"
+                  aria-selected={activeTab === 'letter'}
                   onClick={() => setActiveTab('letter')}
                   className={cn(
                     'px-3 h-7 text-sm font-normal tracking-[-0.1px] transition-colors whitespace-nowrap',
@@ -768,9 +801,11 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
               {/* Debug tab — only when ?debug=1 */}
               {isDebug && (
                 <>
-                  <span className="text-border-strong text-sm select-none">|</span>
+                  <span aria-hidden="true" className="text-border-strong text-sm select-none">|</span>
                   <button
+                    role="tab"
                     type="button"
+                    aria-selected={activeTab === 'debug'}
                     onClick={() => setActiveTab('debug')}
                     className={cn(
                       'px-3 h-7 text-sm font-normal tracking-[-0.1px] rounded-[8px] border transition-colors whitespace-nowrap',
@@ -783,7 +818,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                   </button>
                 </>
               )}
-            </>
+            </div>
           )}
         </div>
 
@@ -795,12 +830,13 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             type="button"
             onClick={handleCopy}
             disabled={showGenerationView || !canCopy}
+            aria-label={copied ? 'Copied!' : 'Copy content'}
             title={copied ? 'Copied!' : 'Copy content'}
             className={cn(iconBtnCls, copied && 'text-success hover:text-success')}
           >
             {copied
-              ? <CheckCircle2 className="h-4 w-4" />
-              : <Copy className="h-4 w-4" />}
+              ? <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+              : <Copy aria-hidden="true" className="h-4 w-4" />}
           </button>
 
           {/* Notion */}
@@ -808,11 +844,12 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             <PopoverTrigger asChild>
               <button
                 type="button"
+                aria-label={readOnly ? 'Sign in to export to Notion' : 'Export to Notion'}
                 title={readOnly ? 'Sign in to export to Notion' : 'Export to Notion'}
                 disabled={readOnly || showGenerationView || generationFailed}
                 className={iconBtnCls}
               >
-                <SiNotion className="h-4 w-4" />
+                <SiNotion aria-hidden="true" className="h-4 w-4" />
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" sideOffset={6} className="w-72 p-0 rounded-2xl border-border-subtle shadow-lg overflow-hidden">
@@ -877,21 +914,23 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                 <button
                   type="button"
                   onClick={enterEditMode}
+                  aria-label="Edit requirements"
                   title="Edit chunks"
                   className={iconBtnCls}
                 >
-                  <Pencil className="h-4 w-4" />
+                  <Pencil aria-hidden="true" className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
                   onClick={handleRefreshAll}
                   disabled={refreshing || chunksData?.enrichment_status !== 'complete'}
+                  aria-label="Re-score all requirements"
                   title="Re-score all requirements"
                   className={iconBtnCls}
                 >
                   {refreshing
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <RefreshCw className="h-4 w-4" />}
+                    ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                    : <RefreshCw aria-hidden="true" className="h-4 w-4" />}
                 </button>
               </>
             )
@@ -904,12 +943,13 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             type="button"
             onClick={() => !readOnly && setShowRegenConfirm(true)}
             disabled={readOnly || regenerating || showGenerationView}
+            aria-label={readOnly ? 'Sign in to regenerate' : regenerating ? 'Regenerating…' : 'Regenerate tailoring'}
             title={readOnly ? 'Sign in to regenerate' : regenerating ? 'Regenerating…' : 'Regenerate'}
             className={iconBtnCls}
           >
             {regenerating
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <RotateCcw className="h-4 w-4" />}
+              ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              : <RotateCcw aria-hidden="true" className="h-4 w-4" />}
           </button>
 
           <ToolDivider />
@@ -955,11 +995,12 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
                       type="button"
                       onClick={handleCopyLink}
                       className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
+                      aria-label={copiedLink ? 'Link copied' : 'Copy share link'}
                       title="Copy link"
                     >
                       {copiedLink
-                        ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                        : <Copy className="h-3.5 w-3.5" />}
+                        ? <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 text-success" />
+                        : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -1066,25 +1107,50 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
               />
             )}
             {activeTab === 'analysis' && (
-              <AnalysisView
-                data={displayChunksData}
-                error={effectiveChunksError}
-                title={tailoring.title}
-                company={tailoring.company}
-                jobUrl={tailoring.job_url}
-                authorName={userName}
-                tailoringId={readOnly ? undefined : tailoring.id}
-                gapAnalysis={tailoring.gap_analysis}
-                gapResponses={gapResponses}
-                partialResponses={partialResponses}
-                generationReady={tailoring.generation_status === 'ready'}
-                readOnly={readOnly}
-                editMode={editMode}
-                onChunkUpdate={handleChunkUpdate}
-                onChunkDelete={handleChunkDelete}
-                onChunkCreate={handleChunkCreate}
-                onSectionRename={handleSectionRename}
-              />
+              <>
+                {!readOnly && tailoring.gap_analysis_status === 'error' && (
+                  <div className="mx-6 mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-error-bg border border-error/30 text-sm text-text-primary">
+                    <AlertCircle className="h-4 w-4 text-error shrink-0" />
+                    <span className="flex-1 text-text-secondary">
+                      Gap analysis failed — questions may be missing.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setGapAnalysisSettled(false);
+                        const res = await fetch(`/api/tailorings/${tailoring.id}/retry-gap`, { method: 'POST' });
+                        if (!res.ok) {
+                          setGapAnalysisSettled(true);
+                        }
+                      }}
+                      className={textBtnCls}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                <AnalysisView
+                  data={displayChunksData}
+                  error={effectiveChunksError}
+                  title={tailoring.title}
+                  company={tailoring.company}
+                  jobUrl={tailoring.job_url}
+                  authorName={userName}
+                  tailoringId={readOnly ? undefined : tailoring.id}
+                  gapAnalysis={tailoring.gap_analysis}
+                  gapResponses={gapResponses}
+                  partialResponses={partialResponses}
+                  generationReady={tailoring.generation_status === 'ready'}
+                  readOnly={readOnly}
+                  editMode={editMode}
+                  jobDraft={editMode ? jobDraft : null}
+                  onJobDraftChange={(draft) => setJobDraft(draft)}
+                  onChunkUpdate={handleChunkUpdate}
+                  onChunkDelete={handleChunkDelete}
+                  onChunkCreate={handleChunkCreate}
+                  onSectionRename={handleSectionRename}
+                />
+              </>
             )}
             {activeTab === 'debug' && (
               <DebugPanel

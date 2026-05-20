@@ -1,13 +1,14 @@
-import logging
 import re
 import uuid
 from datetime import datetime, timezone
+
+import structlog
 
 from app.clients.storage_client import get_storage_client
 from app.models.database import Experience
 from app.services.profile_extractor import extract_profile
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _friendly_processing_error(exc: Exception) -> str:
@@ -25,13 +26,14 @@ def _friendly_processing_error(exc: Exception) -> str:
 _BULLET_MARKER = re.compile(r"^[•\-\*]\s*$")
 _BULLET_START = re.compile(r"^[•\-\*]\s+\S")
 _SECTION_HEADER = re.compile(r"^[A-Z][A-Za-z\s]{0,30}$")
+_TERMINAL_PUNCT = re.compile(r"[.!?:]\s*$")
 
 
 def _normalize_resume_text(text: str) -> str:
     """
     Normalize raw text extracted from a PDF resume to improve LLM parsing quality.
 
-    Fixes two common pypdf artifacts:
+    Fixes two common PDF extraction artifacts:
     1. Orphaned bullet markers — a bare '•' on its own line, with its content on
        the next non-empty line. Joins them into a single bullet line.
     2. Wrapped bullet continuations — a single bullet whose text wraps across
@@ -59,23 +61,35 @@ def _normalize_resume_text(text: str) -> str:
         merged.append(line)
         i += 1
 
-    # Pass 2: join wrapped continuation lines back onto their bullet
+    # Pass 2: join wrapped continuation lines back onto their bullet.
+    # A blank-line-separated fragment is joined when EITHER:
+    #   (a) it starts lowercase  — mid-sentence conjunction/preposition
+    #   (b) the previous bullet ends without terminal punctuation — incomplete sentence
+    # This handles extractors inserting blank lines mid-bullet (e.g. long lines with
+    # parentheticals ending in ')' rather than '.').
     joined: list[str] = []
+    pending_blanks: list[str] = []
     for line in merged:
         stripped = line.strip()
         if not stripped:
-            joined.append("")
+            pending_blanks.append("")
             continue
-        if (
+        prev_complete = bool(_TERMINAL_PUNCT.search(joined[-1])) if joined else True
+        is_continuation = (
             joined
-            and joined[-1].strip()
             and _BULLET_START.match(joined[-1].lstrip())
             and not _BULLET_START.match(stripped)
             and not _SECTION_HEADER.match(stripped)
-        ):
+            and (stripped[0].islower() or not prev_complete)
+        )
+        if is_continuation:
             joined[-1] = joined[-1].rstrip() + " " + stripped
+            pending_blanks = []
         else:
+            joined.extend(pending_blanks)
+            pending_blanks = []
             joined.append(line)
+    joined.extend(pending_blanks)
 
     # Pass 3: collapse 3+ blank lines → 2, collapse runs of spaces within lines
     normalized = re.sub(r"\n{3,}", "\n\n", "\n".join(joined))
@@ -87,11 +101,19 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
 
     if ext == "pdf":
-        from io import BytesIO
+        import fitz  # pymupdf
 
-        from pdfminer.high_level import extract_text as pdfminer_extract
-
-        return pdfminer_extract(BytesIO(file_bytes))
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        page_texts = []
+        for page in doc:
+            blocks = page.get_text("blocks")
+            # Filter to text blocks only (type 0), sort top-to-bottom then left-to-right
+            text_blocks = sorted(
+                (b for b in blocks if b[6] == 0),
+                key=lambda b: (b[1], b[0]),
+            )
+            page_texts.append("\n".join(b[4].strip() for b in text_blocks if b[4].strip()))
+        return "\n\n".join(page_texts)
 
     elif ext in ("doc", "docx"):
         from io import BytesIO
@@ -111,6 +133,12 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
     persist structured profile to DB. Creates its own DB session since the request
     session is closed by the time background tasks run.
     """
+    import time as _time
+
+    from app.metrics import EXPERIENCE_PROCESSING_DURATION_MS, EXPERIENCE_PROCESSING_TOTAL
+
+    _start = _time.perf_counter()
+
     logger.info(
         "process_experience start: experience_id=%s storage_key=%s filename=%s",
         experience_id,
@@ -159,12 +187,16 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
             experience.processed_at = datetime.now(timezone.utc)
             db.commit()
             logger.info("process_experience complete: experience_id=%s", experience_id)
+            EXPERIENCE_PROCESSING_TOTAL.labels(status="success").inc()
+            EXPERIENCE_PROCESSING_DURATION_MS.observe(int((_time.perf_counter() - _start) * 1000))
 
         except Exception as e:
             logger.exception("process_experience failed for experience_id=%s: %s", experience_id, e)
             experience.status = "error"
             experience.error_message = _friendly_processing_error(e)
             db.commit()
+            EXPERIENCE_PROCESSING_TOTAL.labels(status="error").inc()
+            EXPERIENCE_PROCESSING_DURATION_MS.observe(int((_time.perf_counter() - _start) * 1000))
 
     finally:
         db.close()

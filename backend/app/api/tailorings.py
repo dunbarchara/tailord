@@ -1,12 +1,14 @@
 import json
-import logging
 import random
 import re
 import string
+import time
 import uuid
 from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
+import structlog
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from playwright.async_api import Error as PlaywrightError
@@ -21,6 +23,7 @@ from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
 from app.core.playwright_helper import get_rendered_content
 from app.core.token_utils import truncate_to_tokens
+from app.core.url_validation import validate_job_url
 from app.models.database import (
     Experience,
     Job,
@@ -30,19 +33,16 @@ from app.models.database import (
     TailoringDebugLog,
     User,
 )
-from app.models.mvp_schemas import TailoringCreate, _validate_job_url
+from app.schemas.tailoring_schemas import TailoringCreate
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
 from app.services.gap_analyzer import run_gap_analysis
 from app.services.job_extractor import extract_job
-from app.services.tailoring_generator import (
-    _build_ranked_matches_from_chunks,
-    _format_sourced_profile,
-    generate_tailoring,
-)
+from app.services.profile_formatter import build_ranked_matches_from_chunks, format_sourced_profile
+from app.services.tailoring_generator import generate_tailoring
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Combined limit: tailoring creates + regens share one pool per user per hour.
 # Each trigger costs ~4 LLM calls (job extraction, req matching, generation, chunk scoring).
@@ -68,7 +68,12 @@ def _check_tailoring_rate_limit(user_id, db: Session) -> None:
     """Raise 429 if the user has hit the combined create+regen limit in the last hour."""
     count = _get_tailoring_trigger_count(user_id, db)
     if count >= _TAILORING_HOURLY_LIMIT:
-        logger.warning("Rate limit hit: user=%s tailoring triggers in last hour=%d", user_id, count)
+        logger.warning(
+            "rate_limit_hit",
+            user_id=str(user_id),
+            trigger_count=count,
+            limit=_TAILORING_HOURLY_LIMIT,
+        )
         raise HTTPException(
             status_code=429,
             detail="You've created too many tailorings in the last hour. Please wait before trying again.",
@@ -140,20 +145,20 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
     ats_markdown = try_ats_fetch(url)
     if ats_markdown:
         job_markdown = truncate_to_tokens(ats_markdown, max_tokens=12_000, model=settings.llm_model)
-        logger.info("_scrape_job_url: ATS direct fetch succeeded for %s", url)
+        logger.info("ats_fetch_success", url=url)
         return "", job_markdown, True, ""
 
     try:
         html = await get_rendered_content(url)
         job_markdown = extract_markdown_content(html)
     except PlaywrightTimeoutError:
-        logger.exception("Playwright timeout for %s", url)
+        logger.exception("playwright_timeout", url=url)
         raise HTTPException(
             status_code=422,
             detail="That job URL took too long to load. Try again, or check that the URL is publicly accessible.",
         )
     except (PlaywrightError, Exception):
-        logger.exception("Playwright scrape failed for %s", url)
+        logger.exception("playwright_scrape_failed", url=url)
         raise HTTPException(
             status_code=422,
             detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
@@ -162,8 +167,31 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
     job_markdown = truncate_to_tokens(job_markdown, max_tokens=12_000, model=settings.llm_model)
     valid, reason = validate_job_content(job_markdown, html=html)
     if not valid:
-        logger.warning("validate_job_content failed for %s: %s", url, reason)
+        logger.warning("job_content_invalid", url=url, reason=reason)
     return html, job_markdown, valid, reason or ""
+
+
+def _write_debug_log(tailoring_id, event_type: str, payload: dict) -> None:
+    """
+    Write a single TailoringDebugLog row using its own DB session.
+    Non-fatal: logs a warning on failure and never raises.
+    """
+    from app.clients.database import SessionLocal
+
+    try:
+        with SessionLocal() as db:
+            db.add(
+                TailoringDebugLog(
+                    tailoring_id=tailoring_id,
+                    event_type=event_type,
+                    payload=payload,
+                )
+            )
+            db.commit()
+    except Exception:
+        logger.warning(
+            "debug_log_write_failed", tailoring_id=str(tailoring_id), event_type=event_type
+        )
 
 
 def _finalize_tailoring(
@@ -177,6 +205,8 @@ def _finalize_tailoring(
     pronouns: str | None = None,
     experience_id: uuid.UUID | None = None,
     is_manual: bool = False,
+    correlation_id: str = "",
+    carrier: dict | None = None,
 ) -> None:
     """
     Background task: extract the job, enrich chunks, derive ranked matches from chunk
@@ -188,176 +218,458 @@ def _finalize_tailoring(
 
     When is_manual=True, job extraction is skipped — extracted_job is already
     pre-seeded on the Job record from company/title/description fields.
+
+    carrier: serialized OTel span context from the HTTP handler so this background
+    task's root span is parented to the originating HTTP request's trace.
     """
     from app.clients.database import SessionLocal
 
-    # Phase 1: job extraction (extracting stage)
-    extracted_job: dict = {}
-    db = SessionLocal()
-    try:
-        tailoring = db.get(Tailoring, tailoring_id)
-        if not tailoring:
-            logger.error("_finalize_tailoring: tailoring %s not found", tailoring_id)
-            return
+    # Re-establish the correlation ID and bind tailoring_id to the structlog context
+    # so every log record in this background task carries both fields automatically.
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(correlation_id=correlation_id, tailoring_id=tailoring_id)
 
-        tailoring.generation_started_at = datetime.now(timezone.utc)
-        tailoring.generation_stage = "extracting"
-        # Snapshot the exact formatted profile passed to the LLM so the debug panel
-        # always shows what the model actually saw, regardless of later experience edits.
-        tailoring.profile_snapshot = _format_sourced_profile(
-            extracted_profile, candidate_name=candidate_name, pronouns=pronouns
+    # OTel: start a root span for the full background task, parented to the HTTP
+    # handler span via the injected carrier dict.
+    from opentelemetry import propagate as _otel_propagate
+
+    from app.telemetry import get_tracer as _get_otel_tracer
+
+    _tracer = _get_otel_tracer("tailord.tailoring")
+    _parent_ctx = _otel_propagate.extract(carrier or {})
+
+    with _tracer.start_as_current_span(
+        "background_task.tailoring.generate",
+        context=_parent_ctx,
+        attributes={
+            "tailoring.id": tailoring_id,
+            "tailoring.matching_mode": settings.matching_mode,
+        },
+    ):
+        from app.metrics import (
+            TAILORING_ACTIVE_GENERATIONS,
+            TAILORING_GENERATION_DURATION_MS,
+            TAILORING_GENERATIONS_TOTAL,
+            TAILORING_PHASE_DURATION_MS,
         )
-        db.commit()
 
-        if is_manual:
-            # Manual path: company/title were pre-seeded; skip LLM extraction.
-            job = db.get(Job, job_id)
-            extracted_job = (job.extracted_job or {}) if job else {}
-        else:
-            try:
-                extracted_job = extract_job(job_markdown, html=html)
-            except Exception:
-                logger.exception("Job extraction failed for tailoring %s", tailoring_id)
-                tailoring.generation_status = "error"
-                tailoring.generation_stage = None
-                tailoring.generation_error = (
-                    "We couldn't extract the job description. Try regenerating."
+        TAILORING_ACTIVE_GENERATIONS.inc()
+        _generation_success = False
+
+        overall_start = time.perf_counter()
+        phase_durations: dict[str, int] = {}
+
+        logger.info("generation_started", matching_mode=settings.matching_mode)
+
+        # Phase 1: job extraction (extracting stage)
+        extracted_job: dict = {}
+        db = SessionLocal()
+        phase_start = time.perf_counter()
+        try:
+            with _tracer.start_as_current_span("tailoring.phase.extract_job"):
+                tailoring = db.get(Tailoring, tailoring_id)
+                if not tailoring:
+                    logger.error("tailoring_not_found")
+                    TAILORING_ACTIVE_GENERATIONS.dec()
+                    TAILORING_GENERATIONS_TOTAL.labels(
+                        status="error", matching_mode=settings.matching_mode
+                    ).inc()
+                    return
+
+                tailoring.generation_started_at = datetime.now(timezone.utc)
+                tailoring.generation_stage = "extracting"
+                # Snapshot the exact formatted profile passed to the LLM so the debug panel
+                # always shows what the model actually saw, regardless of later experience edits.
+                tailoring.profile_snapshot = format_sourced_profile(
+                    extracted_profile, candidate_name=candidate_name, pronouns=pronouns
                 )
                 db.commit()
-                return
 
-            job = db.get(Job, job_id)
-            if job:
-                job.extracted_job = extracted_job
+                _write_debug_log(
+                    tailoring_id,
+                    "generation_started",
+                    {
+                        "correlation_id": correlation_id,
+                        "matching_mode": settings.matching_mode,
+                        "llm_model": settings.llm_model,
+                        "is_manual": is_manual,
+                    },
+                )
+
+                if is_manual:
+                    # Manual path: company/title were pre-seeded; skip LLM extraction.
+                    job = db.get(Job, job_id)
+                    extracted_job = (job.extracted_job or {}) if job else {}
+                else:
+                    try:
+                        extracted_job = extract_job(job_markdown, html=html)
+                    except Exception:
+                        logger.exception("phase_error", phase="extract_job")
+                        _write_debug_log(
+                            tailoring_id,
+                            "phase_error",
+                            {
+                                "phase": "extract_job",
+                                "error_message": "Job extraction failed",
+                            },
+                        )
+                        tailoring.generation_status = "error"
+                        tailoring.generation_stage = None
+                        tailoring.generation_error = (
+                            "We couldn't extract the job description. Try regenerating."
+                        )
+                        db.commit()
+                        TAILORING_ACTIVE_GENERATIONS.dec()
+                        TAILORING_GENERATIONS_TOTAL.labels(
+                            status="error", matching_mode=settings.matching_mode
+                        ).inc()
+                        return
+
+                    job = db.get(Job, job_id)
+                    if job:
+                        job.extracted_job = extracted_job
+                        db.commit()
+
+                phase_durations["extract_job"] = int((time.perf_counter() - phase_start) * 1000)
+                TAILORING_PHASE_DURATION_MS.labels(phase="extract_job").observe(
+                    phase_durations["extract_job"]
+                )
+                _write_debug_log(
+                    tailoring_id,
+                    "phase_complete",
+                    {
+                        "phase": "extract_job",
+                        "duration_ms": phase_durations["extract_job"],
+                    },
+                )
+                logger.info(
+                    "phase_complete",
+                    phase="extract_job",
+                    duration_ms=phase_durations["extract_job"],
+                )
+
+                tailoring.generation_stage = "enriching"
                 db.commit()
 
-        tailoring.generation_stage = "enriching"
-        db.commit()
-
-    except Exception:
-        logger.exception(
-            "Unexpected error in _finalize_tailoring (extraction) for tailoring %s", tailoring_id
-        )
-        try:
-            tailoring = db.get(Tailoring, tailoring_id)
-            if tailoring:
-                tailoring.generation_status = "error"
-                tailoring.generation_stage = None
-                tailoring.generation_error = "An unexpected error occurred."
-                db.commit()
         except Exception:
-            pass
-        return
-    finally:
-        db.close()
-
-    # Phase 2: chunk enrichment (uses its own session)
-    try:
-        enrich_job_chunks(
-            job_id,
-            job_markdown,
-            extracted_profile,
-            pronouns=pronouns,
-            experience_id=experience_id,
-            candidate_name=candidate_name,
-        )
-    except Exception:
-        logger.exception("Chunk enrichment failed for job %s", job_id)
-
-    # Phase 3: read chunk scores → build ranked matches for the letter
-    ranked_matches: list[dict] = []
-    try:
-        with SessionLocal() as chunk_db:
-            ranked_matches = _build_ranked_matches_from_chunks(uuid.UUID(job_id), chunk_db)
-    except Exception:
-        logger.exception(
-            "Failed to build ranked matches from chunks for job %s — proceeding without", job_id
-        )
-
-    # Phase 4: letter generation (generating stage)
-    db = SessionLocal()
-    try:
-        tailoring = db.get(Tailoring, tailoring_id)
-        if not tailoring:
-            logger.error(
-                "_finalize_tailoring: tailoring %s not found after enrichment", tailoring_id
-            )
-            return
-
-        tailoring.generation_stage = "generating"
-        db.commit()
-
-        try:
-            generated_output = generate_tailoring(
-                extracted_profile,
-                extracted_job,
-                candidate_name,
-                ranked_matches=ranked_matches,
-                job_url=job_url,
-                pronouns=pronouns,
-            )
-        except Exception:
-            logger.exception("Tailoring generation failed for tailoring %s", tailoring_id)
-            tailoring.generation_status = "error"
-            tailoring.generation_stage = None
-            tailoring.generation_error = (
-                "Tailoring generation failed. You can retry by regenerating."
-            )
-            db.commit()
-            return
-
-        now = datetime.now(timezone.utc)
-        tailoring.generated_output = generated_output
-        tailoring.model = settings.llm_model
-        tailoring.generation_status = "ready"
-        tailoring.generation_stage = None
-        tailoring.generated_at = now
-        tailoring.enrichment_status = "complete"  # backward compat — enrichment ran inline
-        tailoring.matching_mode = settings.matching_mode
-        if tailoring.generation_started_at:
-            delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
-            tailoring.generation_duration_ms = int(delta_ms)
-        db.commit()
-        logger.info("_finalize_tailoring: tailoring %s ready", tailoring_id)
-
-        try:
-            debug_log = TailoringDebugLog(
-                tailoring_id=tailoring.id,
-                event_type="generation_complete",
-                payload={
-                    "matching_mode": settings.matching_mode,
-                    "embedding_model": settings.embedding_model,
-                    "llm_model": settings.llm_model,
-                    "generation_duration_ms": tailoring.generation_duration_ms,
+            logger.exception("phase_error", phase="extract_job")
+            _write_debug_log(
+                tailoring_id,
+                "phase_error",
+                {
+                    "phase": "extract_job",
+                    "error_message": "Unexpected error in extraction phase",
                 },
             )
-            db.add(debug_log)
-            db.commit()
-        except Exception:
-            logger.warning("Failed to write TailoringDebugLog for tailoring %s", tailoring_id)
+            try:
+                tailoring = db.get(Tailoring, tailoring_id)
+                if tailoring:
+                    tailoring.generation_status = "error"
+                    tailoring.generation_stage = None
+                    tailoring.generation_error = "An unexpected error occurred."
+                    db.commit()
+            except Exception:
+                pass
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
+            return
+        finally:
+            db.close()
 
-    except Exception:
-        logger.exception(
-            "Unexpected error in _finalize_tailoring (generation) for tailoring %s", tailoring_id
-        )
+        # Phase 2: chunk enrichment (uses its own session)
+        phase_start = time.perf_counter()
+        enrich_error: str | None = None
+        with _tracer.start_as_current_span("tailoring.phase.enrich_job_chunks"):
+            try:
+                enrich_job_chunks(
+                    job_id,
+                    job_markdown,
+                    extracted_profile,
+                    pronouns=pronouns,
+                    experience_id=experience_id,
+                    candidate_name=candidate_name,
+                )
+            except Exception as exc:
+                logger.exception("phase_error", phase="enrich_job_chunks")
+                enrich_error = str(exc)
+
+            phase_durations["enrich_job_chunks"] = int((time.perf_counter() - phase_start) * 1000)
+            TAILORING_PHASE_DURATION_MS.labels(phase="enrich_job_chunks").observe(
+                phase_durations["enrich_job_chunks"]
+            )
+            if enrich_error:
+                _write_debug_log(
+                    tailoring_id,
+                    "phase_error",
+                    {
+                        "phase": "enrich_job_chunks",
+                        "duration_ms": phase_durations["enrich_job_chunks"],
+                        "error_message": enrich_error,
+                    },
+                )
+            else:
+                _write_debug_log(
+                    tailoring_id,
+                    "phase_complete",
+                    {
+                        "phase": "enrich_job_chunks",
+                        "duration_ms": phase_durations["enrich_job_chunks"],
+                    },
+                )
+                logger.info(
+                    "phase_complete",
+                    phase="enrich_job_chunks",
+                    duration_ms=phase_durations["enrich_job_chunks"],
+                )
+
+        # Phases 3 & 4 (parallel): generate_advocacy_letter + gap_analysis
+        # Set the generating stage before dispatching threads.
+        db = SessionLocal()
         try:
             tailoring = db.get(Tailoring, tailoring_id)
-            if tailoring:
-                tailoring.generation_status = "error"
-                tailoring.generation_stage = None
-                tailoring.generation_error = "An unexpected error occurred."
-                db.commit()
+            if not tailoring:
+                logger.error("tailoring_not_found_after_enrichment")
+                TAILORING_ACTIVE_GENERATIONS.dec()
+                TAILORING_GENERATIONS_TOTAL.labels(
+                    status="error", matching_mode=settings.matching_mode
+                ).inc()
+                return
+            tailoring.generation_stage = "generating"
+            db.commit()
         except Exception:
-            pass
-    finally:
-        db.close()
+            logger.exception("phase_error", phase="set_generating_stage")
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
+            return
+        finally:
+            db.close()
 
-    # Gap analysis runs after generation succeeds so chunk_ids are resolvable.
-    # Non-fatal: a failure here must never affect the tailoring itself.
-    try:
-        run_gap_analysis(tailoring_id)
-    except Exception:
-        logger.exception("Gap analysis failed for tailoring %s — non-fatal", tailoring_id)
+        # Capture structlog and OTel contexts for propagation into both threads.
+        import opentelemetry.context as _otel_context
+
+        _ctx_vars = structlog.contextvars.get_contextvars()
+        _otel_ctx = _otel_context.get_current()
+
+        _letter_result: tuple | None = None
+        _letter_failed = False
+        _gap_failed = False
+        _letter_duration_ms = 0
+        _gap_duration_ms = 0
+
+        def _run_letter_phase() -> None:
+            nonlocal _letter_result, _letter_failed, _letter_duration_ms
+            structlog.contextvars.clear_contextvars()
+            structlog.contextvars.bind_contextvars(**_ctx_vars)
+            _tok = _otel_context.attach(_otel_ctx)
+            _start = time.perf_counter()
+            try:
+                with _tracer.start_as_current_span("tailoring.phase.generate_advocacy_letter"):
+                    # Internal step: read chunk scores → build ranked matches for the letter.
+                    # Logged inline; not emitted as a separate phase_complete event.
+                    _ranked: list[dict] = []
+                    try:
+                        with SessionLocal() as _cdb:
+                            _ranked = build_ranked_matches_from_chunks(uuid.UUID(job_id), _cdb)
+                    except Exception:
+                        logger.exception("ranked_matches_failed")
+
+                    try:
+                        _letter_result = generate_tailoring(
+                            extracted_profile,
+                            extracted_job,
+                            candidate_name,
+                            ranked_matches=_ranked,
+                            job_url=job_url,
+                            pronouns=pronouns,
+                        )
+                    except Exception:
+                        logger.exception("phase_error", phase="generate_advocacy_letter")
+                        _write_debug_log(
+                            tailoring_id,
+                            "phase_error",
+                            {
+                                "phase": "generate_advocacy_letter",
+                                "error_message": "Advocacy letter generation failed",
+                            },
+                        )
+                        _letter_failed = True
+            except Exception:
+                _letter_failed = True
+            finally:
+                _letter_duration_ms = int((time.perf_counter() - _start) * 1000)
+                _otel_context.detach(_tok)
+
+        def _run_gap_phase() -> None:
+            nonlocal _gap_failed, _gap_duration_ms
+            structlog.contextvars.clear_contextvars()
+            structlog.contextvars.bind_contextvars(**_ctx_vars)
+            _tok = _otel_context.attach(_otel_ctx)
+            _start = time.perf_counter()
+            try:
+                with _tracer.start_as_current_span("tailoring.phase.gap_analysis"):
+                    run_gap_analysis(tailoring_id)
+            except Exception:
+                logger.exception("phase_error", phase="gap_analysis")
+                _write_debug_log(
+                    tailoring_id,
+                    "phase_error",
+                    {"phase": "gap_analysis", "error_message": "Gap analysis failed"},
+                )
+                _gap_failed = True
+            finally:
+                _gap_duration_ms = int((time.perf_counter() - _start) * 1000)
+                _otel_context.detach(_tok)
+
+        with ThreadPoolExecutor(max_workers=2) as _executor:
+            _executor.submit(_run_letter_phase)
+            _executor.submit(_run_gap_phase)
+        # Both threads have completed here.
+
+        phase_durations["generate_advocacy_letter"] = _letter_duration_ms
+        phase_durations["gap_analysis"] = _gap_duration_ms
+        TAILORING_PHASE_DURATION_MS.labels(phase="generate_advocacy_letter").observe(
+            _letter_duration_ms
+        )
+        TAILORING_PHASE_DURATION_MS.labels(phase="gap_analysis").observe(_gap_duration_ms)
+
+        if _letter_failed:
+            # Letter failure is fatal — abort and mark generation as error.
+            _write_debug_log(
+                tailoring_id,
+                "generation_error",
+                {
+                    "phase": "generate_advocacy_letter",
+                    "error_message": "Unexpected error in letter generation phase",
+                },
+            )
+            db = SessionLocal()
+            try:
+                tailoring = db.get(Tailoring, tailoring_id)
+                if tailoring:
+                    tailoring.generation_status = "error"
+                    tailoring.generation_stage = None
+                    tailoring.generation_error = (
+                        "Tailoring generation failed. You can retry by regenerating."
+                    )
+                    db.commit()
+            except Exception:
+                pass
+            finally:
+                db.close()
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
+            return
+
+        # Letter succeeded — log phase completions.
+        assert _letter_result is not None
+        generated_output, letter_content = _letter_result
+        _write_debug_log(
+            tailoring_id,
+            "phase_complete",
+            {"phase": "generate_advocacy_letter", "duration_ms": _letter_duration_ms},
+        )
+        logger.info(
+            "phase_complete",
+            phase="generate_advocacy_letter",
+            duration_ms=_letter_duration_ms,
+        )
+        if not _gap_failed:
+            _write_debug_log(
+                tailoring_id,
+                "phase_complete",
+                {"phase": "gap_analysis", "duration_ms": _gap_duration_ms},
+            )
+            logger.info(
+                "phase_complete",
+                phase="gap_analysis",
+                duration_ms=_gap_duration_ms,
+            )
+
+        # Write letter results and set generation_status = "ready".
+        # This fires only after BOTH letter and gap analysis have completed.
+        db = SessionLocal()
+        try:
+            tailoring = db.get(Tailoring, tailoring_id)
+            if not tailoring:
+                logger.error("tailoring_not_found_after_parallel_phases")
+                TAILORING_ACTIVE_GENERATIONS.dec()
+                TAILORING_GENERATIONS_TOTAL.labels(
+                    status="error", matching_mode=settings.matching_mode
+                ).inc()
+                return
+
+            now = datetime.now(timezone.utc)
+            tailoring.generated_output = generated_output
+            tailoring.letter_content = letter_content
+            tailoring.model = settings.llm_model
+            tailoring.generation_status = "ready"
+            tailoring.generation_stage = None
+            tailoring.generated_at = now
+            tailoring.enrichment_status = "complete"  # backward compat — enrichment ran inline
+            tailoring.matching_mode = settings.matching_mode
+            if tailoring.generation_started_at:
+                delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
+                tailoring.generation_duration_ms = int(delta_ms)
+            db.commit()
+            _generation_success = True
+        except Exception:
+            logger.exception("phase_error", phase="write_letter_results")
+            _write_debug_log(
+                tailoring_id,
+                "generation_error",
+                {
+                    "phase": "write_letter_results",
+                    "error_message": "Unexpected error writing letter results",
+                },
+            )
+            try:
+                tailoring = db.get(Tailoring, tailoring_id)
+                if tailoring:
+                    tailoring.generation_status = "error"
+                    tailoring.generation_stage = None
+                    tailoring.generation_error = "An unexpected error occurred."
+                    db.commit()
+            except Exception:
+                pass
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
+            return
+        finally:
+            db.close()
+
+        total_duration_ms = int((time.perf_counter() - overall_start) * 1000)
+        _gap_log_extra = {"gap_analysis_failed": True} if _gap_failed else {}
+        logger.info(
+            "generation_complete",
+            total_duration_ms=total_duration_ms,
+            phase_durations=phase_durations,
+            **_gap_log_extra,
+        )
+        _write_debug_log(
+            tailoring_id,
+            "generation_complete",
+            {
+                "total_duration_ms": total_duration_ms,
+                "phase_durations": phase_durations,
+                "matching_mode": settings.matching_mode,
+                "llm_model": settings.llm_model,
+                **_gap_log_extra,
+            },
+        )
+        TAILORING_ACTIVE_GENERATIONS.dec()
+        TAILORING_GENERATIONS_TOTAL.labels(
+            status="success" if _generation_success else "error",
+            matching_mode=settings.matching_mode,
+        ).inc()
+        TAILORING_GENERATION_DURATION_MS.observe(total_duration_ms)
 
 
 async def _stream_tailoring(
@@ -410,90 +722,113 @@ async def _stream_tailoring(
         # sit idle-in-transaction for the entire scraping duration (5–15s).
         extracted_profile = experience.extracted_profile
         experience_id = experience.id
-        preferred = " ".join(
-            filter(None, [user.preferred_first_name, user.preferred_last_name])
-        ).strip()
-        candidate_name = preferred or user.name or user.email
+        candidate_name = user.candidate_name
         candidate_pronouns = user.pronouns or None
         if existing_tailoring:
             existing_tailoring_id = str(existing_tailoring.id)
             existing_job_id = str(existing_tailoring.job_id)
         db.commit()
 
-        if is_manual:
-            # Manual path: use provided description directly, no scraping.
-            html = ""
-            job_markdown = truncate_to_tokens(
-                request.description, max_tokens=12_000, model=settings.llm_model
-            )
-        else:
-            # URL path: scrape and optionally validate.
-            yield _sse("stage", "scraping")
-            try:
-                html, job_markdown, valid, reason = await _scrape_job_url(request.job_url)
-            except HTTPException as exc:
-                yield _sse("error", json.dumps({"detail": exc.detail}))
-                return
+        from app.metrics import TAILORING_PHASE_DURATION_MS as _PHASE_DURATION_MS
+        from app.telemetry import get_tracer as _get_tracer_handler
 
-            if not valid and not request.skip_validation:
-                # Soft failure — surface warning to the user. No DB records created.
-                yield _sse("parse_warning", json.dumps({"reason": reason}))
-                return
-            # If not valid but skip_validation=True, continue with partial content.
+        _tracer_handler = _get_tracer_handler("tailord.tailoring")
+        pre_phase_start = time.perf_counter()
 
-        # Create or reset DB records, then redirect immediately.
-        # Extraction, matching, and generation all run in the background task.
-        if existing_tailoring:
-            # Re-fetch after commit so ORM attributes aren't expired
-            tailoring = db.get(Tailoring, existing_tailoring_id)
-            tailoring.generated_output = None
-            tailoring.generation_status = "generating"
-            tailoring.generation_stage = "extracting"
-            tailoring.generation_error = None
-            tailoring.enrichment_status = "pending"
-            tailoring.gap_analysis_status = "pending"
-            db.commit()
-            job_record = db.get(Job, existing_job_id)
-        else:
-            job_record = Job(
-                user_id=user.id,
-                job_url=request.job_url or None,
-                raw_description=request.description or None,
-            )
+        with _tracer_handler.start_as_current_span("tailoring.phase.validate_job_posting"):
             if is_manual:
-                job_record.extracted_job = {
-                    "title": request.title,
-                    "company": request.company,
-                    "requirements": [],
-                }
-            db.add(job_record)
-            db.commit()
-            db.refresh(job_record)
+                # Manual path: use provided description directly, no scraping.
+                html = ""
+                job_markdown = truncate_to_tokens(
+                    request.description, max_tokens=12_000, model=settings.llm_model
+                )
+            else:
+                # URL path: scrape and optionally validate.
+                yield _sse("stage", "scraping")
+                try:
+                    html, job_markdown, valid, reason = await _scrape_job_url(request.job_url)
+                except HTTPException as exc:
+                    yield _sse("error", json.dumps({"detail": exc.detail}))
+                    return
 
-            tailoring = Tailoring(
-                user_id=user.id,
-                job_id=job_record.id,
-                generated_output=None,
-                generation_status="generating",
-                generation_stage="extracting",
+                if not valid and not request.skip_validation:
+                    # Soft failure — surface warning to the user. No DB records created.
+                    yield _sse("parse_warning", json.dumps({"reason": reason}))
+                    return
+                # If not valid but skip_validation=True, continue with partial content.
+
+            # Create or reset DB records, then redirect immediately.
+            # Extraction, matching, and generation all run in the background task.
+            if existing_tailoring:
+                # Re-fetch after commit so ORM attributes aren't expired
+                tailoring = db.get(Tailoring, existing_tailoring_id)
+                tailoring.generated_output = None
+                tailoring.generation_status = "generating"
+                tailoring.generation_stage = "extracting"
+                tailoring.generation_error = None
+                tailoring.enrichment_status = "pending"
+                tailoring.gap_analysis_status = "pending"
+                db.commit()
+                job_record = db.get(Job, existing_job_id)
+            else:
+                job_record = Job(
+                    user_id=user.id,
+                    job_url=request.job_url or None,
+                    raw_description=request.description or None,
+                )
+                if is_manual:
+                    job_record.extracted_job = {
+                        "title": request.title,
+                        "company": request.company,
+                        "requirements": [],
+                    }
+                db.add(job_record)
+                db.commit()
+                db.refresh(job_record)
+
+                tailoring = Tailoring(
+                    user_id=user.id,
+                    job_id=job_record.id,
+                    generated_output=None,
+                    generation_status="generating",
+                    generation_stage="extracting",
+                )
+                db.add(tailoring)
+                db.commit()
+                db.refresh(tailoring)
+
+            # Serialize the current OTel span context so the background task can parent
+            # its root span to this HTTP request's trace.
+            from opentelemetry import propagate as _otel_propagate
+
+            _otel_carrier: dict = {}
+            _otel_propagate.inject(_otel_carrier)
+
+            background_tasks.add_task(
+                _finalize_tailoring,
+                str(tailoring.id),
+                str(job_record.id),
+                job_markdown,
+                html,
+                extracted_profile,
+                candidate_name,
+                request.job_url,
+                candidate_pronouns,
+                experience_id,
+                is_manual,
+                structlog.contextvars.get_contextvars().get("correlation_id", ""),
+                _otel_carrier,
             )
-            db.add(tailoring)
-            db.commit()
-            db.refresh(tailoring)
 
-        background_tasks.add_task(
-            _finalize_tailoring,
-            str(tailoring.id),
-            str(job_record.id),
-            job_markdown,
-            html,
-            extracted_profile,
-            candidate_name,
-            request.job_url,
-            candidate_pronouns,
-            experience_id,
-            is_manual,
-        )
+            _pre_phase_duration_ms = int((time.perf_counter() - pre_phase_start) * 1000)
+            _PHASE_DURATION_MS.labels(phase="validate_job_posting").observe(_pre_phase_duration_ms)
+            logger.info(
+                "phase_complete",
+                phase="validate_job_posting",
+                duration_ms=_pre_phase_duration_ms,
+                tailoring_id=str(tailoring.id),
+                is_manual=is_manual,
+            )
 
         yield _sse("ready", json.dumps({"id": str(tailoring.id)}))
 
@@ -535,7 +870,7 @@ async def create_tailoring(
 ):
     if body.job_url:
         try:
-            _validate_job_url(body.job_url, is_local=settings.environment == "local")
+            validate_job_url(body.job_url, is_local=settings.environment == "local")
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
     _check_tailoring_rate_limit(user.id, db)
@@ -613,6 +948,40 @@ def delete_tailoring(
     db.commit()
 
 
+@router.post("/tailorings/{tailoring_id}/retry-gap-analysis")
+def retry_gap_analysis(
+    tailoring_id: str,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Reset gap_analysis_status to pending and re-run gap analysis in the background."""
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+    if tailoring.generation_status != "ready":
+        raise HTTPException(
+            status_code=409,
+            detail="Gap analysis can only be retried after generation completes.",
+        )
+    tailoring.gap_analysis_status = "pending"
+    db.commit()
+    background_tasks.add_task(run_gap_analysis, tailoring_id)
+    job = tailoring.job
+    return {
+        "id": str(tailoring.id),
+        "generation_status": tailoring.generation_status,
+        "gap_analysis_status": tailoring.gap_analysis_status,
+        "title": job.extracted_job.get("title") if job and job.extracted_job else None,
+        "company": job.extracted_job.get("company") if job and job.extracted_job else None,
+    }
+
+
 @router.get("/tailorings/{tailoring_id}")
 def get_tailoring(
     tailoring_id: str,
@@ -629,12 +998,18 @@ def get_tailoring(
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
     job = tailoring.job
+    exp = db.query(Experience).filter(Experience.user_id == user.id).first()
+    resume_data = (exp.extracted_profile or {}).get("resume") or {} if exp else {}
     return {
         "id": str(tailoring.id),
         "title": job.extracted_job.get("title") if job.extracted_job else None,
         "company": job.extracted_job.get("company") if job.extracted_job else None,
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
+        "letter_content": tailoring.letter_content,
+        "author_email": resume_data.get("email") or None,
+        "author_title": resume_data.get("title") or None,
+        "author_linkedin": resume_data.get("linkedin") or None,
         "model": tailoring.model,
         "generation_status": tailoring.generation_status,
         "generation_stage": tailoring.generation_stage,
@@ -680,6 +1055,51 @@ def get_tailoring_chunks(
     return {
         "enrichment_status": tailoring.enrichment_status,
         "chunks": [_serialize_chunk(c) for c in chunks],
+    }
+
+
+class TailoringJobUpdate(BaseModel):
+    title: str | None = None
+    company: str | None = None
+
+
+@router.patch("/tailorings/{tailoring_id}")
+def update_tailoring_job(
+    tailoring_id: str,
+    body: TailoringJobUpdate,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Patch the job's extracted title and/or company for a tailoring.
+
+    Only fields included in the request body are updated. Updates the Job row's
+    extracted_job JSON directly so all surfaces that read from it reflect the change
+    immediately (header, dashboard card, public page) without regeneration.
+    """
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    job = tailoring.job
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    updates = body.model_dump(exclude_unset=True)
+    if updates:
+        extracted = dict(job.extracted_job or {})
+        extracted.update(updates)
+        job.extracted_job = extracted
+        db.commit()
+
+    extracted_job = job.extracted_job or {}
+    return {
+        "title": extracted_job.get("title"),
+        "company": extracted_job.get("company"),
     }
 
 
@@ -1082,7 +1502,7 @@ def get_tailoring_debug_info(
     else:
         experience = db.query(Experience).filter(Experience.user_id == user.id).first()
         extracted_profile = (experience.extracted_profile if experience else None) or {}
-        formatted_profile = _format_sourced_profile(
+        formatted_profile = format_sourced_profile(
             extracted_profile,
             candidate_name=user.name,
             pronouns=user.pronouns if hasattr(user, "pronouns") else None,
@@ -1260,6 +1680,7 @@ def get_public_tailoring(
         "company": job.extracted_job.get("company") if job and job.extracted_job else None,
         "job_url": job.job_url if job else None,
         "generated_output": tailoring.generated_output,
+        "letter_content": tailoring.letter_content,
         "letter_public": tailoring.letter_public,
         "posting_public": tailoring.posting_public,
         "created_at": tailoring.created_at.isoformat(),
@@ -1276,7 +1697,7 @@ def get_public_tailoring(
 
     if author:
         exp = db.query(Experience).filter(Experience.user_id == author.id).first()
-        has_resume = bool(exp and exp.s3_key)
+        has_resume = bool(exp and exp.storage_key)
         github_repos_with_url = []
         if exp and exp.github_repo_details and isinstance(exp.github_repo_details, dict):
             for r in exp.github_repo_details.get("repos") or []:

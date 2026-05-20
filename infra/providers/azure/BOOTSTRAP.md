@@ -76,6 +76,23 @@ and swap to separate SPs in the future without changing the workflow.
 
 ## 3. Terraform apply
 
+### Resource provider registration (one-time)
+
+Some Azure resource providers used by this stack are not registered by default.
+Run once before the first `terraform apply` — safe to re-run, idempotent:
+
+```bash
+az provider register --namespace Microsoft.Monitor --wait          # Azure Managed Prometheus
+az provider register --namespace Microsoft.Dashboard --wait        # Azure Managed Grafana
+az provider register --namespace Microsoft.Insights --wait         # Application Insights
+az provider register --namespace Microsoft.AlertsManagement --wait # Metric + log alert rules
+```
+
+You can confirm registration status with:
+```bash
+az provider show --namespace Microsoft.Monitor --query registrationState
+```
+
 ### Secret architecture
 
 Application secrets (NextAuth, Google OAuth, Notion, API keys, database URLs, GitHub App private

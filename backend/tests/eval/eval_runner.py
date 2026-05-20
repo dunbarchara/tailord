@@ -38,7 +38,7 @@ from app.core.llm_utils import llm_parse_with_retry  # noqa: E402
 from app.prompts import chunk_matching as prompt  # noqa: E402
 from app.schemas.matching import ChunkMatchBatch  # noqa: E402
 from app.services.chunk_matcher import _build_candidate_header, _build_grouped_context  # noqa: E402
-from app.services.tailoring_generator import _format_sourced_profile  # noqa: E402
+from app.services.profile_formatter import format_sourced_profile  # noqa: E402
 from tests.eval.profile_schema import EvalCandidateProfile  # noqa: E402
 
 _EVAL_DIR = Path(__file__).parent
@@ -261,7 +261,7 @@ def _run_offline(fixtures: list[dict], cache: dict, mode: str, threshold: float)
 
 def _run_fixture_llm(fixture: dict, profiles: dict[str, EvalCandidateProfile]) -> list[int]:
     profile = profiles[fixture["profile"]]
-    formatted_profile = _format_sourced_profile(
+    formatted_profile = format_sourced_profile(
         profile.to_profile_dict(),
         candidate_name=profile.candidate_name,
         pronouns=profile.pronouns,

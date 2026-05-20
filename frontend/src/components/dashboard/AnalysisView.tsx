@@ -23,6 +23,8 @@ interface AnalysisViewProps {
   generationReady?: boolean;
   readOnly?: boolean;
   editMode?: boolean;
+  jobDraft?: { title: string; company: string } | null;
+  onJobDraftChange?: (draft: { title: string; company: string }) => void;
   onChunkUpdate?: (chunk: JobChunk) => void;
   onChunkDelete?: (chunkId: string) => void;
   onChunkCreate?: (chunk: JobChunk) => void;
@@ -49,7 +51,8 @@ interface ChunkContextPanelProps {
   answeredChunk?: ExperienceChunk | null;
   partialQuestion?: { question: string; context: string } | null;
   partialAnsweredChunk?: ExperienceChunk | null;
-  onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null, partialQuestion?: string | null, partialContext?: string | null) => void;
+  persistedPartialAnswer?: string | null;
+  onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null, partialQuestion?: string | null, partialContext?: string | null, answerText?: string) => void;
   readOnly?: boolean;
 }
 
@@ -332,7 +335,7 @@ function ExpandableText({ text, textClassName }: { text: string; textClassName?:
 
 /* ─── Chunk context panel ────────────────────────────────────────────────── */
 
-function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, partialQuestion, partialAnsweredChunk, onScoreChange, readOnly }: ChunkContextPanelProps) {
+function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, partialQuestion, partialAnsweredChunk, persistedPartialAnswer, onScoreChange, readOnly }: ChunkContextPanelProps) {
   const [rescoring, setRescoring] = useState(false);
   const [rescoreMsg, setRescoreMsg] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -542,7 +545,7 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
               onSuccess={() => {}}
             />
           ) : partialQuestion && tailoringId ? (
-            (partialAnsweredChunk || justPartialAnswered) && !isEditingPartial ? (
+            (partialAnsweredChunk || justPartialAnswered || !!persistedPartialAnswer) && !isEditingPartial ? (
               <div className="rounded-lg border border-border-subtle bg-surface-base px-3 py-2.5 space-y-1.5">
                 <p className="text-xs font-medium text-success flex items-center gap-1.5">
                   <CheckCircle2 className="h-3 w-3 shrink-0" />
@@ -554,7 +557,7 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                   </p>
                 )}
                 <p className="text-sm text-text-secondary leading-relaxed">
-                  {localPartialAnswer ?? partialAnsweredChunk?.content ?? ''}
+                  {localPartialAnswer ?? persistedPartialAnswer ?? partialAnsweredChunk?.content ?? ''}
                 </p>
                 <button
                   type="button"
@@ -571,9 +574,9 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                 question={partialQuestion.question}
                 context={partialQuestion.context}
                 responseType="partial"
-                initialValue={isEditingPartial ? (localPartialAnswer ?? partialAnsweredChunk?.content ?? '') : undefined}
+                initialValue={isEditingPartial ? (localPartialAnswer ?? persistedPartialAnswer ?? partialAnsweredChunk?.content ?? '') : undefined}
                 onSuccess={(score, rationale, blurb, text) => {
-                  onScoreChange(chunk.id, score, rationale, blurb);
+                  onScoreChange(chunk.id, score, rationale, blurb, undefined, undefined, text);
                   setLocalPartialAnswer(text);
                   setJustPartialAnswered(true);
                   setIsEditingPartial(false);
@@ -642,6 +645,55 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
   );
 }
 
+/* ─── Job properties panel (edit mode) ──────────────────────────────────── */
+
+function JobPropertiesPanel({
+  jobDraft,
+  onJobDraftChange,
+}: {
+  jobDraft: { title: string; company: string };
+  onJobDraftChange?: (draft: { title: string; company: string }) => void;
+}) {
+  const inputCls =
+    'w-full rounded-md border border-border-default bg-surface-base px-3 py-2 text-sm ' +
+    'text-text-primary placeholder:text-text-disabled ' +
+    'focus:outline-none focus:border-border-focus transition-colors';
+
+  return (
+    <div className="flex-1 flex flex-col px-4 pt-8 pb-8 min-h-0">
+      <p className="text-xs text-text-tertiary uppercase tracking-wider mb-4 mt-2">
+        Job Details
+      </p>
+      <div className="space-y-4">
+        <div>
+          <p className="text-[11px] font-medium text-text-disabled uppercase tracking-wider mb-1.5">
+            Position
+          </p>
+          <input
+            type="text"
+            value={jobDraft.title}
+            onChange={(e) => onJobDraftChange?.({ ...jobDraft, title: e.target.value })}
+            placeholder="Job title"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <p className="text-[11px] font-medium text-text-disabled uppercase tracking-wider mb-1.5">
+            Company
+          </p>
+          <input
+            type="text"
+            value={jobDraft.company}
+            onChange={(e) => onJobDraftChange?.({ ...jobDraft, company: e.target.value })}
+            placeholder="Company name"
+            className={inputCls}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── AnalysisView ───────────────────────────────────────────────────────── */
 
 export function AnalysisView({
@@ -658,6 +710,8 @@ export function AnalysisView({
   generationReady,
   readOnly,
   editMode,
+  jobDraft,
+  onJobDraftChange,
   onChunkUpdate,
   onChunkDelete,
   onChunkCreate,
@@ -671,6 +725,7 @@ export function AnalysisView({
   const [inlinePartialQuestions, setInlinePartialQuestions] = useState<
     Map<string, { question: string; context: string }>
   >(new Map());
+  const [localPartialAnswers, setLocalPartialAnswers] = useState<Map<string, string>>(new Map());
 
   const localChunks = useMemo(() => {
     const chunks = data?.chunks ?? [];
@@ -742,6 +797,7 @@ export function AnalysisView({
     blurb?: string | null,
     partialQuestion?: string | null,
     partialContext?: string | null,
+    answerText?: string,
   ) {
     setScoreOverrides(prev =>
       new Map(prev).set(chunkId, { match_score: score, match_rationale: rationale, advocacy_blurb: blurb }),
@@ -750,6 +806,9 @@ export function AnalysisView({
       setInlinePartialQuestions(prev =>
         new Map(prev).set(chunkId, { question: partialQuestion, context: partialContext ?? '' }),
       );
+    }
+    if (answerText) {
+      setLocalPartialAnswers(prev => new Map(prev).set(chunkId, answerText));
     }
   }
 
@@ -801,15 +860,22 @@ export function AnalysisView({
         </div>
 
         {/* Right panel — 2/5 */}
-        <div className="w-2/5 flex flex-col overflow-y-auto">
-          {selectedChunk ? (
+        <div className="w-2/5 flex flex-col overflow-y-auto border-l border-border-subtle">
+          {editMode && jobDraft ? (
+            <JobPropertiesPanel
+              jobDraft={jobDraft}
+              onJobDraftChange={onJobDraftChange}
+            />
+          ) : selectedChunk ? (
             <ChunkContextPanel
+              key={selectedChunk.id}
               chunk={selectedChunk}
               tailoringId={tailoringId}
               gapQuestion={gapByChunkId.get(selectedChunk.id) ?? null}
               answeredChunk={answeredByChunkId.get(selectedChunk.id) ?? null}
               partialQuestion={inlinePartialQuestions.get(selectedChunk.id) ?? partialByChunkId.get(selectedChunk.id) ?? null}
               partialAnsweredChunk={partialAnsweredByChunkId.get(selectedChunk.id) ?? null}
+              persistedPartialAnswer={localPartialAnswers.get(selectedChunk.id) ?? null}
               onScoreChange={handleScoreChange}
               readOnly={readOnly}
             />

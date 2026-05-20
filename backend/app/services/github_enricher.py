@@ -1,15 +1,22 @@
-import logging
+import time as _time
 import uuid
 from datetime import datetime, timezone
+
+import structlog
+import structlog.contextvars
 
 from app.clients.github_client import GitHubClient
 from app.clients.llm_client import get_llm_client
 from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
-from app.prompts.github_enrichment import SYSTEM, TEMPERATURE, USER_TEMPLATE
+from app.metrics import GITHUB_ENRICHMENT_DURATION_MS, GITHUB_ENRICHMENT_TOTAL
+from app.prompts.github_enrichment import PROMPT_NAME, SYSTEM, TEMPERATURE, USER_TEMPLATE
 from app.schemas.llm_outputs import GitHubRepoEnrichment
+from app.telemetry import get_tracer as _get_tracer
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
+
+_tracer = _get_tracer("tailord.experience")
 
 
 def _format_languages(languages: dict[str, int]) -> str:
@@ -56,6 +63,7 @@ def _llm_enrich_repo(
         ],
         response_model=GitHubRepoEnrichment,
         temperature=TEMPERATURE,
+        prompt_name=PROMPT_NAME,
     )
 
 
@@ -64,6 +72,8 @@ def enrich_github_repos(
     experience_id: uuid.UUID,
     repo_names: list[str] | None = None,
     merge_with_existing: bool = False,
+    user_id: str | None = None,
+    correlation_id: str | None = None,
 ) -> None:
     """
     Background task: fetches authenticated repo data for each of the user's repos,
@@ -73,138 +83,173 @@ def enrich_github_repos(
     Creates its own DB session — safe to call after the request context closes.
     Silently skips enrichment if GitHub App credentials are not configured.
     """
+    structlog.contextvars.clear_contextvars()
+    ctx: dict = {"github_username": github_username}
+    if user_id:
+        ctx["user_id"] = user_id
+    if correlation_id:
+        ctx["correlation_id"] = correlation_id
+    structlog.contextvars.bind_contextvars(**ctx)
+
     if not settings.github_app_id:
-        logger.warning("github_enricher: GITHUB_APP_ID not set — skipping enrichment")
+        logger.warning("github_enrichment_skipped_no_app_id")
         return
 
     from app.clients.database import SessionLocal
     from app.models.database import Experience
 
     db = SessionLocal()
+    _overall_start = _time.perf_counter()
     try:
-        github = GitHubClient()
-        repos = github.get_user_repos(github_username)
-        if repo_names is not None:
-            name_filter = set(repo_names)
-            repos = [r for r in repos if r["name"] in name_filter]
-        enriched = []
-        errors = 0
+        with _tracer.start_as_current_span(
+            "background_task.experience.github_enrichment",
+            attributes={
+                "experience.id": str(experience_id),
+                "github.username": github_username,
+            },
+        ):
+            github = GitHubClient()
+            repos = github.get_user_repos(github_username)
+            if repo_names is not None:
+                name_filter = set(repo_names)
+                repos = [r for r in repos if r["name"] in name_filter]
+            enriched = []
+            errors = 0
 
-        for repo in repos:
-            name = repo["name"]
-            try:
-                languages = github.get_languages(github_username, name)
-                topics = github.get_topics(github_username, name)
-                readme = github.get_readme(github_username, name)
-                manifests = github.get_manifests(github_username, name)
-                workflow = github.get_first_workflow(github_username, name)
-                if workflow:
-                    manifests[".github/workflows"] = workflow
+            for repo in repos:
+                name = repo["name"]
+                _repo_start = _time.perf_counter()
+                try:
+                    with _tracer.start_as_current_span(
+                        "experience.github.enrich_repo",
+                        attributes={"github.repo": name},
+                    ):
+                        languages = github.get_languages(github_username, name)
+                        topics = github.get_topics(github_username, name)
+                        readme = github.get_readme(github_username, name)
+                        manifests = github.get_manifests(github_username, name)
+                        workflow = github.get_first_workflow(github_username, name)
+                        if workflow:
+                            manifests[".github/workflows"] = workflow
 
-                llm_result = _llm_enrich_repo(
-                    owner=github_username,
-                    repo_name=name,
-                    description=repo.get("description"),
-                    languages=languages,
-                    topics=topics,
-                    readme=readme,
-                    manifests=manifests,
-                )
+                        llm_result = _llm_enrich_repo(
+                            owner=github_username,
+                            repo_name=name,
+                            description=repo.get("description"),
+                            languages=languages,
+                            topics=topics,
+                            readme=readme,
+                            manifests=manifests,
+                        )
 
-                total_bytes = sum(languages.values()) or 1
-                enriched.append(
-                    {
-                        "name": name,
-                        "owner": github_username,
-                        "url": f"https://github.com/{github_username}/{name}",
-                        "description": repo.get("description"),
-                        "readme_summary": llm_result.readme_summary,
-                        "detected_stack": llm_result.detected_stack,
-                        "project_domain": llm_result.project_domain,
-                        "confidence": llm_result.confidence,
-                        "experience_claims": llm_result.experience_claims,
-                        "language_breakdown": {
-                            lang: round(count / total_bytes, 3) for lang, count in languages.items()
-                        },
-                        "topics": topics,
-                        "stars": repo.get("stargazers_count", 0),
-                        "last_pushed_at": repo.get("pushed_at"),
-                        "scanned_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
-                logger.debug("github_enricher: enriched %s/%s", github_username, name)
-            except Exception:
-                logger.exception("github_enricher: failed to enrich %s/%s", github_username, name)
-                errors += 1
+                        total_bytes = sum(languages.values()) or 1
+                        enriched.append(
+                            {
+                                "name": name,
+                                "owner": github_username,
+                                "url": f"https://github.com/{github_username}/{name}",
+                                "description": repo.get("description"),
+                                "readme_summary": llm_result.readme_summary,
+                                "detected_stack": llm_result.detected_stack,
+                                "project_domain": llm_result.project_domain,
+                                "confidence": llm_result.confidence,
+                                "experience_claims": llm_result.experience_claims,
+                                "language_breakdown": {
+                                    lang: round(count / total_bytes, 3)
+                                    for lang, count in languages.items()
+                                },
+                                "topics": topics,
+                                "stars": repo.get("stargazers_count", 0),
+                                "last_pushed_at": repo.get("pushed_at"),
+                                "scanned_at": datetime.now(timezone.utc).isoformat(),
+                            }
+                        )
+                        logger.info(
+                            "github_repo_enrichment_complete",
+                            repo_name=name,
+                            confidence=llm_result.confidence,
+                            duration_ms=int((_time.perf_counter() - _repo_start) * 1000),
+                        )
+                except Exception:
+                    logger.exception(
+                        "github_repo_enrichment_failed",
+                        repo_name=name,
+                        duration_ms=int((_time.perf_counter() - _repo_start) * 1000),
+                    )
+                    errors += 1
 
-        experience = db.query(Experience).filter(Experience.id == experience_id).first()
-        if not experience:
-            logger.error("github_enricher: experience %s not found after enrichment", experience_id)
-            return
+            experience = db.query(Experience).filter(Experience.id == experience_id).first()
+            if not experience:
+                logger.error("github_enrichment_experience_not_found")
+                return
 
-        if merge_with_existing and experience.github_repo_details:
-            existing_by_name = {
-                r["name"]: r for r in experience.github_repo_details.get("repos", [])
-            }
-            for r in enriched:
-                existing_by_name[r["name"]] = r
-            experience.github_repo_details = {
-                **experience.github_repo_details,
-                "repos": list(existing_by_name.values()),
-                "request_count": experience.github_repo_details.get("request_count", 0)
-                + github.request_count,
-                "error_count": experience.github_repo_details.get("error_count", 0) + errors,
-            }
-        else:
-            experience.github_repo_details = {
-                "enriched_at": datetime.now(timezone.utc).isoformat(),
-                "repos": enriched,
-                "request_count": github.request_count,
-                "error_count": errors,
-            }
-
-        # Propagate scanned_at back into github_repos so the frontend can display it.
-        enriched_names = {r["name"]: r["scanned_at"] for r in enriched}
-        experience.github_repos = [
-            {**r, "scanned_at": enriched_names[r["name"]]} if r.get("name") in enriched_names else r
-            for r in (experience.github_repos or [])
-        ]
-
-        # Merge enriched fields into extracted_profile["github"]["repos"] so the
-        # tailoring generator and requirement matcher see the enriched data.
-        enriched_by_name = {r["name"]: r for r in enriched}
-        existing_profile = experience.extracted_profile or {}
-        github_profile = existing_profile.get("github") or {}
-        merged_repos = []
-        for repo in github_profile.get("repos") or []:
-            name = repo.get("name")
-            if name and name in enriched_by_name:
-                merged_repos.append({**repo, **enriched_by_name[name]})
+            if merge_with_existing and experience.github_repo_details:
+                existing_by_name = {
+                    r["name"]: r for r in experience.github_repo_details.get("repos", [])
+                }
+                for r in enriched:
+                    existing_by_name[r["name"]] = r
+                experience.github_repo_details = {
+                    **experience.github_repo_details,
+                    "repos": list(existing_by_name.values()),
+                    "request_count": experience.github_repo_details.get("request_count", 0)
+                    + github.request_count,
+                    "error_count": experience.github_repo_details.get("error_count", 0) + errors,
+                }
             else:
-                merged_repos.append(repo)
-        experience.extracted_profile = {
-            **existing_profile,
-            "github": {**github_profile, "repos": merged_repos},
-        }
+                experience.github_repo_details = {
+                    "enriched_at": datetime.now(timezone.utc).isoformat(),
+                    "repos": enriched,
+                    "request_count": github.request_count,
+                    "error_count": errors,
+                }
 
-        db.commit()
+            # Propagate scanned_at back into github_repos so the frontend can display it.
+            enriched_names = {r["name"]: r["scanned_at"] for r in enriched}
+            experience.github_repos = [
+                {**r, "scanned_at": enriched_names[r["name"]]}
+                if r.get("name") in enriched_names
+                else r
+                for r in (experience.github_repos or [])
+            ]
 
-        from app.services.experience_chunker import chunk_github_repo
-        from app.services.experience_embedder import embed_experience_chunks
+            # Merge enriched fields into extracted_profile["github"]["repos"] so the
+            # tailoring generator and requirement matcher see the enriched data.
+            enriched_by_name = {r["name"]: r for r in enriched}
+            existing_profile = experience.extracted_profile or {}
+            github_profile = existing_profile.get("github") or {}
+            merged_repos = []
+            for repo in github_profile.get("repos") or []:
+                name = repo.get("name")
+                if name and name in enriched_by_name:
+                    merged_repos.append({**repo, **enriched_by_name[name]})
+                else:
+                    merged_repos.append(repo)
+            experience.extracted_profile = {
+                **existing_profile,
+                "github": {**github_profile, "repos": merged_repos},
+            }
 
-        total_chunks = 0
-        for repo_data in enriched:
-            total_chunks += chunk_github_repo(db, experience, repo_data["name"])
-        db.commit()
-        embed_experience_chunks(experience.id, db)
+            db.commit()
 
-        logger.info(
-            "github_enricher: complete experience=%s repos=%d errors=%d requests=%d chunks=%d",
-            experience_id,
-            len(enriched),
-            errors,
-            github.request_count,
-            total_chunks,
-        )
+            from app.services.experience_chunker import chunk_github_repo
+            from app.services.experience_embedder import embed_experience_chunks
+
+            total_chunks = 0
+            for repo_data in enriched:
+                total_chunks += chunk_github_repo(db, experience, repo_data["name"])
+            db.commit()
+            embed_experience_chunks(experience.id, db)
+
+            total_ms = int((_time.perf_counter() - _overall_start) * 1000)
+            GITHUB_ENRICHMENT_TOTAL.labels(status="success" if errors == 0 else "partial").inc()
+            GITHUB_ENRICHMENT_DURATION_MS.observe(total_ms)
+            logger.info(
+                "github_enrichment_complete",
+                repo_count=len(enriched),
+                error_count=errors,
+                chunk_count=total_chunks,
+                duration_ms=total_ms,
+            )
     finally:
         db.close()

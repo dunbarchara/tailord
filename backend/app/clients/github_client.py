@@ -1,15 +1,15 @@
 import base64
-import logging
 import time
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 import jwt
 import requests
+import structlog
 
 from app.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _API_BASE = "https://api.github.com"
 _API_VERSION = "2022-11-28"

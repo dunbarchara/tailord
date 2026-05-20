@@ -5,7 +5,7 @@ from app.config import settings
 
 DATABASE_URL = settings.database_url
 
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(bind=engine)
 

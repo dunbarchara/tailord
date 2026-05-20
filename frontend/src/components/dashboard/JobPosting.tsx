@@ -88,8 +88,11 @@ function ChunkItem({
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [editingContent, setEditingContent] = useState(false);
   const [draftContent, setDraftContent] = useState(chunk.content);
+
+  useEffect(() => {
+    setDraftContent(chunk.content);
+  }, [chunk.content]);
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [newGroupDraft, setNewGroupDraft] = useState('');
   const [rescoring, setRescoring] = useState(false);
@@ -166,35 +169,27 @@ function ChunkItem({
   }
 
   function handleContentBlur() {
-    setEditingContent(false);
     const trimmed = draftContent.trim();
     if (trimmed && trimmed !== chunk.content) {
       applyChunkEdit({ content: trimmed });
     }
   }
 
-  const body = editMode && editingContent ? (
+  const body = editMode ? (
     <textarea
-      autoFocus
       rows={3}
       value={draftContent}
       onChange={e => setDraftContent(e.target.value)}
       onBlur={handleContentBlur}
-      className="w-full resize-none rounded border border-border-focus bg-surface-elevated px-2 py-1 text-sm text-text-primary focus:outline-none"
+      className="w-full resize-none rounded border border-border-default bg-surface-elevated px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-border-focus transition-colors"
     />
   ) : chunk.chunk_type === 'bullet' ? (
-    <div
-      className={cn('flex gap-2 text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}
-      onClick={editMode ? () => { setDraftContent(chunk.content); setEditingContent(true); } : undefined}
-    >
+    <div className={cn('flex gap-2 text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}>
       <span className="text-text-tertiary flex-shrink-0 mt-0.5">·</span>
       <span><InlineMarkdown text={chunk.content} /></span>
     </div>
   ) : (
-    <p
-      className={cn('text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}
-      onClick={editMode ? () => { setDraftContent(chunk.content); setEditingContent(true); } : undefined}
-    >
+    <p className={cn('text-sm leading-relaxed', isHidden ? 'text-text-disabled' : 'text-text-secondary')}>
       <InlineMarkdown text={chunk.content} />
     </p>
   );
@@ -217,6 +212,7 @@ function ChunkItem({
         >
           <div className="p-2 border-b border-border-subtle">
             <input
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
               autoFocus
               value={newGroupDraft}
               onChange={e => setNewGroupDraft(e.target.value)}
@@ -383,6 +379,9 @@ function ChunkItem({
 
   if (onSelect) {
     const isSelected = selectedId === chunk.id;
+    // Non-edit mode: the whole row is an interactive toggle. role="button" + keyboard
+    // handler make it accessible without converting to <button> (which would conflict
+    // with nested interactive children rendered in edit mode).
     return (
       <div
         className={cn(
@@ -391,7 +390,10 @@ function ChunkItem({
           isSelected ? 'bg-surface-sunken' : (!editMode && 'hover:bg-surface-sunken/50'),
           isHidden && 'opacity-60',
         )}
+        role={!editMode ? 'button' : undefined}
+        tabIndex={!editMode ? 0 : undefined}
         onClick={!editMode ? () => onSelect(isSelected ? null : chunk.id) : undefined}
+        onKeyDown={!editMode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(isSelected ? null : chunk.id); } } : undefined}
       >
         {barColor && <div className={cn('absolute top-0 bottom-0 -left-3 w-1 rounded-sm', barColor)} />}
         {body}
@@ -410,7 +412,10 @@ function ChunkItem({
         isExpanded ? 'translate-x-0.5' : (!editMode && 'hover:translate-x-0.5'),
         isHidden && 'opacity-60',
       )}
+      role={!editMode ? 'button' : undefined}
+      tabIndex={!editMode ? 0 : undefined}
       onClick={!editMode ? () => setExpandedId(isExpanded ? null : chunk.id) : undefined}
+      onKeyDown={!editMode ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(isExpanded ? null : chunk.id); } } : undefined}
     >
       <div className={cn(
         'absolute top-0 bottom-0 -left-3 rounded-sm transition-all duration-200',
@@ -595,6 +600,7 @@ function SectionBlock({
       <div className="flex items-center gap-2 mb-3 pb-1 border-b border-border-subtle">
         {editMode && !isUnsectioned && editingSection ? (
           <input
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
             autoFocus
             value={sectionDraft}
             onChange={e => setSectionDraft(e.target.value)}
@@ -612,7 +618,10 @@ function SectionBlock({
               isUnsectioned ? 'text-text-disabled italic' : 'text-text-primary',
               editMode && !isUnsectioned && 'cursor-text hover:text-text-link',
             )}
+            role={editMode && !isUnsectioned ? 'button' : undefined}
+            tabIndex={editMode && !isUnsectioned ? 0 : undefined}
             onClick={editMode && !isUnsectioned ? () => { setSectionDraft(section); setEditingSection(true); } : undefined}
+            onKeyDown={editMode && !isUnsectioned ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSectionDraft(section); setEditingSection(true); } } : undefined}
           >
             {stripMarkdown(displaySection)}
           </h2>
@@ -669,6 +678,7 @@ function SectionBlock({
           {addingChunk ? (
             <div className="space-y-1.5">
               <textarea
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                 autoFocus
                 rows={2}
                 placeholder="New requirement…"
@@ -837,6 +847,7 @@ export function JobPosting({
           {showAddSection ? (
             <div className="flex items-center gap-2">
               <input
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                 autoFocus
                 value={addingSectionName}
                 onChange={e => setAddingSectionName(e.target.value)}

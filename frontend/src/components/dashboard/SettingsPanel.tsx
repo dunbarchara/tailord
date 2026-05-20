@@ -85,10 +85,15 @@ function SettingRow({
 
 /* ─── Save status text ──────────────────────────────────────────────────── */
 
+// role="status" is an implicit aria-live="polite" region — the container always
+// renders so that content changes inside it are reliably announced to screen readers.
 function SaveStatus({ status }: { status: 'idle' | 'saved' | 'error' }) {
-  if (status === 'saved') return <span className="text-sm text-success">Saved</span>;
-  if (status === 'error') return <span className="text-sm text-error">Failed to save</span>;
-  return null;
+  return (
+    <span role="status" aria-live="polite" className="text-sm">
+      {status === 'saved' && <span className="text-success">Saved</span>}
+      {status === 'error' && <span className="text-error">Failed to save</span>}
+    </span>
+  );
 }
 
 /* ─── Card box ──────────────────────────────────────────────────────────── */
@@ -411,8 +416,9 @@ export function SettingsPanel() {
             <div className="flex flex-col gap-4">
               <div className="flex gap-3">
                 <div className="flex flex-col gap-1.5 flex-1">
-                  <label className="text-sm font-medium text-text-primary">First name</label>
+                  <label htmlFor="settings-first-name" className="text-sm font-medium text-text-primary">First name</label>
                   <input
+                    id="settings-first-name"
                     type="text"
                     placeholder="First name"
                     value={firstName}
@@ -421,8 +427,9 @@ export function SettingsPanel() {
                   />
                 </div>
                 <div className="flex flex-col gap-1.5 flex-1">
-                  <label className="text-sm font-medium text-text-primary">Last name</label>
+                  <label htmlFor="settings-last-name" className="text-sm font-medium text-text-primary">Last name</label>
                   <input
+                    id="settings-last-name"
                     type="text"
                     placeholder="Last name"
                     value={lastName}
@@ -456,6 +463,7 @@ export function SettingsPanel() {
                   <button
                     key={preset}
                     type="button"
+                    aria-pressed={pronouns === preset}
                     onClick={() => { setPronouns(pronouns === preset ? null : preset); setPronounsSaveStatus('idle'); }}
                     className={cn(
                       'px-3 h-8 rounded-[10px] text-sm border transition-colors',
@@ -469,6 +477,7 @@ export function SettingsPanel() {
                 ))}
                 <button
                   type="button"
+                  aria-pressed={pronouns === 'custom'}
                   onClick={() => { setPronouns(pronouns === 'custom' ? null : 'custom'); setPronounsSaveStatus('idle'); }}
                   className={cn(
                     'px-3 h-8 rounded-[10px] text-sm border transition-colors',
@@ -483,6 +492,7 @@ export function SettingsPanel() {
               {pronouns === 'custom' && (
                 <input
                   type="text"
+                  aria-label="Custom pronouns"
                   placeholder="e.g. ze/zir"
                   value={customPronouns}
                   onChange={(e) => { setCustomPronouns(e.target.value); setPronounsSaveStatus('idle'); }}
@@ -510,9 +520,10 @@ export function SettingsPanel() {
           >
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-text-primary">Username</label>
+                <label htmlFor="settings-username" className="text-sm font-medium text-text-primary">Username</label>
                 <div className="relative max-w-xs">
                   <input
+                    id="settings-username"
                     type="text"
                     placeholder="your-username"
                     value={usernameInput}
@@ -595,6 +606,7 @@ export function SettingsPanel() {
                         setTimeout(() => setCopiedProfile(false), 2000);
                       }}
                       className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors"
+                      aria-label={copiedProfile ? 'Link copied' : 'Copy profile link'}
                       title="Copy link"
                     >
                       {copiedProfile

@@ -1,3 +1,5 @@
+PROMPT_NAME = "user_input_parsing"
+
 TEMPERATURE = 0.1
 
 SYSTEM = """

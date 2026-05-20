@@ -88,27 +88,42 @@ frontend/src/app/
 ├── admin/                         # Admin panel — server component, isAdmin gate, user management
 ├── u/[slug]/                      # Public profile page (server component, OG meta)
 ├── t/[slug]/                      # Public tailoring page (shared link)
-└── api/                           # Next.js API routes — thin proxies to FastAPI backend
-    ├── auth/[...nextauth]/        # NextAuth Google OAuth
-    ├── auth/notion/               # Notion OAuth initiation
-    ├── auth/notion/callback/      # Notion OAuth callback
-    ├── admin/users/               # → GET /admin/users
-    ├── admin/users/[id]/approve/  # → POST /admin/users/{id}/approve
-    ├── admin/users/[id]/revoke/   # → POST /admin/users/{id}/revoke
-    ├── experience/                # → GET/DELETE /experience, PATCH /experience/profile
-    ├── experience/upload-url/     # → POST /experience/upload-url
-    ├── experience/process/        # → POST /experience/process (SSE)
-    ├── experience/github/         # → POST/DELETE /experience/github
-    ├── experience/user-input/     # → POST /experience/user-input
-    ├── tailorings/                # → GET/POST /tailorings
-    ├── tailorings/[id]/           # → GET/POST(regenerate)/DELETE /tailorings/{id}
-    ├── tailorings/[id]/chunks/    # → GET /tailorings/{id}/chunks
-    ├── tailorings/[id]/share/     # → POST/DELETE /tailorings/{id}/share
-    ├── tailorings/[id]/export/notion/  # → POST /notion/export/{id}
-    ├── tailorings/public/[slug]/  # → GET /tailorings/public/{slug}
-    ├── users/                     # → GET/PATCH /users/me
-    ├── users/public/[slug]/       # → GET /users/public/{slug}
-    └── notion/                    # → DELETE /notion/disconnect
+└── api/                                            # Next.js API routes — thin proxies to FastAPI backend
+    ├── auth/[...nextauth]/                         # NextAuth Google OAuth
+    ├── auth/notion/                                # Notion OAuth initiation
+    ├── auth/notion/callback/                       # Notion OAuth callback
+    ├── admin/users/                                # → GET /admin/users
+    ├── admin/users/[id]/approve/                   # → POST /admin/users/{id}/approve
+    ├── admin/users/[id]/revoke/                    # → POST /admin/users/{id}/revoke
+    ├── experience/                                 # → GET/DELETE /experience
+    ├── experience/upload-url/                      # → POST /experience/upload-url
+    ├── experience/process/                         # → POST /experience/process (SSE)
+    ├── experience/github/                          # → POST/DELETE /experience/github
+    ├── experience/github/[username]/repos/         # → GET /experience/github/{username}/repos
+    ├── experience/user-input/                      # → POST /experience/user-input
+    ├── experience/user-input/chunks/               # → GET /experience/user-input/chunks
+    ├── experience/user-input/parse/                # → POST /experience/user-input/parse
+    ├── experience/chunks/                          # → GET /experience/chunks
+    ├── experience/chunks/[id]/                     # → GET/PATCH/DELETE /experience/chunks/{id}
+    ├── experience/gap-response/                    # → POST /experience/gap-response
+    ├── tailorings/                                 # → GET/POST /tailorings
+    ├── tailorings/[id]/                            # → GET/POST(regenerate)/DELETE /tailorings/{id}
+    ├── tailorings/[id]/chunks/                     # → GET /tailorings/{id}/chunks
+    ├── tailorings/[id]/chunks/[chunkId]/           # → GET/PATCH /tailorings/{id}/chunks/{chunkId}
+    ├── tailorings/[id]/chunks/[chunkId]/rescore/   # → POST /tailorings/{id}/chunks/{chunkId}/rescore
+    ├── tailorings/[id]/chunks/merge/               # → POST /tailorings/{id}/chunks/merge
+    ├── tailorings/[id]/chunks/rename-group/        # → POST /tailorings/{id}/chunks/rename-group
+    ├── tailorings/[id]/debug/                      # → GET /tailorings/{id}/debug
+    ├── tailorings/[id]/gap-answer/                 # → POST /tailorings/{id}/gap-answer
+    ├── tailorings/[id]/refresh/                    # → POST /tailorings/{id}/refresh
+    ├── tailorings/[id]/share/                      # → POST/DELETE /tailorings/{id}/share
+    ├── tailorings/[id]/export/notion/              # → POST /notion/export/{id}
+    ├── tailorings/public/[userSlug]/[tailoringSlug]/  # → GET /tailorings/public/{userSlug}/{tailoringSlug}
+    ├── users/                                      # → GET/PATCH /users/me
+    ├── users/check-username/[slug]/                # → GET /users/check-username/{slug}
+    ├── users/public/[slug]/                        # → GET /users/public/{slug}
+    ├── notion/                                     # → DELETE /notion/disconnect
+    └── health/                                     # → GET /health (liveness probe)
 ```
 
 `middleware.ts` protects `/dashboard/*` and `/admin/*` via NextAuth `withAuth`. All backend routes require `X-API-Key`.

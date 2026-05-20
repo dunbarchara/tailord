@@ -58,7 +58,7 @@ interface TableRowProps {
 
 function TableRow({
   content,
-  isGroupHeader = false,
+  isGroupHeader: _isGroupHeader = false,
   context,
   isExpanded,
   onExpand,
@@ -433,6 +433,7 @@ function SkillsTable({
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
                   >
                     <input
+                      // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                       autoFocus
                       value={editingPillValue}
                       onChange={(e) => setEditingPillValue(e.target.value)}
@@ -570,6 +571,7 @@ function InlineSkillsRow({
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-overlay text-text-secondary border "
                 >
                   <input
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- appears in response to a user click; focus is expected
                     autoFocus
                     value={editingPillValue}
                     onChange={(e) => setEditingPillValue(e.target.value)}
@@ -897,9 +899,9 @@ function formatWorkGroupKey(group: WorkExperienceGroup): string {
   return label || 'Unknown role';
 }
 
-/* ─── ChunkedProfile ─────────────────────────────────────────────────────── */
+/* ─── ProfileChunkEditor ─────────────────────────────────────────────────── */
 
-export function ChunkedProfile({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceChunksResponse; readOnly?: boolean }) {
+export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceChunksResponse; readOnly?: boolean }) {
   const [data, setData] = useState<ExperienceChunksResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
 

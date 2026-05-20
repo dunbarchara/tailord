@@ -20,7 +20,7 @@ export function TailoringHeader({ company, title, jobUrl, authorName, authorUrl,
           {company && <span className="text-text-tertiary">{company}</span>}
           {company && authorName && <span className="text-text-tertiary"> · </span>}
           {authorName && authorUrl ? (
-            <Link href={authorUrl} className="text-text-tertiary hover:text-text-primary hover:underline">{authorName} <span className="text-text-disabled">→</span></Link>
+            <Link href={authorUrl} className="text-text-tertiary hover:text-text-primary hover:underline">{authorName} <span className="text-text-disabled" aria-hidden="true">→</span></Link>
           ) : authorName ? (
             <span className="text-text-secondary">{authorName}</span>
           ) : null}
@@ -36,7 +36,7 @@ export function TailoringHeader({ company, title, jobUrl, authorName, authorUrl,
           rel="noopener noreferrer"
           className="inline-block mt-2 text-sm text-text-link hover:underline print:hidden"
         >
-          View job posting →
+          View job posting <span aria-hidden="true">→</span>
         </a>
       )}
     </header>

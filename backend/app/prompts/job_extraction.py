@@ -1,3 +1,5 @@
+PROMPT_NAME = "job_extraction"
+
 TEMPERATURE = 0.2
 
 SYSTEM = """

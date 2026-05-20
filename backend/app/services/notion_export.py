@@ -8,15 +8,15 @@ Page hierarchy:
         └─ Letter
 """
 
-import logging
 import re
 
 import requests
+import structlog
 
 from app.services.chunk_display import SOURCE_LABELS as _SOURCE_LABELS
 from app.services.chunk_display import is_display_ready
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class NotionAuthError(Exception):

@@ -1,4 +1,4 @@
-import logging
+import structlog
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
@@ -7,7 +7,7 @@ from app.core.llm_utils import llm_parse
 from app.prompts import job_extraction as prompt
 from app.schemas.llm_outputs import ExtractedJob
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _extract_hints(html: str) -> dict:
@@ -78,6 +78,7 @@ def extract_job(job_markdown: str, html: str | None = None) -> dict:
         ],
         response_model=ExtractedJob,
         temperature=prompt.TEMPERATURE,
+        prompt_name=prompt.PROMPT_NAME,
     )
     data = result.model_dump()
 

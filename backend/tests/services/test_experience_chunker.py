@@ -39,11 +39,11 @@ def _make_db() -> MagicMock:
 
 
 def test_resume_chunks_summary():
+    # summary is intentionally skipped — it's always included in the formatted-profile
+    # baseline context sent to the LLM, so embedding it would crowd cosine top-K results.
     profile = {"summary": "Experienced engineer.", "work_experience": [], "skills": {}}
     chunks = _resume_chunks(profile)
-    assert any(
-        c["claim_type"] == "other" and c["content"] == "Experienced engineer." for c in chunks
-    )
+    assert not any(c["content"] == "Experienced engineer." for c in chunks)
 
 
 def test_resume_chunks_work_experience_bullets():
@@ -122,6 +122,9 @@ def test_resume_chunks_skips_empty_strings():
 
 
 def test_github_repo_chunks_readme_and_stack():
+    # readme_summary is intentionally skipped — always present in the formatted-profile
+    # baseline context, so embedding it would crowd cosine top-K results.
+    # Only detected_stack items produce skill chunks.
     repo = {
         "name": "myrepo",
         "readme_summary": "A deployment tool for Kubernetes.",
@@ -131,11 +134,9 @@ def test_github_repo_chunks_readme_and_stack():
     project_chunks = [c for c in chunks if c["claim_type"] == "project"]
     skill_chunks = [c for c in chunks if c["claim_type"] == "skill"]
 
-    assert len(project_chunks) == 1
-    assert project_chunks[0]["content"] == "A deployment tool for Kubernetes."
+    assert len(project_chunks) == 0
     assert len(skill_chunks) == 3
     assert {c["content"] for c in skill_chunks} == {"Python", "Docker", "Kubernetes"}
-    # All chunks for a repo share the same group_key for rendering
     assert all(c["group_key"] == "myrepo" for c in chunks)
 
 
@@ -159,7 +160,7 @@ def test_github_repo_chunks_skips_empty_stack_items():
 
 def test_chunk_resume_inserts_chunks():
     profile = {
-        "summary": "Great engineer.",
+        "summary": "Great engineer.",  # skipped — not embedded
         "work_experience": [{"bullets": ["Did stuff"], "duration": "2021-2022"}],
         "skills": {"technical": ["Python"], "soft": []},
     }
@@ -168,16 +169,15 @@ def test_chunk_resume_inserts_chunks():
 
     count = chunk_resume(db, exp)
 
-    assert count == 3  # summary + 1 bullet + 1 skill
-    assert db.add.call_count == 3
+    assert count == 2  # 1 bullet + 1 skill (summary is skipped)
+    assert db.add.call_count == 2
     added = db._added
-    assert any(a.claim_type == "other" for a in added)
     assert any(a.claim_type == "work_experience" for a in added)
     assert any(a.claim_type == "skill" for a in added)
 
 
 def test_chunk_resume_sets_correct_source_fields():
-    profile = {"summary": "Hello world."}
+    profile = {"skills": {"technical": ["Python"]}}  # summary alone produces no chunks
     exp = _make_experience(extracted_profile={"resume": profile})
     db = _make_db()
 
@@ -234,7 +234,7 @@ def test_chunk_github_repo_inserts_chunks():
             "repos": [
                 {
                     "name": "tailord",
-                    "readme_summary": "AI tailoring tool.",
+                    "readme_summary": "AI tailoring tool.",  # skipped — not embedded
                     "detected_stack": ["Python", "FastAPI"],
                 }
             ]
@@ -245,7 +245,7 @@ def test_chunk_github_repo_inserts_chunks():
 
     count = chunk_github_repo(db, exp, "tailord")
 
-    assert count == 3  # 1 project + 2 skills
+    assert count == 2  # 2 skills from detected_stack (readme_summary is skipped)
     for chunk in db._added:
         assert chunk.source_type == "github"
         assert chunk.source_ref == "tailord"

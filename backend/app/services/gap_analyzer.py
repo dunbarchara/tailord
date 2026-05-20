@@ -1,13 +1,15 @@
-import logging
+from typing import Literal
+
+import structlog
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import gap_analysis as prompt
 from app.schemas.gaps import GapAnalysis, GapQuestion, ProfileGapWithChunk
-from app.services.tailoring_generator import _format_sourced_profile
+from app.services.profile_formatter import format_sourced_profile
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def run_gap_analysis(tailoring_id: str) -> None:
@@ -27,45 +29,34 @@ def run_gap_analysis(tailoring_id: str) -> None:
     from app.clients.database import SessionLocal
     from app.models.database import JobChunk, Tailoring
 
-    logger.info("run_gap_analysis: start tailoring_id=%s", tailoring_id)
+    logger.info("run_gap_analysis_start", tailoring_id=tailoring_id)
 
     db = SessionLocal()
     try:
         tailoring = db.query(Tailoring).filter(Tailoring.id == tailoring_id).first()
         if not tailoring:
-            logger.warning("run_gap_analysis: tailoring %s not found", tailoring_id)
-            return
-
-        if tailoring.generation_status != "ready":
-            logger.info(
-                "run_gap_analysis: skipping tailoring %s (status=%s)",
-                tailoring_id,
-                tailoring.generation_status,
-            )
+            logger.warning("run_gap_analysis_not_found", tailoring_id=tailoring_id)
             return
 
         job = tailoring.job
         if not job:
-            logger.info("run_gap_analysis: no job for tailoring %s", tailoring_id)
+            logger.info("run_gap_analysis_no_job", tailoring_id=tailoring_id)
             tailoring.gap_analysis_status = "complete"
             db.commit()
             return
 
         user = tailoring.user
         if not user or not user.experience or not user.experience.extracted_profile:
-            logger.info("run_gap_analysis: no experience profile for tailoring %s", tailoring_id)
+            logger.info("run_gap_analysis_no_experience", tailoring_id=tailoring_id)
             tailoring.gap_analysis_status = "complete"
             db.commit()
             return
 
         extracted_profile = user.experience.extracted_profile
         pronouns = user.pronouns or None
-        preferred = " ".join(
-            filter(None, [user.preferred_first_name, user.preferred_last_name])
-        ).strip()
-        candidate_name = preferred or user.name or user.email
+        candidate_name = user.candidate_name
 
-        formatted_profile = _format_sourced_profile(
+        formatted_profile = format_sourced_profile(
             extracted_profile, candidate_name=candidate_name, pronouns=pronouns
         )
 
@@ -86,8 +77,8 @@ def run_gap_analysis(tailoring_id: str) -> None:
 
         if not all_scored_chunks:
             logger.info(
-                "run_gap_analysis: no scored chunks for tailoring %s — enrichment may not have run yet",
-                tailoring_id,
+                "run_gap_analysis_no_scored_chunks",
+                tailoring_id=tailoring_id,
             )
             tailoring.gap_analysis_status = "complete"
             db.commit()
@@ -99,19 +90,20 @@ def run_gap_analysis(tailoring_id: str) -> None:
         partial_chunks = [c for c in all_scored_chunks if c.match_score == 1 and c.should_render]
 
         logger.info(
-            "run_gap_analysis: tailoring=%s total_scored=%d sourced=%d gaps=%d partials=%d",
-            tailoring_id,
-            len(all_scored_chunks),
-            sourced_count,
-            len(gap_chunks),
-            len(partial_chunks),
+            "run_gap_analysis_scoring_summary",
+            tailoring_id=tailoring_id,
+            total_scored=len(all_scored_chunks),
+            sourced_count=sourced_count,
+            gap_count=len(gap_chunks),
+            partial_count=len(partial_chunks),
         )
 
         # One focused LLM call per gap chunk — single responsibility: question generation only
         gaps_with_questions: list[ProfileGapWithChunk] = []
         for chunk in gap_chunks:
             try:
-                result = _generate_gap_question(
+                result = _generate_question(
+                    "gap",
                     requirement=chunk.content,
                     match_rationale=chunk.match_rationale or "",
                     formatted_profile=formatted_profile,
@@ -128,15 +120,15 @@ def run_gap_analysis(tailoring_id: str) -> None:
                 )
             except Exception:
                 logger.exception(
-                    "run_gap_analysis: question generation failed for chunk %s — skipping",
-                    chunk.id,
+                    "run_gap_analysis_question_failed", chunk_id=str(chunk.id), mode="gap"
                 )
 
         # One focused LLM call per partial chunk — path-to-strong question generation
         partials_with_questions: list[ProfileGapWithChunk] = []
         for chunk in partial_chunks:
             try:
-                result = _generate_partial_question(
+                result = _generate_question(
+                    "partial",
                     requirement=chunk.content,
                     match_rationale=chunk.match_rationale or "",
                     formatted_profile=formatted_profile,
@@ -153,8 +145,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
                 )
             except Exception:
                 logger.exception(
-                    "run_gap_analysis: partial question generation failed for chunk %s — skipping",
-                    chunk.id,
+                    "run_gap_analysis_question_failed", chunk_id=str(chunk.id), mode="partial"
                 )
 
         gap_analysis = GapAnalysis(
@@ -168,19 +159,20 @@ def run_gap_analysis(tailoring_id: str) -> None:
         db.commit()
 
         logger.info(
-            "run_gap_analysis: complete tailoring=%s gaps_with_questions=%d sourced=%d unsourced=%d",
-            tailoring_id,
-            len(gaps_with_questions),
-            sourced_count,
-            len(gap_chunks),
+            "run_gap_analysis_complete",
+            tailoring_id=tailoring_id,
+            gaps_with_questions=len(gaps_with_questions),
+            partials_with_questions=len(partials_with_questions),
+            sourced_count=sourced_count,
+            unsourced_count=len(gap_chunks),
         )
 
     except Exception:
-        logger.exception("run_gap_analysis failed for tailoring %s", tailoring_id)
+        logger.exception("run_gap_analysis_failed", tailoring_id=tailoring_id)
         try:
             tailoring = db.get(Tailoring, tailoring_id)
             if tailoring:
-                tailoring.gap_analysis_status = "complete"
+                tailoring.gap_analysis_status = "error"
                 db.commit()
         except Exception:
             pass
@@ -203,19 +195,24 @@ def _build_job_context(extracted_job: dict) -> str:
     return "\n".join(lines) if lines else "this role"
 
 
-def _generate_gap_question(
+def _generate_question(
+    mode: Literal["gap", "partial"],
     requirement: str,
     match_rationale: str,
     formatted_profile: str,
     job_context: str,
 ) -> GapQuestion:
     """
-    Single-responsibility LLM call: given one confirmed gap requirement and the
-    candidate's profile, generate a targeted follow-up question.
+    Single-responsibility LLM call: generate a targeted follow-up question for one
+    scored requirement.
 
-    The requirement has already been scored 0 by the chunk matcher — this function
-    only generates the question; it does not re-score or validate the gap.
+    mode="gap"     — requirement scored 0; asks for gap-filling experience evidence.
+    mode="partial" — requirement scored 1; asks for a path-to-strong clarification.
+
+    The prompt templates differ between modes; everything else is identical.
     """
+    sys_prompt = prompt.SYSTEM if mode == "gap" else prompt.PARTIAL_SYSTEM
+    user_template = prompt.USER_TEMPLATE if mode == "gap" else prompt.PARTIAL_USER_TEMPLATE
 
     def _validate(r: GapQuestion) -> None:
         if not r.question_for_candidate.strip():
@@ -225,10 +222,10 @@ def _generate_gap_question(
         get_llm_client(),
         model=settings.llm_model,
         messages=[
-            {"role": "system", "content": prompt.SYSTEM},
+            {"role": "system", "content": sys_prompt},
             {
                 "role": "user",
-                "content": prompt.USER_TEMPLATE.format(
+                "content": user_template.format(
                     requirement=requirement,
                     match_rationale=match_rationale,
                     job_context=job_context,
@@ -239,43 +236,5 @@ def _generate_gap_question(
         response_model=GapQuestion,
         temperature=prompt.TEMPERATURE,
         validate_fn=_validate,
-    )
-
-
-def _generate_partial_question(
-    requirement: str,
-    match_rationale: str,
-    formatted_profile: str,
-    job_context: str,
-) -> GapQuestion:
-    """
-    Single-responsibility LLM call: given one partial-match requirement and the
-    candidate's profile, generate a targeted path-to-strong question.
-
-    The requirement has already been scored 1 by the chunk matcher — this function
-    only generates the question; it does not re-score.
-    """
-
-    def _validate(r: GapQuestion) -> None:
-        if not r.question_for_candidate.strip():
-            raise ValueError("question_for_candidate is empty")
-
-    return llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": prompt.PARTIAL_SYSTEM},
-            {
-                "role": "user",
-                "content": prompt.PARTIAL_USER_TEMPLATE.format(
-                    requirement=requirement,
-                    match_rationale=match_rationale,
-                    job_context=job_context,
-                    formatted_profile=formatted_profile,
-                ),
-            },
-        ],
-        response_model=GapQuestion,
-        temperature=prompt.TEMPERATURE,
-        validate_fn=_validate,
+        prompt_name=prompt.PROMPT_NAME if mode == "gap" else prompt.PARTIAL_PROMPT_NAME,
     )

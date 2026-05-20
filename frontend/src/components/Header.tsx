@@ -77,9 +77,11 @@ export function Header() {
           </button>
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-nav-menu"
+            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
             className="rounded-full p-2 text-text-tertiary hover:text-text-primary hover:bg-surface-overlay transition-colors"
           >
-            <span className="sr-only">Menu</span>
             {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
         </div>
@@ -87,7 +89,7 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="sm:hidden px-6 pb-3 pt-2 flex flex-col gap-1 border-t border-border-subtle animate-fade-in">
+        <div id="mobile-nav-menu" className="sm:hidden px-6 pb-3 pt-2 flex flex-col gap-1 border-t border-border-subtle animate-fade-in">
           {session ? (
             <>
               <button

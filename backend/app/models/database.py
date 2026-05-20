@@ -51,6 +51,14 @@ class User(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    @property
+    def candidate_name(self) -> str:
+        """Resolved display name for LLM prompts. Always returns a non-empty string."""
+        preferred = " ".join(
+            filter(None, [self.preferred_first_name, self.preferred_last_name])
+        ).strip()
+        return preferred or self.name or self.email
+
     experience: Mapped["Experience | None"] = relationship(
         "Experience", back_populates="user", uselist=False
     )
@@ -65,7 +73,7 @@ class Experience(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), unique=True
     )
-    s3_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
     filename: Mapped[str | None] = mapped_column(String, nullable=True)
     # status: pending | processing | ready | error
     status: Mapped[str] = mapped_column(String, default="pending")
@@ -118,6 +126,9 @@ class Tailoring(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"))
     generated_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured letter content — populated alongside generated_output on every generation.
+    # Null for tailorings created before this column was added (fall back to generated_output).
+    letter_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     # generation lifecycle: pending | generating | ready | error
     generation_status: Mapped[str] = mapped_column(String, default="ready", server_default="ready")
@@ -205,12 +216,12 @@ class LlmTriggerLog(Base):
 
 class TailoringDebugLog(Base):
     """
-    One row per notable generation event. Level 3 scaffolding — table exists, nothing writes yet.
+    One row per notable generation event. Written via _write_debug_log() in tailorings.py.
 
     Intended use: per-batch chunk matching results, token counts, latency per pipeline step,
     validation retry counts. Provides the raw signal the eval pipeline will aggregate.
 
-    event_type values (planned): 'chunk_batch' | 'generation_complete' | 'validation_retry' | 'error'
+    event_type values: 'generation_complete' | (planned) 'chunk_batch' | 'validation_retry' | 'error'
     """
 
     __tablename__ = "tailoring_debug_logs"

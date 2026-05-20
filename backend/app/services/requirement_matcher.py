@@ -1,13 +1,13 @@
-import logging
+import structlog
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import requirement_matching as prompt
 from app.schemas.matching import RequirementMatchList
-from app.services.tailoring_generator import _format_sourced_profile
+from app.services.profile_formatter import format_sourced_profile
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def match_requirements(
@@ -30,7 +30,7 @@ def match_requirements(
         lines.append(f"[PREFERRED] {req}")
     requirements_block = "\n".join(lines)
 
-    formatted_profile = _format_sourced_profile(extracted_profile, pronouns=pronouns)
+    formatted_profile = format_sourced_profile(extracted_profile, pronouns=pronouns)
 
     def _validate(r: RequirementMatchList) -> None:
         if not r.matches:
@@ -52,6 +52,7 @@ def match_requirements(
         response_model=RequirementMatchList,
         temperature=prompt.TEMPERATURE,
         validate_fn=_validate,
+        prompt_name=prompt.PROMPT_NAME,
     )
 
     matches = [m.model_dump() for m in result.matches if m.score >= 1]

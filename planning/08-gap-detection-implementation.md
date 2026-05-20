@@ -331,3 +331,40 @@ Use a native `<details>` / `<summary>` for the collapsible — no JS needed, con
 | Showing updated chunk score in the UI immediately after answer | Fire-and-forget background task; polling is unnecessary complexity at this stage |
 | Gap analysis for regenerated tailorings | Gaps are re-run in `_finalize_tailoring` which runs on both create and regen — already covered |
 | Deleting answered gaps from the list | Answered gaps stay visible; the "Saved" confirmation communicates success |
+
+---
+
+## TODO — Gap enrichment loop UX review
+
+The following scenarios need a design pass before we can consider the gap enrichment
+loop complete. None of these require implementation work yet — just a review and
+decision on the right UX for each case.
+
+### Score transition scenarios
+
+For each possible transition, we need to decide: what does the UI say and show?
+
+| Transition | Current behavior | Questions |
+|------------|-----------------|-----------|
+| gap → strong | ? | Do we acknowledge the improvement explicitly ("Nice, that closed the gap!")? |
+| gap → partial | ? | Do we show the gap QA card below the new partial question card? |
+| gap → gap | ? | Do we acknowledge that the answer wasn't enough ("We couldn't verify that yet — try being more specific")? |
+| partial → strong | ? | Do we show the path-to-strong QA card below the strong match as an artifact? |
+| partial → partial | ? | Do we acknowledge score didn't change ("Score didn't move — try adding a more concrete example")? |
+| partial → gap (edge case) | ? | Is this possible? If so, how do we handle it without making the user feel penalized? |
+
+### Artifact rendering after score improvement
+
+When an answer improves the score, should the old QA card remain visible as an artifact?
+- **gap → strong**: show gap question + answer below the strong match card?
+- **gap → partial**: show gap QA card below the new path-to-strong card?
+- **partial → strong**: show partial QA card below the strong match card?
+
+This affects both the tailoring analysis view and any future tailoring letter sections
+that reference gap responses.
+
+### Messaging tone
+
+Per the candidate advocacy principle: all messaging around score transitions must be
+encouraging and specific, never vague or deflating. Even gap→gap should feel like
+useful guidance, not a failure state.

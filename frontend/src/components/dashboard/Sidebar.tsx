@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, tailoringLabel } from '@/lib/utils';
 import type { TailoringListItem } from '@/types';
 
 /* ─── Icons ──────────────────────────────────────────────────────────────── */
@@ -135,6 +135,7 @@ function SearchBar({
     return (
       <button
         type="button"
+        aria-label="Search tailorings"
         onClick={onExpand}
         className="flex items-center h-8 w-full px-2 rounded-[10px] border border-transparent bg-black/5 dark:bg-white/5 hover:bg-black/[0.07] dark:hover:bg-white/[0.07] transition-colors text-text-tertiary"
       >
@@ -145,10 +146,11 @@ function SearchBar({
 
   return (
     <div className="flex items-center h-8 px-2 gap-2 rounded-[10px] border border-transparent bg-black/5 dark:bg-white/5 focus-within:bg-black/[0.07] dark:focus-within:bg-white/[0.07] transition-colors">
-      <IconSearch className="size-[18px] shrink-0 text-text-tertiary" />
+      <IconSearch className="size-[18px] shrink-0 text-text-tertiary" aria-hidden="true" />
       <input
         ref={inputRef}
         type="text"
+        aria-label="Search tailorings"
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={(e) => e.key === 'Escape' && onQueryChange('')}
@@ -160,14 +162,6 @@ function SearchBar({
 }
 
 /* ─── Tailoring list item ────────────────────────────────────────────────── */
-
-function tailoringLabel(t: TailoringListItem): string {
-  if (t.title) return t.title;
-  if (t.job_url) {
-    try { return new URL(t.job_url).hostname.replace(/^www\./, ''); } catch {}
-  }
-  return 'Untitled';
-}
 
 function SpinningLoader({ className }: { className?: string }) {
   return <Loader2 className={cn(className, 'animate-spin')} />;
@@ -284,6 +278,7 @@ function AccountPopover({ collapsed, isMock }: { collapsed: boolean; isMock?: bo
         <button
           type="button"
           className={cn(navItemBase, navItemInactive, 'justify-between')}
+          aria-label="Account menu"
           title={collapsed ? 'Account' : undefined}
         >
           <div className="flex items-center gap-2">
@@ -448,6 +443,7 @@ export function Sidebar({
   return (
     <>
       <aside
+        aria-label="Navigation"
         className={cn(
           'flex flex-col bg-surface-base border-r border-border-subtle transition-[width] duration-200 overflow-hidden shrink-0',
           isCollapsed ? 'w-[60px]' : 'w-[240px]',
@@ -491,7 +487,7 @@ export function Sidebar({
           <div className="flex flex-col gap-3.5 px-3 pt-3 shrink-0">
 
             {/* Primary nav */}
-            <nav className="flex flex-col gap-0.5">
+            <nav aria-label="Primary" className="flex flex-col gap-0.5">
               <NavItem icon={IconHome}   label="Home"          href={basePath}                    active={activeItem === 'Home'}          collapsed={isCollapsed} />
               <NavItem icon={IconEditor} label="My Experience" href={`${basePath}/experience`}     active={activeItem === 'My Experience'} collapsed={isCollapsed} />
               <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href={`${basePath}/profile`} active={activeItem === 'My Profile'} collapsed={isCollapsed} />
@@ -550,10 +546,11 @@ export function Sidebar({
                         <button
                           type="button"
                           onClick={handleExpand}
+                          aria-label="Show all tailorings"
                           title="Show all tailorings"
                           className="flex items-center justify-center h-8 w-full rounded-[10px] border border-transparent text-text-disabled hover:bg-black/5 dark:hover:bg-white/5 hover:text-text-secondary transition-colors"
                         >
-                          <span className="text-sm leading-none tracking-widest">···</span>
+                          <span aria-hidden="true" className="text-sm leading-none tracking-widest">···</span>
                         </button>
                       )}
                     </>
@@ -591,10 +588,11 @@ export function Sidebar({
               type="button"
               onClick={() => isCollapsed ? handleExpand() : setCollapsed(true)}
               className={cn(navItemBase, navItemInactive)}
+              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               title={isCollapsed ? 'Expand' : 'Collapse'}
             >
-              <IconCollapse className="size-[18px] shrink-0" />
-              {!isCollapsed && <span>Collapse</span>}
+              <IconCollapse className="size-[18px] shrink-0" aria-hidden="true" />
+              {!isCollapsed && <span aria-hidden="true">Collapse</span>}
             </button>
           </div>
 

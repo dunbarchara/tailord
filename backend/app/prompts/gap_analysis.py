@@ -1,3 +1,6 @@
+PROMPT_NAME = "gap_question"
+PARTIAL_PROMPT_NAME = "partial_match_question"
+
 TEMPERATURE = 0.3
 
 SYSTEM = """

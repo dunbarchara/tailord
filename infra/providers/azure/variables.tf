@@ -81,3 +81,8 @@ variable "github_app_installation_id_staging" {
   description = "Installation ID for the Tailord staging GitHub App"
   type        = string
 }
+
+variable "alert_email" {
+  description = "Email address for operational alert notifications"
+  type        = string
+}

@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
-import type { ChunksResponse, JobChunk } from '@/types'
+import type { ChunksResponse, JobChunk, LetterContent } from '@/types'
 import { PublicTailoringView } from './PublicTailoringView'
 import { TailoringHeader } from '@/components/dashboard/TailoringHeader'
 
@@ -13,6 +13,7 @@ interface PublicTailoring {
   company: string | null
   job_url: string | null
   generated_output: string
+  letter_content?: LetterContent | null
   letter_public: boolean
   posting_public: boolean
   chunks?: JobChunk[]
@@ -114,6 +115,7 @@ export default async function PublicTailoringPage({
           letterPublic={tailoring.letter_public}
           postingPublic={tailoring.posting_public}
           generatedOutput={tailoring.generated_output}
+          letterContent={tailoring.letter_content}
           chunksData={chunksData}
           title={tailoring.title}
           company={tailoring.company}

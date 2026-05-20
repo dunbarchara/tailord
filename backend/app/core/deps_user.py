@@ -1,7 +1,8 @@
-import logging
 import re
 import unicodedata
 
+import structlog
+import structlog.contextvars
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.deps_database import get_db
 from app.models.database import User
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _slugify(name: str) -> str:
@@ -57,16 +58,9 @@ def get_current_user(
             )
             user.username_slug = _generate_username_slug(display_name, db)
         db.commit()
-        logger.debug(
-            "get_current_user: found user_id=%s email=%s status=%s",
-            user.id,
-            user.email,
-            user.status,
-        )
+        db.refresh(user)
     else:
-        logger.info(
-            "get_current_user: creating new user google_sub=%s email=%s", x_user_id, x_user_email
-        )
+        logger.info("user_created", email=x_user_email)
         user = User(
             google_sub=x_user_id,
             email=x_user_email or x_user_id,
@@ -80,33 +74,44 @@ def get_current_user(
             # Another concurrent request inserted the same google_sub — re-query and continue.
             db.rollback()
             user = db.query(User).filter(User.google_sub == x_user_id).first()
+            structlog.contextvars.bind_contextvars(user_id=str(user.id))
             return user
         display_name = x_user_name
         user.username_slug = _generate_username_slug(display_name, db)
         db.commit()
         db.refresh(user)
-        logger.info("get_current_user: created user_id=%s slug=%s", user.id, user.username_slug)
+
     return user
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
+async def require_admin(user: User = Depends(get_current_user)) -> User:
     """
     Extends get_current_user with an admin gate.
     Raises 403 if the user does not have is_admin=True in the DB.
     Always reads from the DB — never trusts client-supplied claims.
+
+    Async so that bind_contextvars runs in the event loop context and is
+    visible to subsequent log calls — sync dependencies run in a thread pool
+    and their context mutations do not propagate back.
     """
+    structlog.contextvars.bind_contextvars(user_id=str(user.id))
     if not user.is_admin:
-        logger.warning("require_admin: rejected user_id=%s email=%s", user.id, user.email)
+        logger.warning("require_admin_rejected")
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
 
-def require_approved_user(user: User = Depends(get_current_user)) -> User:
+async def require_approved_user(user: User = Depends(get_current_user)) -> User:
     """
     Extends get_current_user with an approval gate.
     Raises 403 if the user's status is not 'approved'.
+
+    Async so that bind_contextvars runs in the event loop context and is
+    visible to subsequent log calls — sync dependencies run in a thread pool
+    and their context mutations do not propagate back.
     """
+    structlog.contextvars.bind_contextvars(user_id=str(user.id))
     if user.status != "approved":
-        logger.warning("require_approved_user: rejected user_id=%s status=%s", user.id, user.status)
+        logger.warning("require_approved_user_rejected", status=user.status)
         raise HTTPException(status_code=403, detail="Account pending approval")
     return user

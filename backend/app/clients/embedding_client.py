@@ -19,20 +19,14 @@ Leave LLM_API_KEY unset — LM Studio does not need a real key. This way your
 Azure Foundry / production key never leaves its intended endpoint.
 """
 
-import logging
-
+import structlog
 from openai import OpenAI
 
-from app.config import settings
+from app.config import settings, use_managed_identity
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 EMBEDDING_TIMEOUT_SECONDS = 30
-
-
-def _use_managed_identity() -> bool:
-    """True in staging/production when no explicit API key is configured."""
-    return settings.environment in ("staging", "production") and not settings.llm_api_key
 
 
 def get_embedding_client() -> OpenAI:
@@ -54,7 +48,7 @@ def get_embedding_client() -> OpenAI:
     else:
         base_url = settings.llm_base_url  # same endpoint as LLM (Azure AI Foundry)
 
-    if _use_managed_identity():
+    if use_managed_identity():
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         token_provider = get_bearer_token_provider(
