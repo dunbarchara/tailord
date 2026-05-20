@@ -242,40 +242,6 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "generation_failure_sp
   action { action_groups = [azurerm_monitor_action_group.ops_email.id] }
 }
 
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "p95_latency_degradation" {
-  name                = "${var.project_name}-p95-latency-degradation"
-  resource_group_name = azurerm_resource_group.tailord.name
-  location            = azurerm_resource_group.tailord.location
-  scopes              = [azurerm_log_analytics_workspace.tailord.id]
-  evaluation_frequency = "PT5M"
-  window_duration      = "PT15M"
-  severity             = 2
-  description          = "P95 request latency above 5000 ms"
-
-  criteria {
-    query = <<-QUERY
-      ContainerAppConsoleLogs_CL
-      | where TimeGenerated > ago(15m)
-      | where ContainerAppName_s contains "backend-prod"
-      | extend p = parse_json(Log_s)
-      | where tostring(p.event) == "request_complete"
-      | extend duration_ms = toint(p.duration_ms)
-      | where isnotnull(duration_ms)
-      | summarize p95 = percentile(duration_ms, 95)
-      | where p95 > 5000
-    QUERY
-    time_aggregation_method = "Count"
-    threshold               = 0
-    operator                = "GreaterThan"
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 1
-      number_of_evaluation_periods             = 1
-    }
-  }
-
-  action { action_groups = [azurerm_monitor_action_group.ops_email.id] }
-}
-
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "log_analytics_quota" {
   name                = "${var.project_name}-log-analytics-quota"
   resource_group_name = azurerm_resource_group.tailord.name
