@@ -330,3 +330,13 @@ Routes to add:
 ```
 
 Items 1–4 and 10 are safe to batch into a single PR. Items 5–8 can follow in a second PR. Item 9 warrants its own PR.
+
+---
+
+## TODO — My Experience: always-visible section shells
+
+Consider always rendering all experience section shells (Resume, GitHub, Additional
+Experience, Inferred Profile) with empty states and descriptions even when unpopulated.
+This lets users understand the full surface area of the platform on a single page scan
+without having to interact with anything. Each shell's empty state should describe
+what kinds of experience claims that section produces.

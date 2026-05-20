@@ -127,6 +127,7 @@ export function ExperienceManager({
   initialChunks?: ExperienceChunksResponse;
 } = {}) {
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
+  const [hasProfileData, setHasProfileData] = useState(false);
   const [githubUrl, setGithubUrl] = useState('');
   const [githubState, setGithubState] = useState<GithubState>('idle');
   const [githubError, setGithubError] = useState<string | null>(null);
@@ -188,6 +189,9 @@ export function ExperienceManager({
     };
     setProfileFields(fields);
     setProfileFieldsInitial(fields);
+    if (record.extracted_profile && Object.keys(record.extracted_profile).length > 0) {
+      setHasProfileData(true);
+    }
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -705,7 +709,7 @@ export function ExperienceManager({
           </div>
 
           {/* Inferred Profile Signals */}
-          {uploadState.phase === 'ready' && (
+          {(uploadState.phase === 'ready' || hasProfileData) && (
             <div className="mt-8 pb-8 border-b border-zinc-950/5 dark:border-white/5">
               <button
                 type="button"

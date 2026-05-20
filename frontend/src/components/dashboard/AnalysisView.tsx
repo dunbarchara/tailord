@@ -51,7 +51,8 @@ interface ChunkContextPanelProps {
   answeredChunk?: ExperienceChunk | null;
   partialQuestion?: { question: string; context: string } | null;
   partialAnsweredChunk?: ExperienceChunk | null;
-  onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null, partialQuestion?: string | null, partialContext?: string | null) => void;
+  persistedPartialAnswer?: string | null;
+  onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null, partialQuestion?: string | null, partialContext?: string | null, answerText?: string) => void;
   readOnly?: boolean;
 }
 
@@ -334,7 +335,7 @@ function ExpandableText({ text, textClassName }: { text: string; textClassName?:
 
 /* ─── Chunk context panel ────────────────────────────────────────────────── */
 
-function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, partialQuestion, partialAnsweredChunk, onScoreChange, readOnly }: ChunkContextPanelProps) {
+function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, partialQuestion, partialAnsweredChunk, persistedPartialAnswer, onScoreChange, readOnly }: ChunkContextPanelProps) {
   const [rescoring, setRescoring] = useState(false);
   const [rescoreMsg, setRescoreMsg] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -544,7 +545,7 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
               onSuccess={() => {}}
             />
           ) : partialQuestion && tailoringId ? (
-            (partialAnsweredChunk || justPartialAnswered) && !isEditingPartial ? (
+            (partialAnsweredChunk || justPartialAnswered || !!persistedPartialAnswer) && !isEditingPartial ? (
               <div className="rounded-lg border border-border-subtle bg-surface-base px-3 py-2.5 space-y-1.5">
                 <p className="text-xs font-medium text-success flex items-center gap-1.5">
                   <CheckCircle2 className="h-3 w-3 shrink-0" />
@@ -556,7 +557,7 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                   </p>
                 )}
                 <p className="text-sm text-text-secondary leading-relaxed">
-                  {localPartialAnswer ?? partialAnsweredChunk?.content ?? ''}
+                  {localPartialAnswer ?? persistedPartialAnswer ?? partialAnsweredChunk?.content ?? ''}
                 </p>
                 <button
                   type="button"
@@ -573,9 +574,9 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                 question={partialQuestion.question}
                 context={partialQuestion.context}
                 responseType="partial"
-                initialValue={isEditingPartial ? (localPartialAnswer ?? partialAnsweredChunk?.content ?? '') : undefined}
+                initialValue={isEditingPartial ? (localPartialAnswer ?? persistedPartialAnswer ?? partialAnsweredChunk?.content ?? '') : undefined}
                 onSuccess={(score, rationale, blurb, text) => {
-                  onScoreChange(chunk.id, score, rationale, blurb);
+                  onScoreChange(chunk.id, score, rationale, blurb, undefined, undefined, text);
                   setLocalPartialAnswer(text);
                   setJustPartialAnswered(true);
                   setIsEditingPartial(false);
@@ -724,6 +725,7 @@ export function AnalysisView({
   const [inlinePartialQuestions, setInlinePartialQuestions] = useState<
     Map<string, { question: string; context: string }>
   >(new Map());
+  const [localPartialAnswers, setLocalPartialAnswers] = useState<Map<string, string>>(new Map());
 
   const localChunks = useMemo(() => {
     const chunks = data?.chunks ?? [];
@@ -795,6 +797,7 @@ export function AnalysisView({
     blurb?: string | null,
     partialQuestion?: string | null,
     partialContext?: string | null,
+    answerText?: string,
   ) {
     setScoreOverrides(prev =>
       new Map(prev).set(chunkId, { match_score: score, match_rationale: rationale, advocacy_blurb: blurb }),
@@ -803,6 +806,9 @@ export function AnalysisView({
       setInlinePartialQuestions(prev =>
         new Map(prev).set(chunkId, { question: partialQuestion, context: partialContext ?? '' }),
       );
+    }
+    if (answerText) {
+      setLocalPartialAnswers(prev => new Map(prev).set(chunkId, answerText));
     }
   }
 
@@ -862,12 +868,14 @@ export function AnalysisView({
             />
           ) : selectedChunk ? (
             <ChunkContextPanel
+              key={selectedChunk.id}
               chunk={selectedChunk}
               tailoringId={tailoringId}
               gapQuestion={gapByChunkId.get(selectedChunk.id) ?? null}
               answeredChunk={answeredByChunkId.get(selectedChunk.id) ?? null}
               partialQuestion={inlinePartialQuestions.get(selectedChunk.id) ?? partialByChunkId.get(selectedChunk.id) ?? null}
               partialAnsweredChunk={partialAnsweredByChunkId.get(selectedChunk.id) ?? null}
+              persistedPartialAnswer={localPartialAnswers.get(selectedChunk.id) ?? null}
               onScoreChange={handleScoreChange}
               readOnly={readOnly}
             />
