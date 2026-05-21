@@ -1,6 +1,6 @@
 {
-  "uid": "tailord-tailoring-pipeline",
-  "title": "Tailoring Pipeline",
+  "uid": "tailord-tailoring-pipeline-prod",
+  "title": "Tailoring Pipeline (Prod)",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
@@ -12,11 +12,11 @@
       "title": "Generation Rate by Status",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(tailoring_generations_total[5m])) by (status)",
+          "expr": "sum(rate(tailoring_generations_total{environment=\"production\"}[5m])) by (status)",
           "legendFormat": "{{status}}"
         }
       ],
@@ -30,11 +30,11 @@
       "title": "Success Rate % (1h)",
       "type": "stat",
       "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(rate(tailoring_generations_total{status=\"success\"}[1h])) / sum(rate(tailoring_generations_total[1h]))",
+          "expr": "100 * sum(rate(tailoring_generations_total{status=\"success\",environment=\"production\"}[1h])) / sum(rate(tailoring_generations_total{environment=\"production\"}[1h]))",
           "legendFormat": "Success %"
         }
       ],
@@ -59,11 +59,11 @@
       "title": "Total Generation P95 (1h)",
       "type": "stat",
       "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(tailoring_generation_duration_ms_bucket[1h])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(tailoring_generation_duration_ms_bucket{environment=\"production\"}[1h])) by (le))",
           "legendFormat": "P95 ms"
         }
       ],
@@ -88,11 +88,11 @@
       "title": "Phase P95 Durations",
       "type": "bargauge",
       "gridPos": { "x": 12, "y": 4, "w": 12, "h": 4 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(tailoring_phase_duration_ms_bucket[5m])) by (le, phase))",
+          "expr": "histogram_quantile(0.95, sum(rate(tailoring_phase_duration_ms_bucket{environment=\"production\"}[5m])) by (le, phase))",
           "legendFormat": "{{phase}}"
         }
       ],
@@ -107,11 +107,11 @@
       "title": "Matching Mode Distribution (24h)",
       "type": "piechart",
       "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(tailoring_generations_total[24h])) by (matching_mode)",
+          "expr": "sum(increase(tailoring_generations_total{environment=\"production\"}[24h])) by (matching_mode)",
           "legendFormat": "{{matching_mode}}"
         }
       ],
@@ -122,11 +122,11 @@
       "title": "Experience Processing Rate",
       "type": "timeseries",
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(experience_processing_total[5m])) by (status)",
+          "expr": "sum(rate(experience_processing_total{environment=\"production\"}[5m])) by (status)",
           "legendFormat": "{{status}}"
         }
       ],

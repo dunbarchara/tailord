@@ -1,6 +1,6 @@
 {
-  "uid": "tailord-user-activity",
-  "title": "User Activity",
+  "uid": "tailord-user-activity-prod",
+  "title": "User Activity (Prod)",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "5m",
@@ -12,7 +12,7 @@
       "title": "Total Users",
       "type": "stat",
       "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
       "targets": [
         {
           "refId": "A",
@@ -31,7 +31,7 @@
       "title": "Approved Users",
       "type": "stat",
       "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
       "targets": [
         {
           "refId": "A",
@@ -50,7 +50,7 @@
       "title": "Experience Success Rate (7d)",
       "type": "stat",
       "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
       "targets": [
         {
           "refId": "A",
@@ -79,7 +79,7 @@
       "title": "Generation Status Distribution",
       "type": "bargauge",
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 4 },
-      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
       "targets": [
         {
           "refId": "A",
@@ -98,7 +98,7 @@
       "title": "Tailorings per Day (30d)",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 4, "w": 12, "h": 9 },
-      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
       "targets": [
         {
           "refId": "A",
@@ -116,7 +116,7 @@
       "title": "Active Users per Day (30d)",
       "type": "timeseries",
       "gridPos": { "x": 12, "y": 4, "w": 12, "h": 9 },
-      "datasource": { "uid": "postgres-local", "type": "postgres" },
+      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
       "targets": [
         {
           "refId": "A",

@@ -424,6 +424,53 @@ local development where the admin page is not needed.
 
 ---
 
+## 8. Grafana setup (run once after first deploy)
+
+Dashboards are deployed automatically by CI on every merge to main. Two one-time manual steps
+are required before the first deploy runs successfully.
+
+### 8a. Create a service account token
+
+1. Open the Grafana instance in Azure portal → **Launch workspace**
+2. Navigate to **Administration → Service Accounts → Add service account**
+3. Name: `github-actions`, Role: **Admin**
+4. Click **Add service account token** → copy the token value
+5. Add two secrets to the **`production-azure`** GitHub environment:
+
+| Secret | Value |
+|--------|-------|
+| `GRAFANA_SA_TOKEN` | Token value from above |
+| `GRAFANA_URL` | Grafana endpoint (e.g. `https://tailord-grafana-xxxx.canadacentral.grafana.azure.com`) |
+
+The Grafana URL is visible in the Azure portal on the Azure Managed Grafana resource overview page.
+
+### 8b. Configure PostgreSQL datasources (manual — DB credentials must not flow through CI)
+
+This Grafana instance monitors both prod and staging. Add two separate datasources.
+
+The CI deploy script selects the prod datasource by name (`tailord-postgres-prod`), so the
+name must match exactly. The staging datasource name is for your reference only.
+
+**Production** — In Grafana → **Connections → Add new connection → PostgreSQL**:
+- **Name**: `tailord-postgres-prod`
+- **Host**: `tailord-pg.postgres.database.azure.com:5432`
+- **Database**: `tailord_prod`
+- **User / Password**: retrieve `prod-database-url` from Key Vault and parse out the credentials
+- **TLS/SSL mode**: require
+
+**Staging** — repeat the above with:
+- **Name**: `tailord-postgres-staging`
+- **Database**: `tailord_staging`
+- **User / Password**: retrieve `staging-database-url` from Key Vault
+
+Click **Save & test** on each — confirm both connections succeed.
+
+Dashboards 04 (Per-Tailoring Debug) and 05 (User Activity) use the prod datasource.
+The Azure Monitor and Managed Prometheus datasources are provisioned automatically by Azure
+and will already appear in Grafana; you do not need to configure them manually.
+
+---
+
 ## Infrastructure isolation reference
 
 What is shared between prod and staging, and what is fully isolated:

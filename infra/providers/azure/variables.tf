@@ -86,3 +86,9 @@ variable "alert_email" {
   description = "Email address for operational alert notifications"
   type        = string
 }
+
+variable "grafana_admin_object_id" {
+  description = "Azure AD object ID of the Grafana admin user (az ad signed-in-user show --query id -o tsv)"
+  sensitive   = true
+  type        = string
+}
