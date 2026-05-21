@@ -1,6 +1,6 @@
 {
-  "uid": "tailord-llm-observability",
-  "title": "LLM Observability",
+  "uid": "tailord-llm-observability-prod",
+  "title": "LLM Observability (Prod)",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
@@ -12,11 +12,11 @@
       "title": "LLM Call Rate",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(llm_call_duration_ms_count[5m])) by (model, prompt_type)",
+          "expr": "sum(rate(llm_call_duration_ms_count{environment=\"production\"}[5m])) by (model, prompt_type)",
           "legendFormat": "{{model}} / {{prompt_type}}"
         }
       ],
@@ -30,11 +30,11 @@
       "title": "Model Distribution (24h)",
       "type": "piechart",
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(llm_call_duration_ms_count[24h])) by (model)",
+          "expr": "sum(increase(llm_call_duration_ms_count{environment=\"production\"}[24h])) by (model)",
           "legendFormat": "{{model}}"
         }
       ],
@@ -45,11 +45,11 @@
       "title": "P50 Latency by Prompt Type",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.50, sum(rate(llm_call_duration_ms_bucket[5m])) by (le, prompt_type))",
+          "expr": "histogram_quantile(0.50, sum(rate(llm_call_duration_ms_bucket{environment=\"production\"}[5m])) by (le, prompt_type))",
           "legendFormat": "p50 {{prompt_type}}"
         }
       ],
@@ -63,11 +63,11 @@
       "title": "P95 Latency by Prompt Type",
       "type": "timeseries",
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(llm_call_duration_ms_bucket[5m])) by (le, prompt_type))",
+          "expr": "histogram_quantile(0.95, sum(rate(llm_call_duration_ms_bucket{environment=\"production\"}[5m])) by (le, prompt_type))",
           "legendFormat": "p95 {{prompt_type}}"
         }
       ],
@@ -81,11 +81,11 @@
       "title": "Input Tokens/s",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 16, "w": 8, "h": 7 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(llm_tokens_total{direction=\"input\"}[5m])) by (prompt_type)",
+          "expr": "sum(rate(llm_tokens_total{direction=\"input\",environment=\"production\"}[5m])) by (prompt_type)",
           "legendFormat": "{{prompt_type}}"
         }
       ],
@@ -99,11 +99,11 @@
       "title": "Output Tokens/s",
       "type": "timeseries",
       "gridPos": { "x": 8, "y": 16, "w": 8, "h": 7 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(llm_tokens_total{direction=\"output\"}[5m])) by (prompt_type)",
+          "expr": "sum(rate(llm_tokens_total{direction=\"output\",environment=\"production\"}[5m])) by (prompt_type)",
           "legendFormat": "{{prompt_type}}"
         }
       ],
@@ -117,11 +117,11 @@
       "title": "LLM Error Rate",
       "type": "timeseries",
       "gridPos": { "x": 16, "y": 16, "w": 8, "h": 7 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(llm_errors_total[5m])) by (error_type)",
+          "expr": "sum(rate(llm_errors_total{environment=\"production\"}[5m])) by (error_type)",
           "legendFormat": "{{error_type}}"
         }
       ],
@@ -135,11 +135,11 @@
       "title": "LLM Retry Rate",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 23, "w": 12, "h": 7 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(llm_retries_total[5m])) by (prompt_type)",
+          "expr": "sum(rate(llm_retries_total{environment=\"production\"}[5m])) by (prompt_type)",
           "legendFormat": "{{prompt_type}}"
         }
       ],

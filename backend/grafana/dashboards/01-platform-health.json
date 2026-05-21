@@ -1,6 +1,6 @@
 {
-  "uid": "tailord-platform-health",
-  "title": "Platform Health",
+  "uid": "tailord-platform-health-prod",
+  "title": "Platform Health (Prod)",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
@@ -12,11 +12,11 @@
       "title": "Request Rate by Endpoint",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_requests_total[5m])) by (endpoint)",
+          "expr": "sum(rate(http_requests_total{environment=\"production\"}[5m])) by (endpoint)",
           "legendFormat": "{{endpoint}}"
         }
       ],
@@ -30,11 +30,11 @@
       "title": "HTTP Error Rate %",
       "type": "stat",
       "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(rate(http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))",
+          "expr": "100 * sum(rate(http_requests_total{status_code=~\"5..\",environment=\"production\"}[5m])) / sum(rate(http_requests_total{environment=\"production\"}[5m]))",
           "legendFormat": "Error Rate %"
         }
       ],
@@ -59,11 +59,11 @@
       "title": "P50 Latency",
       "type": "stat",
       "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_ms_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_ms_bucket{environment=\"production\"}[5m])) by (le))",
           "legendFormat": "P50 ms"
         }
       ],
@@ -78,11 +78,11 @@
       "title": "Active Generations",
       "type": "gauge",
       "gridPos": { "x": 12, "y": 4, "w": 6, "h": 4 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "tailoring_active_generations",
+          "expr": "tailoring_active_generations{environment=\"production\"}",
           "legendFormat": "Active"
         }
       ],
@@ -108,11 +108,11 @@
       "title": "P95 Latency by Endpoint",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_ms_bucket[5m])) by (le, endpoint))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_ms_bucket{environment=\"production\"}[5m])) by (le, endpoint))",
           "legendFormat": "p95 {{endpoint}}"
         }
       ],
@@ -126,11 +126,11 @@
       "title": "P95 Latency (Overall)",
       "type": "stat",
       "gridPos": { "x": 18, "y": 4, "w": 6, "h": 4 },
-      "datasource": { "uid": "prometheus-local", "type": "prometheus" },
+      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_ms_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_ms_bucket{environment=\"production\"}[5m])) by (le))",
           "legendFormat": "P95 ms"
         }
       ],
