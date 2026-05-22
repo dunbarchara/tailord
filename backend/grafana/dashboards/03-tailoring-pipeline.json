@@ -134,6 +134,48 @@
         "defaults": { "unit": "reqps" },
         "overrides": []
       }
+    },
+    {
+      "id": 7,
+      "title": "Job Scrape Failures by Type",
+      "description": "Log-based. Events: playwright_scrape_failed (bot protection / hard error), playwright_timeout, job_content_invalid (expired/removed listing or non-job page).",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 16, "h": 8 },
+      "datasource": { "uid": "__AZURE_MONITOR_UID__", "type": "grafana-azure-monitor-datasource" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppConsoleLogs_CL\n| where TimeGenerated > ago(1h)\n| where ContainerAppName_s == \"tailord-backend-prod\"\n| extend p = parse_json(Log_s)\n| where tostring(p.event) in (\"playwright_scrape_failed\", \"playwright_timeout\", \"job_content_invalid\")\n| summarize count() by bin(TimeGenerated, 5m), event=tostring(p.event)\n| order by TimeGenerated asc"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Scrape Failures (Time Range)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
+      "datasource": { "uid": "__AZURE_MONITOR_UID__", "type": "grafana-azure-monitor-datasource" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppConsoleLogs_CL\n| where TimeGenerated > ago(1h)\n| where ContainerAppName_s == \"tailord-backend-prod\"\n| extend p = parse_json(Log_s)\n| where tostring(p.event) in (\"playwright_scrape_failed\", \"playwright_timeout\", \"job_content_invalid\")\n| summarize count() by event=tostring(p.event)"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "orientation": "horizontal" }
     }
   ]
 }

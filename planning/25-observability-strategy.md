@@ -13,6 +13,10 @@
 | 3 | Dashboards (5), alert rules in Terraform | **Done** (Day 23) |
 | 4 | OpenTelemetry distributed tracing → Application Insights | **Done** (Day 23) |
 
+## Pending
+
+- [ ] Add `azurerm_monitor_scheduled_query_rules_alert_v2` in `monitoring.tf` for job scrape failure spikes. All three failure events (`playwright_scrape_failed`, `playwright_timeout`, `job_content_invalid`) are already logged with `url` — the alert just needs a KQL query over `ContainerAppConsoleLogs_CL` counting these events in a 15-minute window, firing when count exceeds a threshold (suggested: 5). A spike here likely means a major job board has started blocking the scraper and warrants investigation of the URLs in the logs.
+
 ### Layer 1 — What was built (Day 23)
 
 - **`backend/app/middleware/correlation.py`** — Pure-ASGI `CorrelationIdMiddleware`. Reads or generates `X-Correlation-Id` per request, calls `structlog.contextvars.clear_contextvars()` + `bind_contextvars(correlation_id=...)`, echoes header in response. Safe for SSE streaming.

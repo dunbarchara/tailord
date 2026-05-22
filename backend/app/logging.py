@@ -23,7 +23,7 @@ _shared_processors: list = [
     structlog.stdlib.add_log_level,
     _uppercase_level,
     structlog.stdlib.PositionalArgumentsFormatter(),
-    structlog.processors.TimeStamper(fmt="iso"),
+    structlog.processors.TimeStamper(fmt="iso", utc=True),
 ]
 
 

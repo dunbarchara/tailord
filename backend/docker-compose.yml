@@ -39,6 +39,9 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -51,21 +54,31 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
 
-  promtail:
-    image: grafana/promtail:3.4.2
+  alloy:
+    image: grafana/alloy:latest
+    ports:
+      - "12345:12345"  # Alloy UI / pipeline graph
+      - "4317:4317"    # OTLP gRPC (traces)
+      - "4318:4318"    # OTLP HTTP (traces)
     volumes:
-      - ./promtail.yml:/etc/promtail/config.yml:ro
-      - ./logs:/var/log/tailord:ro
-    command: -config.file=/etc/promtail/config.yml
+      - ./alloy.config:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - loki
+      - prometheus
+      - tempo
 
   tempo:
     image: grafana/tempo:2.7.2
     ports:
-      - "3200:3200"
-      - "4317:4317"
-      - "4318:4318"
+      - "3200:3200"    # Tempo HTTP API / query
     volumes:
       - ./tempo.yml:/etc/tempo.yaml:ro
     command: -config.file=/etc/tempo.yaml
@@ -90,3 +103,4 @@ volumes:
   postgres_data:
   azurite_data:
   loki_data:
+  alloy_data:

@@ -28,10 +28,30 @@ npm run lint
 
 **Backend** (from `backend/`):
 ```
-docker compose up -d                   # PostgreSQL :5432 + Azurite blob storage :10000 (required before anything else)
-uv run alembic upgrade head            # apply pending migrations
-uv run uvicorn app.main:app --reload   # FastAPI dev server on :8000
+docker compose up -d                                    # infra + full observability stack (required first)
+uv run alembic upgrade head                             # apply pending migrations
+uv run uvicorn app.main:app --reload                    # FastAPI dev server on :8000
+alloy run alloy-native.config --storage.path=/tmp/alloy-native-data  # log shipping (separate terminal)
 ```
+
+**Local observability** (all running after `docker compose up -d`):
+```
+Grafana      http://localhost:3001   dashboards (anon admin access)
+Prometheus   http://localhost:9090   metrics storage + query
+Loki         http://localhost:3100   log storage + query
+Tempo        http://localhost:3200   trace storage + query
+Alloy UI     http://localhost:12345  pipeline graph (metrics + traces)
+```
+
+Signal routing:
+- **Logs**: backend writes `logs/app.jsonl` → native Alloy (`alloy-native.config`) → Loki
+- **Metrics**: Docker Alloy scrapes `:8000/metrics` every 15s → remote_write → Prometheus
+- **Traces**: backend sends OTLP → Docker Alloy `:4317/4318` → Tempo
+- **Frontend**: stdout only (terminal) — no structured local observability; in production, Azure Container Apps captures stdout to Azure Monitor
+
+Why native Alloy for logs: inotify does not fire inside Docker containers on macOS bind mounts (even with VirtioFS). Native Alloy uses FSEvents and detects file changes correctly. Install once via `brew install grafana/grafana/alloy`.
+
+---
 
 **Quality checks** (from repo root — mirrors CI):
 ```

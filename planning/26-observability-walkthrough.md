@@ -107,7 +107,9 @@ couldn't correlate them with the HTTP request that triggered the generation.
 ### 1.5 The JSON sidecar file (`logs/app.jsonl`)
 
 `logging.py` configures a second log handler that writes every record as a JSON line to
-`logs/app.jsonl`. Promtail (Layer 3) tails this file and ships it to Loki.
+`logs/app.jsonl`. Native Alloy (`alloy-native.config`, running on macOS outside Docker) tails
+this file and ships it to Loki. Timestamps are emitted in UTC (`utc=True` on `TimeStamper`)
+so Loki's `creation_grace_period` window handles any clock skew without rejecting lines.
 
 ### 1.6 What to verify ✓
 
@@ -211,24 +213,28 @@ prompt_name — unbounded values).
 
 ---
 
-**Q: What did the `app.jsonl*` glob in Promtail cause on each rotation, and why does removing the glob fix it?**
+**Q: Why does log shipping run as a native process instead of inside Docker?**
 
-`RotatingFileHandler` works by renaming: when `app.jsonl` hits 5 MB, Python renames it
-to `app.jsonl.1` (shifting existing backups up), then opens a fresh `app.jsonl`. From
-that moment, `app.jsonl.1` is a new path that Promtail has never seen. Promtail tracks
-file positions by file path in `/tmp/positions.yaml`. Finding no entry for `app.jsonl.1`,
-it treats it as a newly created runtime file and starts reading from position 0 —
-re-shipping every line that was already shipped when the file was named `app.jsonl`.
-Those lines land in Loki a second time with identical timestamps. Loki does not
-deduplicate across ingestion windows, so both copies persist.
+On macOS, Docker Desktop mounts project directories into containers via VirtioFS. The Linux
+`inotify` API — which Promtail and Docker-based Alloy use to watch files — does not receive
+events for writes made to VirtioFS bind mounts from the host side. The log file (`logs/app.jsonl`)
+is written by the backend process running natively on macOS; Docker containers bind-mounting
+that directory never see the kernel-level `IN_MODIFY` events.
 
-Removing the glob — `__path__: /var/log/tailord/app.jsonl` — means Promtail never
-discovers the backup files. After a rotation it detects that `app.jsonl` is now shorter
-than its stored offset (the new file starts at 0 bytes), treats this as truncation,
-resets its position to 0, and begins reading the new file cleanly. A small window of
-lines written just before the rotation and not yet shipped by Promtail may be missed, but
-for local dev observability that is an acceptable trade-off. The backup files are local
-disk rollover only; Loki is the durable log store.
+The fix: run Alloy natively on macOS (`alloy-native.config`), where it uses `FSEvents`/`kqueue`
+and receives file-change notifications correctly. The Docker-based `alloy` service handles
+metrics and traces (which are pushed over TCP and don't rely on filesystem watching); native
+Alloy handles only log shipping.
+
+**Q: What did the `app.jsonl*` glob in Promtail cause on each rotation?** (historical)
+
+Before the switch to native Alloy, Promtail ran in Docker with a glob pattern.
+`RotatingFileHandler` works by renaming: when `app.jsonl` hits 5 MB, Python renames it to
+`app.jsonl.1`, then opens a fresh `app.jsonl`. Promtail tracked positions by file path, so
+finding no entry for `app.jsonl.1` it treated the renamed backup as a new file and re-shipped
+everything from position 0. This caused duplicate log lines in Loki on every rotation. The
+immediate fix was removing the glob (watch only `app.jsonl`); the permanent fix was moving to
+native Alloy which avoids the inotify issue entirely.
 
 ---
 
@@ -325,17 +331,23 @@ Together they form a complete local observability platform. All four run via Doc
 ### 3.2 Service map
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  docker-compose.yml                                      │
-│                                                          │
-│  postgres :5432          ← app database                  │
-│  azurite  :10000         ← blob storage (local Azure)    │
-│  prometheus :9090        ← scrapes /metrics every 15s   │
-│  loki :3100              ← log aggregation               │
-│  promtail                ← tails logs/app.jsonl → Loki   │
-│  tempo :4317/:4318/:3200 ← receives OTel traces          │
-│  grafana :3001           ← UI for all four signals       │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  docker-compose.yml                                              │
+│                                                                  │
+│  postgres    :5432           ← app database                      │
+│  azurite     :10000          ← blob storage (local Azure)        │
+│  prometheus  :9090           ← remote_write receiver + storage   │
+│  loki        :3100           ← log aggregation                   │
+│  alloy       :12345/:4317/:4318                                  │
+│                ← scrapes /metrics → Prometheus (remote_write)    │
+│                ← receives OTLP traces → Tempo                    │
+│  tempo       :3200           ← trace storage + query             │
+│  grafana     :3001           ← UI for all four signals           │
+└─────────────────────────────────────────────────────────────────┘
+
+Native Alloy (macOS host, alloy-native.config):
+  tails logs/app.jsonl → Loki
+  (runs outside Docker because inotify doesn't fire on macOS bind mounts)
 ```
 
 ### 3.3 Provisioning-as-code
@@ -361,17 +373,19 @@ docker compose up -d
 # Check all services are healthy
 docker compose ps
 
-# Watch Promtail picking up logs (optional)
-docker compose logs -f promtail
-
 # Start the backend (separate terminal)
 uv run uvicorn app.main:app --reload
+
+# Start native Alloy for log shipping (separate terminal, from backend/)
+# Install once: brew install grafana/grafana/alloy
+alloy run alloy-native.config --storage.path=/tmp/alloy-native-data
 ```
 
 Ports:
 - `http://localhost:3001` — Grafana (no login needed locally)
 - `http://localhost:9090` — Prometheus
 - `http://localhost:3100` — Loki (API only, use via Grafana)
+- `http://localhost:12345` — Alloy UI (pipeline graph for metrics + traces)
 - Tempo — no UI, accessed only through Grafana's Tempo datasource
 
 ### 3.5 What to verify ✓
@@ -385,8 +399,8 @@ Ports:
       — log lines should appear after you make requests.
 
 ### Questions to bring
-- What is Promtail doing exactly? Trace the path from a `logger.info(...)` call in Python
-  to a log line appearing in Loki.
+- Trace the path from a `logger.info(...)` call in Python to a log line appearing in Loki.
+  Which process ships the line? Why does it run outside Docker?
 - What would break if you changed the Grafana container name in docker-compose?
 
 ---
@@ -771,7 +785,9 @@ The workspace has a 0.5 GB/day cap (cost control). If it fires:
 1. Log Analytics → Usage and estimated costs → check which table is consuming the quota.
 2. Usually `ContainerAppConsoleLogs_CL` from verbose logging.
 3. Check if `LOG_LEVEL` was accidentally set to DEBUG in production (extremely verbose).
-4. Temporary fix: reduce the Promtail scrape interval or filter low-value log events.
+4. Temporary fix: filter low-value log events at the structlog level (raise the log level
+   threshold for noisy loggers in `logging.py`). In Azure, log shipping is handled by the
+   Container Apps platform — there is no Alloy/Promtail scrape interval to adjust.
 
 ---
 
@@ -787,6 +803,9 @@ The workspace has a 0.5 GB/day cap (cost control). If it fires:
 | LLM call spans | `backend/app/core/llm_utils.py` |
 | Frontend tracing | `frontend/src/instrumentation.ts` |
 | Docker Compose stack | `backend/docker-compose.yml` |
+| Docker Alloy config (metrics + traces) | `backend/alloy.config` |
+| Native Alloy config (log shipping) | `backend/alloy-native.config` |
+| Loki config | `backend/loki.yml` |
 | Grafana provisioning | `backend/grafana/provisioning/` |
 | Azure alerts + Application Insights | `infra/providers/azure/monitoring.tf` |
 
@@ -797,5 +816,6 @@ The workspace has a 0.5 GB/day cap (cost control). If it fires:
 | Grafana (all dashboards) | http://localhost:3001 |
 | Prometheus (raw metrics) | http://localhost:9090 |
 | Backend metrics endpoint | http://localhost:8000/metrics |
+| Alloy UI (pipeline graph) | http://localhost:12345 |
 | Loki API (via Grafana Explore) | http://localhost:3001/explore |
 | Tempo (via Grafana Explore) | http://localhost:3001/explore |
