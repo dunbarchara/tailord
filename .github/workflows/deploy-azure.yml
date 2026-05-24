@@ -436,7 +436,7 @@ jobs:
           -H "Content-Type: application/json" \
           -d '{"title": "Production", "uid": "tailord-prod"}' \
           "${{ secrets.GRAFANA_URL }}/api/folders")
-        if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 409 ]; then
+        if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 409 ] && [ "$HTTP_STATUS" -ne 412 ]; then
           echo "::error::Failed to create Production folder (HTTP $HTTP_STATUS)"
           exit 1
         fi
