@@ -3,15 +3,22 @@
   "title": "Per-Tailoring Debug (Prod)",
   "schemaVersion": 39,
   "version": 1,
+  "editable": true,
+  "timezone": "utc",
   "refresh": "10s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "tailoring_id",
         "label": "Tailoring ID",
         "type": "textbox",
-        "current": { "value": "" },
+        "current": {
+          "value": ""
+        },
         "hide": 0
       }
     ]
@@ -21,8 +28,16 @@
       "id": 1,
       "title": "Tailoring Metadata",
       "type": "table",
-      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -30,24 +45,47 @@
           "format": "table"
         }
       ],
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "options": { "footer": { "show": false } }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "footer": {
+          "show": false
+        }
+      }
     },
     {
       "id": 2,
       "title": "Log Timeline",
       "type": "logs",
-      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 12 },
-      "datasource": { "uid": "__AZURE_MONITOR_UID__", "type": "grafana-azure-monitor-datasource" },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 12
+      },
+      "datasource": {
+        "uid": "__AZURE_MONITOR_UID__",
+        "type": "grafana-azure-monitor-datasource"
+      },
       "targets": [
         {
           "refId": "A",
+          "datasource": {
+            "uid": "__AZURE_MONITOR_UID__",
+            "type": "grafana-azure-monitor-datasource"
+          },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
             "query": "ContainerAppConsoleLogs_CL\n| where TimeGenerated > ago(1h)\n| where ContainerAppName_s == \"tailord-backend-prod\"\n| extend p = parse_json(Log_s)\n| where tostring(p.tailoring_id) == \"$tailoring_id\"\n| project TimeGenerated, Log_s\n| order by TimeGenerated asc"
           }
         }
       ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
       "options": {
         "showTime": true,
         "showLabels": false,
@@ -59,8 +97,16 @@
       "id": 3,
       "title": "TailoringDebugLog Events",
       "type": "table",
-      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -68,8 +114,15 @@
           "format": "table"
         }
       ],
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "options": { "footer": { "show": false } }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "footer": {
+          "show": false
+        }
+      }
     }
   ]
 }

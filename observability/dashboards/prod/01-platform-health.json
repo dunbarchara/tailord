@@ -3,16 +3,31 @@
   "title": "Platform Health (Prod)",
   "schemaVersion": 39,
   "version": 1,
+  "editable": true,
+  "timezone": "utc",
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
-  "templating": { "list": [] },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,
       "title": "Request Rate by Endpoint",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -21,7 +36,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "reqps" },
+        "defaults": {
+          "unit": "reqps"
+        },
         "overrides": []
       }
     },
@@ -29,8 +46,16 @@
       "id": 2,
       "title": "HTTP Error Rate %",
       "type": "stat",
-      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -44,22 +69,45 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           }
         },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 3,
       "title": "P50 Latency",
       "type": "stat",
-      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -68,17 +116,33 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "ms" },
+        "defaults": {
+          "unit": "ms"
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 4,
       "title": "Active Generations",
       "type": "gauge",
-      "gridPos": { "x": 12, "y": 4, "w": 6, "h": 4 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -94,9 +158,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "red", "value": 8 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
             ]
           }
         },
@@ -107,8 +180,16 @@
       "id": 5,
       "title": "P95 Latency by Endpoint",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -117,7 +198,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "ms" },
+        "defaults": {
+          "unit": "ms"
+        },
         "overrides": []
       }
     },
@@ -125,8 +208,16 @@
       "id": 6,
       "title": "P95 Latency (Overall)",
       "type": "stat",
-      "gridPos": { "x": 18, "y": 4, "w": 6, "h": 4 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -140,15 +231,30 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 2000 },
-              { "color": "red", "value": 5000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2000
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
             ]
           }
         },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     }
   ]
 }

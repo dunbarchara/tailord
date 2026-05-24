@@ -113,6 +113,21 @@ uv run alembic upgrade head   # apply migrations (requires db container to be up
 uv run uvicorn app.main:app --reload   # http://localhost:8000
 ```
 
+```
+For native Alloy specifically, your dev flow should be four terminals:
+  # terminal 1 — infra
+  cd backend && docker compose up
+
+  # terminal 2 — log shipping
+  cd backend && alloy run alloy-native.config --storage.path=/tmp/alloy-native-data
+
+  # terminal 3 — backend
+  cd backend && uv run uvicorn app.main:app --reload
+
+  # terminal 4 — frontend
+  cd frontend && npm run dev
+```
+
 The `docker compose` stack starts two services: Postgres 16 and [Azurite](https://github.com/Azure/Azurite) (Azure Blob Storage emulator). A third `storage-init` container runs once on first start to create the `uploads` container and configure CORS. Local Azurite values for `.env`:
 
 ```bash

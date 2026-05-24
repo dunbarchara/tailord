@@ -7,6 +7,6 @@ providers:
     type: file
     disableDeletion: true
     updateIntervalSeconds: 30
-    allowUiUpdates: true   # set false after initial build to enforce JSON as source of truth
+    allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards

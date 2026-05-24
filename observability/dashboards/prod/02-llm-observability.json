@@ -3,16 +3,31 @@
   "title": "LLM Observability (Prod)",
   "schemaVersion": 39,
   "version": 1,
+  "editable": true,
+  "timezone": "utc",
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
-  "templating": { "list": [] },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,
       "title": "LLM Call Rate",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -21,7 +36,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "reqps" },
+        "defaults": {
+          "unit": "reqps"
+        },
         "overrides": []
       }
     },
@@ -29,8 +46,16 @@
       "id": 2,
       "title": "Model Distribution (24h)",
       "type": "piechart",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -38,14 +63,25 @@
           "legendFormat": "{{model}}"
         }
       ],
-      "fieldConfig": { "defaults": {}, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
     },
     {
       "id": 3,
       "title": "P50 Latency by Prompt Type",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -54,7 +90,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "ms" },
+        "defaults": {
+          "unit": "ms"
+        },
         "overrides": []
       }
     },
@@ -62,8 +100,16 @@
       "id": 4,
       "title": "P95 Latency by Prompt Type",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -72,7 +118,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "ms" },
+        "defaults": {
+          "unit": "ms"
+        },
         "overrides": []
       }
     },
@@ -80,8 +128,16 @@
       "id": 5,
       "title": "Input Tokens/s",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 7 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -90,7 +146,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" },
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       }
     },
@@ -98,8 +156,16 @@
       "id": 6,
       "title": "Output Tokens/s",
       "type": "timeseries",
-      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 7 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -108,7 +174,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" },
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       }
     },
@@ -116,8 +184,16 @@
       "id": 7,
       "title": "LLM Error Rate",
       "type": "timeseries",
-      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 7 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -126,7 +202,13 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "red" } },
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
         "overrides": []
       }
     },
@@ -134,8 +216,16 @@
       "id": 8,
       "title": "LLM Retry Rate",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 23, "w": 12, "h": 7 },
-      "datasource": { "uid": "__PROMETHEUS_UID__", "type": "prometheus" },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
       "targets": [
         {
           "refId": "A",
@@ -144,7 +234,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "reqps" },
+        "defaults": {
+          "unit": "reqps"
+        },
         "overrides": []
       }
     }

@@ -33,7 +33,8 @@
 #   make install-backend        uv sync --dev
 #   make install-frontend       npm install
 
-.PHONY: check check-backend check-frontend check-infra check-pre-commit \
+.PHONY: check check-backend check-frontend check-infra check-pre-commit check-dashboards \
+        generate-dashboards \
         install install-backend install-frontend \
         eval-offline eval-record eval-live
 
@@ -99,6 +100,19 @@ check-infra:
 		--quiet \
 		--config-file infra/providers/azure/.checkov.yaml
 
+# ─── Dashboards ────────────────────────────────────────────────────────────────
+
+# Regenerate all dashboard JSON from the Python generator (source of truth).
+# Run this after editing observability/dashboards/generate.py, then commit.
+generate-dashboards:
+	python3 observability/dashboards/generate.py
+
+# CI gate: fail if generate.py has changed without regenerating the JSON files.
+check-dashboards:
+	@echo ""
+	@echo "── dashboards (freshness check) ─────────────────────────────────"
+	python3 observability/dashboards/generate.py --check
+
 # ─── Eval ──────────────────────────────────────────────────────────────────────
 
 # Offline gate: compare committed cache against expected labels (no API calls).
@@ -120,4 +134,4 @@ eval-live:
 
 # Runs all four check targets sequentially in the same order as CI jobs.
 # Stops at the first failing target — fix that layer, then re-run.
-check: check-pre-commit check-backend check-frontend check-infra
+check: check-pre-commit check-backend check-frontend check-infra check-dashboards

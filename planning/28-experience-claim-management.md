@@ -85,6 +85,28 @@ The user sees both the existing chunk and the incoming chunk, with source badges
 
 For **skill-type chunks specifically**, the threshold can be tighter because "TypeScript" and "TypeScript" are identical. For `work_experience` or `project` chunks, keep the threshold strict — two different accomplishments at the same company should never auto-merge.
 
+### Periodic compaction
+
+Ingest-time dedup (above) catches duplicates at the point of entry. It does not catch duplicates that arrived via different paths over time — e.g., a skill mentioned in a resume upload, then again in a gap response six months later, then again from a GitHub README scan. Over time, a user with multiple sources accumulates semantic near-duplicates that ingest-time dedup never saw together.
+
+**Periodic compaction pass:**
+- Runs on a schedule (e.g., weekly) or triggered when a user's chunk count crosses a threshold (e.g., every 50 new chunks added)
+- For each user: cluster all chunks by `claim_type`, compute pairwise cosine similarity within each cluster
+- Pairs above the threshold (>= 0.92) that were not already reviewed at ingest time → add to the `DeduplicationCandidate` review queue
+- For skill-type chunks with the same canonical text (once normalization exists): auto-suggest merge rather than just flagging
+
+**Surface in My Experience:**
+- Same review queue used by ingest-time dedup — the user experience is identical regardless of when the duplicate was detected
+- Optionally: a periodic nudge ("You have 7 similar claims that might be worth consolidating") shown on the dashboard or experience page after a compaction run
+
+**Compaction vs. dedup distinction:**
+- Dedup: two chunks say the same thing — collapse to one
+- Compaction: multiple chunks about the same theme but with different specifics — surface them together so the user can decide if they want a single consolidated claim or to keep the distinct evidence
+
+The compaction pass should not auto-merge. It surfaces candidates; the user decides. Silent compaction undermines trust in the repository.
+
+---
+
 ### The dedup unit is the accomplishment, not the technology
 
 This is the key principle from doc 23. "Reduced latency by 40% using Redis" is a unique signal even if Redis is already in the profile. Do not merge accomplishment chunks based on shared technology. Deduplicate the accomplishment text; keep the technology cluster orthogonal.
@@ -148,6 +170,30 @@ My Experience should evolve into a **claim browser**, not a source-grouped list.
 **Dedup review queue:** a persistent "Needs review" section at the top of My Experience, shown only when there are pending deduplication candidates. Dismissible per-item.
 
 **Source health status:** for plugin-connected sources (GitHub, Linear), a compact status indicator showing last sync time and whether it errored. Not buried in settings — visible alongside the claims it produced.
+
+### Requirement-driven search
+
+A user should be able to bring any requirement string to their experience repository and immediately see how well their record covers it.
+
+**Flow:**
+1. User pastes or types a requirement into a search field in My Experience (e.g., "5+ years distributed systems experience with Kafka")
+2. Backend temporarily embeds the requirement — no storage, no side effects, transient query only
+3. Cosine similarity runs against the user's `experience_chunks` using the existing retrieval infrastructure
+4. Returns top-K results with similarity scores, displayed inline with their source badges and claim types
+
+**Why this matters:**
+- Gives users agency to probe their own record before submitting an application
+- Makes the retrieval pipeline transparent — users see exactly what evidence Tailord would draw on
+- Naturally surfaces gaps: low top-K scores or weak similarity on a key requirement tells the user what to add
+- Reinforces the repository-as-asset framing: not "here are your chunks" but "here's how your record answers this question"
+
+**Implementation notes:**
+- The embedding and retrieval path is already used in tailoring generation; this is the same call exposed as a user-facing query
+- Do not store the embedded query — the requirement text is ephemeral
+- Consider showing the similarity score to the user in some form (e.g., a match strength indicator) — the absolute number is less useful than a relative signal ("strong match", "partial match", "weak coverage")
+- Natural entry point: a search/filter bar at the top of the claim browser, alongside the existing facet filters
+
+---
 
 ### Editing
 

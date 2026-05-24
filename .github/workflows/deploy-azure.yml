@@ -444,7 +444,7 @@ jobs:
     - name: Deploy dashboards
       run: |
         shopt -s nullglob
-        for f in backend/grafana/dashboards/*.json; do
+        for f in observability/dashboards/prod/*.json; do
           PAYLOAD=$(jq \
             --arg prom "${{ steps.datasources.outputs.prometheus }}" \
             --arg azmon "${{ steps.datasources.outputs.azure_monitor }}" \
