@@ -3,16 +3,31 @@
   "title": "User Activity (Prod)",
   "schemaVersion": 39,
   "version": 1,
+  "editable": true,
+  "timezone": "utc",
   "refresh": "5m",
-  "time": { "from": "now-30d", "to": "now" },
-  "templating": { "list": [] },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,
       "title": "Total Users",
       "type": "stat",
-      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -21,17 +36,33 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" },
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 2,
       "title": "Approved Users",
       "type": "stat",
-      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -40,17 +71,33 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" },
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 3,
       "title": "Experience Success Rate (7d)",
       "type": "stat",
-      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -64,22 +111,45 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 80 },
-              { "color": "green", "value": 95 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
             ]
           }
         },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 4,
       "title": "Generation Status Distribution",
       "type": "bargauge",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 4 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -88,17 +158,34 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" },
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "horizontal" }
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal"
+      }
     },
     {
       "id": 5,
       "title": "Tailorings per Day (30d)",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 9 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -107,7 +194,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" },
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       }
     },
@@ -115,8 +204,16 @@
       "id": 6,
       "title": "Active Users per Day (30d)",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 9 },
-      "datasource": { "uid": "__POSTGRES_UID__", "type": "postgres" },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
       "targets": [
         {
           "refId": "A",
@@ -125,7 +222,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" },
+        "defaults": {
+          "unit": "short"
+        },
         "overrides": []
       }
     }
