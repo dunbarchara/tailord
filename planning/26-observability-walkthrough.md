@@ -321,7 +321,7 @@ tailoring_active_generations
 
 ## Section 3 — The Local LGTM Stack
 
-> **Files:** `backend/docker-compose.yml`, `backend/grafana/provisioning/`
+> **Files:** `backend/docker-compose.yml`, `observability/provisioning/`
 
 ### 3.1 What LGTM stands for
 
@@ -352,15 +352,26 @@ Native Alloy (macOS host, alloy-native.config):
 
 ### 3.3 Provisioning-as-code
 
-Grafana is configured entirely through files in `backend/grafana/provisioning/` — no manual
+Grafana is configured entirely through files in `observability/provisioning/` — no manual
 UI setup required after `docker compose up`. On startup, Grafana reads:
 
-- `datasources/` — connects to Prometheus, Loki, Tempo, PostgreSQL
+- `datasources/local.yaml` — connects to Prometheus, Loki, Tempo, PostgreSQL
 - `dashboards/provider.yaml` — tells Grafana where to find dashboard JSON files
-- `dashboards/*.json` — the 5 dashboards, loaded automatically
+- `observability/dashboards/local/*.json` — the 5 dashboards, loaded automatically
 
 If you delete the Grafana container and recreate it, everything comes back exactly as it was.
 This is the right way to manage Grafana: dashboards live in git, not in a database.
+
+**Dashboard JSON is generated, not hand-edited.** The source of truth is
+`observability/dashboards/generate.py`. To change a dashboard, edit the generator and run:
+
+```bash
+make generate-dashboards   # regenerates both local/ and prod/ JSON
+make check-dashboards      # CI also runs this to catch stale artifacts
+```
+
+The generator handles the local/prod split natively: local files use Loki + LogQL, prod files
+use Azure Monitor + KQL. No `__prod_*` metadata fields or two-pass transforms needed.
 
 ### 3.4 Starting the full stack
 
@@ -407,7 +418,7 @@ Ports:
 
 ## Section 4 — Grafana Dashboards
 
-> **Files:** `backend/grafana/provisioning/dashboards/*.json`
+> **Files:** `observability/dashboards/generate.py`, `observability/dashboards/local/*.json`
 
 ### 4.1 The five dashboards
 
@@ -806,7 +817,8 @@ The workspace has a 0.5 GB/day cap (cost control). If it fires:
 | Docker Alloy config (metrics + traces) | `backend/alloy.config` |
 | Native Alloy config (log shipping) | `backend/alloy-native.config` |
 | Loki config | `backend/loki.yml` |
-| Grafana provisioning | `backend/grafana/provisioning/` |
+| Grafana provisioning | `observability/provisioning/` |
+| Dashboard generator (source of truth) | `observability/dashboards/generate.py` |
 | Azure alerts + Application Insights | `infra/providers/azure/monitoring.tf` |
 
 ## Summary: Key URLs (local)
