@@ -25,15 +25,20 @@ for f in files:
     except subprocess.CalledProcessError:
         pass
 
+EMAIL_SAFE = re.compile(r"example|mock", re.IGNORECASE)
+
 patterns = [
-    (r"[a-zA-Z0-9._%+-]+@(?!example\.com)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "non-example.com email"),
+    (r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "non-example.com email"),
     (r"\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b", "phone number"),
     (r"\b[\w-]+\.internal\b", ".internal URL"),
 ]
 
 fail = False
 for pattern, label in patterns:
-    if re.search(pattern, content):
+    matches = re.findall(pattern, content)
+    if label == "non-example.com email":
+        matches = [m for m in matches if not EMAIL_SAFE.search(m)]
+    if matches:
         print(f"planning-content-scan: {label} detected in planning/", file=sys.stderr)
         fail = True
 

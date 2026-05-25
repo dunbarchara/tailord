@@ -404,7 +404,7 @@ jobs:
     environment: production-azure
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Fetch datasource UIDs
       id: datasources
