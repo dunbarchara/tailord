@@ -17,8 +17,8 @@ export async function register() {
     const { OTLPTraceExporter } = await import(
       '@opentelemetry/exporter-trace-otlp-http'
     );
-    const { Resource } = await import('@opentelemetry/resources');
-    const { SEMRESATTRS_SERVICE_NAME } = await import(
+    const { resourceFromAttributes } = await import('@opentelemetry/resources');
+    const { ATTR_SERVICE_NAME } = await import(
       '@opentelemetry/semantic-conventions'
     );
 
@@ -29,12 +29,12 @@ export async function register() {
     });
 
     const provider = new NodeTracerProvider({
-      resource: new Resource({
-        [SEMRESATTRS_SERVICE_NAME]: 'tailord-frontend',
+      resource: resourceFromAttributes({
+        [ATTR_SERVICE_NAME]: 'tailord-frontend',
       }),
+      spanProcessors: [new BatchSpanProcessor(exporter)],
     });
 
-    provider.addSpanProcessor(new BatchSpanProcessor(exporter));
     provider.register();
   }
 }
