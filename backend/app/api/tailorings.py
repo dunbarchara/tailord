@@ -5,7 +5,7 @@ import string
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 
 import structlog
@@ -48,6 +48,7 @@ logger = structlog.get_logger(__name__)
 # Each trigger costs ~4 LLM calls (job extraction, req matching, generation, chunk scoring).
 _TAILORING_HOURLY_LIMIT = 10
 _TAILORING_WARN_THRESHOLD = 8
+_GENERATION_PHASES_TIMEOUT_SECONDS = 600  # 10 min wall-clock for letter + gap phases
 
 
 def _get_tailoring_trigger_count(user_id, db: Session) -> int:
@@ -409,6 +410,26 @@ def _finalize_tailoring(
                         "error_message": enrich_error,
                     },
                 )
+                # Enrich failure is fatal — abort; do not deliver partial tailorings.
+                db = SessionLocal()
+                try:
+                    tailoring = db.get(Tailoring, tailoring_id)
+                    if tailoring:
+                        tailoring.generation_status = "error"
+                        tailoring.generation_stage = None
+                        tailoring.generation_error = (
+                            "Requirement matching failed. Please regenerate."
+                        )
+                        db.commit()
+                except Exception:
+                    pass
+                finally:
+                    db.close()
+                TAILORING_ACTIVE_GENERATIONS.dec()
+                TAILORING_GENERATIONS_TOTAL.labels(
+                    status="error", matching_mode=settings.matching_mode
+                ).inc()
+                return
             else:
                 _write_debug_log(
                     tailoring_id,
@@ -524,10 +545,31 @@ def _finalize_tailoring(
                 _gap_duration_ms = int((time.perf_counter() - _start) * 1000)
                 _otel_context.detach(_tok)
 
-        with ThreadPoolExecutor(max_workers=2) as _executor:
-            _executor.submit(_run_letter_phase)
-            _executor.submit(_run_gap_phase)
-        # Both threads have completed here.
+        _phases_executor = ThreadPoolExecutor(max_workers=2)
+        _letter_future = _phases_executor.submit(_run_letter_phase)
+        _gap_future = _phases_executor.submit(_run_gap_phase)
+        _phases_done, _phases_not_done = wait(
+            [_letter_future, _gap_future], timeout=_GENERATION_PHASES_TIMEOUT_SECONDS
+        )
+        _phases_executor.shutdown(
+            wait=False
+        )  # drain in background (threads exit when HTTP timeout fires)
+
+        for _f in _phases_not_done:
+            if _f is _letter_future:
+                logger.error(
+                    "phase_timeout",
+                    phase="generate_advocacy_letter",
+                    timeout_s=_GENERATION_PHASES_TIMEOUT_SECONDS,
+                )
+                _letter_failed = True
+            else:
+                logger.error(
+                    "phase_timeout",
+                    phase="gap_analysis",
+                    timeout_s=_GENERATION_PHASES_TIMEOUT_SECONDS,
+                )
+                _gap_failed = True
 
         phase_durations["generate_advocacy_letter"] = _letter_duration_ms
         phase_durations["gap_analysis"] = _gap_duration_ms
@@ -566,6 +608,34 @@ def _finalize_tailoring(
             ).inc()
             return
 
+        if _gap_failed:
+            # Gap failure is fatal — abort and mark generation as error.
+            _write_debug_log(
+                tailoring_id,
+                "generation_error",
+                {
+                    "phase": "gap_analysis",
+                    "error_message": "Gap analysis failed or timed out",
+                },
+            )
+            db = SessionLocal()
+            try:
+                tailoring = db.get(Tailoring, tailoring_id)
+                if tailoring:
+                    tailoring.generation_status = "error"
+                    tailoring.generation_stage = None
+                    tailoring.generation_error = "Gap analysis failed. Please regenerate."
+                    db.commit()
+            except Exception:
+                pass
+            finally:
+                db.close()
+            TAILORING_ACTIVE_GENERATIONS.dec()
+            TAILORING_GENERATIONS_TOTAL.labels(
+                status="error", matching_mode=settings.matching_mode
+            ).inc()
+            return
+
         # Letter succeeded — log phase completions.
         assert _letter_result is not None
         generated_output, letter_content = _letter_result
@@ -579,17 +649,16 @@ def _finalize_tailoring(
             phase="generate_advocacy_letter",
             duration_ms=_letter_duration_ms,
         )
-        if not _gap_failed:
-            _write_debug_log(
-                tailoring_id,
-                "phase_complete",
-                {"phase": "gap_analysis", "duration_ms": _gap_duration_ms},
-            )
-            logger.info(
-                "phase_complete",
-                phase="gap_analysis",
-                duration_ms=_gap_duration_ms,
-            )
+        _write_debug_log(
+            tailoring_id,
+            "phase_complete",
+            {"phase": "gap_analysis", "duration_ms": _gap_duration_ms},
+        )
+        logger.info(
+            "phase_complete",
+            phase="gap_analysis",
+            duration_ms=_gap_duration_ms,
+        )
 
         # Write letter results and set generation_status = "ready".
         # This fires only after BOTH letter and gap analysis have completed.
@@ -646,12 +715,10 @@ def _finalize_tailoring(
             db.close()
 
         total_duration_ms = int((time.perf_counter() - overall_start) * 1000)
-        _gap_log_extra = {"gap_analysis_failed": True} if _gap_failed else {}
         logger.info(
             "generation_complete",
             total_duration_ms=total_duration_ms,
             phase_durations=phase_durations,
-            **_gap_log_extra,
         )
         _write_debug_log(
             tailoring_id,
@@ -661,7 +728,6 @@ def _finalize_tailoring(
                 "phase_durations": phase_durations,
                 "matching_mode": settings.matching_mode,
                 "llm_model": settings.llm_model,
-                **_gap_log_extra,
             },
         )
         TAILORING_ACTIVE_GENERATIONS.dec()
@@ -996,6 +1062,23 @@ def get_tailoring(
     )
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
+
+    # Lazy recovery: surface silent background-task deaths as errors.
+    if tailoring.generation_status == "generating" and tailoring.generation_started_at is not None:
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(
+            minutes=settings.generation_stale_threshold_minutes
+        )
+        if tailoring.generation_started_at < stale_cutoff:
+            logger.warning(
+                "stale_generation_detected",
+                tailoring_id=tailoring_id,
+                generation_started_at=tailoring.generation_started_at.isoformat(),
+                threshold_minutes=settings.generation_stale_threshold_minutes,
+            )
+            tailoring.generation_status = "error"
+            tailoring.generation_stage = None
+            tailoring.generation_error = "Generation timed out. Please regenerate."
+            db.commit()
 
     job = tailoring.job
     exp = db.query(Experience).filter(Experience.user_id == user.id).first()

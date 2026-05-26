@@ -10,8 +10,54 @@ class RawChunk:
     section: str | None
 
 
+_HEADER_RE = re.compile(r"^#{1,3}\s+(.+)")
+_BARE_BULLET_RE = re.compile(r"^([-*+•]|\d+\.)\s*$")
+_BULLET_RE = re.compile(r"^([-*+•]|\d+\.)\s+(.*)")
+_UNICODE_GLYPH_RE = re.compile(r"^[▪▸►▶◆◇◦·•‣⁃]\s*(.*)")
+
+
+def normalize_markdown(markdown: str) -> str:
+    """Canonicalize raw scraped markdown before parsing.
+
+    - rstrip() each line (trailing whitespace)
+    - All header variants (# / ## / ###) → "## <content>"
+    - All bullet variants (- * + • 1. etc.) with content → "- <content>"
+    - Empty bullets (marker, no content) → "" (blank line)
+    - Unicode glyph line starters (▸ ▪ etc.) → "- <content>" or "" if empty
+    - All other lines passed through unchanged
+    """
+    out = []
+    for line in markdown.splitlines():
+        line = line.rstrip()
+
+        m = _HEADER_RE.match(line)
+        if m:
+            out.append("## " + m.group(1).strip())
+            continue
+
+        if _BARE_BULLET_RE.match(line):
+            out.append("")
+            continue
+
+        m = _BULLET_RE.match(line)
+        if m:
+            content = m.group(2).strip()
+            out.append("- " + content if content else "")
+            continue
+
+        m = _UNICODE_GLYPH_RE.match(line)
+        if m:
+            content = m.group(1).strip()
+            out.append("- " + content if content else "")
+            continue
+
+        out.append(line)
+    return "\n".join(out)
+
+
 def extract_chunks(markdown: str) -> list[RawChunk]:
     """Parse markdown into structured chunks, tracking section context from headers."""
+    markdown = normalize_markdown(markdown)
     chunks: list[RawChunk] = []
     position = 0
     current_section: str | None = None
@@ -27,8 +73,8 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
             i += 1
             continue
 
-        # Header: ## Heading or # Heading or ### Heading
-        header_match = re.match(r"^#{1,3}\s+(.+)", line)
+        # Header: canonical "## Heading" form (normalize_markdown collapses all variants)
+        header_match = re.match(r"^## (.+)", line)
         if header_match:
             content = header_match.group(1).strip()
             chunks.append(
@@ -64,9 +110,8 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
                 i += 1
                 continue
 
-        # Bullet: - item, * item, + item, • item, or 1. item
-        # (+) is a valid CommonMark bullet marker and is used by some job boards as pseudo-lists.
-        bullet_match = re.match(r"^[-*+•]\s+(.+)", line) or re.match(r"^\d+\.\s+(.+)", line)
+        # Bullet: canonical "- item" form (normalize_markdown collapses all variants)
+        bullet_match = re.match(r"^- (.+)", line)
         if bullet_match:
             content = bullet_match.group(1).strip()
             # Collect indented continuation lines
@@ -95,21 +140,14 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
             para_line = lines[i]
             if not para_line.strip():
                 break
-            # Stop if we hit a header or bullet
-            if (
-                re.match(r"^#{1,3}\s+", para_line)
-                or re.match(r"^[-*+•]\s+", para_line)
-                or re.match(r"^\d+\.\s+", para_line)
-            ):
+            # Stop if we hit a header or bullet (canonical forms after normalization)
+            if re.match(r"^(## |- )", para_line):
                 break
             para_lines.append(para_line.strip())
             i += 1
 
         if para_lines:
             content = " ".join(para_lines)
-            # Strip leading Unicode bullet/arrow glyphs that appear verbatim in some
-            # job posting HTML (e.g. "▸ Build and operate…" inside a <p> tag).
-            content = re.sub(r"^[▪▸►▶◆◇◦·•‣⁃]\s*", "", content).strip()
             # Skip short paragraphs (less than 20 chars)
             if len(content) >= 20:
                 chunks.append(
@@ -121,5 +159,9 @@ def extract_chunks(markdown: str) -> list[RawChunk]:
                     )
                 )
                 position += 1
+        else:
+            # Safety: paragraph inner loop broke immediately without consuming any line
+            # (e.g. an empty bullet "- " with no content). Skip to prevent infinite loop.
+            i += 1
 
     return chunks

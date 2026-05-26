@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 
 import structlog
+from sqlalchemy import text
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
@@ -262,9 +263,12 @@ def enrich_job_chunks(
 
     db = SessionLocal()
     try:
+        logger.debug("enrich_db_session_opened", job_id=str(job_id))
+        db.execute(text("SET LOCAL statement_timeout = '30000'"))  # 30 s for this transaction
         # Delete existing chunks for idempotent re-enrichment
         db.query(JobChunk).filter(JobChunk.job_id == job_id).delete()
         db.commit()
+        logger.debug("enrich_delete_committed", job_id=str(job_id))
 
         t0 = time.perf_counter()
         chunks = extract_chunks(job_markdown)
@@ -528,12 +532,14 @@ def enrich_job_chunks(
     except Exception:
         logger.exception("enrich_job_chunks_failed", job_id=str(job_id))
         try:
+            db.rollback()  # required: session is in aborted-txn state after QueryCanceled
             from app.models.database import Tailoring as _Tailoring
 
             _set_enrichment_status(db, _Tailoring, job_id, "error")
             db.commit()
         except Exception:
             logger.exception("enrich_job_chunks_status_update_failed", job_id=str(job_id))
+        raise
     finally:
         db.close()
         logger.debug("enrich_job_chunks_session_closed", job_id=str(job_id))

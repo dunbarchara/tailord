@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────────
     # Default matches docker-compose (user: app, pass: app, db: app).
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
+    db_pool_recycle: int = 300  # seconds; recycle connections before Azure drops them
+    db_statement_timeout_ms: int = 30000  # milliseconds; 0 = disabled
 
     # ── LLM ───────────────────────────────────────────────────────────────────
     # llm_base_url:    set for Azure AI Foundry or a local model; omit to use
@@ -77,6 +79,9 @@ class Settings(BaseSettings):
     # applicationinsights_connection_string: injected by Terraform in staging/production.
     otel_endpoint: str = "http://localhost:4317"
     applicationinsights_connection_string: str = ""
+
+    # ── Generation ────────────────────────────────────────────────────────────
+    generation_stale_threshold_minutes: int = 30
 
     # ── Notion OAuth ──────────────────────────────────────────────────────────
     notion_client_id: str | None = None

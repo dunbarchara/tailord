@@ -65,6 +65,7 @@ def setup_logging() -> None:
     formatter = structlog.stdlib.ProcessorFormatter(
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.ExceptionRenderer(),
             renderer,
         ],
         foreign_pre_chain=_shared_processors,
@@ -78,6 +79,7 @@ def setup_logging() -> None:
         json_formatter = structlog.stdlib.ProcessorFormatter(
             processors=[
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.ExceptionRenderer(),
                 structlog.processors.JSONRenderer(),
             ],
             foreign_pre_chain=_shared_processors,
