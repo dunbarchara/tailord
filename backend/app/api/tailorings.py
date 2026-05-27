@@ -789,7 +789,7 @@ async def _stream_tailoring(
         extracted_profile = experience.extracted_profile
         user_id = user.id
         candidate_name = user.candidate_name
-        candidate_pronouns = user.pronouns or None
+        candidate_pronouns = user.profile.pronouns if user.profile else None
         if existing_tailoring:
             existing_tailoring_id = str(existing_tailoring.id)
             existing_job_id = str(existing_tailoring.job_id)
@@ -1104,7 +1104,11 @@ def get_tailoring(
         "posting_public": tailoring.posting_public,
         "is_public": tailoring.is_public,
         "public_slug": tailoring.public_slug,
-        "author_username_slug": tailoring.user.username_slug if tailoring.user else None,
+        "author_username_slug": (
+            tailoring.user.profile.username_slug
+            if tailoring.user and tailoring.user.profile
+            else None
+        ),
         "notion_page_url": tailoring.notion_page_url,
         "notion_posting_page_url": tailoring.notion_posting_page_url,
         "gap_analysis": tailoring.gap_analysis,
@@ -1385,10 +1389,7 @@ def refresh_tailoring_chunks(
     if not experience:
         raise HTTPException(status_code=422, detail="No experience found")
 
-    preferred = " ".join(
-        filter(None, [user.preferred_first_name, user.preferred_last_name])
-    ).strip()
-    candidate_name = preferred or user.name or user.email
+    candidate_name = user.candidate_name
 
     tailoring.enrichment_status = "pending"
     db.commit()
@@ -1400,7 +1401,7 @@ def refresh_tailoring_chunks(
         tailoring.job_id,
         tailoring_id,
         experience.extracted_profile or {},
-        user.pronouns,
+        user.profile.pronouns if user.profile else None,
         user.id,
         candidate_name,
     )
@@ -1473,15 +1474,12 @@ def submit_gap_answer(
     # If chunk_id is None (no match found during gap analysis), skip re-enrichment.
     chunk_reenrichment_queued = False
     if chunk_id:
-        preferred = " ".join(
-            filter(None, [user.preferred_first_name, user.preferred_last_name])
-        ).strip()
-        gap_candidate_name = preferred or user.name or user.email
+        gap_candidate_name = user.candidate_name
         background_tasks.add_task(
             re_enrich_single_chunk,
             chunk_id,
             updated_profile,
-            user.pronouns,
+            user.profile.pronouns if user.profile else None,
             experience.id,
             gap_candidate_name,
         )
@@ -1522,10 +1520,7 @@ def rescore_chunk(
     if not experience:
         raise HTTPException(status_code=422, detail="No experience found")
 
-    preferred = " ".join(
-        filter(None, [user.preferred_first_name, user.preferred_last_name])
-    ).strip()
-    candidate_name = preferred or user.name or user.email
+    candidate_name = user.candidate_name
 
     # Promote to requirement so future Refresh All includes this chunk
     if not chunk.is_requirement:
@@ -1535,7 +1530,7 @@ def rescore_chunk(
     re_enrich_single_chunk(
         str(chunk.id),
         experience.extracted_profile or {},
-        user.pronouns,
+        user.profile.pronouns if user.profile else None,
         experience.id,
         candidate_name,
         force_score=body.force_score,
@@ -1588,7 +1583,7 @@ def get_tailoring_debug_info(
         formatted_profile = format_sourced_profile(
             extracted_profile,
             candidate_name=user.name,
-            pronouns=user.pronouns if hasattr(user, "pronouns") else None,
+            pronouns=user.profile.pronouns if user.profile else None,
         )
         profile_snapshot_source = "reconstructed"
 
@@ -1615,13 +1610,9 @@ def get_tailoring_debug_info(
 
         first = scored_chunks[0]
         # Extract candidate_name from profile_snapshot or user record
-        _cname = (
-            " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name])).strip()
-            or user.name
-            or user.email
-        )
+        _cname = user.candidate_name
         candidate_header = _build_candidate_header(
-            _cname, user.pronouns if hasattr(user, "pronouns") else None
+            _cname, user.profile.pronouns if user.profile else None
         )
         sample_user_message = chunk_prompt.format_user_template_vector(
             candidate_header=candidate_header,
@@ -1740,9 +1731,14 @@ def get_public_tailoring(
     _: str = Depends(require_api_key),
     db: Session = Depends(get_db),
 ):
-    author = db.query(User).filter(User.username_slug == username_slug).first()
-    if not author:
+    from app.models.database import UserProfile
+
+    author_profile = (
+        db.query(UserProfile).filter(UserProfile.username_slug == username_slug).first()
+    )
+    if not author_profile:
         raise HTTPException(status_code=404, detail="Tailoring not found")
+    author = author_profile.user
 
     tailoring = (
         db.query(Tailoring)
@@ -1767,15 +1763,19 @@ def get_public_tailoring(
         "letter_public": tailoring.letter_public,
         "posting_public": tailoring.posting_public,
         "created_at": tailoring.created_at.isoformat(),
-        "author_slug": author.username_slug if author else None,
+        "author_slug": author.profile.username_slug if author and author.profile else None,
         "author_name": (
             " ".join(
-                p for p in [author.preferred_first_name, author.preferred_last_name] if p
+                p
+                for p in [author.profile.preferred_first_name, author.profile.preferred_last_name]
+                if p
             ).strip()
             or author.name
-        )
-        if author
-        else None,
+            if author and author.profile
+            else author.name
+            if author
+            else None
+        ),
     }
 
     if author:
@@ -1794,7 +1794,9 @@ def get_public_tailoring(
         response["author_title"] = resume_data.get("title") or None
         response["author_email"] = resume_data.get("email") or None
         response["author_linkedin"] = resume_data.get("linkedin") or None
-        response["author_profile_public"] = bool(author.profile_public)
+        response["author_profile_public"] = bool(
+            author.profile.profile_public if author.profile else False
+        )
 
     if tailoring.posting_public:
         chunks = (

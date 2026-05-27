@@ -53,7 +53,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
             return
 
         extracted_profile = user.experience.extracted_profile
-        pronouns = user.pronouns or None
+        pronouns = user.profile.pronouns if user.profile else None
         candidate_name = user.candidate_name
 
         formatted_profile = format_sourced_profile(

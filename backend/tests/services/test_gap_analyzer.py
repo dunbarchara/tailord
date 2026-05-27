@@ -31,9 +31,9 @@ def _ready_tailoring(chunks_for_query):
     tailoring.job = MagicMock()  # non-None — has a job
     tailoring.user = MagicMock()
     tailoring.user.experience.extracted_profile = {"resume": {}}
-    tailoring.user.pronouns = None
-    tailoring.user.preferred_first_name = None
-    tailoring.user.preferred_last_name = None
+    tailoring.user.profile.pronouns = None
+    tailoring.user.profile.preferred_first_name = None
+    tailoring.user.profile.preferred_last_name = None
     tailoring.user.name = "Alex Chen"
     tailoring.user.email = "alex@example.com"
 

@@ -109,16 +109,20 @@ def test_check_username_too_short(client):
 
 def test_get_public_user_not_public_returns_404(client, approved_user):
     # approved_user has profile_public=False (default)
-    response = client.get(f"/users/public/{approved_user.username_slug}", headers=API_HEADERS)
+    response = client.get(
+        f"/users/public/{approved_user.profile.username_slug}", headers=API_HEADERS
+    )
     assert response.status_code == 404
 
 
 def test_get_public_user_when_public(client, approved_user):
     client.patch("/users/me", json={"profile_public": True}, headers=AUTH_HEADERS)
-    response = client.get(f"/users/public/{approved_user.username_slug}", headers=API_HEADERS)
+    response = client.get(
+        f"/users/public/{approved_user.profile.username_slug}", headers=API_HEADERS
+    )
     assert response.status_code == 200
     data = response.json()
-    assert data["username_slug"] == approved_user.username_slug
+    assert data["username_slug"] == approved_user.profile.username_slug
 
 
 def test_get_public_user_nonexistent_returns_404(client):

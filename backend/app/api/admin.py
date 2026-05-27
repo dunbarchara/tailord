@@ -19,7 +19,7 @@ def _user_row(user: User) -> dict:
         "id": str(user.id),
         "email": user.email,
         "name": user.name,
-        "avatar_url": user.avatar_url,
+        "avatar_url": user.profile.avatar_url if user.profile else None,
         "status": user.status,
         "is_admin": user.is_admin,
         "created_at": user.created_at.isoformat(),

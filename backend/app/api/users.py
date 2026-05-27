@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -9,7 +10,7 @@ from app.auth import require_api_key
 from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user
-from app.models.database import Experience, Job, Tailoring, User
+from app.models.database import Experience, Job, Tailoring, User, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -42,28 +43,38 @@ _RESERVED = frozenset(
 router = APIRouter()
 
 
+def _notion_workspace_name(user: User) -> str | None:
+    notion = next((i for i in user.integrations if i.provider == "notion"), None)
+    if notion and notion.provider_metadata:
+        return notion.provider_metadata.get("workspace_name")
+    return None
+
+
 def _user_response(user: User) -> dict:
+    profile = user.profile
     return {
         "id": str(user.id),
-        "google_sub": user.google_sub,
         "email": user.email,
         "name": user.name,
-        "preferred_first_name": user.preferred_first_name,
-        "preferred_last_name": user.preferred_last_name,
-        "username_slug": user.username_slug,
-        "avatar_url": user.avatar_url,
-        "pronouns": user.pronouns,
-        "profile_public": user.profile_public,
+        "preferred_first_name": profile.preferred_first_name if profile else None,
+        "preferred_last_name": profile.preferred_last_name if profile else None,
+        "username_slug": profile.username_slug if profile else None,
+        "avatar_url": profile.avatar_url if profile else None,
+        "pronouns": profile.pronouns if profile else None,
+        "profile_public": profile.profile_public if profile else False,
+        "communication_email": profile.communication_email if profile else None,
         "status": user.status,
         "is_admin": user.is_admin,
-        "notion_workspace_name": user.notion_workspace_name,
+        "notion_workspace_name": _notion_workspace_name(user),
     }
 
 
 def _display_name(user: User) -> str | None:
-    parts = [user.preferred_first_name, user.preferred_last_name]
-    preferred = " ".join(p for p in parts if p).strip()
-    return preferred or user.name or None
+    if user.profile:
+        parts = [user.profile.preferred_first_name, user.profile.preferred_last_name]
+        preferred = " ".join(p for p in parts if p).strip()
+        return preferred or user.name or None
+    return user.name or None
 
 
 @router.post("/users/me")
@@ -89,6 +100,7 @@ class UserUpdate(BaseModel):
     profile_public: bool | None = None
     username_slug: str | None = None
     pronouns: str | None = None
+    communication_email: str | None = None
 
     @field_validator("username_slug")
     @classmethod
@@ -113,23 +125,31 @@ def update_user(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    profile = user.profile
+    if profile is None:
+        raise HTTPException(status_code=500, detail="User profile not found")
+
     if "preferred_first_name" in body.model_fields_set:
-        user.preferred_first_name = body.preferred_first_name or None
+        profile.preferred_first_name = body.preferred_first_name or None
     if "preferred_last_name" in body.model_fields_set:
-        user.preferred_last_name = body.preferred_last_name or None
+        profile.preferred_last_name = body.preferred_last_name or None
     if body.profile_public is not None:
-        user.profile_public = body.profile_public
+        profile.profile_public = body.profile_public
     if "pronouns" in body.model_fields_set:
-        user.pronouns = body.pronouns or None
+        profile.pronouns = body.pronouns or None
+    if "communication_email" in body.model_fields_set:
+        profile.communication_email = body.communication_email or None
     if "username_slug" in body.model_fields_set:
         new_slug = body.username_slug or None
         if new_slug is not None:
             existing = (
-                db.query(User).filter(User.username_slug == new_slug, User.id != user.id).first()
+                db.query(UserProfile)
+                .filter(UserProfile.username_slug == new_slug, UserProfile.user_id != user.id)
+                .first()
             )
             if existing:
                 raise HTTPException(status_code=409, detail="That username is already taken")
-        user.username_slug = new_slug
+        profile.username_slug = new_slug
     db.commit()
     db.refresh(user)
     return _user_response(user)
@@ -143,7 +163,7 @@ def check_username(
 ):
     if len(slug) < 3 or len(slug) > 30 or not _USERNAME_RE.match(slug) or slug in _RESERVED:
         return {"available": False}
-    taken = db.query(User.id).filter(User.username_slug == slug).first()
+    taken = db.query(UserProfile.id).filter(UserProfile.username_slug == slug).first()
     return {"available": taken is None}
 
 
@@ -153,10 +173,11 @@ def get_public_user(
     _: str = Depends(require_api_key),
     db: Session = Depends(get_db),
 ):
-    user = db.query(User).filter(User.username_slug == username_slug).first()
-    if not user or not user.profile_public:
+    profile = db.query(UserProfile).filter(UserProfile.username_slug == username_slug).first()
+    if not profile or not profile.profile_public:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    user = profile.user
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
     resume_profile = None
     github_username = None
@@ -167,8 +188,8 @@ def get_public_user(
 
     return {
         "name": _display_name(user),
-        "avatar_url": user.avatar_url,
-        "username_slug": user.username_slug,
+        "avatar_url": profile.avatar_url,
+        "username_slug": profile.username_slug,
         "github_username": github_username,
         "profile": resume_profile,
     }
@@ -181,8 +202,12 @@ def delete_user(
     db: Session = Depends(get_db),
 ):
     """
-    Permanently delete the current user and all associated data.
-    Order: storage file → tailorings → jobs → experience → user.
+    Permanently delete user data and leave a tombstone row with deleted_at set.
+    PII (email, name) is cleared from the tombstone. The row is kept for
+    platform metrics (account lifetime, churn cohorts).
+
+    Order: storage file → tailorings → jobs → experience → claims → groups →
+           integrations → identities → tombstone users row.
     """
     # 1. Delete uploaded resume file from storage
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
@@ -207,7 +232,28 @@ def delete_user(
         db.delete(experience)
         db.flush()
 
-    # 5. Delete user
-    db.delete(user)
+    # 5. Delete claims and groups (cascade from user but we delete explicitly
+    #    since we're keeping the user row as tombstone)
+    for claim in list(user.claims):
+        db.delete(claim)
+    for group in list(user.groups):
+        db.delete(group)
+    db.flush()
+
+    # 6. Delete integrations and identities
+    for integration in list(user.integrations):
+        db.delete(integration)
+    for identity in list(user.auth_identities):
+        db.delete(identity)
+
+    # 7. Delete profile
+    if user.profile:
+        db.delete(user.profile)
+    db.flush()
+
+    # 8. Tombstone: clear PII, set deleted_at — keep the row
+    user.email = None
+    user.name = None
+    user.deleted_at = datetime.now(timezone.utc)
     db.commit()
-    logger.info("User %s deleted", user.id)
+    logger.info("User %s deleted (tombstone preserved)", user.id)

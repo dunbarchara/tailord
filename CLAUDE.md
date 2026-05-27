@@ -165,7 +165,7 @@ frontend/src/app/
 | `backend/app/config.py` | Pydantic Settings (env vars) |
 | `backend/app/clients/llm_client.py` | OpenAI SDK wrapper (configurable `LLM_BASE_URL`) |
 | `backend/app/clients/storage_client.py` | Storage abstraction — `AzureStorageClient` / `S3StorageClient` |
-| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `Experience`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
+| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `AuthIdentity`, `UserProfile`, `UserIntegration`, `Experience`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
 | `backend/app/api/experience.py` | Experience CRUD, GitHub enrichment, SSE processing stream |
 | `backend/app/api/tailorings.py` | Tailoring CRUD, SSE generation stream, sharing, Notion export |
 | `backend/app/api/admin.py` | Admin user management — `require_admin()` dependency, approve/revoke |
@@ -183,7 +183,13 @@ frontend/src/app/
 
 **SQLAlchemy ORM (`backend/app/models/database.py`):**
 
-- `User` — `id` (UUID), `google_sub` (unique, indexed), `email`, `name`, `preferred_first_name`, `preferred_last_name`, `pronouns`, `avatar_url`, `username_slug` (unique, nullable), `profile_public`, `status` (pending/approved), `is_admin`, Notion OAuth fields (`notion_access_token`, `notion_bot_id`, `notion_workspace_*`, `notion_parent_page_id`), `created_at`
+- `User` — `id` (UUID), `email` (nullable — cleared on delete tombstone), `name` (nullable), `status` (pending/approved), `is_admin`, `created_at`, `updated_at`, `deleted_at` (nullable — set on account deletion; PII cleared, row kept as tombstone). No auth or profile fields — those live in dedicated tables.
+
+- `AuthIdentity` — `id`, `user_id` (FK → users CASCADE), `provider` (varchar 50 — `"google"` now; future: `"linkedin"`, `"magic_link"`), `subject` (google_sub for google; email for magic_link), `email` (provider-supplied at auth time), `connected_at`, `updated_at`; UNIQUE `(provider, subject)`. Replaces `users.google_sub`.
+
+- `UserProfile` — `id`, `user_id` (FK → users CASCADE, UNIQUE — 1:1), `preferred_first_name`, `preferred_last_name`, `pronouns`, `avatar_url`, `username_slug` (UNIQUE nullable, indexed), `profile_public` (bool, default false), `communication_email` (future: digest email), `created_at`, `updated_at`. Loaded via `lazy="selectin"` — always co-loaded with User.
+
+- `UserIntegration` — `id`, `user_id` (FK → users CASCADE, indexed), `provider` (varchar 50 — `"notion"` now; future: `"github"`, `"jira"`), `credentials` (JSONB — `{access_token, ...}`, never exposed in API), `provider_metadata` (JSONB — `{workspace_id, workspace_name, bot_id, parent_page_id}` for Notion), `connected_at`, `updated_at`; UNIQUE `(user_id, provider)`. Replaces all `notion_*` fields on User. Loaded via `lazy="selectin"`. Security TODO: credentials should be encrypted at rest.
 
 - `Experience` — `id`, `user_id` (FK, 1:1), `storage_key` (blob key, nullable), `filename` (nullable), `status` (pending/processing/ready/error), `extracted_profile` (JSON — keyed by source: `"resume"`, `"github"`, `"user_input"`, etc.), `raw_resume_text`, `github_username`, `github_repos` (JSON), `user_input_text`, `error_message`, `uploaded_at`, `processed_at`, `last_process_requested_at`
 
@@ -199,7 +205,9 @@ frontend/src/app/
 
 - `TailoringDebugLog` — schema-only scaffold for future LLM telemetry (Level 3); no data written yet
 
-**Relationships:** `User` → one `Experience`, many `Tailorings`, many `ExperienceClaim`, many `ExperienceGroup`; `ExperienceGroup` → many `ExperienceClaim`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
+**Relationships:** `User` → one `UserProfile` (selectin), many `AuthIdentity`, many `UserIntegration` (selectin), one `Experience`, many `Tailorings`, many `ExperienceClaim`, many `ExperienceGroup`; `ExperienceGroup` → many `ExperienceClaim`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
+
+**Identity lookup pattern:** `X-User-Id` header = google_sub. Backend looks up `AuthIdentity(provider="google", subject=x_user_id)` → loads `user`. Frontend/header contract unchanged.
 
 ---
 

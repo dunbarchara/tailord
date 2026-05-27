@@ -51,16 +51,30 @@ API_HEADERS = {"X-API-Key": "test-key"}  # for public endpoints (no user require
 
 
 def make_user(db, google_sub=TEST_GOOGLE_SUB, status="approved", username_slug=None, **kwargs):
-    from app.models.database import User
+    from app.models.database import AuthIdentity, User, UserProfile
 
     user = User(
-        google_sub=google_sub,
         email=f"{google_sub}@example.com",
-        username_slug=username_slug or google_sub[:20],
         status=status,
         **kwargs,
     )
     db.add(user)
+    db.flush()  # get id before creating dependents
+
+    profile = UserProfile(
+        user_id=user.id,
+        username_slug=username_slug or google_sub[:20],
+    )
+    db.add(profile)
+
+    identity = AuthIdentity(
+        user_id=user.id,
+        provider="google",
+        subject=google_sub,
+        email=f"{google_sub}@example.com",
+    )
+    db.add(identity)
+
     db.commit()
     db.refresh(user)
     return user

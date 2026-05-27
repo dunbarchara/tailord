@@ -13,7 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,41 +24,43 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    google_sub: Mapped[str] = mapped_column(String, unique=True, index=True)
-    email: Mapped[str] = mapped_column(String)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
-    preferred_first_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    preferred_last_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Notion OAuth
-    notion_access_token: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_bot_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_workspace_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_workspace_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_parent_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    pronouns: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Public profile
-    username_slug: Mapped[str | None] = mapped_column(
-        String, unique=True, nullable=True, index=True
-    )
-    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
-    profile_public: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
     # status: pending | approved
     status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     is_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
+    # Soft-delete tombstone: set on account deletion; PII (email, name) cleared at same time.
+    # The row is kept indefinitely for platform metrics (account lifetime, churn cohorts).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @property
     def candidate_name(self) -> str:
-        """Resolved display name for LLM prompts. Always returns a non-empty string."""
-        preferred = " ".join(
-            filter(None, [self.preferred_first_name, self.preferred_last_name])
-        ).strip()
-        return preferred or self.name or self.email
+        """Resolved display name for LLM prompts. Always returns a non-empty string.
+        Delegates to profile.candidate_name if profile exists."""
+        if self.profile:
+            preferred = " ".join(
+                filter(None, [self.profile.preferred_first_name, self.profile.preferred_last_name])
+            ).strip()
+            if preferred:
+                return preferred
+        return self.name or self.email or ""
 
+    # profile is always needed — selectin-load batches it with User queries
+    profile: Mapped["UserProfile | None"] = relationship(
+        "UserProfile", back_populates="user", uselist=False, lazy="selectin"
+    )
+    auth_identities: Mapped[list["AuthIdentity"]] = relationship(
+        "AuthIdentity", back_populates="user", cascade="all, delete-orphan"
+    )
+    integrations: Mapped[list["UserIntegration"]] = relationship(
+        "UserIntegration", back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
     experience: Mapped["Experience | None"] = relationship(
         "Experience", back_populates="user", uselist=False
     )
@@ -70,6 +72,121 @@ class User(Base):
     groups: Mapped[list["ExperienceGroup"]] = relationship(
         "ExperienceGroup", back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class AuthIdentity(Base):
+    """
+    Provider-neutral OAuth subject. One row per (provider, subject) pair.
+    Replaces users.google_sub with a normalized, extensible identity table.
+
+    provider values: "google" (current); future: "linkedin", "magic_link"
+    subject: google_sub for google; email for magic_link
+    """
+
+    __tablename__ = "auth_identities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    subject: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("provider", "subject", name="uq_auth_identities_provider_subject"),
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="auth_identities")
+
+
+class UserProfile(Base):
+    """
+    Display preferences and public profile settings for a user (1:1 with users).
+    Extracted from users to isolate profile concerns from identity/auth concerns.
+
+    username_slug: URL-safe handle for public profile (/u/{slug}). UNIQUE, nullable
+                   (unset until user chooses one or one is auto-generated at signup).
+    communication_email: future use — digest/notification emails distinct from auth email.
+    """
+
+    __tablename__ = "user_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    preferred_first_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    preferred_last_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    pronouns: Mapped[str | None] = mapped_column(String, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    username_slug: Mapped[str | None] = mapped_column(
+        String, unique=True, nullable=True, index=True
+    )
+    profile_public: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Deferred: will be used for digest/notification email routing
+    communication_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="profile")
+
+
+class UserIntegration(Base):
+    """
+    Per-user OAuth tokens and metadata for external service integrations.
+    One row per (user_id, provider) pair.
+
+    provider values: "notion" (current); future: "github" (per-user OAuth), "jira"
+    credentials: {access_token, refresh_token?, expires_at?} — never exposed in API responses
+    provider_metadata: provider-specific non-secret data
+      notion: {bot_id, workspace_id, workspace_name, parent_page_id}
+      github (future): {installation_id, login}
+
+    Security TODO: credentials should be encrypted at rest.
+    """
+
+    __tablename__ = "user_integrations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    credentials: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Named provider_metadata in Python to avoid shadowing SQLAlchemy's Base.metadata
+    provider_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True, name="metadata")
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_user_integrations_user_provider"),
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="integrations")
 
 
 class Experience(Base):

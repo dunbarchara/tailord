@@ -185,7 +185,7 @@ def get_upload_url(
 
     existing = db.query(Experience).filter(Experience.user_id == user.id).first()
 
-    storage_key = f"users/{user.google_sub}/{uuid.uuid4()}.{ext}"
+    storage_key = f"users/{user.id}/{uuid.uuid4()}.{ext}"
 
     if existing:
         # Clean up old file but preserve GitHub data on the existing row
@@ -1199,7 +1199,7 @@ def create_gap_response(
         re_enrich_single_chunk(
             str(job_chunk_uuid),
             experience.extracted_profile or {},
-            user.pronouns,
+            user.profile.pronouns if user.profile else None,
             user.id,
             candidate_name,
         )
@@ -1221,7 +1221,7 @@ def create_gap_response(
                 formatted_profile = format_sourced_profile(
                     experience.extracted_profile or {},
                     candidate_name=candidate_name,
-                    pronouns=user.pronouns,
+                    pronouns=user.profile.pronouns if user.profile else None,
                 )
                 pq = _generate_question(
                     "partial",

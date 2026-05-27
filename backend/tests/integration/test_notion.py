@@ -1,5 +1,6 @@
 """Integration tests for Notion OAuth and export endpoints."""
 
+import uuid as _uuid
 from urllib.parse import urlparse
 
 import responses as rsps_lib
@@ -16,14 +17,25 @@ _FAKE_PAGE_4 = {"id": "page-jkl", "url": "https://notion.so/page-jkl"}
 
 
 def _user_with_notion(db):
-    """Approved user with a connected Notion token."""
-    return make_user(
-        db,
-        notion_access_token="test-notion-token",
-        notion_bot_id="bot-123",
-        notion_workspace_id="ws-123",
-        notion_workspace_name="My Workspace",
+    """Approved user with a connected Notion integration."""
+    from app.models.database import UserIntegration
+
+    user = make_user(db)
+    integration = UserIntegration(
+        id=_uuid.uuid4(),
+        user_id=user.id,
+        provider="notion",
+        credentials={"access_token": "test-notion-token"},
+        provider_metadata={
+            "bot_id": "bot-123",
+            "workspace_id": "ws-123",
+            "workspace_name": "My Workspace",
+        },
     )
+    db.add(integration)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,10 @@
 # Experience Claim — Schema Reference
 
 **Date:** 2026-05-27
-**Status:** Implemented — migrations `d2e3f4a5b6c7` + `e3f4a5b6c7d8` applied.
+**Status:** Implemented — migrations `d2e3f4a5b6c7` + `e3f4a5b6c7d8` + `f5a6b7c8d9e0` applied.
 **Related:** `planning/experience_capture/`, `planning/33-sprint-plan-20260527.md`
+
+> **Note (Day 2):** The parent `users` table was refactored in migration `a7b8c9d0e1f2`. The `user_id` FK columns on `experience_groups` and `experience_claims` are unchanged — they still point to `users.id`. The `users` row itself now carries only identity fields; profile and integration data moved to `user_profiles` and `user_integrations`. No schema changes to either claims table.
 
 ---
 

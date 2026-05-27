@@ -1,4 +1,6 @@
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Literal
 
 import requests
@@ -9,7 +11,7 @@ from app.auth import require_api_key
 from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user, require_approved_user
-from app.models.database import JobChunk, Tailoring, User
+from app.models.database import JobChunk, Tailoring, User, UserIntegration
 from app.services.notion_export import (
     NotionAuthError,
     chunks_to_notion_markdown,
@@ -21,6 +23,15 @@ from app.services.notion_export import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _get_notion_integration(user: User, db: Session) -> UserIntegration | None:
+    """Return the Notion UserIntegration row for this user, or None if not connected."""
+    return (
+        db.query(UserIntegration)
+        .filter(UserIntegration.user_id == user.id, UserIntegration.provider == "notion")
+        .first()
+    )
 
 
 @router.get("/notion/auth-url")
@@ -69,16 +80,31 @@ def notion_callback(
         raise HTTPException(status_code=502, detail="Notion token exchange failed")
 
     data = response.json()
-    user.notion_access_token = data.get("access_token")
-    user.notion_bot_id = data.get("bot_id")
-    workspace = data.get("workspace_id") or data.get("workspace", {}).get("id")
-    user.notion_workspace_id = workspace
-    user.notion_workspace_name = data.get("workspace_name") or data.get("workspace", {}).get("name")
+    workspace_id = data.get("workspace_id") or data.get("workspace", {}).get("id")
+    workspace_name = data.get("workspace_name") or data.get("workspace", {}).get("name")
+
+    integration = _get_notion_integration(user, db)
+    if integration is None:
+        integration = UserIntegration(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            provider="notion",
+            connected_at=datetime.now(timezone.utc),
+        )
+        db.add(integration)
+
+    integration.credentials = {"access_token": data.get("access_token")}
+    integration.provider_metadata = {
+        "bot_id": data.get("bot_id"),
+        "workspace_id": workspace_id,
+        "workspace_name": workspace_name,
+    }
+    integration.updated_at = datetime.now(timezone.utc)
     db.commit()
 
     return {
-        "notion_workspace_name": user.notion_workspace_name,
-        "notion_workspace_id": user.notion_workspace_id,
+        "notion_workspace_name": workspace_name,
+        "notion_workspace_id": workspace_id,
     }
 
 
@@ -88,11 +114,10 @@ def notion_disconnect(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user.notion_access_token = None
-    user.notion_bot_id = None
-    user.notion_workspace_id = None
-    user.notion_workspace_name = None
-    db.commit()
+    integration = _get_notion_integration(user, db)
+    if integration:
+        db.delete(integration)
+        db.commit()
     return {"ok": True}
 
 
@@ -104,7 +129,8 @@ def export_tailoring_to_notion(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    if not user.notion_access_token:
+    integration = _get_notion_integration(user, db)
+    if not integration or not (integration.credentials or {}).get("access_token"):
         raise HTTPException(status_code=403, detail="Notion not connected")
 
     tailoring = (
@@ -145,11 +171,13 @@ def export_tailoring_to_notion(
         existing_page_id = tailoring.notion_posting_page_id
 
     page_title = "Advocacy Letter" if view == "letter" else "Job Posting"
+    access_token = integration.credentials["access_token"]
+    meta = integration.provider_metadata or {}
 
     try:
         if existing_page_id:
             updated = update_notion_page(
-                access_token=user.notion_access_token,
+                access_token=access_token,
                 page_id=existing_page_id,
                 title=page_title,
                 markdown=markdown,
@@ -168,25 +196,35 @@ def export_tailoring_to_notion(
                 )
                 return {"page_url": page_url}
 
-        # Lock user and tailoring rows before container creation to prevent
+        # Lock user, integration, and tailoring rows before container creation to prevent
         # concurrent exports racing to create duplicate parent/container pages.
         user = db.query(User).filter(User.id == user.id).with_for_update().first()
+        integration = (
+            db.query(UserIntegration)
+            .filter(UserIntegration.user_id == user.id, UserIntegration.provider == "notion")
+            .with_for_update()
+            .first()
+        )
         tailoring = (
             db.query(Tailoring).filter(Tailoring.id == tailoring_id).with_for_update().first()
         )
 
+        meta = integration.provider_metadata or {}
+        access_token = integration.credentials["access_token"]
+
         # Ensure workspace-level and per-tailoring container pages exist
         parent_page_id = get_or_create_parent_page(
-            access_token=user.notion_access_token,
-            existing_parent_page_id=user.notion_parent_page_id,
+            access_token=access_token,
+            existing_parent_page_id=meta.get("parent_page_id"),
         )
-        if parent_page_id != user.notion_parent_page_id:
-            user.notion_parent_page_id = parent_page_id
+        if parent_page_id != meta.get("parent_page_id"):
+            integration.provider_metadata = {**meta, "parent_page_id": parent_page_id}
+            meta = integration.provider_metadata
 
         is_new_container = not tailoring.notion_container_page_id
 
         container_page_id = get_or_create_tailoring_container(
-            access_token=user.notion_access_token,
+            access_token=access_token,
             parent_page_id=parent_page_id,
             existing_container_id=tailoring.notion_container_page_id,
             title=container_title,
@@ -204,7 +242,7 @@ def export_tailoring_to_notion(
         # Posting placeholder first so the ordering is preserved.
         if is_new_container and view == "letter" and not tailoring.notion_posting_page_id:
             stub_id, stub_url = create_notion_page(
-                access_token=user.notion_access_token,
+                access_token=access_token,
                 parent_page_id=container_page_id,
                 title="Job Posting",
                 markdown="*Export the Job Posting view from Tailord to populate this page.*",
@@ -218,18 +256,15 @@ def export_tailoring_to_notion(
             )
 
         page_id, page_url = create_notion_page(
-            access_token=user.notion_access_token,
+            access_token=access_token,
             parent_page_id=container_page_id,
             title=page_title,
             markdown=markdown,
         )
     except NotionAuthError:
-        logger.warning("Notion access revoked for user %s — clearing token", user.id)
-        user.notion_access_token = None
-        user.notion_bot_id = None
-        user.notion_workspace_id = None
-        user.notion_workspace_name = None
-        user.notion_parent_page_id = None
+        logger.warning("Notion access revoked for user %s — clearing integration", user.id)
+        if integration:
+            db.delete(integration)
         db.commit()
         raise HTTPException(status_code=403, detail="notion_disconnected")
     except ValueError as e:

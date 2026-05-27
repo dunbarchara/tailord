@@ -9,7 +9,10 @@
 
 | Table | Rows est. | Primary owner | Notes |
 |-------|-----------|---------------|-------|
-| `users` | per-user | Identity | The root anchor for all user data |
+| `users` | per-user | Identity | Root anchor; identity/auth fields extracted to satellite tables |
+| `auth_identities` | 1+ per user | Identity | Provider-neutral OAuth subjects; replaces `users.google_sub` |
+| `user_profiles` | 1 per user | Identity | Display prefs + public profile; replaces inline fields on `users` |
+| `user_integrations` | 0–N per user | Identity | Per-user OAuth tokens (Notion now; GitHub future) |
 | `experiences` | 1 per user | Ingestion | Pipeline state + raw source data |
 | `experience_groups` | many per user | Claims | Parent containers for grouped claims |
 | `experience_claims` | many per user | Claims | Atomic experience units; embedded |
@@ -23,39 +26,90 @@
 
 ## `users`
 
-**Purpose:** Identity, preferences, integration tokens.
+**Purpose:** Root identity anchor only. All auth, profile, and integration fields extracted to satellite tables via migration `a7b8c9d0e1f2`.
 
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | Internal ID used as FK anchor throughout |
-| `google_sub` | varchar UNIQUE | no | Google OAuth subject — the stable external identity |
-| `email` | varchar | no | |
-| `name` | varchar | yes | From Google OAuth |
-| `preferred_first_name` | varchar | yes | User-set; overrides `name` for LLM prompts |
-| `preferred_last_name` | varchar | yes | |
-| `pronouns` | varchar | yes | Used in LLM advocacy blurbs ("she built…") |
-| `username_slug` | varchar UNIQUE | yes | Public profile URL segment `/u/<slug>` |
-| `avatar_url` | varchar | yes | |
-| `profile_public` | boolean | no | `false` default — explicit opt-in |
+| `email` | varchar | yes | Nullable — cleared on tombstone |
+| `name` | varchar | yes | From OAuth; cleared on tombstone |
 | `status` | varchar | no | `pending` \| `approved` — admin gate |
 | `is_admin` | boolean | no | |
-| `notion_access_token` | varchar | yes | Notion OAuth |
-| `notion_bot_id` | varchar | yes | |
-| `notion_workspace_id` | varchar | yes | |
-| `notion_workspace_name` | varchar | yes | |
-| `notion_parent_page_id` | varchar | yes | |
 | `created_at` | timestamptz | no | |
+| `updated_at` | timestamptz | yes | Set on any mutation |
+| `deleted_at` | timestamptz | yes | Set on account deletion (tombstone); PII cleared at same time |
 
 **Relationships out:**
+- → `auth_identities` (1:many, cascade delete; selectin-loaded)
+- → `user_profiles` (1:1, cascade delete; selectin-loaded)
+- → `user_integrations` (1:many, cascade delete; selectin-loaded)
 - → `experiences` (1:1)
 - → `jobs` (1:many)
 - → `tailorings` (1:many)
 - → `experience_claims` (1:many, cascade delete)
 - → `experience_groups` (1:many, cascade delete)
 
-**Questions / candidates for change:**
-- Notion fields (5 columns) are only populated for Notion-connected users. Could be extracted to a `user_integrations` table if more integrations follow the same pattern — not worth it yet unless Notion fields become more complex.
-- No `deleted_at` soft-delete. Deletion is hard (cascades to all claims, tailorings, etc.).
+**Delete behaviour (v1):** `DELETE /users/me` hard-cascades all user data (tailorings, jobs, experience, claims, groups, integrations, identities, profile), then sets `deleted_at` and clears `email`/`name` on the row as a tombstone. Row is kept indefinitely for platform metrics (account lifetime, churn cohorts). Hard user deletion is now a product feature with a safe implementation.
+
+---
+
+## `auth_identities`
+
+**Purpose:** Provider-neutral OAuth subjects. One row per (provider, subject) pair. Replaces `users.google_sub`. Designed to support multiple auth providers per user.
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | UUID PK | no | |
+| `user_id` | UUID FK → users | no | CASCADE delete; indexed |
+| `provider` | varchar(50) | no | `google` now; future: `linkedin`, `magic_link` |
+| `subject` | varchar | no | `google_sub` for google; email for magic_link |
+| `email` | varchar | yes | Provider-supplied email at auth time |
+| `connected_at` | timestamptz | no | |
+| `updated_at` | timestamptz | no | |
+
+**Constraints:** UNIQUE `(provider, subject)`
+
+**Identity lookup pattern:** `X-User-Id` header = google_sub. Backend: `AuthIdentity.query(provider="google", subject=x_user_id)` → loads User. Frontend/header contract unchanged.
+
+---
+
+## `user_profiles`
+
+**Purpose:** Display preferences and public profile settings. Exactly 1 row per user. Replaces the inline profile fields on `users`. Loaded via `lazy="selectin"` — always co-loaded with User.
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | UUID PK | no | |
+| `user_id` | UUID FK → users | no | CASCADE delete; UNIQUE (1:1) |
+| `preferred_first_name` | varchar | yes | User-set display name |
+| `preferred_last_name` | varchar | yes | |
+| `pronouns` | varchar | yes | Used in LLM advocacy blurbs |
+| `avatar_url` | varchar | yes | Provider-supplied; updated on every login |
+| `username_slug` | varchar UNIQUE | yes | Public profile URL segment `/u/<slug>`; indexed |
+| `profile_public` | boolean | no | `false` default — explicit opt-in |
+| `communication_email` | varchar | yes | Future: digest/notification emails separate from auth email |
+| `created_at` | timestamptz | no | |
+| `updated_at` | timestamptz | no | |
+
+---
+
+## `user_integrations`
+
+**Purpose:** Per-user OAuth tokens and metadata for external service integrations. One row per (user_id, provider) pair. Replaces the 5 `notion_*` columns on `users`. Designed to absorb future integrations (GitHub per-user OAuth, Jira, etc.) without schema changes. Loaded via `lazy="selectin"`.
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | UUID PK | no | |
+| `user_id` | UUID FK → users | no | CASCADE delete; indexed |
+| `provider` | varchar(50) | no | `notion` now; future: `github`, `jira` |
+| `credentials` | JSONB | yes | `{access_token, refresh_token?, expires_at?}` — **never exposed in API responses** |
+| `metadata` | JSONB | yes | Provider-specific non-secret data. Notion: `{bot_id, workspace_id, workspace_name, parent_page_id}` |
+| `connected_at` | timestamptz | no | |
+| `updated_at` | timestamptz | no | |
+
+**Constraints:** UNIQUE `(user_id, provider)`
+
+**Security TODO:** `credentials` should be encrypted at rest. Currently stored plaintext in JSONB.
 
 ---
 
@@ -300,7 +354,10 @@
 ## Cross-cutting observations
 
 ### Ownership scoping
-All user-scoped tables now anchor directly to `users.id`:
+All user-scoped tables anchor directly to `users.id`:
+- `auth_identities` → `users.id` (cascade)
+- `user_profiles` → `users.id` (1:1, cascade)
+- `user_integrations` → `users.id` (cascade)
 - `experiences` → `users.id` (unique)
 - `experience_claims` → `users.id`
 - `experience_groups` → `users.id`
@@ -308,22 +365,25 @@ All user-scoped tables now anchor directly to `users.id`:
 - `tailorings` → `users.id`
 - `llm_trigger_log` → `users.id`
 
-The two-step experience lookup (`user_id → experience.id → claim`) is now gone. Every ownership check is a single-hop `WHERE user_id = ?`.
+Every ownership check is a single-hop `WHERE user_id = ?`.
 
 ### Cascade behaviour
 
-| Child table | On user delete | On parent delete |
-|-------------|---------------|-----------------|
+| Child table | On user delete (hard) | On parent delete |
+|-------------|----------------------|-----------------|
+| `auth_identities` | CASCADE | — |
+| `user_profiles` | CASCADE | — |
+| `user_integrations` | CASCADE | — |
 | `experiences` | CASCADE | — |
 | `experience_groups` | CASCADE | — |
 | `experience_claims` | CASCADE | group_id SET NULL |
 | `jobs` | — (user_id nullable) | — |
-| `tailorings` | — (no cascade; user_id not FK-constrained on delete) | — |
+| `tailorings` | — (user_id not FK-constrained on delete) | — |
 | `job_chunks` | — | jobs CASCADE |
 | `llm_trigger_log` | CASCADE | — |
 | `tailoring_debug_logs` | — | tailorings CASCADE |
 
-> Note: `tailorings` does not cascade-delete when a user is deleted. This is a gap — deleting a user would orphan their tailorings. If hard user deletion becomes a product feature, this needs a migration.
+> Note: `tailorings` and `jobs` do not cascade-delete when a user is deleted. `DELETE /users/me` handles this explicitly in application code (deletes tailorings, then jobs, then experience, then claims/groups, then integrations/identities, then tombstones the user row). The FK gap on `tailorings` remains — a future migration could add `ON DELETE CASCADE` to close it.
 
 ### Nullable FKs
 - `jobs.user_id` — nullable for legacy reasons. Safe to make non-nullable after confirming no null rows in production.
@@ -350,3 +410,5 @@ The following filter patterns are used in hot paths but may not have explicit in
 | Add cleanup for `llm_trigger_log` | Cron job / partition / TTL | No urgency; defer until table size is visible |
 | Drop `experience_source` from `job_chunks` | After frontend audit | Check `_serialize_chunk` in `tailorings.py` |
 | Drop `user_input_text` from `experiences` | After audit of read sites | Low priority; data is redundant with claims |
+| Encrypt `user_integrations.credentials` at rest | AES via pgcrypto / app-level | Security TODO — no urgency until prod users connect Notion |
+| Add `ON DELETE CASCADE` to `tailorings.user_id` FK | Migration to close the gap | Low risk currently — app code handles it explicitly |
