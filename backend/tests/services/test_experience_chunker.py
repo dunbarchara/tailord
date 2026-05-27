@@ -22,7 +22,9 @@ from app.services.experience_chunker import (
 
 
 def _make_experience(extracted_profile: dict | None = None) -> SimpleNamespace:
-    return SimpleNamespace(id=uuid.uuid4(), extracted_profile=extracted_profile)
+    return SimpleNamespace(
+        id=uuid.uuid4(), user_id=uuid.uuid4(), extracted_profile=extracted_profile
+    )
 
 
 def _make_db() -> MagicMock:
@@ -186,7 +188,7 @@ def test_chunk_resume_sets_correct_source_fields():
     chunk = db._added[0]
     assert chunk.source_type == "resume"
     assert chunk.source_ref is None
-    assert chunk.experience_id == exp.id
+    assert chunk.user_id == exp.user_id
 
 
 def test_chunk_resume_positions_are_sequential():
@@ -249,7 +251,7 @@ def test_chunk_github_repo_inserts_chunks():
     for chunk in db._added:
         assert chunk.source_type == "github"
         assert chunk.source_ref == "tailord"
-        assert chunk.experience_id == exp.id
+        assert chunk.user_id == exp.user_id
 
 
 def test_chunk_github_repo_noop_when_repo_not_found():

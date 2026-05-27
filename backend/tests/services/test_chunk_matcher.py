@@ -369,7 +369,7 @@ def _run_enrich_vector(job_id, chunks, llm_result, experience_id=None):
                                     job_id,
                                     "# Job\n\nContent",
                                     {},
-                                    experience_id=experience_id,
+                                    user_id=experience_id,
                                 )
 
     return added, mock_db
@@ -487,7 +487,7 @@ def test_re_enrich_vector_path_updates_chunk_fields():
                             mock_settings.vector_top_k = 8
                             mock_settings.llm_model = "gpt-4o-mini"
                             mock_settings.embedding_model = "text-embedding-3-small"
-                            re_enrich_single_chunk("fake-chunk-id", {}, experience_id=experience_id)
+                            re_enrich_single_chunk("fake-chunk-id", {}, user_id=experience_id)
 
     assert mock_chunk.match_score == 2
     assert mock_chunk.match_rationale

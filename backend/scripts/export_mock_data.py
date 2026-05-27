@@ -53,13 +53,13 @@ def row_to_dict(row: object) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# ExperienceChunks builder
+# ExperienceClaims builder
 # ---------------------------------------------------------------------------
 
 
-def build_experience_chunks(chunks: list) -> dict:
+def build_experience_claims(chunks: list) -> dict:
     """
-    Group ExperienceChunk rows into the ExperienceChunksResponse shape the
+    Group ExperienceClaim rows into the ExperienceClaimsResponse shape the
     frontend expects.
     """
     resume_we: dict[str, dict] = {}  # group_key → {group_key, date_range, chunks[]}
@@ -195,7 +195,7 @@ def main() -> None:
     from app.clients.database import SessionLocal
     from app.models.database import (
         Experience,
-        ExperienceChunk,
+        ExperienceClaim,
         Job,
         JobChunk,
         Tailoring,
@@ -235,14 +235,14 @@ def main() -> None:
         exp_dict.pop("user_id", None)
         exp_dict.pop("s3_key", None)
 
-        # ── ExperienceChunks ──────────────────────────────────────────────────
+        # ── ExperienceClaims ──────────────────────────────────────────────────
         exp_chunks = (
-            db.query(ExperienceChunk)
-            .filter(ExperienceChunk.experience_id == experience.id)
-            .order_by(ExperienceChunk.source_type, ExperienceChunk.position)
+            db.query(ExperienceClaim)
+            .filter(ExperienceClaim.user_id == experience.user_id)
+            .order_by(ExperienceClaim.source_type, ExperienceClaim.position)
             .all()
         )
-        experience_chunks = build_experience_chunks(exp_chunks)
+        experience_claims = build_experience_claims(exp_chunks)
 
         # ── Tailorings ────────────────────────────────────────────────────────
         tailorings_list = []
@@ -307,7 +307,7 @@ def main() -> None:
             "displayName": display_name,
             "user": user_dict,
             "experience": exp_dict,
-            "experienceChunks": experience_chunks,
+            "experienceClaims": experience_claims,
             "tailorings": tailorings_list,
             "tailoringDetails": tailoring_details,
             "chunks": chunks_map,

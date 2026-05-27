@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     # ── Matching ──────────────────────────────────────────────────────────────
     # matching_mode: "vector" = cosine pre-selection → focused grouped context → LLM scores (default)
     #                "llm"    = full formatted profile passed to LLM scorer (legacy fallback)
-    # vector_top_k: number of ExperienceChunk rows retrieved per JobChunk in vector mode.
+    # vector_top_k: number of ExperienceClaim rows retrieved per JobChunk in vector mode.
     # chunk_scorer_concurrency: max parallel LLM/embedding calls during chunk scoring.
     matching_mode: str = "vector"
     vector_top_k: int = 8

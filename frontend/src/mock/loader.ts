@@ -1,5 +1,5 @@
 import data from './data.json';
-import type { TailoringListItem, Tailoring, ExperienceRecord, ChunksResponse, ExperienceChunksResponse } from '@/types';
+import type { TailoringListItem, Tailoring, ExperienceRecord, ChunksResponse, ExperienceClaimsResponse } from '@/types';
 
 export function getMockDisplayName(): string {
   return data.displayName;
@@ -27,6 +27,6 @@ export function getMockChunks(id: string): ChunksResponse | null {
   return (chunks[id] ?? null) as ChunksResponse | null;
 }
 
-export function getMockExperienceChunks(): ExperienceChunksResponse {
-  return (data as unknown as { experienceChunks: ExperienceChunksResponse }).experienceChunks;
+export function getMockExperienceClaims(): ExperienceClaimsResponse {
+  return (data as unknown as { experienceClaims: ExperienceClaimsResponse }).experienceClaims;
 }

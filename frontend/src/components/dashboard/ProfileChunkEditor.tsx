@@ -5,8 +5,8 @@ import { ChevronDown, ChevronUp, Pencil, Trash2, Check, Loader2, Plus, X, GitBra
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import type {
-  ExperienceChunk,
-  ExperienceChunksResponse,
+  ExperienceClaim,
+  ExperienceClaimsResponse,
   WorkExperienceGroup,
 } from '@/types';
 
@@ -239,8 +239,8 @@ function ExperienceTable({
 }: {
   groupLabel?: string;
   groupChunkIds?: string[];
-  chunks: ExperienceChunk[];
-  context?: (chunk: ExperienceChunk) => string | undefined;
+  chunks: ExperienceClaim[];
+  context?: (chunk: ExperienceClaim) => string | undefined;
   onSave: (id: string, content: string) => Promise<void>;
   onSaveGroupKey?: (chunkIds: string[], newLabel: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -357,7 +357,7 @@ function SkillsTable({
   onSave,
   readOnly = false,
 }: {
-  chunks: ExperienceChunk[];
+  chunks: ExperienceClaim[];
   onDelete: (id: string) => Promise<void>;
   onSave: (id: string, content: string) => Promise<void>;
   readOnly?: boolean;
@@ -377,7 +377,7 @@ function SkillsTable({
     try { await onDelete(id); } finally { setDeletingId(null); }
   };
 
-  const startPillEdit = (chunk: ExperienceChunk) => {
+  const startPillEdit = (chunk: ExperienceClaim) => {
     setEditingPillId(chunk.id);
     setEditingPillValue(chunk.content);
   };
@@ -499,7 +499,7 @@ function InlineSkillsRow({
   onSave,
   readOnly = false,
 }: {
-  chunks: ExperienceChunk[];
+  chunks: ExperienceClaim[];
   onDelete: (id: string) => Promise<void>;
   onSave: (id: string, content: string) => Promise<void>;
   readOnly?: boolean;
@@ -519,7 +519,7 @@ function InlineSkillsRow({
     try { await onDelete(id); } finally { setDeletingId(null); }
   };
 
-  const startPillEdit = (chunk: ExperienceChunk) => {
+  const startPillEdit = (chunk: ExperienceClaim) => {
     setEditingPillId(chunk.id);
     setEditingPillValue(chunk.content);
   };
@@ -638,7 +638,7 @@ function RepoTable({
   readOnly = false,
 }: {
   repoName: string;
-  chunks: ExperienceChunk[];
+  chunks: ExperienceClaim[];
   onSave: (id: string, content: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   readOnly?: boolean;
@@ -754,7 +754,7 @@ function ActivitySection({
 
 /* ─── AddExperienceForm ──────────────────────────────────────────────────── */
 
-function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: ExperienceChunk[]) => void; readOnly?: boolean }) {
+function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: ExperienceClaim[]) => void; readOnly?: boolean }) {
   const [text, setText] = useState('');
   const [parsing, setParsing] = useState(false);
   const [persisting, setPersisting] = useState(false);
@@ -794,7 +794,7 @@ function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: Ex
     if (chunks.length === 0) return;
     setPersisting(true);
     try {
-      const res = await fetch('/api/experience/user-input/chunks', {
+      const res = await fetch('/api/experience/user-input/claims', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chunks }),
@@ -804,10 +804,10 @@ function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: Ex
         toastError(err.detail ?? 'Failed to save');
         return;
       }
-      const data: { chunk_ids: string[] } = await res.json();
+      const data: { claim_ids: string[] } = await res.json();
       const now = new Date().toISOString();
-      const newChunks: ExperienceChunk[] = chunks.map((content, i) => ({
-        id: data.chunk_ids[i] ?? `temp-${i}`,
+      const newChunks: ExperienceClaim[] = chunks.map((content, i) => ({
+        id: data.claim_ids[i] ?? `temp-${i}`,
         source_type: 'user_input',
         source_ref: null,
         claim_type: 'other',
@@ -901,16 +901,16 @@ function formatWorkGroupKey(group: WorkExperienceGroup): string {
 
 /* ─── ProfileChunkEditor ─────────────────────────────────────────────────── */
 
-export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceChunksResponse; readOnly?: boolean }) {
-  const [data, setData] = useState<ExperienceChunksResponse | null>(initialData ?? null);
+export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceClaimsResponse; readOnly?: boolean }) {
+  const [data, setData] = useState<ExperienceClaimsResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
 
   const fetchChunks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/experience/chunks');
+      const res = await fetch('/api/experience/claims');
       if (!res.ok) return;
-      const json: ExperienceChunksResponse = await res.json();
+      const json: ExperienceClaimsResponse = await res.json();
       setData(json);
     } finally {
       setLoading(false);
@@ -923,7 +923,7 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
   }, [fetchChunks, refreshKey, initialData]);
 
   const handleSave = async (id: string, content: string) => {
-    const res = await fetch(`/api/experience/chunks/${id}`, {
+    const res = await fetch(`/api/experience/claims/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -932,12 +932,12 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail ?? 'Failed to save');
     }
-    const updated: ExperienceChunk = await res.json();
+    const updated: ExperienceClaim = await res.json();
     setData((prev) => prev ? patchChunkInResponse(prev, updated) : prev);
   };
 
   const handleDelete = async (id: string) => {
-    const res = await fetch(`/api/experience/chunks/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/experience/claims/${id}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toastError(err.detail ?? 'Failed to delete');
@@ -950,7 +950,7 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
   const handleSaveGroupKey = async (chunkIds: string[], newLabel: string) => {
     const results = await Promise.all(
       chunkIds.map((id) =>
-        fetch(`/api/experience/chunks/${id}`, {
+        fetch(`/api/experience/claims/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ group_key: newLabel }),
@@ -967,7 +967,7 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
   /** Delete every chunk in a group. */
   const handleDeleteGroup = async (chunkIds: string[]) => {
     const results = await Promise.all(
-      chunkIds.map((id) => fetch(`/api/experience/chunks/${id}`, { method: 'DELETE' })),
+      chunkIds.map((id) => fetch(`/api/experience/claims/${id}`, { method: 'DELETE' })),
     );
     if (results.some((r) => !r.ok)) {
       toastError('Some items could not be deleted');
@@ -977,7 +977,7 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
     );
   };
 
-  const handleAdded = (newChunks: ExperienceChunk[]) => {
+  const handleAdded = (newChunks: ExperienceClaim[]) => {
     setData((prev) => {
       if (!prev) return prev;
       return { ...prev, user_input: [...(prev.user_input ?? []), ...newChunks] };
@@ -1162,10 +1162,10 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
 /* ─── Response patch helpers ─────────────────────────────────────────────── */
 
 function patchChunkInResponse(
-  prev: ExperienceChunksResponse,
-  updated: ExperienceChunk,
-): ExperienceChunksResponse {
-  const replaceIn = (chunks: ExperienceChunk[]) =>
+  prev: ExperienceClaimsResponse,
+  updated: ExperienceClaim,
+): ExperienceClaimsResponse {
+  const replaceIn = (chunks: ExperienceClaim[]) =>
     chunks.map((c) => (c.id === updated.id ? updated : c));
 
   return {
@@ -1190,10 +1190,10 @@ function patchChunkInResponse(
 }
 
 function removeChunkFromResponse(
-  prev: ExperienceChunksResponse,
+  prev: ExperienceClaimsResponse,
   id: string,
-): ExperienceChunksResponse {
-  const filterOut = (chunks: ExperienceChunk[]) => chunks.filter((c) => c.id !== id);
+): ExperienceClaimsResponse {
+  const filterOut = (chunks: ExperienceClaim[]) => chunks.filter((c) => c.id !== id);
 
   const newResume = prev.resume
     ? {

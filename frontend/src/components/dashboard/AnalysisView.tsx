@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, MousePointerClick, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ChunksResponse, ExperienceChunk, GapAnalysis, JobChunk } from '@/types';
+import type { ChunksResponse, ExperienceClaim, GapAnalysis, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
 import { JobPosting } from '@/components/dashboard/JobPosting';
 
@@ -18,8 +18,8 @@ interface AnalysisViewProps {
   authorName?: string | null;
   tailoringId?: string;
   gapAnalysis?: GapAnalysis | null;
-  gapResponses?: ExperienceChunk[] | null;
-  partialResponses?: ExperienceChunk[] | null;
+  gapResponses?: ExperienceClaim[] | null;
+  partialResponses?: ExperienceClaim[] | null;
   generationReady?: boolean;
   readOnly?: boolean;
   editMode?: boolean;
@@ -48,9 +48,9 @@ interface ChunkContextPanelProps {
   chunk: JobChunk;
   tailoringId?: string;
   gapQuestion?: { question: string; context: string } | null;
-  answeredChunk?: ExperienceChunk | null;
+  answeredChunk?: ExperienceClaim | null;
   partialQuestion?: { question: string; context: string } | null;
-  partialAnsweredChunk?: ExperienceChunk | null;
+  partialAnsweredChunk?: ExperienceClaim | null;
   persistedPartialAnswer?: string | null;
   onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null, partialQuestion?: string | null, partialContext?: string | null, answerText?: string) => void;
   readOnly?: boolean;

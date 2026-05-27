@@ -206,7 +206,7 @@ export interface ChunksResponse {
   chunks: JobChunk[]
 }
 
-export interface ExperienceChunk {
+export interface ExperienceClaim {
   id: string
   source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'partial_response' | 'additional_experience'
   source_ref: string | null
@@ -223,37 +223,37 @@ export interface ExperienceChunk {
 export interface WorkExperienceGroup {
   group_key: string | null
   date_range: string | null
-  chunks: ExperienceChunk[]
+  chunks: ExperienceClaim[]
 }
 
 export interface ProjectGroup {
   group_key: string | null
-  chunks: ExperienceChunk[]
+  chunks: ExperienceClaim[]
 }
 
 export interface GitHubRepoGroup {
   group_key: string | null
-  chunks: ExperienceChunk[]
+  chunks: ExperienceClaim[]
 }
 
-export interface ResumeChunksSection {
+export interface ResumeClaimsSection {
   work_experience: WorkExperienceGroup[]
-  skills: ExperienceChunk[]
+  skills: ExperienceClaim[]
   projects: ProjectGroup[]
-  education: ExperienceChunk[]
-  other: ExperienceChunk[]
+  education: ExperienceClaim[]
+  other: ExperienceClaim[]
 }
 
-export interface GitHubChunksSection {
+export interface GitHubClaimsSection {
   repos: GitHubRepoGroup[]
 }
 
-export interface ExperienceChunksResponse {
-  resume: ResumeChunksSection | null
-  github: GitHubChunksSection | null
-  user_input: ExperienceChunk[] | null
-  gap_response: ExperienceChunk[] | null
-  partial_response: ExperienceChunk[] | null
+export interface ExperienceClaimsResponse {
+  resume: ResumeClaimsSection | null
+  github: GitHubClaimsSection | null
+  user_input: ExperienceClaim[] | null
+  gap_response: ExperienceClaim[] | null
+  partial_response: ExperienceClaim[] | null
 }
 
 export interface ExperienceRecord {

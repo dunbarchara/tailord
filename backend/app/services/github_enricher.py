@@ -239,7 +239,7 @@ def enrich_github_repos(
             for repo_data in enriched:
                 total_chunks += chunk_github_repo(db, experience, repo_data["name"])
             db.commit()
-            embed_experience_chunks(experience.id, db)
+            embed_experience_chunks(experience.user_id, db)
 
             total_ms = int((_time.perf_counter() - _overall_start) * 1000)
             GITHUB_ENRICHMENT_TOTAL.labels(status="success" if errors == 0 else "partial").inc()

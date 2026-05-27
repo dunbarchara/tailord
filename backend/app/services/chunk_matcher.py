@@ -77,25 +77,25 @@ def _build_candidate_header(candidate_name: str | None, pronouns: str | None) ->
 
 def _retrieve_top_k_experience_chunks(
     job_chunk_embedding: list[float],
-    experience_id: uuid.UUID,
+    user_id: uuid.UUID,
     db,
     k: int,
 ) -> list:
     """
-    Return the top-K ExperienceChunk rows most similar to job_chunk_embedding,
+    Return the top-K ExperienceClaim rows most similar to job_chunk_embedding,
     ordered by cosine similarity (closest first).
 
-    Scoped to the given experience_id. Skips chunks with null embeddings.
+    Scoped to the given user_id. Skips chunks with null embeddings.
     """
-    from app.models.database import ExperienceChunk
+    from app.models.database import ExperienceClaim
 
     return (
-        db.query(ExperienceChunk)
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.experience_id == experience_id,
-            ExperienceChunk.embedding.isnot(None),
+            ExperienceClaim.user_id == user_id,
+            ExperienceClaim.embedding.isnot(None),
         )
-        .order_by(ExperienceChunk.embedding.cosine_distance(job_chunk_embedding))
+        .order_by(ExperienceClaim.embedding.cosine_distance(job_chunk_embedding))
         .limit(k)
         .all()
     )
@@ -103,7 +103,7 @@ def _retrieve_top_k_experience_chunks(
 
 def _build_grouped_context(chunks: list) -> str:
     """
-    Format a list of ExperienceChunk rows into a grouped, human-readable context block.
+    Format a list of ExperienceClaim rows into a grouped, human-readable context block.
 
     Groups chunks by (group_key, date_range, source_type) so the LLM sees them as
     coherent work-experience entries / projects / GitHub repos, not isolated facts.
@@ -157,7 +157,7 @@ def _score_chunk_vector(
     chunk_content: str,
     chunk_type: str,
     chunk_section: str | None,
-    experience_id: uuid.UUID,
+    user_id: uuid.UUID,
     candidate_header: str,
     k: int,
     force_score: bool = False,
@@ -166,7 +166,7 @@ def _score_chunk_vector(
     """
     Score a single job chunk using vector pre-selection.
 
-    Embeds chunk_content, retrieves the top-K most similar ExperienceChunks,
+    Embeds chunk_content, retrieves the top-K most similar ExperienceClaims,
     builds a grouped context block, then calls the LLM for a single score + blurb.
 
     Creates its own DB session — safe to call from threads.
@@ -181,7 +181,7 @@ def _score_chunk_vector(
 
     db = SessionLocal()
     try:
-        top_k_chunks = _retrieve_top_k_experience_chunks(job_chunk_embedding, experience_id, db, k)
+        top_k_chunks = _retrieve_top_k_experience_chunks(job_chunk_embedding, user_id, db, k)
     finally:
         db.close()
 
@@ -242,7 +242,7 @@ def enrich_job_chunks(
     job_markdown: str,
     extracted_profile: dict,
     pronouns: str | None = None,
-    experience_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
 ) -> None:
     """
@@ -251,7 +251,7 @@ def enrich_job_chunks(
 
     Dispatches based on settings.matching_mode:
       - "vector": cosine pre-selection → focused grouped context → one LLM call per chunk.
-                  Requires experience_id; falls back to llm mode if missing.
+                  Requires user_id; falls back to llm mode if missing.
       - "llm":    full formatted profile → batched LLM calls (default).
 
     Creates its own DB session — do not pass a session across thread boundaries.
@@ -285,10 +285,10 @@ def enrich_job_chunks(
             return
 
         # Determine effective mode
-        use_vector = settings.matching_mode == "vector" and experience_id is not None
-        if settings.matching_mode == "vector" and experience_id is None:
+        use_vector = settings.matching_mode == "vector" and user_id is not None
+        if settings.matching_mode == "vector" and user_id is None:
             logger.warning(
-                "enrich_job_chunks: MATCHING_MODE=vector but experience_id not provided"
+                "enrich_job_chunks: MATCHING_MODE=vector but user_id not provided"
                 " — falling back to llm mode for job_id=%s",
                 job_id,
             )
@@ -313,7 +313,7 @@ def enrich_job_chunks(
                     chunk.content,
                     chunk.chunk_type,
                     chunk.section,
-                    experience_id,
+                    user_id,
                     candidate_header,
                     k,
                     prompt_name=prompt.PROMPT_NAME_VECTOR_BATCH,
@@ -549,7 +549,7 @@ def re_enrich_single_chunk(
     chunk_id: str,
     extracted_profile: dict,
     pronouns: str | None = None,
-    experience_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
     force_score: bool = False,
 ) -> None:
@@ -572,7 +572,7 @@ def re_enrich_single_chunk(
             logger.warning("re_enrich_single_chunk_not_found", chunk_id=chunk_id)
             return
 
-        use_vector = settings.matching_mode == "vector" and experience_id is not None
+        use_vector = settings.matching_mode == "vector" and user_id is not None
 
         if use_vector:
             candidate_header = _build_candidate_header(candidate_name, pronouns)
@@ -581,7 +581,7 @@ def re_enrich_single_chunk(
                 chunk.content,
                 chunk.chunk_type,
                 chunk.section,
-                experience_id,
+                user_id,
                 candidate_header,
                 k,
                 force_score=force_score,
@@ -654,7 +654,7 @@ def refresh_job_chunks(
     tailoring_id: str,
     extracted_profile: dict,
     pronouns: str | None = None,
-    experience_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
 ) -> None:
     """
@@ -690,7 +690,7 @@ def refresh_job_chunks(
             db.commit()
             return
 
-        use_vector = settings.matching_mode == "vector" and experience_id is not None
+        use_vector = settings.matching_mode == "vector" and user_id is not None
 
         result_map: dict[str, ChunkMatchResult] = {}
         error_count = 0
@@ -708,7 +708,7 @@ def refresh_job_chunks(
                     chunk.content,
                     chunk.chunk_type,
                     chunk.section,
-                    experience_id,
+                    user_id,
                     candidate_header,
                     k,
                     prompt_name=prompt.PROMPT_NAME_VECTOR_BATCH,

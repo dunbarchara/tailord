@@ -64,6 +64,12 @@ class User(Base):
     )
     jobs: Mapped[list["Job"]] = relationship("Job", back_populates="user")
     tailorings: Mapped[list["Tailoring"]] = relationship("Tailoring", back_populates="user")
+    claims: Mapped[list["ExperienceClaim"]] = relationship(
+        "ExperienceClaim", back_populates="user", cascade="all, delete-orphan"
+    )
+    groups: Mapped[list["ExperienceGroup"]] = relationship(
+        "ExperienceGroup", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Experience(Base):
@@ -95,9 +101,6 @@ class Experience(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="experience")
-    chunks: Mapped[list["ExperienceChunk"]] = relationship(
-        "ExperienceChunk", back_populates="experience", cascade="all, delete-orphan"
-    )
 
 
 class Job(Base):
@@ -235,7 +238,48 @@ class TailoringDebugLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class ExperienceChunk(Base):
+class ExperienceGroup(Base):
+    """
+    Parent container for grouped ExperienceClaims (roles, projects, repos, education).
+
+    One level of nesting only: claims belong to a group, groups belong to an experience.
+    Groups are context — they are not embedded. When an ExperienceClaim with a group_id
+    is passed to the LLM, the group context is prepended by the retrieval layer.
+
+    group_type values: role | project | repository | education | custom
+    type_meta: JSONB with type-specific fields (see design doc — no migration needed
+               for new group types, just a new Pydantic variant).
+    """
+
+    __tablename__ = "experience_groups"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    group_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    start_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    end_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    type_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="groups")
+    claims: Mapped[list["ExperienceClaim"]] = relationship(
+        "ExperienceClaim", back_populates="group"
+    )
+
+
+class ExperienceClaim(Base):
     """
     Atomic, source-traceable claim derived from extracted_profile.
     One row per bullet / skill / project / education entry.
@@ -243,43 +287,62 @@ class ExperienceChunk(Base):
     source_type values and lifecycle:
       resume      — parsed from uploaded resume; deleted when resume is removed
       github      — derived from GitHub repo enrichment; deleted when repo is disconnected
-      user_input  — manually submitted by user; deleted per-chunk or all at once
+      user_input  — manually submitted by user; deleted per-claim or all at once
       gap_response — user's answer to a gap question; NEVER deleted by source events,
-                     only by Experience cascade (see 17-chunk-model.md)
+                     only by Experience cascade
       partial_response — user's answer to a path-to-strong question; same lifecycle as gap_response
       annotation  — (future) user-added claim on a position/project; same lifecycle as gap_response
 
     source_ref:  null for resume/user_input/gap_response; repo name for github
     claim_type:  work_experience | skill | project | education | other
+
+    group_id: FK → experience_groups. Null = ungrouped/standalone. SET NULL on group delete.
+    group_key: deprecated denormalized string (kept until group_id backfill is verified).
+
+    confidence:  high   = user directly stated (gap_response, user_input, annotation)
+                 medium = LLM-extracted from structure (resume, PR description)
+                 low    = inferred by pipeline (GitHub stack detection)
+    status:      active | archived (soft delete)
+
     chunk_metadata: null for resume/github/user_input; JSON provenance for gap_response
                     and annotation — e.g. {question, job_chunk_id, tailoring_id}
     """
 
-    __tablename__ = "experience_chunks"
+    __tablename__ = "experience_claims"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    experience_id: Mapped[uuid.UUID] = mapped_column(
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("experiences.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experience_groups.id", ondelete="SET NULL"),
+        nullable=True,
     )
     source_type: Mapped[str] = mapped_column(String(30), nullable=False)
     source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     claim_type: Mapped[str] = mapped_column(String(30), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # Grouping key for rendering hierarchy. Examples:
-    #   work_experience → "ACME Corp | Software Engineer"
-    #   project         → "MyApp"
-    #   education       → "BSc Computer Science | MIT"
-    #   github chunks   → repo name (mirrors source_ref)
-    #   skill / other   → null (flat, no parent group)
+    # group_key: deprecated — replaced by group_id → experience_groups.
+    # Kept until backfill is verified; will be dropped in a future migration.
     group_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     date_range: Mapped[str | None] = mapped_column(String(100), nullable=True)
     technologies: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    # Provenance metadata for gap_response and annotation chunks.
+    confidence: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="medium", server_default="medium"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
+    provenance_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    provenance_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Provenance metadata for gap_response and annotation claims.
     # gap_response: {question: str, job_chunk_id: str, tailoring_id: str}
-    # annotation:   {parent_chunk_id: str}  (future)
+    # annotation:   {parent_claim_id: str}  (future)
     # Null for resume, github, user_input.
     chunk_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -292,7 +355,10 @@ class ExperienceChunk(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    experience: Mapped["Experience"] = relationship("Experience", back_populates="chunks")
+    user: Mapped["User"] = relationship("User", back_populates="claims")
+    group: Mapped["ExperienceGroup | None"] = relationship(
+        "ExperienceGroup", back_populates="claims"
+    )
 
 
 class JobChunk(Base):

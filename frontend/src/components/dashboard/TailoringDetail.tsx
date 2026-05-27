@@ -27,7 +27,7 @@ import { DebugPanel } from '@/components/dashboard/DebugPanel';
 import { AdvocacyLetter } from '@/components/dashboard/AdvocacyLetter';
 import { GenerationView } from '@/components/dashboard/GenerationView';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
-import type { Tailoring, ChunksResponse, ExperienceChunk, JobChunk } from '@/types';
+import type { Tailoring, ChunksResponse, ExperienceClaim, JobChunk } from '@/types';
 
 const POLL_INTERVAL = 3000;
 
@@ -141,8 +141,8 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [activeTab]);
   const [chunksData, setChunksData] = useState<ChunksResponse | null>(null);
   const [chunksError, setChunksError] = useState<string | null>(null);
-  const [gapResponses, setGapResponses] = useState<ExperienceChunk[] | null>(null);
-  const [partialResponses, setPartialResponses] = useState<ExperienceChunk[] | null>(null);
+  const [gapResponses, setGapResponses] = useState<ExperienceClaim[] | null>(null);
+  const [partialResponses, setPartialResponses] = useState<ExperienceClaim[] | null>(null);
   const [notionConnected, setNotionConnected] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [exportingNotionLetter, setExportingNotionLetter] = useState(false);
@@ -297,7 +297,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   useEffect(() => {
     if (readOnly) return;
     if (tailoring?.generation_status !== 'ready') return;
-    fetch('/api/experience/chunks')
+    fetch('/api/experience/claims')
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.gap_response) setGapResponses(d.gap_response);

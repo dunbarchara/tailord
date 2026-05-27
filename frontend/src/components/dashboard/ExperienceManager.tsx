@@ -9,7 +9,7 @@ import { ResumeUploadSection } from '@/components/dashboard/ResumeUploadSection'
 import type { UploadPhase } from '@/components/dashboard/ResumeUploadSection';
 import { GitHubSection } from '@/components/dashboard/GitHubSection';
 import type { GithubState } from '@/components/dashboard/GitHubSection';
-import type { ExperienceRecord, ExperienceChunksResponse, GitHubRepo, ProfileCorrections } from '@/types';
+import type { ExperienceRecord, ExperienceClaimsResponse, GitHubRepo, ProfileCorrections } from '@/types';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -124,7 +124,7 @@ export function ExperienceManager({
 }: {
   readOnly?: boolean;
   initialRecord?: ExperienceRecord;
-  initialChunks?: ExperienceChunksResponse;
+  initialChunks?: ExperienceClaimsResponse;
 } = {}) {
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
   const [hasProfileData, setHasProfileData] = useState(false);

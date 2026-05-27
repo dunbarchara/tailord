@@ -204,7 +204,7 @@ def _finalize_tailoring(
     candidate_name: str,
     job_url: str | None,
     pronouns: str | None = None,
-    experience_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     is_manual: bool = False,
     correlation_id: str = "",
     carrier: dict | None = None,
@@ -389,7 +389,7 @@ def _finalize_tailoring(
                     job_markdown,
                     extracted_profile,
                     pronouns=pronouns,
-                    experience_id=experience_id,
+                    user_id=user_id,
                     candidate_name=candidate_name,
                 )
             except Exception as exc:
@@ -787,7 +787,7 @@ async def _stream_tailoring(
         # db.commit() closes the implicit read transaction so the connection doesn't
         # sit idle-in-transaction for the entire scraping duration (5–15s).
         extracted_profile = experience.extracted_profile
-        experience_id = experience.id
+        user_id = user.id
         candidate_name = user.candidate_name
         candidate_pronouns = user.pronouns or None
         if existing_tailoring:
@@ -880,7 +880,7 @@ async def _stream_tailoring(
                 candidate_name,
                 request.job_url,
                 candidate_pronouns,
-                experience_id,
+                user_id,
                 is_manual,
                 structlog.contextvars.get_contextvars().get("correlation_id", ""),
                 _otel_carrier,
@@ -1401,7 +1401,7 @@ def refresh_tailoring_chunks(
         tailoring_id,
         experience.extracted_profile or {},
         user.pronouns,
-        experience.id,
+        user.id,
         candidate_name,
     )
 
@@ -1627,7 +1627,7 @@ def get_tailoring_debug_info(
             candidate_header=candidate_header,
             job_requirement=f"[{first.chunk_type.upper()}] {first.content}",
             grouped_context=(
-                "(top-8 ExperienceChunks retrieved by cosine similarity at scoring time —\n"
+                "(top-8 ExperienceClaims retrieved by cosine similarity at scoring time —\n"
                 " content varies per job chunk; not stored)"
             ),
             k=settings.vector_top_k,

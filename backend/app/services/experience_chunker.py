@@ -1,5 +1,5 @@
 """
-experience_chunker.py — deterministic chunking of extracted_profile into ExperienceChunk rows.
+experience_chunker.py — deterministic chunking of extracted_profile into ExperienceClaim rows.
 
 No LLM involved. Each public function takes an already-loaded Experience (or its extracted_profile
 dict) and a SQLAlchemy session, deletes existing chunks for the specified source, then inserts new
@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 import structlog
 from sqlalchemy.orm import Session
 
-from app.models.database import Experience, ExperienceChunk
+from app.models.database import Experience, ExperienceClaim
 
 logger = structlog.get_logger(__name__)
 
@@ -188,22 +188,22 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
 
 def _delete_chunks(
     db: Session,
-    experience_id: uuid.UUID,
+    user_id: uuid.UUID,
     source_type: str,
     source_ref: str | None = None,
 ) -> int:
-    """Delete existing chunks matching (experience_id, source_type[, source_ref]).
+    """Delete existing chunks matching (user_id, source_type[, source_ref]).
 
     source_ref=None deletes ALL chunks for that source_type when source_ref is None
     on the row (i.e. resume / user_input). For github, pass the specific repo name
     to limit deletion to that repo; pass None to delete all github chunks.
     """
-    q = db.query(ExperienceChunk).filter(
-        ExperienceChunk.experience_id == experience_id,
-        ExperienceChunk.source_type == source_type,
+    q = db.query(ExperienceClaim).filter(
+        ExperienceClaim.user_id == user_id,
+        ExperienceClaim.source_type == source_type,
     )
     if source_ref is not None:
-        q = q.filter(ExperienceChunk.source_ref == source_ref)
+        q = q.filter(ExperienceClaim.source_ref == source_ref)
     deleted = q.delete(synchronize_session=False)
     return deleted
 
@@ -220,14 +220,14 @@ def chunk_resume(db: Session, experience: Experience) -> int:
         logger.debug("chunk_resume_skipped_no_profile")
         return 0
 
-    _delete_chunks(db, experience.id, "resume")
+    _delete_chunks(db, experience.user_id, "resume")
 
     raw = _resume_chunks(profile)
     now = datetime.now(timezone.utc)
     for position, chunk_data in enumerate(raw):
         db.add(
-            ExperienceChunk(
-                experience_id=experience.id,
+            ExperienceClaim(
+                user_id=experience.user_id,
                 source_type="resume",
                 source_ref=None,
                 position=position,
@@ -255,14 +255,14 @@ def chunk_github_repo(db: Session, experience: Experience, repo_name: str) -> in
         logger.debug("chunk_github_repo_not_found", repo_name=repo_name)
         return 0
 
-    _delete_chunks(db, experience.id, "github", source_ref=repo_name)
+    _delete_chunks(db, experience.user_id, "github", source_ref=repo_name)
 
     raw = _github_repo_chunks(repo)
     now = datetime.now(timezone.utc)
     for position, chunk_data in enumerate(raw):
         db.add(
-            ExperienceChunk(
-                experience_id=experience.id,
+            ExperienceClaim(
+                user_id=experience.user_id,
                 source_type="github",
                 source_ref=repo_name,
                 position=position,
@@ -276,23 +276,21 @@ def chunk_github_repo(db: Session, experience: Experience, repo_name: str) -> in
     return len(raw)
 
 
-def delete_github_chunks(
-    db: Session, experience_id: uuid.UUID, repo_name: str | None = None
-) -> int:
-    """Delete GitHub chunks for the given experience.
+def delete_github_chunks(db: Session, user_id: uuid.UUID, repo_name: str | None = None) -> int:
+    """Delete GitHub chunks for the given user.
 
     repo_name=None → delete ALL github chunks (used when disconnecting all GitHub).
     repo_name='foo' → delete only that repo's chunks.
     Does NOT commit — caller is responsible.
     """
-    return _delete_chunks(db, experience_id, "github", source_ref=repo_name)
+    return _delete_chunks(db, user_id, "github", source_ref=repo_name)
 
 
-def delete_resume_chunks(db: Session, experience_id: uuid.UUID) -> int:
-    """Delete all resume chunks for the given experience. Does NOT commit."""
-    return _delete_chunks(db, experience_id, "resume")
+def delete_resume_chunks(db: Session, user_id: uuid.UUID) -> int:
+    """Delete all resume chunks for the given user. Does NOT commit."""
+    return _delete_chunks(db, user_id, "resume")
 
 
-def delete_user_input_chunks(db: Session, experience_id: uuid.UUID) -> int:
-    """Delete all user_input chunks for the given experience. Does NOT commit."""
-    return _delete_chunks(db, experience_id, "user_input")
+def delete_user_input_chunks(db: Session, user_id: uuid.UUID) -> int:
+    """Delete all user_input chunks for the given user. Does NOT commit."""
+    return _delete_chunks(db, user_id, "user_input")

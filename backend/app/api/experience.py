@@ -28,7 +28,7 @@ from app.metrics import (
 )
 from app.models.database import (
     Experience,
-    ExperienceChunk,
+    ExperienceClaim,
     Job,
     JobChunk,
     LlmTriggerLog,
@@ -87,7 +87,7 @@ def _has_non_resume_sources(e: Experience) -> bool:
 def _clear_resume_fields(e: Experience, db: Session) -> None:
     """Remove all file-upload data from the experience row, preserving other sources.
 
-    Also deletes associated resume ExperienceChunk rows. Does not commit.
+    Also deletes associated resume ExperienceClaim rows. Does not commit.
     """
     e.storage_key = None
     e.filename = None
@@ -98,7 +98,7 @@ def _clear_resume_fields(e: Experience, db: Session) -> None:
     e.extracted_profile = {
         k: v for k, v in (e.extracted_profile or {}).items() if k != "resume"
     } or None
-    delete_resume_chunks(db, e.id)
+    delete_resume_chunks(db, e.user_id)
 
 
 class UploadUrlRequest(BaseModel):
@@ -370,8 +370,7 @@ async def trigger_process(
                 _ctx = structlog.contextvars.get_contextvars()
                 background_tasks.add_task(
                     embed_experience_chunks_task,
-                    experience.id,
-                    user_id=_ctx.get("user_id"),
+                    experience.user_id,
                     correlation_id=_ctx.get("correlation_id"),
                 )
 
@@ -604,7 +603,7 @@ def set_github(
             old_repo_names = {r["name"] for r in (experience.github_repos or [])}
             new_repo_names = set(body.selected_repo_names)
             for removed_repo in old_repo_names - new_repo_names:
-                delete_github_chunks(db, experience.id, repo_name=removed_repo)
+                delete_github_chunks(db, experience.user_id, repo_name=removed_repo)
 
         experience.github_username = body.github_username
         experience.github_repos = repos
@@ -679,7 +678,7 @@ def remove_github(
         experience.extracted_profile = {
             k: v for k, v in experience.extracted_profile.items() if k != "github"
         } or None
-    delete_github_chunks(db, experience.id)
+    delete_github_chunks(db, experience.user_id)
     db.commit()
 
 
@@ -699,7 +698,7 @@ def remove_user_input(
         experience.extracted_profile = {
             k: v for k, v in experience.extracted_profile.items() if k != "user_input"
         } or None
-    deleted = delete_user_input_chunks(db, experience.id)
+    deleted = delete_user_input_chunks(db, experience.user_id)
     db.commit()
     logger.info("user_input_removed", chunk_count=deleted)
 
@@ -769,18 +768,18 @@ def _ensure_experience(user: User, db: Session) -> Experience:
     return experience
 
 
-@router.post("/experience/user-input/chunks")
-def persist_user_input_chunks(
+@router.post("/experience/user-input/claims")
+def persist_user_input_claims(
     body: UserInputChunksRequest,
     background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    """Persist a list of user_input claim strings as individual ExperienceChunks.
+    """Persist a list of user_input claim strings as individual ExperienceClaims.
 
-    Additive — does not replace existing user_input chunks.
-    Each chunk is embedded in a background task.
+    Additive — does not replace existing user_input claims.
+    Each claim is embedded in a background task.
     """
     chunks_text = [c.strip() for c in body.chunks if c.strip()]
     if not chunks_text:
@@ -790,8 +789,8 @@ def persist_user_input_chunks(
 
     # Append after the highest existing position across all source types
     max_pos = (
-        db.query(func.max(ExperienceChunk.position))
-        .filter(ExperienceChunk.experience_id == experience.id)
+        db.query(func.max(ExperienceClaim.position))
+        .filter(ExperienceClaim.user_id == user.id)
         .scalar()
     )
     next_pos = (max_pos if max_pos is not None else -1) + 1
@@ -799,8 +798,8 @@ def persist_user_input_chunks(
     now = datetime.now(timezone.utc)
     created_ids: list[str] = []
     for text in chunks_text:
-        chunk = ExperienceChunk(
-            experience_id=experience.id,
+        chunk = ExperienceClaim(
+            user_id=user.id,
             source_type="user_input",
             source_ref=None,
             claim_type="other",
@@ -824,12 +823,11 @@ def persist_user_input_chunks(
     _ctx = structlog.contextvars.get_contextvars()
     background_tasks.add_task(
         embed_experience_chunks_task,
-        experience.id,
-        user_id=_ctx.get("user_id"),
+        user.id,
         correlation_id=_ctx.get("correlation_id"),
     )
-    logger.info("user_input_chunks_persisted", chunk_count=len(chunks_text))
-    return {"experience_id": str(experience.id), "chunk_ids": created_ids}
+    logger.info("user_input_claims_persisted", claim_count=len(chunks_text))
+    return {"experience_id": str(experience.id), "claim_ids": created_ids}
 
 
 # ---------------------------------------------------------------------------
@@ -837,7 +835,7 @@ def persist_user_input_chunks(
 # ---------------------------------------------------------------------------
 
 
-def _serialize_exp_chunk(c: ExperienceChunk) -> dict:
+def _serialize_exp_claim(c: ExperienceClaim) -> dict:
     return {
         "id": str(c.id),
         "source_type": c.source_type,
@@ -853,8 +851,8 @@ def _serialize_exp_chunk(c: ExperienceChunk) -> dict:
     }
 
 
-def _group_experience_chunks(chunks: list) -> dict:
-    """Group ExperienceChunk rows into a render-ready structure.
+def _group_experience_claims(chunks: list) -> dict:
+    """Group ExperienceClaim rows into a render-ready structure.
 
     Maintains insertion order so work-experience roles and projects appear in the
     same sequence they were chunked (i.e. as they appeared in the resume).
@@ -873,7 +871,7 @@ def _group_experience_chunks(chunks: list) -> dict:
     partial_response_chunks: list = []
 
     for c in chunks:
-        s = _serialize_exp_chunk(c)
+        s = _serialize_exp_claim(c)
         if c.source_type == "resume":
             if c.claim_type == "work_experience":
                 key = (c.group_key, c.date_range)
@@ -932,8 +930,8 @@ def _group_experience_chunks(chunks: list) -> dict:
     }
 
 
-@router.get("/experience/chunks")
-def get_experience_chunks(
+@router.get("/experience/claims")
+def get_experience_claims(
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -949,30 +947,30 @@ def get_experience_chunks(
         }
 
     chunks = (
-        db.query(ExperienceChunk)
-        .filter(ExperienceChunk.experience_id == experience.id)
-        .order_by(ExperienceChunk.source_type, ExperienceChunk.position)
+        db.query(ExperienceClaim)
+        .filter(ExperienceClaim.user_id == user.id)
+        .order_by(ExperienceClaim.source_type, ExperienceClaim.position)
         .all()
     )
-    return _group_experience_chunks(chunks)
+    return _group_experience_claims(chunks)
 
 
-class ChunkContentUpdate(BaseModel):
+class ClaimContentUpdate(BaseModel):
     content: str | None = None
     group_key: str | None = None
     date_range: str | None = None
 
     @model_validator(mode="after")
-    def at_least_one(self) -> "ChunkContentUpdate":
+    def at_least_one(self) -> "ClaimContentUpdate":
         if self.content is None and self.group_key is None and self.date_range is None:
             raise ValueError("at least one of content, group_key, or date_range is required")
         return self
 
 
-@router.patch("/experience/chunks/{chunk_id}")
-def update_experience_chunk(
-    chunk_id: str,
-    body: ChunkContentUpdate,
+@router.patch("/experience/claims/{claim_id}")
+def update_experience_claim(
+    claim_id: str,
+    body: ClaimContentUpdate,
     background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
@@ -983,20 +981,20 @@ def update_experience_chunk(
         raise HTTPException(status_code=404, detail="No experience found")
 
     try:
-        chunk_uuid = uuid.UUID(chunk_id)
+        claim_uuid = uuid.UUID(claim_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid chunk ID")
+        raise HTTPException(status_code=400, detail="Invalid claim ID")
 
-    chunk = (
-        db.query(ExperienceChunk)
+    claim = (
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.id == chunk_uuid,
-            ExperienceChunk.experience_id == experience.id,
+            ExperienceClaim.id == claim_uuid,
+            ExperienceClaim.user_id == user.id,
         )
         .first()
     )
-    if not chunk:
-        raise HTTPException(status_code=404, detail="Chunk not found")
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
 
     now = datetime.now(timezone.utc)
 
@@ -1004,20 +1002,20 @@ def update_experience_chunk(
         content = body.content.strip()
         if not content:
             raise HTTPException(status_code=422, detail="Content cannot be empty")
-        chunk.content = content
-        chunk.updated_at = now
+        claim.content = content
+        claim.updated_at = now
 
     if body.group_key is not None or body.date_range is not None:
-        old_group_key = chunk.group_key
+        old_group_key = claim.group_key
         new_group_key = body.group_key if body.group_key is not None else old_group_key
-        new_date_range = body.date_range if body.date_range is not None else chunk.date_range
+        new_date_range = body.date_range if body.date_range is not None else claim.date_range
         siblings = (
-            db.query(ExperienceChunk)
+            db.query(ExperienceClaim)
             .filter(
-                ExperienceChunk.experience_id == experience.id,
-                ExperienceChunk.source_type == chunk.source_type,
-                ExperienceChunk.source_ref == chunk.source_ref,
-                ExperienceChunk.group_key == old_group_key,
+                ExperienceClaim.user_id == user.id,
+                ExperienceClaim.source_type == claim.source_type,
+                ExperienceClaim.source_ref == claim.source_ref,
+                ExperienceClaim.group_key == old_group_key,
             )
             .all()
         )
@@ -1027,44 +1025,44 @@ def update_experience_chunk(
             sibling.updated_at = now
 
     db.commit()
-    db.refresh(chunk)
+    db.refresh(claim)
     if body.content is not None:
-        background_tasks.add_task(re_embed_chunk, chunk.id)
-    logger.info("update_experience_chunk", chunk_id=str(chunk.id))
-    return _serialize_exp_chunk(chunk)
+        background_tasks.add_task(re_embed_chunk, claim.id)
+    logger.info("update_experience_claim", claim_id=str(claim.id))
+    return _serialize_exp_claim(claim)
 
 
-@router.delete("/experience/chunks/{chunk_id}", status_code=204)
-def delete_experience_chunk(
-    chunk_id: str,
+@router.delete("/experience/claims/{claim_id}", status_code=204)
+def delete_experience_claim(
+    claim_id: str,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    """Delete a single ExperienceChunk by ID. Works for any source_type."""
+    """Delete a single ExperienceClaim by ID. Works for any source_type."""
     experience = db.query(Experience).filter(Experience.user_id == user.id).first()
     if not experience:
         raise HTTPException(status_code=404, detail="No experience found")
 
     try:
-        chunk_uuid = uuid.UUID(chunk_id)
+        claim_uuid = uuid.UUID(claim_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid chunk ID")
+        raise HTTPException(status_code=400, detail="Invalid claim ID")
 
-    chunk = (
-        db.query(ExperienceChunk)
+    claim = (
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.id == chunk_uuid,
-            ExperienceChunk.experience_id == experience.id,
+            ExperienceClaim.id == claim_uuid,
+            ExperienceClaim.user_id == user.id,
         )
         .first()
     )
-    if not chunk:
-        raise HTTPException(status_code=404, detail="Chunk not found")
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
 
-    db.delete(chunk)
+    db.delete(claim)
     db.commit()
-    logger.info("delete_experience_chunk", chunk_id=str(chunk_uuid))
+    logger.info("delete_experience_claim", claim_id=str(claim_uuid))
 
 
 # ---------------------------------------------------------------------------
@@ -1082,7 +1080,7 @@ def create_gap_response(
     """
     Record a user's answer to a gap question.
 
-    Creates a gap_response ExperienceChunk, embeds it synchronously, then re-scores
+    Creates a gap_response ExperienceClaim, embeds it synchronously, then re-scores
     the specific JobChunk that triggered the gap question. Returns the new score inline
     so the UI can update the requirement badge without a full page reload.
     """
@@ -1129,10 +1127,10 @@ def create_gap_response(
 
     # Upsert: reuse any existing response chunk for this job_chunk_id regardless of source type
     existing_gap_chunks = (
-        db.query(ExperienceChunk)
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.experience_id == experience.id,
-            ExperienceChunk.source_type.in_(
+            ExperienceClaim.user_id == user.id,
+            ExperienceClaim.source_type.in_(
                 ["gap_response", "additional_experience", "partial_response"]
             ),
         )
@@ -1164,13 +1162,13 @@ def create_gap_response(
         gap_chunk.updated_at = now
     else:
         max_pos = (
-            db.query(func.max(ExperienceChunk.position))
-            .filter(ExperienceChunk.experience_id == experience.id)
+            db.query(func.max(ExperienceClaim.position))
+            .filter(ExperienceClaim.user_id == user.id)
             .scalar()
         )
         next_pos = (max_pos if max_pos is not None else -1) + 1
-        gap_chunk = ExperienceChunk(
-            experience_id=experience.id,
+        gap_chunk = ExperienceClaim(
+            user_id=user.id,
             source_type=source_type,
             source_ref=None,
             claim_type="other",
@@ -1194,7 +1192,7 @@ def create_gap_response(
         },
     ):
         # Embed synchronously — must complete before re_enrich so the new vector is retrievable
-        embed_experience_chunks(experience.id, db)
+        embed_experience_chunks(user.id, db)
 
         # Re-score the requirement synchronously — user is waiting for the result
         candidate_name = user.candidate_name
@@ -1202,7 +1200,7 @@ def create_gap_response(
             str(job_chunk_uuid),
             experience.extracted_profile or {},
             user.pronouns,
-            experience.id,
+            user.id,
             candidate_name,
         )
 
@@ -1247,7 +1245,7 @@ def create_gap_response(
         partial_question_generated=partial_question is not None,
     )
     return {
-        "chunk_id": str(gap_chunk.id),
+        "claim_id": str(gap_chunk.id),
         "updated_score": updated_chunk.match_score if updated_chunk else None,
         "updated_rationale": updated_chunk.match_rationale if updated_chunk else None,
         "advocacy_blurb": updated_chunk.advocacy_blurb if updated_chunk else None,

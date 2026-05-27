@@ -1,6 +1,6 @@
 # Eval Results
 
-**Date:** 2026-05-19
+**Date:** 2026-05-27
 **LLM model:** `gpt-5.4-mini`
 **Embedding model:** `text-embedding-3-small`
 **Vector top-K:** 8

@@ -1,4 +1,4 @@
-import { getMockExperience, getMockExperienceChunks } from '@/mock/loader';
+import { getMockExperience, getMockExperienceClaims } from '@/mock/loader';
 import { ExperienceManager } from '@/components/dashboard/ExperienceManager';
 
 export default function DemoExperiencePage() {
@@ -7,7 +7,7 @@ export default function DemoExperiencePage() {
       <ExperienceManager
         readOnly
         initialRecord={getMockExperience()}
-        initialChunks={getMockExperienceChunks()}
+        initialChunks={getMockExperienceClaims()}
       />
     </div>
   );

@@ -298,7 +298,7 @@ def _run_fixture_llm(fixture: dict, profiles: dict[str, EvalCandidateProfile]) -
 
 def _build_exp_chunks_from_profile(profile_dict: dict) -> list[SimpleNamespace]:
     """
-    Convert a profile dict into ExperienceChunk-like SimpleNamespace objects
+    Convert a profile dict into ExperienceClaim-like SimpleNamespace objects
     for in-memory embedding and retrieval during eval.
 
     Mirrors the shape expected by _build_grouped_context:

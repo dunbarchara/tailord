@@ -121,10 +121,10 @@ frontend/src/app/
     ├── experience/github/                          # → POST/DELETE /experience/github
     ├── experience/github/[username]/repos/         # → GET /experience/github/{username}/repos
     ├── experience/user-input/                      # → POST /experience/user-input
-    ├── experience/user-input/chunks/               # → GET /experience/user-input/chunks
+    ├── experience/user-input/claims/               # → POST /experience/user-input/claims
     ├── experience/user-input/parse/                # → POST /experience/user-input/parse
-    ├── experience/chunks/                          # → GET /experience/chunks
-    ├── experience/chunks/[id]/                     # → GET/PATCH/DELETE /experience/chunks/{id}
+    ├── experience/claims/                          # → GET /experience/claims
+    ├── experience/claims/[id]/                     # → PATCH/DELETE /experience/claims/{id}
     ├── experience/gap-response/                    # → POST /experience/gap-response
     ├── tailorings/                                 # → GET/POST /tailorings
     ├── tailorings/[id]/                            # → GET/POST(regenerate)/DELETE /tailorings/{id}
@@ -191,17 +191,23 @@ frontend/src/app/
 
 - `Tailoring` — `id`, `user_id` (FK), `job_id` (FK), `model` (LLM model name), `generated_output` (markdown), `generation_status` (pending/generating/ready/error), `generation_stage`, `generation_error`, `generation_started_at`, `generated_at`, `last_regenerated_at`, `enrichment_status` (pending/complete), `profile_snapshot` (formatted profile string passed to LLM — for debug), telemetry (`generation_duration_ms`, `chunk_batch_count`, `chunk_error_count`), sharing (`letter_public`, `posting_public`, `public_slug`), Notion export fields, `created_at`
 
+- `ExperienceGroup` — `id`, `user_id` (FK → users.id, CASCADE on user delete), `group_type` (role/project/repository/education/custom), `name`, `start_date`, `end_date`, `location`, `type_meta` (JSONB, type-specific fields), `source_type`, `source_ref`, `created_at`, `updated_at`
+
+- `ExperienceClaim` — `id`, `user_id` (FK → users.id, CASCADE on user delete), `group_id` (FK → experience_groups, nullable, SET NULL on group delete), `source_type`, `source_ref`, `claim_type` (work_experience/skill/project/education/other), `content`, `group_key` (deprecated — kept until group_id backfill), `date_range`, `technologies` (JSON), `confidence` (high/medium/low), `status` (active/archived), `provenance_url`, `provenance_label`, `tags` (JSON), `chunk_metadata` (JSON), `position`, `embedding` (vector 1536), `embedding_model`, `created_at`, `updated_at`
+
 - `LlmTriggerLog` — tracks LLM events per user for rate limiting; `event_type` (`tailoring_create`, `tailoring_regen`), `user_id`, `created_at`
 
 - `TailoringDebugLog` — schema-only scaffold for future LLM telemetry (Level 3); no data written yet
 
-**Relationships:** `User` → one `Experience`, many `Tailorings`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
+**Relationships:** `User` → one `Experience`, many `Tailorings`, many `ExperienceClaim`, many `ExperienceGroup`; `ExperienceGroup` → many `ExperienceClaim`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
 
 ---
 
 ## Domain Concepts
 
 - **Experience**: A user's professional background (resume upload, GitHub, manual input). Reusable across all Tailorings.
+- **Experience Claim** (`ExperienceClaim`): The atomic unit of experience — one row per bullet, skill, project, or education entry. Has a `group_id` FK to an `ExperienceGroup` (null = ungrouped/standalone). URL segment: `/claims`.
+- **Experience Group** (`ExperienceGroup`): Parent container for related claims. Types: role, project, repository, education, custom. Groups are context only — not embedded; their data is prepended to the LLM prompt when a grouped claim is retrieved.
 - **Tailoring**: An AI-generated, role-specific document derived from Experience + a job description. Persisted, viewable, regeneratable.
 - **Dashboard** (`/dashboard`): The authenticated workspace. This route is a stable product surface — do not remove or rename it.
 
