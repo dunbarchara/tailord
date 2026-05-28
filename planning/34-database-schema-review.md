@@ -19,7 +19,7 @@
 | `jobs` | many per user | Tailoring | One per tailoring creation |
 | `job_chunks` | many per job | Tailoring | Extracted + scored job requirements |
 | `tailorings` | many per user | Tailoring | Generated documents |
-| `llm_trigger_log` | many per user | Rate limiting | Sliding-window trigger tracking |
+| `llm_usage_logs` | many per user | Rate limiting / Billing | Hourly burst limiter + monthly quota source + cost tracking (model/token cols nullable until instrumentation ships) |
 | `tailoring_debug_logs` | many per tailoring | Observability | Generation telemetry (scaffold) |
 
 ---
@@ -320,20 +320,34 @@
 
 ---
 
-## `llm_trigger_log`
+## `llm_usage_logs`
 
-**Purpose:** One row per LLM pipeline trigger. Used for sliding-window rate limiting. Records `tailoring_create`, `tailoring_regen`, and `experience_process` events.
+**Purpose:** One row per LLM pipeline trigger. Serves three purposes: (1) sliding-window hourly burst rate limiting, (2) monthly tailoring quota enforcement (when billing ships), (3) cost tracking once LLM instrumentation lands (model/token columns nullable until then).
 
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | |
-| `user_id` | UUID FK → users | no | CASCADE delete; indexed |
-| `event_type` | varchar(50) | no | `tailoring_create` \| `tailoring_regen` \| `experience_process` |
+| `user_id` | UUID FK → users | no | CASCADE delete |
+| `event_type` | varchar(50) | no | See event types below |
+| `model` | varchar(100) | yes | LLM model name; null until instrumentation ships |
+| `input_tokens` | integer | yes | Prompt tokens; null until instrumentation ships |
+| `output_tokens` | integer | yes | Completion tokens; null until instrumentation ships |
+| `cost_usd` | numeric(10,6) | yes | Estimated cost; null until instrumentation ships |
 | `created_at` | timestamptz | no | |
 
-**Questions / candidates for change:**
-- TTL cleanup: rows older than 30 days are deleted as a `BackgroundTasks` call on every tailoring create/regen (amortized). See `_cleanup_old_trigger_logs` in `tailorings.py`.
-- `experience_process` events are tracked but not currently rate-limited against (the cooldown is implemented via `last_requested_at` on `experience_sources`, not this table). Decide whether to consolidate or keep both mechanisms.
+**Event types:**
+- `tailoring_create` — full tailoring pipeline; counts toward monthly quota and hourly burst
+- `tailoring_regen` — full regen; counts toward monthly quota and hourly burst
+- `letter_regen` — letter-only regen; counts toward hourly burst, NOT monthly quota
+- `resume_process` — LLM resume profile extraction (renamed from `experience_process`)
+- `github_enrich` — GitHub repo enrichment (tracked, not yet rate-limited)
+- `gap_analysis` — gap question generation (tracked when run independently)
+
+**Index:** `ix_llm_usage_logs_user_event_time` on `(user_id, event_type, created_at)` — covers both hourly burst sliding-window queries and calendar-month quota range scans.
+
+**Retention:** 90 days (covers 3 billing months for dispute resolution). Rows cleaned as `BackgroundTask` on tailoring create/regen and experience process (amortized). See `_cleanup_old_trigger_logs` in `tailorings.py`, `_cleanup_old_usage_logs` in `experience.py`.
+
+**Future (partner API):** When headless enrichment API ships, a nullable `partner_id UUID FK → api_partners` will be added. Rate limiting will then scope to `partner_id` instead of `user_id` for B2B calls.
 
 ---
 
@@ -351,7 +365,7 @@
 
 **Questions / candidates for change:**
 - No `user_id` — only reachable via `tailoring_id`. For analytics queries spanning users, a `user_id` denorm would save a join.
-- No cleanup / TTL — same concern as `llm_trigger_log`.
+- No cleanup / TTL — same concern as `llm_usage_logs`.
 - `event_type` values are not enforced at the DB level (no CHECK constraint or enum). A mistake in a caller would silently write a garbage type.
 
 ---
@@ -368,7 +382,7 @@ All user-scoped tables anchor directly to `users.id`:
 - `experience_groups` → `users.id`
 - `jobs` → `users.id`
 - `tailorings` → `users.id`
-- `llm_trigger_log` → `users.id`
+- `llm_usage_logs` → `users.id`
 
 Every ownership check is a single-hop `WHERE user_id = ?`.
 
@@ -385,7 +399,7 @@ Every ownership check is a single-hop `WHERE user_id = ?`.
 | `jobs` | — (user_id non-nullable; app code deletes jobs before user row) | — |
 | `tailorings` | CASCADE (added migration `a4b5c6d7e8f9`) | — |
 | `job_chunks` | — | jobs CASCADE |
-| `llm_trigger_log` | CASCADE | — |
+| `llm_usage_logs` | CASCADE | — |
 | `tailoring_debug_logs` | — | tailorings CASCADE |
 
 > Note: `tailorings` now cascade-deletes on user delete (migration `a4b5c6d7e8f9`). `jobs` does not — `DELETE /users/me` handles jobs explicitly in application code. `jobs.user_id` is non-nullable as of the same migration.
@@ -433,7 +447,7 @@ These deprecated columns are safe to drop once the next deploy is confirmed stab
 | ~~Add `original_content` to `experience_claims`~~ | ✅ Done — migration `e2b3c4d5f6a7` | Set on first user PATCH of content |
 | ~~Collapse `provenance_url` + `provenance_label` + `chunk_metadata` → `provenance_metadata`~~ | ✅ Done — migration `e2b3c4d5f6a7` | `chunk_metadata` backfilled into `provenance_metadata` |
 | ~~Make `jobs.user_id` non-nullable~~ | ✅ Done — migration `a4b5c6d7e8f9` | |
-| ~~Add cleanup for `llm_trigger_log`~~ | ✅ Done — amortized cleanup in `tailorings.py` | Rows >30d deleted as BackgroundTask on create/regen |
+| ~~Add cleanup for `llm_usage_logs`~~ | ✅ Done — amortized cleanup in `tailorings.py` + `experience.py` | Rows >90d deleted as BackgroundTask on create/regen/process |
 | ~~Add `ON DELETE CASCADE` to `tailorings.user_id` FK~~ | ✅ Done — migration `a4b5c6d7e8f9` | |
 | ~~Encrypt `user_integrations.credentials` at rest~~ | ✅ Done — migration `c5d6e7f8a9b0` | `EncryptedJSON` Fernet, `FIELD_ENCRYPTION_KEY` env var |
 | ~~Rename `is_requirement` → `include_in_scoring` on `job_chunks`~~ | ✅ Done — migration `c9d0e1f2a3b4` | Semantics: "include in scoring runs" vs the ambiguous "is a requirement" |
@@ -447,6 +461,7 @@ These deprecated columns are safe to drop once the next deploy is confirmed stab
 | ~~Add `updated_at` to `tailorings`~~ | ✅ Done — migration `d0e1f2a3b4c5` | `server_default=now()`, `onupdate=now()` |
 | ~~Promote `tailorings.letter_content` from JSON → JSONB~~ | ✅ Done — migration `d0e1f2a3b4c5` | Lossless cast |
 | ~~Fix `public_slug` collision risk~~ | ✅ Done | `_generate_slug()` now checks uniqueness per user with retry loop |
+| ~~Rename `llm_trigger_log` → `llm_usage_logs` and extend for billing~~ | ✅ Done — migration `e0f1a2b3c4d5` | Added `model`, `input_tokens`, `output_tokens`, `cost_usd` (nullable); `experience_process` → `resume_process`; composite index `(user_id, event_type, created_at)`; 30d → 90d retention; cleanup added to `experience.py` as well |
 | Drop `generated_output` once all rows have `letter_content` | Open | Requires confirming all prod rows upgraded via "Upgrade Letter" feature or regen |
 | Make `position` on `experience_claims` scoped to `(user_id, group_id)` | Open | Before experience editor reorder UX ships; complex backfill |
 | Drop vestigial `corrections` sub-key from `experience_sources.source_data` | Open | Low priority; verify no pipeline code writes it |

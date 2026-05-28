@@ -29,7 +29,7 @@ from app.models.database import (
     ExperienceClaim,
     Job,
     JobChunk,
-    LlmTriggerLog,
+    LlmUsageLog,
     Tailoring,
     TailoringDebugLog,
     User,
@@ -57,24 +57,26 @@ _GENERATION_PHASES_TIMEOUT_SECONDS = 600  # 10 min wall-clock for letter + gap p
 
 
 def _get_tailoring_trigger_count(user_id, db: Session) -> int:
-    """Return the number of tailoring LLM triggers in the last hour for a user."""
+    """Return the number of tailoring LLM triggers in the last hour for a user.
+    Counts create + regen + letter_regen — all expensive enough to rate-limit.
+    Note: letter_regen is excluded from monthly billing quota (see QUOTA_EVENT_TYPES)."""
     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
     return (
-        db.query(LlmTriggerLog)
+        db.query(LlmUsageLog)
         .filter(
-            LlmTriggerLog.user_id == user_id,
-            LlmTriggerLog.event_type.in_(["tailoring_create", "tailoring_regen"]),
-            LlmTriggerLog.created_at >= one_hour_ago,
+            LlmUsageLog.user_id == user_id,
+            LlmUsageLog.event_type.in_(["tailoring_create", "tailoring_regen", "letter_regen"]),
+            LlmUsageLog.created_at >= one_hour_ago,
         )
         .count()
     )
 
 
 def _cleanup_old_trigger_logs(db: Session) -> None:
-    """Delete LlmTriggerLog rows older than 30 days. Rate limit window is 1 hour,
-    so anything older has no query value. Amortized on tailoring create/regen."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-    db.query(LlmTriggerLog).filter(LlmTriggerLog.created_at < cutoff).delete()
+    """Delete LlmUsageLog rows older than 90 days. 90 days covers 3 billing months
+    for dispute resolution and analytics lookback. Amortized on tailoring create/regen."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    db.query(LlmUsageLog).filter(LlmUsageLog.created_at < cutoff).delete()
     db.commit()
 
 
@@ -970,7 +972,7 @@ async def create_tailoring(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
     _check_tailoring_rate_limit(user.id, db)
-    db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_create"))
+    db.add(LlmUsageLog(user_id=user.id, event_type="tailoring_create"))
     db.commit()
     background_tasks.add_task(_cleanup_old_trigger_logs, db)
     return StreamingResponse(
@@ -998,7 +1000,7 @@ async def regenerate_tailoring(
 
     _check_tailoring_rate_limit(user.id, db)
     tailoring.last_regenerated_at = datetime.now(timezone.utc)
-    db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_regen"))
+    db.add(LlmUsageLog(user_id=user.id, event_type="tailoring_regen"))
     db.commit()
     background_tasks.add_task(_cleanup_old_trigger_logs, db)
 
@@ -1206,7 +1208,7 @@ async def regenerate_letter(
     tailoring.generation_stage = "enriching"
     tailoring.generation_error = None
     tailoring.last_regenerated_at = datetime.now(timezone.utc)
-    db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_regen"))
+    db.add(LlmUsageLog(user_id=user.id, event_type="letter_regen"))
     db.commit()
     background_tasks.add_task(_cleanup_old_trigger_logs, db)
 

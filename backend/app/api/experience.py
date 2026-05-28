@@ -31,7 +31,7 @@ from app.models.database import (
     ExperienceSource,
     Job,
     JobChunk,
-    LlmTriggerLog,
+    LlmUsageLog,
     Tailoring,
     User,
 )
@@ -67,6 +67,14 @@ ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
 
 # Minimum gap between experience processing triggers per user.
 _EXPERIENCE_PROCESS_COOLDOWN_MINUTES = 5
+
+
+def _cleanup_old_usage_logs(db: Session) -> None:
+    """Delete LlmUsageLog rows older than 90 days. Amortized on experience processing."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    db.query(LlmUsageLog).filter(LlmUsageLog.created_at < cutoff).delete()
+    db.commit()
+
 
 # Resumes are typically < 500 KB. 10 MB is a generous ceiling that still
 # blocks accidental or malicious oversized uploads before text extraction.
@@ -360,8 +368,9 @@ async def trigger_process(
     resume_src.last_requested_at = now
     resume_src.sync_status = "syncing"
     resume_src.updated_at = now
-    db.add(LlmTriggerLog(user_id=user.id, event_type="experience_process"))
+    db.add(LlmUsageLog(user_id=user.id, event_type="resume_process"))
     db.commit()
+    background_tasks.add_task(_cleanup_old_usage_logs, db)
 
     storage_key = body.storage_key
     filename = (resume_src.config or {}).get("filename") or "file.txt"

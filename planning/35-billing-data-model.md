@@ -105,11 +105,11 @@ Don't add a usage denormalization table yet — compute from existing data at en
 
 | Limit | Query |
 |---|---|
-| Tailorings created this period | `COUNT(LlmTriggerLog) WHERE event_type = "tailoring_create" AND user_id = X AND created_at >= period_start` |
+| Tailorings created this period | `COUNT(LlmUsageLog) WHERE event_type IN ("tailoring_create", "tailoring_regen") AND user_id = X AND created_at >= period_start` |
 | Manual claims added | `COUNT(ExperienceClaim) WHERE source_type IN ("user_input", "gap_response", "partial_response") AND user_id = X AND status = "active"` |
 | Remaining entitlement credits | `SUM(quantity - consumed) WHERE user_id = X AND entitlement_type = T AND (expires_at IS NULL OR expires_at > now()) AND consumed < quantity` |
 
-`LlmTriggerLog` already exists for rate limiting — billing reuses it for tailoring count without a new table.
+`LlmUsageLog` already exists for rate limiting — billing reuses it for tailoring count without a new table. Note: `letter_regen` events count toward the hourly burst limit but NOT the monthly quota (`tailoring_create` + `tailoring_regen` only). When headless API billing ships, a nullable `partner_id FK → api_partners` will be added.
 
 ---
 
@@ -132,7 +132,7 @@ async def get_effective_limits(user: User, db: AsyncSession) -> EffectiveLimits:
     # 1. Load user_subscriptions row (or default to free)
     # 2. Get tier limits from static config
     # 3. Query active entitlements for additive credits
-    # 4. Query usage from LlmTriggerLog + ExperienceClaim
+    # 4. Query usage from LlmUsageLog + ExperienceClaim
     # 5. Return net remaining
     ...
 ```

@@ -155,13 +155,16 @@ def make_experience(db, user, **kwargs):
     return make_experience_source(db, user, source_type="resume", **kwargs)
 
 
-def make_llm_trigger_log(db, user, n=1, event_type="tailoring_create"):
-    from app.models.database import LlmTriggerLog
+def make_llm_usage_log(db, user, n=1, event_type="tailoring_create"):
+    from app.models.database import LlmUsageLog
 
     logs = []
     for _ in range(n):
-        log = LlmTriggerLog(user_id=user.id, event_type=event_type)
+        log = LlmUsageLog(user_id=user.id, event_type=event_type)
         db.add(log)
         logs.append(log)
     db.commit()
     return logs
+
+
+make_llm_trigger_log = make_llm_usage_log  # backward compat alias

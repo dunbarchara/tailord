@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -8,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -331,25 +333,34 @@ class Tailoring(Base):
     job: Mapped["Job"] = relationship("Job", back_populates="tailorings")
 
 
-class LlmTriggerLog(Base):
+class LlmUsageLog(Base):
     """
-    One row per LLM pipeline trigger. Used for sliding-window rate limiting.
+    One row per LLM pipeline trigger. Serves two purposes:
+    1. Rate limiting — hourly burst limit (sliding window count)
+    2. Billing usage — monthly tailoring count for quota enforcement
+    3. Cost tracking — token counts and cost_usd for analytics (populated when
+       LLM call instrumentation ships; nullable until then)
 
-    Storing triggers in a separate table (rather than updating a timestamp on the
-    parent row) is necessary because a user can trigger the same Tailoring multiple
-    times — last_regenerated_at would only record the most recent event, making 10
-    rapid regens on one tailoring look like a single event in the last hour.
-
-    event_type values: 'tailoring_create' | 'tailoring_regen' | 'experience_process'
+    event_type values:
+      'tailoring_create'  — full tailoring pipeline (counts toward monthly quota)
+      'tailoring_regen'   — full regen (counts toward monthly quota)
+      'letter_regen'      — letter-only regen; counts toward hourly burst but NOT monthly quota
+      'resume_process'    — LLM resume profile extraction (renamed from experience_process)
+      'github_enrich'     — LLM GitHub repo enrichment (tracked, not yet rate-limited)
+      'gap_analysis'      — gap question generation (tracked when run independently)
     """
 
-    __tablename__ = "llm_trigger_log"
+    __tablename__ = "llm_usage_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
