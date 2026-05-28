@@ -80,13 +80,14 @@ def make_user(db, google_sub=TEST_GOOGLE_SUB, status="approved", username_slug=N
     return user
 
 
-def make_job(db, user, extracted_job=None, job_url=None):
+def make_job(db, user, extracted_job=None, job_url=None, source_type="url"):
     from app.models.database import Job
 
     job = Job(
         user_id=user.id,
         job_url=job_url or "https://example.com/job",
         extracted_job=extracted_job or {"title": "Engineer", "company": "Acme"},
+        source_type=source_type,
     )
     db.add(job)
     db.commit()

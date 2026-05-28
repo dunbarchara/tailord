@@ -37,8 +37,11 @@ function chunkToMarkdown(chunk: JobChunk): string {
     `pos:${chunk.position}`,
     chunk.section ? `section: ${chunk.section}` : null,
     `score: ${score}`,
+    `semantic_type: ${chunk.semantic_type ?? 'null'}`,
+    `eval_status: ${chunk.evaluation_status ?? 'null'}`,
+    `include_in_scoring: ${chunk.include_in_scoring}`,
+    `render: ${chunk.should_render ?? 'undefined'}`,
     source ? `source: ${source}` : null,
-    chunk.should_render === false ? `render: false` : null,
   ].filter(Boolean).join(' | ');
 
   const lines = [`### ${meta}`, chunk.content];
@@ -138,6 +141,17 @@ function CopyButton({ getText }: { getText: () => string }) {
   );
 }
 
+function BoolField({ label, value }: { label: string; value: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-text-tertiary">{label}:</span>
+      <span className={cn('font-mono', value ? 'text-text-secondary' : 'text-warning')}>
+        {String(value)}
+      </span>
+    </span>
+  );
+}
+
 function ChunkRow({ chunk }: { chunk: JobChunk }) {
   const sources = chunk.experience_sources ?? [];
   const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
@@ -147,7 +161,7 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
       'rounded border border-border-subtle bg-surface-elevated text-xs mb-2',
       (chunk.match_score === 0 || chunk.match_score === -1) && 'opacity-50',
     )}>
-      {/* Row 1: metadata */}
+      {/* Row 1: primary metadata */}
       <div className="flex items-center gap-4 px-3 py-1.5 border-b border-border-subtle bg-surface-sunken rounded-t flex-wrap">
         <Field label="id" value={<span className="text-text-tertiary">{chunk.id.slice(0, 8)}</span>} />
         <Field label="type" value={chunk.chunk_type} />
@@ -155,29 +169,30 @@ function ChunkRow({ chunk }: { chunk: JobChunk }) {
         <Field label="section" value={chunk.section} />
         <Field label="score" value={<ScoreBadge score={chunk.match_score} />} />
         {source && <Field label="source" value={source} />}
-        {chunk.should_render === false && (
-          <span className="inline-flex items-center gap-1 text-xs text-text-disabled">
-            <span className="text-text-tertiary">render:</span>
-            <span className="font-mono text-warning">false</span>
-          </span>
-        )}
         <span className="ml-auto">
           <CopyButton getText={() => chunkToMarkdown(chunk)} />
         </span>
       </div>
-      {/* Row 2: content */}
+      {/* Row 2: scoring metadata */}
+      <div className="flex items-center gap-4 px-3 py-1.5 border-b border-border-subtle flex-wrap">
+        <Field label="semantic_type" value={chunk.semantic_type} />
+        <Field label="eval_status" value={chunk.evaluation_status} />
+        <BoolField label="include_in_scoring" value={chunk.include_in_scoring} />
+        <BoolField label="render" value={chunk.should_render ?? true} />
+      </div>
+      {/* Row 3: content */}
       <div className="px-3 py-2 border-b border-border-subtle">
         <span className="text-xs font-medium text-text-disabled uppercase tracking-wider mr-2">Posting</span>
         <span className="text-text-secondary leading-relaxed whitespace-pre-wrap">{chunk.content}</span>
       </div>
-      {/* Row 3: advocacy blurb */}
-      {chunk.advocacy_blurb && (
-        <div className="px-3 py-1.5 border-b border-border-subtle">
-          <span className="text-xs font-medium text-text-disabled uppercase tracking-wider mr-2">Advocacy</span>
-          <span className="text-text-secondary leading-relaxed">{chunk.advocacy_blurb}</span>
-        </div>
-      )}
-      {/* Row 4: rationale */}
+      {/* Row 4: advocacy blurb */}
+      <div className="px-3 py-1.5 border-b border-border-subtle min-h-[1.75rem]">
+        <span className="text-xs font-medium text-text-disabled uppercase tracking-wider mr-2">Advocacy</span>
+        <span className="text-text-secondary leading-relaxed">
+          {chunk.advocacy_blurb ?? <span className="text-text-disabled">—</span>}
+        </span>
+      </div>
+      {/* Row 5: rationale */}
       <div className="px-3 py-1.5 min-h-[1.75rem]">
         <span className="text-xs font-medium text-text-disabled uppercase tracking-wider mr-2">Rationale</span>
         <span className="text-text-tertiary italic">

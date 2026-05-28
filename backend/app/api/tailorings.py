@@ -140,7 +140,9 @@ def _serialize_chunk(c: JobChunk) -> dict:
         if c.experience_sources
         else None,
         "should_render": c.should_render,
-        "is_requirement": c.is_requirement,
+        "include_in_scoring": c.include_in_scoring,
+        "semantic_type": c.semantic_type,
+        "evaluation_status": c.evaluation_status,
         "display_ready": is_display_ready(c),
         "scored_content": c.scored_content,
     }
@@ -847,6 +849,7 @@ async def _stream_tailoring(
                     user_id=user.id,
                     job_url=request.job_url or None,
                     raw_description=request.description or None,
+                    source_type="manual" if is_manual else "url",
                 )
                 if is_manual:
                     job_record.extracted_job = {
@@ -1204,7 +1207,7 @@ def update_tailoring_job(
 class PatchChunkRequest(BaseModel):
     content: str | None = None
     should_render: bool | None = None
-    is_requirement: bool | None = None
+    include_in_scoring: bool | None = None
     section: str | None = None
     position: int | None = None
     chunk_type: str | None = None  # "bullet" | "paragraph" (header not user-editable)
@@ -1265,8 +1268,8 @@ def patch_chunk(
         chunk.content = body.content
     if body.should_render is not None:
         chunk.should_render = body.should_render
-    if body.is_requirement is not None:
-        chunk.is_requirement = body.is_requirement
+    if body.include_in_scoring is not None:
+        chunk.include_in_scoring = body.include_in_scoring
     if body.section is not None:
         chunk.section = body.section
     if body.position is not None:
@@ -1322,7 +1325,8 @@ def create_chunk(
         content=body.content,
         section=body.section,
         position=max_pos + 1,
-        is_requirement=True,
+        include_in_scoring=True,
+        evaluation_status=None,
         should_render=True,
     )
     db.add(chunk)
@@ -1552,9 +1556,9 @@ def rescore_chunk(
 
     candidate_name = user.candidate_name
 
-    # Promote to requirement so future Refresh All includes this chunk
-    if not chunk.is_requirement:
-        chunk.is_requirement = True
+    # Promote to scoreable so future Refresh All includes this chunk
+    if not chunk.include_in_scoring:
+        chunk.include_in_scoring = True
         db.commit()
 
     re_enrich_single_chunk(
@@ -1579,7 +1583,9 @@ def rescore_chunk(
         "source_label": SOURCE_LABELS.get((chunk.experience_sources or [None])[0])
         if chunk.experience_sources
         else None,
-        "is_requirement": chunk.is_requirement,
+        "include_in_scoring": chunk.include_in_scoring,
+        "semantic_type": chunk.semantic_type,
+        "evaluation_status": chunk.evaluation_status,
         "should_render": chunk.should_render,
         "display_ready": is_display_ready(chunk),
     }
@@ -1670,7 +1676,6 @@ def get_tailoring_debug_info(
 
     from app.prompts import gap_analysis as gap_prompt
     from app.prompts import job_extraction as prompt_job_extraction
-    from app.prompts import requirement_matching as prompt_req_matching
 
     return {
         "model": tailoring.model or settings.llm_model,
@@ -1681,7 +1686,6 @@ def get_tailoring_debug_info(
         "profile_snapshot_source": profile_snapshot_source,
         "matching_mode": matching_mode,
         "job_extraction_system_prompt": prompt_job_extraction.SYSTEM,
-        "requirement_matching_system_prompt": prompt_req_matching.SYSTEM,
         "chunk_matching_system_prompt": chunk_prompt.SYSTEM,
         "sample_chunk_user_message": sample_user_message,
         "tailoring_system_prompt": tailoring_prompt.SYSTEM

@@ -533,7 +533,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         return (
           c.content !== orig.content ||
           c.should_render !== orig.should_render ||
-          c.is_requirement !== orig.is_requirement ||
+          c.include_in_scoring !== orig.include_in_scoring ||
           c.section !== orig.section ||
           c.position !== orig.position ||
           c.chunk_type !== orig.chunk_type
@@ -556,7 +556,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
           const patch: Record<string, unknown> = {};
           if (c.content !== orig.content) patch.content = c.content;
           if (c.should_render !== orig.should_render) patch.should_render = c.should_render;
-          if (c.is_requirement !== orig.is_requirement) patch.is_requirement = c.is_requirement;
+          if (c.include_in_scoring !== orig.include_in_scoring) patch.include_in_scoring = c.include_in_scoring;
           if (c.section !== orig.section) patch.section = c.section;
           if (c.position !== orig.position) patch.position = c.position;
           if (c.chunk_type !== orig.chunk_type) patch.chunk_type = c.chunk_type;

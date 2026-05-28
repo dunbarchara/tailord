@@ -17,6 +17,51 @@ from app.services.profile_formatter import format_sourced_profile
 
 logger = structlog.get_logger(__name__)
 
+# (include_in_scoring, should_render) — None means "use LLM-returned value"
+SEMANTIC_TYPE_RULES: dict[str, tuple[bool | None, bool | None]] = {
+    "job_requirement": (True, True),
+    "role_description": (True, True),
+    "company_description": (None, False),  # LLM decides include_in_scoring; render always False
+    "compensation": (False, False),
+    "location": (False, False),
+    "application_info": (False, False),
+    "legal": (False, False),
+    "other": (None, None),  # LLM decides both
+}
+
+
+def resolve_chunk_flags(result: ChunkMatchResult) -> ChunkMatchResult:
+    """Apply SEMANTIC_TYPE_RULES to override include_in_scoring and should_render."""
+    include_override, render_override = SEMANTIC_TYPE_RULES.get(
+        result.semantic_type, SEMANTIC_TYPE_RULES["other"]
+    )
+    return ChunkMatchResult(
+        score=result.score,
+        rationale=result.rationale,
+        advocacy_blurb=result.advocacy_blurb,
+        experience_sources=result.experience_sources,
+        should_render=render_override if render_override is not None else result.should_render,
+        include_in_scoring=include_override
+        if include_override is not None
+        else result.include_in_scoring,
+        semantic_type=result.semantic_type,
+    )
+
+
+def _derive_evaluation_status(match: ChunkMatchResult, chunk_type: str) -> str | None:
+    if chunk_type == "header":
+        return "skipped"
+    if not match.include_in_scoring:
+        return "skipped"
+    if match.score in (0, 1, 2):
+        return "scored"
+    if match.score == -1 and "error" in (match.rationale or "").lower():
+        return "error"
+    if match.score == -1:
+        return "skipped"
+    return None
+
+
 BATCH_SIZE = (
     3  # Smaller batches reduce output token count — advocacy_blurb roughly doubles output length
 )
@@ -271,6 +316,8 @@ def _score_chunk_vector(
         advocacy_blurb=raw.advocacy_blurb,
         experience_sources=raw.experience_sources,
         should_render=raw.should_render,
+        include_in_scoring=raw.include_in_scoring,
+        semantic_type=raw.semantic_type,
     )
     return annotated, job_chunk_embedding
 
@@ -525,6 +572,7 @@ def enrich_job_chunks(
         # embed_job_chunks at the end skips chunks already embedded.
         now = datetime.now(timezone.utc)
         for chunk, match in all_results:
+            match = resolve_chunk_flags(match)
             embedding = embedding_map.get(chunk.position) if use_vector else None
             job_chunk = JobChunk(
                 job_id=job_id,
@@ -537,6 +585,9 @@ def enrich_job_chunks(
                 advocacy_blurb=match.advocacy_blurb,
                 experience_sources=match.experience_sources or [],
                 should_render=match.should_render,
+                include_in_scoring=match.include_in_scoring,
+                semantic_type=match.semantic_type,
+                evaluation_status=_derive_evaluation_status(match, chunk.chunk_type),
                 enriched_at=now,
                 scored_content=chunk.content,
                 embedding=embedding,
@@ -676,6 +727,7 @@ def re_enrich_single_chunk(
         chunk.advocacy_blurb = match.advocacy_blurb
         chunk.experience_sources = match.experience_sources or []
         chunk.should_render = match.should_render
+        chunk.evaluation_status = "scored" if match.score in (0, 1, 2) else "error"
         chunk.enriched_at = now
         chunk.scored_content = chunk.content
         db.commit()
@@ -704,7 +756,7 @@ def refresh_job_chunks(
     """
     Re-score existing JobChunk rows in-place without deleting them.
 
-    Only chunks where is_requirement=True are re-scored; is_requirement=False chunks
+    Only chunks where include_in_scoring=True are re-scored; include_in_scoring=False chunks
     are left untouched. Sets enrichment_status on the specific tailoring.
 
     Creates its own DB session — do not pass a session across thread boundaries.
@@ -724,7 +776,7 @@ def refresh_job_chunks(
         chunks = (
             db.query(JobChunk).filter(JobChunk.job_id == job_id).order_by(JobChunk.position).all()
         )
-        scoreable = [c for c in chunks if c.is_requirement and c.chunk_type != "header"]
+        scoreable = [c for c in chunks if c.include_in_scoring and c.chunk_type != "header"]
 
         if not scoreable:
             logger.info("refresh_job_chunks_no_scoreable", job_id=str(job_id))
@@ -890,7 +942,7 @@ def refresh_job_chunks(
                 for chunk, match in zip(batch, batch_results):
                     result_map[str(chunk.id)] = match
 
-        # Update chunks in-place
+        # Update chunks in-place (do NOT touch semantic_type or include_in_scoring — set at extraction)
         now = datetime.now(timezone.utc)
         for chunk in scoreable:
             match = result_map.get(str(chunk.id))
@@ -901,6 +953,7 @@ def refresh_job_chunks(
             chunk.advocacy_blurb = match.advocacy_blurb
             chunk.experience_sources = match.experience_sources or []
             chunk.should_render = match.should_render
+            chunk.evaluation_status = "scored" if match.score in (0, 1, 2) else "error"
             chunk.enriched_at = now
             chunk.scored_content = chunk.content
 

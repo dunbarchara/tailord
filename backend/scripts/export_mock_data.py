@@ -166,7 +166,7 @@ def build_chunks_response(job_chunks: list, enrichment_status: str) -> dict:
         # Add source_label
         source_map = {"resume": "Resume", "github": "GitHub", "user_input": "Manual"}
         d["source_label"] = (
-            source_map.get(jc.experience_source or "", None) if jc.experience_source else None
+            source_map.get((jc.experience_sources or [None])[0]) if jc.experience_sources else None
         )
         chunks.append(d)
     return {"enrichment_status": enrichment_status, "chunks": chunks}

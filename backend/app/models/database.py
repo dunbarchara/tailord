@@ -256,6 +256,10 @@ class Job(Base):
     job_url: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_job: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # source_type: "url" | "manual"
+    source_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="url", server_default="url"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship("User", back_populates="jobs")
@@ -545,10 +549,20 @@ class JobChunk(Base):
     should_render: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
-    is_requirement: Mapped[bool] = mapped_column(
+    include_in_scoring: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    # semantic_type: set at initial extraction; never updated on refresh.
+    # Values: job_requirement | role_description | company_description | compensation |
+    #         location | application_info | legal | other
+    semantic_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # evaluation_status: scored | skipped | error | null (pre-migration rows)
+    evaluation_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     scored_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Populated by experience_embedder.py after job chunk extraction.
     embedding = mapped_column(Vector(1536), nullable=True)
