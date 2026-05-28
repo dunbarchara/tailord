@@ -64,7 +64,7 @@ check-backend:
 	cd backend && uv run ruff check .
 	@echo ""
 	@echo "── bandit (SAST) ────────────────────────────────────────────────"
-	cd backend && uv run bandit -r app/ -ll -q
+	cd backend && uv run bandit -r app/ -ll -q 2>&1 | grep -v "^\[tester\]\|^\[manager\]"; exit $${PIPESTATUS[0]}
 	@echo ""
 	@echo "── pip-audit (CVE scan) ─────────────────────────────────────────"
 	cd backend && uv run pip-audit

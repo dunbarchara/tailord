@@ -315,6 +315,9 @@ class Tailoring(Base):
     notion_export: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # LLM models used. Keys: letter (scoring model planned).
     models: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Resume draft JSONB. Populated by POST /tailorings/{id}/resume/generate.
+    # Shape: ResumeDraft — sections, skills_claim_ids, education_group_ids, contact_override, warnings.
+    resume_draft: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     @hybrid_property
     def is_public(self) -> bool:

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Resume</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+    line-height: 1.4;
+    color: #1a1a1a;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Screen: simulate letter page with visible margins for the preview iframe */
+  @media screen {
+    body {
+      padding: 0.5in;
+      width: 8.5in;
+      min-height: 11in;
+      box-sizing: border-box;
+    }
+  }
+
+  .page { width: 100%; }
+
+  /* ── Header ── */
+  .header {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1pt solid #1a1a1a;
+  }
+  .header h1 {
+    font-size: 18pt;
+    font-weight: bold;
+    margin-bottom: 3px;
+  }
+  .header-contact {
+    font-size: 9.5pt;
+    color: #444;
+  }
+  .header-contact a { color: #1a1a1a; text-decoration: none; }
+
+  /* ── Section ── */
+  .section { margin-bottom: 10px; }
+  .section-title {
+    font-size: 12pt;
+    font-weight: bold;
+    border-bottom: 0.75pt solid #aaa;
+    padding-bottom: 1px;
+    margin-bottom: 5px;
+  }
+
+  /* ── Entry rows ── */
+  .entry { margin-bottom: 7px; }
+  .entry-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  /* Row 1: Org / School name (bold) + right-side location (bold) */
+  .entry-org {
+    font-size: 10pt;
+    font-weight: bold;
+  }
+  .entry-right {
+    font-size: 10pt;
+    font-weight: bold;
+    white-space: nowrap;
+    margin-left: 8px;
+    flex-shrink: 0;
+  }
+  /* Row 2: Job title / Degree (normal) + dates (normal) */
+  .entry-sub {
+    font-size: 10pt;
+    font-weight: normal;
+    color: #222;
+  }
+  .entry-dates {
+    font-size: 10pt;
+    font-weight: normal;
+    color: #222;
+    white-space: nowrap;
+    margin-left: 8px;
+    flex-shrink: 0;
+  }
+
+  /* ── Bullets ── */
+  .bullets { padding-left: 14px; margin: 3px 0 0; }
+  .bullets li { font-size: 10pt; margin-bottom: 2px; line-height: 1.35; }
+
+  /* ── Skills ── */
+  .skills-text { font-size: 10pt; line-height: 1.5; }
+
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <h1>{{ name }}</h1>
+    <div class="header-contact">{{ contact_html }}</div>
+  </div>
+
+  {%- set exp_entries = sections | rejectattr('group_type', 'equalto', 'repository') | list %}
+  {%- set proj_entries = sections | selectattr('group_type', 'equalto', 'repository') | list %}
+
+  {%- macro render_entries(entries) %}
+    {% for entry in entries %}
+    {%- set start = entry.start_date or '' %}
+    {%- set end = entry.end_date or 'Present' %}
+    {%- set has_dates = start or entry.end_date %}
+    {%- set job_title = entry.type_meta.get('title', '') if entry.type_meta else '' %}
+    <div class="entry">
+      <div class="entry-row">
+        <span class="entry-org">{{ entry.name }}</span>
+        {%- if entry.location %}<span class="entry-right">{{ entry.location }}</span>{%- endif %}
+      </div>
+      {%- if job_title or has_dates %}
+      <div class="entry-row">
+        <span class="entry-sub">{{ job_title }}</span>
+        {%- if has_dates %}<span class="entry-dates">{{ start }}{% if start %} – {% endif %}{{ end }}</span>{%- endif %}
+      </div>
+      {%- endif %}
+      {% if entry.bullets %}
+      <ul class="bullets">
+        {% for bullet in entry.bullets %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {%- endmacro %}
+
+  {% if exp_entries %}
+  <div class="section">
+    <div class="section-title">Experience</div>
+    {{ render_entries(exp_entries) }}
+  </div>
+  {% endif %}
+
+  {% if proj_entries %}
+  <div class="section">
+    <div class="section-title">Projects</div>
+    {{ render_entries(proj_entries) }}
+  </div>
+  {% endif %}
+
+  {% if skills %}
+  <div class="section">
+    <div class="section-title">Skills</div>
+    <div class="skills-text">{{ skills | join(' | ') }}</div>
+  </div>
+  {% endif %}
+
+  {% if education %}
+  <div class="section">
+    <div class="section-title">Education</div>
+    {% for edu in education %}
+    <div class="entry">
+      <div class="entry-row">
+        <span class="entry-org">{{ edu.name }}</span>
+        {%- if edu.location %}<span class="entry-right">{{ edu.location }}</span>{%- endif %}
+      </div>
+      {%- if edu.degree or edu.end_date %}
+      <div class="entry-row">
+        <span class="entry-sub">{{ edu.degree or '' }}</span>
+        {%- if edu.end_date %}<span class="entry-dates">{{ edu.end_date }}</span>{%- endif %}
+      </div>
+      {%- endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>

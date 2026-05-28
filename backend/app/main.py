@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
-from app.api import admin, experience, notion, tailorings, users
+from app.api import admin, experience, notion, resume, tailorings, users
 from app.clients.llm_client import validate_llm_config
 from app.logging import setup_logging
 from app.metrics import HTTP_REQUEST_DURATION_MS, HTTP_REQUESTS_TOTAL
@@ -112,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(experience.router)
     app.include_router(tailorings.router)
+    app.include_router(resume.router)
     app.include_router(notion.router)
     return app
 

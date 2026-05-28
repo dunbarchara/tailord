@@ -1418,6 +1418,7 @@ def get_tailoring(
         "notion_page_url": notion.get("page_url"),
         "notion_posting_page_url": notion.get("posting_page_url"),
         "gap_analysis": gap_analysis,
+        "resume_draft": tailoring.resume_draft,
         "updated_at": tailoring.updated_at.isoformat() if tailoring.updated_at else None,
         "created_at": tailoring.created_at.isoformat(),
     }

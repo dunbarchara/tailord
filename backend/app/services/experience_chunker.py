@@ -23,7 +23,7 @@ github      → walk repos (with enriched details merged) from ExperienceSource.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import structlog
 from sqlalchemy.orm import Session
@@ -36,6 +36,31 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers — build raw chunk dicts before DB insert
 # ---------------------------------------------------------------------------
+
+
+def _format_github_date_range(created_at: str | None, last_pushed_at: str | None) -> str | None:
+    """Format 'Jan 2024 – Present' or 'Jan 2024 – Mar 2025' from ISO8601 repo dates.
+    Uses created_at (repo creation) as start, pushed_at as end. Treats pushed within
+    the last 6 months as 'Present'.
+    """
+
+    def _fmt(iso: str) -> str:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.strftime("%b %Y")
+
+    start = _fmt(created_at) if created_at else None
+
+    end_label = None
+    if last_pushed_at:
+        last_dt = datetime.fromisoformat(last_pushed_at.replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) - last_dt <= timedelta(days=180):
+            end_label = "Present"
+        else:
+            end_label = _fmt(last_pushed_at)
+
+    if start and end_label:
+        return f"{start} – {end_label}"
+    return start or end_label
 
 
 def _job_group_key(job: dict) -> str | None:
@@ -146,6 +171,10 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
     """
     chunks: list[dict] = []
     repo_name = (repo.get("name") or "").strip() or None
+    date_range = _format_github_date_range(
+        repo.get("created_at"),
+        repo.get("last_pushed_at"),
+    )
 
     # readme_summary intentionally skipped — always present in _fmt_github_prose baseline
     # context and would crowd out experience_claims in cosine similarity top-K retrieval.
@@ -158,7 +187,7 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
                     "claim_type": "skill",
                     "content": item,
                     "group_key": repo_name,
-                    "date_range": None,
+                    "date_range": date_range,
                     "keywords": None,
                 }
             )
@@ -171,7 +200,7 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
                     "claim_type": "work_experience",
                     "content": claim,
                     "group_key": repo_name,
-                    "date_range": None,
+                    "date_range": date_range,
                     "keywords": None,
                 }
             )

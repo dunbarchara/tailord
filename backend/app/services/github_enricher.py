@@ -161,6 +161,7 @@ def enrich_github_repos(
                                 "topics": topics,
                                 "stars": repo.get("stargazers_count", 0),
                                 "last_pushed_at": repo.get("pushed_at"),
+                                "created_at": repo.get("created_at"),
                                 "scanned_at": datetime.now(timezone.utc).isoformat(),
                             }
                         )

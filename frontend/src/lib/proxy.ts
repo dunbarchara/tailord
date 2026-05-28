@@ -11,7 +11,7 @@ function parseErrorDetail(text: string): string {
   return text
 }
 
-function buildUserHeaders(user: UserContext, correlationId: string): Record<string, string> {
+export function buildUserHeaders(user: UserContext, correlationId: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-API-Key': env.apiKey,
@@ -63,7 +63,7 @@ export async function proxyToBackend(
   }
 }
 
-interface UserContext {
+export interface UserContext {
   userId: string
   userEmail: string
   userName?: string | null

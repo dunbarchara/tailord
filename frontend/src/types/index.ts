@@ -15,6 +15,52 @@ export interface GapAnalysis {
   unsourced_claim_count: number
 }
 
+export interface ResumeSection {
+  group_id: string
+  group_type: 'role' | 'project' | 'repository' | 'education' | 'custom'
+  group_name: string
+  group_start_date: string | null
+  group_end_date: string | null
+  group_location: string | null
+  group_type_meta: Record<string, unknown> | null
+  included: boolean
+  claim_ids: string[]
+  rewrites: Record<string, string>
+}
+
+export interface ResumeContactOverride {
+  linkedin_url: string | null
+  location: string | null
+}
+
+export interface EducationEntry {
+  name: string
+  degree: string | null
+  end_date: string | null
+  location: string | null
+}
+
+export interface ResumeDraft {
+  generated_at: string
+  polished: boolean
+  contact_override: ResumeContactOverride
+  sections: ResumeSection[]
+  skills_claim_ids: string[]
+  education_group_ids: string[]
+  education_data?: EducationEntry[]
+  warnings: string[]
+}
+
+export interface ExperienceGroup {
+  id: string
+  group_type: 'role' | 'project' | 'repository' | 'education' | 'custom'
+  name: string
+  start_date: string | null
+  end_date: string | null
+  location: string | null
+  type_meta: Record<string, unknown> | null
+}
+
 export interface Tailoring {
   id: string
   title: string | null
@@ -44,6 +90,7 @@ export interface Tailoring {
     batch_errors?: number
   } | null
   gap_analysis?: GapAnalysis | null
+  resume_draft?: ResumeDraft | null
   updated_at?: string | null
   created_at: string
 }
