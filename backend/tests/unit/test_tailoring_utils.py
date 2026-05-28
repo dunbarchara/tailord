@@ -37,12 +37,12 @@ def test_validate_profile_blank_summary_raises():
 
 
 def test_validate_profile_github_repos_passes():
-    _validate_profile({"github_repos": [{"name": "my-repo"}]})
+    _validate_profile({"github": {"repos": [{"name": "my-repo"}]}})
 
 
 def test_validate_profile_github_empty_list_raises():
     with pytest.raises(HTTPException):
-        _validate_profile({"github_repos": []})
+        _validate_profile({"github": {"repos": []}})
 
 
 # ---------------------------------------------------------------------------

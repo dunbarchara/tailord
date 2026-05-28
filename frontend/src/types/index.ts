@@ -256,8 +256,18 @@ export interface ExperienceClaimsResponse {
   partial_response: ExperienceClaim[] | null
 }
 
-export interface ExperienceRecord {
+export interface ExperienceSourceStatus {
   id: string
+  source_type: 'resume' | 'github'
+  connection_status: 'connected' | 'disconnected' | 'error'
+  sync_status: 'idle' | 'syncing' | 'error'
+  config: { filename?: string | null; username?: string | null }
+  error_message: string | null
+  last_synced_at: string | null
+}
+
+export interface ExperienceRecord {
+  id: string | null
   filename: string | null
   status: ExperienceStatus
   extracted_profile: SourcedProfile | null
@@ -270,4 +280,6 @@ export interface ExperienceRecord {
   uploaded_at: string | null
   processed_at: string | null
   last_process_requested_at: string | null
+  // New: per-source status (alongside legacy flat fields for backward compat)
+  sources?: ExperienceSourceStatus[]
 }

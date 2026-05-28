@@ -7,7 +7,7 @@ from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import gap_analysis as prompt
 from app.schemas.gaps import GapAnalysis, GapQuestion, ProfileGapWithChunk
-from app.services.profile_formatter import format_sourced_profile
+from app.services.profile_formatter import format_sourced_profile, sources_to_profile_dict
 
 logger = structlog.get_logger(__name__)
 
@@ -46,13 +46,19 @@ def run_gap_analysis(tailoring_id: str) -> None:
             return
 
         user = tailoring.user
-        if not user or not user.experience or not user.experience.extracted_profile:
+        if not user or not user.experience_sources:
             logger.info("run_gap_analysis_no_experience", tailoring_id=tailoring_id)
             tailoring.gap_analysis_status = "complete"
             db.commit()
             return
 
-        extracted_profile = user.experience.extracted_profile
+        extracted_profile = sources_to_profile_dict(user.experience_sources)
+        if not extracted_profile:
+            logger.info("run_gap_analysis_no_experience", tailoring_id=tailoring_id)
+            tailoring.gap_analysis_status = "complete"
+            db.commit()
+            return
+
         pronouns = user.profile.pronouns if user.profile else None
         candidate_name = user.candidate_name
 

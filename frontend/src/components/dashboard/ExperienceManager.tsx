@@ -310,7 +310,7 @@ export function ExperienceManager({
             setStageStartedAt({ [PROCESS_STAGES[0]]: startTs });
             setProcessingStage(PROCESS_STAGES[0]);
           }
-          setUploadState({ phase: 'processing', filename: record.filename ?? '', experienceId: record.id });
+          setUploadState({ phase: 'processing', filename: record.filename ?? '', experienceId: record.id ?? '' });
           startPolling();
         } else if (record.status === 'error') {
           setUploadState({ phase: 'error', message: record.error_message ?? 'Processing failed' });

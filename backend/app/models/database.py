@@ -61,8 +61,8 @@ class User(Base):
     integrations: Mapped[list["UserIntegration"]] = relationship(
         "UserIntegration", back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
-    experience: Mapped["Experience | None"] = relationship(
-        "Experience", back_populates="user", uselist=False
+    experience_sources: Mapped[list["ExperienceSource"]] = relationship(
+        "ExperienceSource", back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
     jobs: Mapped[list["Job"]] = relationship("Job", back_populates="user")
     tailorings: Mapped[list["Tailoring"]] = relationship("Tailoring", back_populates="user")
@@ -189,35 +189,61 @@ class UserIntegration(Base):
     user: Mapped["User"] = relationship("User", back_populates="integrations")
 
 
-class Experience(Base):
-    __tablename__ = "experiences"
+class ExperienceSource(Base):
+    """
+    One row per (user_id, source_type) pair. Replaces the monolithic Experience table.
+
+    source_type values: "resume" | "github" | (future: "linear", "messenger", ...)
+    connection_status: connected | disconnected | error
+    sync_status: idle | syncing | error
+
+    config shapes:
+      resume:  {"storage_key": "users/123/abc.pdf", "filename": "resume.pdf"}
+      github:  {"username": "dunbarchara"}
+
+    source_data shapes:
+      resume:  {"extracted": {...profile...}, "raw_text": "...", "corrections": {...}}
+      github:  {"extracted": {...}, "repos": [...], "repo_details": {...}}
+    """
+
+    __tablename__ = "experience_sources"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), unique=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
-    storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
-    filename: Mapped[str | None] = mapped_column(String, nullable=True)
-    # status: pending | processing | ready | error
-    status: Mapped[str] = mapped_column(String, default="pending")
-    extracted_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    raw_resume_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
-    github_username: Mapped[str | None] = mapped_column(String, nullable=True)
-    github_repos: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    # Enriched per-repo signals from the GitHub App crawl (README, manifests, LLM summary).
-    # Null until enrichment completes. Additive — does not replace github_repos.
-    github_repo_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    user_input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Set at request time (before processing begins) — used for the 5-min cooldown check.
-    # processed_at captures completion; this captures the trigger.
-    last_process_requested_at: Mapped[datetime | None] = mapped_column(
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # connection_status: connected | disconnected | error
+    connection_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="connected", server_default="connected"
+    )
+    # sync_status: idle | syncing | error
+    sync_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="idle", server_default="idle"
+    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Cooldown anchor (was last_process_requested_at on Experience)
+    last_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Surface connection config (non-secret)
+    config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Pipeline artifacts + extracted content
+    source_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True, name="source_data")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    user: Mapped["User"] = relationship("User", back_populates="experience")
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_type", name="uq_experience_sources_user_source"),
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="experience_sources")
 
 
 class Job(Base):

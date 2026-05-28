@@ -165,12 +165,12 @@ frontend/src/app/
 | `backend/app/config.py` | Pydantic Settings (env vars) |
 | `backend/app/clients/llm_client.py` | OpenAI SDK wrapper (configurable `LLM_BASE_URL`) |
 | `backend/app/clients/storage_client.py` | Storage abstraction — `AzureStorageClient` / `S3StorageClient` |
-| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `AuthIdentity`, `UserProfile`, `UserIntegration`, `Experience`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
-| `backend/app/api/experience.py` | Experience CRUD, GitHub enrichment, SSE processing stream |
+| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `AuthIdentity`, `UserProfile`, `UserIntegration`, `ExperienceSource`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
+| `backend/app/api/experience.py` | ExperienceSource CRUD, GitHub enrichment, SSE processing stream |
 | `backend/app/api/tailorings.py` | Tailoring CRUD, SSE generation stream, sharing, Notion export |
 | `backend/app/api/admin.py` | Admin user management — `require_admin()` dependency, approve/revoke |
 | `backend/app/services/experience_processor.py` | Text extraction (PDF/DOCX/TXT) + background processing |
-| `backend/app/services/tailoring_generator.py` | LLM tailoring generation — profile formatting, ranked match rendering |
+| `backend/app/services/letter_generator.py` | LLM letter generation — profile formatting, ranked match rendering (`tailoring_generator.py` is a compat stub) |
 | `backend/app/services/requirement_matcher.py` | Scores job requirements against candidate experience (STRONG/PARTIAL) |
 | `backend/app/services/profile_extractor.py` | LLM profile extraction, bullet post-processing |
 | `backend/app/prompts/profile_extraction.py` | Profile extraction prompt + temperature |
@@ -191,7 +191,7 @@ frontend/src/app/
 
 - `UserIntegration` — `id`, `user_id` (FK → users CASCADE, indexed), `provider` (varchar 50 — `"notion"` now; future: `"github"`, `"jira"`), `credentials` (JSONB — `{access_token, ...}`, never exposed in API), `provider_metadata` (JSONB — `{workspace_id, workspace_name, bot_id, parent_page_id}` for Notion), `connected_at`, `updated_at`; UNIQUE `(user_id, provider)`. Replaces all `notion_*` fields on User. Loaded via `lazy="selectin"`. Security TODO: credentials should be encrypted at rest.
 
-- `Experience` — `id`, `user_id` (FK, 1:1), `storage_key` (blob key, nullable), `filename` (nullable), `status` (pending/processing/ready/error), `extracted_profile` (JSON — keyed by source: `"resume"`, `"github"`, `"user_input"`, etc.), `raw_resume_text`, `github_username`, `github_repos` (JSON), `user_input_text`, `error_message`, `uploaded_at`, `processed_at`, `last_process_requested_at`
+- `ExperienceSource` — `id`, `user_id` (FK → users CASCADE, indexed), `source_type` (varchar 30 — `"resume"` | `"github"` | future surfaces), `connection_status` (connected/disconnected/error), `sync_status` (idle/syncing/error), `last_synced_at` (timestamptz, nullable), `last_requested_at` (timestamptz, nullable — cooldown anchor), `error_message` (nullable), `config` (JSONB — surface connection config: `{storage_key, filename}` for resume; `{username}` for github), `source_data` (JSONB — pipeline artifacts: `{extracted, raw_text, corrections}` for resume; `{repos, repo_details, extracted}` for github), `created_at`, `updated_at`; UNIQUE `(user_id, source_type)`. Replaces the monolithic `experiences` table. Profile dict assembled on demand via `sources_to_profile_dict()` in `profile_formatter.py`.
 
 - `Job` — `id`, `user_id` (FK), `job_url`, `extracted_job` (JSON), `created_at`; one-to-many with `JobChunk`
 
@@ -205,7 +205,9 @@ frontend/src/app/
 
 - `TailoringDebugLog` — schema-only scaffold for future LLM telemetry (Level 3); no data written yet
 
-**Relationships:** `User` → one `UserProfile` (selectin), many `AuthIdentity`, many `UserIntegration` (selectin), one `Experience`, many `Tailorings`, many `ExperienceClaim`, many `ExperienceGroup`; `ExperienceGroup` → many `ExperienceClaim`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
+**Relationships:** `User` → one `UserProfile` (selectin), many `AuthIdentity`, many `UserIntegration` (selectin), many `ExperienceSource` (selectin), many `Tailorings`, many `ExperienceClaim`, many `ExperienceGroup`; `ExperienceGroup` → many `ExperienceClaim`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
+
+**Profile assembly:** `sources_to_profile_dict(user.experience_sources)` assembles the legacy `{resume, github, corrections}` dict used by `format_sourced_profile()` and all LLM calls. Call sites do not need to know which `ExperienceSource` row holds which data.
 
 **Identity lookup pattern:** `X-User-Id` header = google_sub. Backend looks up `AuthIdentity(provider="google", subject=x_user_id)` → loads `user`. Frontend/header contract unchanged.
 

@@ -127,19 +127,31 @@ def make_chunk(db, job, position=0, **kwargs):
     return chunk
 
 
-def make_experience(db, user, **kwargs):
-    from app.models.database import Experience
+def make_experience_source(db, user, source_type="resume", **kwargs):
+    from datetime import datetime, timezone
 
-    defaults = {
-        "status": "ready",
-        "extracted_profile": {"resume": {"work_experience": [{"title": "Engineer"}]}},
+    from app.models.database import ExperienceSource
+
+    now = datetime.now(timezone.utc)
+    defaults: dict = {
+        "connection_status": "connected",
+        "sync_status": "idle",
+        "created_at": now,
+        "updated_at": now,
     }
+    if source_type == "resume" and "source_data" not in kwargs:
+        defaults["source_data"] = {"extracted": {"work_experience": [{"title": "Engineer"}]}}
     defaults.update(kwargs)
-    experience = Experience(user_id=user.id, **defaults)
-    db.add(experience)
+    src = ExperienceSource(user_id=user.id, source_type=source_type, **defaults)
+    db.add(src)
     db.commit()
-    db.refresh(experience)
-    return experience
+    db.refresh(src)
+    return src
+
+
+# Backward-compat alias used by existing tests
+def make_experience(db, user, **kwargs):
+    return make_experience_source(db, user, source_type="resume", **kwargs)
 
 
 def make_llm_trigger_log(db, user, n=1, event_type="tailoring_create"):

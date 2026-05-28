@@ -30,7 +30,9 @@ def _ready_tailoring(chunks_for_query):
     tailoring.generation_status = "ready"
     tailoring.job = MagicMock()  # non-None — has a job
     tailoring.user = MagicMock()
-    tailoring.user.experience.extracted_profile = {"resume": {}}
+    tailoring.user.experience_sources = [
+        MagicMock()
+    ]  # non-empty; sources_to_profile_dict is patched
     tailoring.user.profile.pronouns = None
     tailoring.user.profile.preferred_first_name = None
     tailoring.user.profile.preferred_last_name = None
@@ -103,10 +105,14 @@ def test_run_gap_analysis_zero_gaps_empty_result():
         with patch("app.services.gap_analyzer.llm_parse_with_retry") as mock_llm:
             with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
                 with patch(
-                    "app.services.gap_analyzer.format_sourced_profile",
-                    return_value="formatted profile",
+                    "app.services.gap_analyzer.sources_to_profile_dict",
+                    return_value={"resume": {"summary": "Engineer"}},
                 ):
-                    run_gap_analysis("fake-tailoring-id")
+                    with patch(
+                        "app.services.gap_analyzer.format_sourced_profile",
+                        return_value="formatted profile",
+                    ):
+                        run_gap_analysis("fake-tailoring-id")
 
     # Chunk scores are the authoritative source — no LLM re-scoring
     mock_llm.assert_not_called()
@@ -139,10 +145,14 @@ def test_run_gap_analysis_sourced_count_excludes_score_zero():
         with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_gap_q):
             with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
                 with patch(
-                    "app.services.gap_analyzer.format_sourced_profile",
-                    return_value="formatted profile",
+                    "app.services.gap_analyzer.sources_to_profile_dict",
+                    return_value={"resume": {"summary": "Engineer"}},
                 ):
-                    run_gap_analysis("fake-tailoring-id")
+                    with patch(
+                        "app.services.gap_analyzer.format_sourced_profile",
+                        return_value="formatted profile",
+                    ):
+                        run_gap_analysis("fake-tailoring-id")
 
     saved = tailoring.gap_analysis
     assert saved["sourced_claim_count"] == 2  # score 2 and 1
@@ -169,10 +179,14 @@ def test_run_gap_analysis_gap_content_in_output():
         with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_gap_q):
             with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
                 with patch(
-                    "app.services.gap_analyzer.format_sourced_profile",
-                    return_value="formatted profile",
+                    "app.services.gap_analyzer.sources_to_profile_dict",
+                    return_value={"resume": {"summary": "Engineer"}},
                 ):
-                    run_gap_analysis("fake-tailoring-id")
+                    with patch(
+                        "app.services.gap_analyzer.format_sourced_profile",
+                        return_value="formatted profile",
+                    ):
+                        run_gap_analysis("fake-tailoring-id")
 
     saved = tailoring.gap_analysis
     assert len(saved["gaps"]) == 1

@@ -10,7 +10,7 @@ from app.auth import require_api_key
 from app.clients.storage_client import get_storage_client
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user
-from app.models.database import Experience, Job, Tailoring, User, UserProfile
+from app.models.database import ExperienceSource, Job, Tailoring, User, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -178,13 +178,13 @@ def get_public_user(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     user = profile.user
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
     resume_profile = None
     github_username = None
-    if experience:
-        if experience.extracted_profile:
-            resume_profile = experience.extracted_profile.get("resume")
-        github_username = experience.github_username
+    for src in user.experience_sources:
+        if src.source_type == "resume" and src.source_data:
+            resume_profile = src.source_data.get("extracted")
+        elif src.source_type == "github" and src.config:
+            github_username = src.config.get("username")
 
     return {
         "name": _display_name(user),
@@ -210,16 +210,18 @@ def delete_user(
            integrations → identities → tombstone users row.
     """
     # 1. Delete uploaded resume file from storage
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if experience and experience.storage_key:
-        try:
-            get_storage_client().delete_object(experience.storage_key)
-        except Exception:
-            logger.warning(
-                "Failed to delete storage object %s for user %s — continuing",
-                experience.storage_key,
-                user.id,
-            )
+    for src in user.experience_sources:
+        if src.source_type == "resume":
+            storage_key = (src.config or {}).get("storage_key")
+            if storage_key:
+                try:
+                    get_storage_client().delete_object(storage_key)
+                except Exception:
+                    logger.warning(
+                        "Failed to delete storage object %s for user %s — continuing",
+                        storage_key,
+                        user.id,
+                    )
 
     # 2. Delete tailorings (must precede jobs due to FK)
     db.query(Tailoring).filter(Tailoring.user_id == user.id).delete()
@@ -227,10 +229,10 @@ def delete_user(
     # 3. Delete jobs (job_chunks cascade via ondelete="CASCADE")
     db.query(Job).filter(Job.user_id == user.id).delete()
 
-    # 4. Delete experience
-    if experience:
-        db.delete(experience)
-        db.flush()
+    # 4. Delete experience_sources (cascade via user relationship, but delete explicitly
+    #    since we're keeping the user row as tombstone)
+    db.query(ExperienceSource).filter(ExperienceSource.user_id == user.id).delete()
+    db.flush()
 
     # 5. Delete claims and groups (cascade from user but we delete explicitly
     #    since we're keeping the user row as tombstone)

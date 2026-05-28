@@ -25,7 +25,7 @@ from app.core.playwright_helper import get_rendered_content
 from app.core.token_utils import truncate_to_tokens
 from app.core.url_validation import validate_job_url
 from app.models.database import (
-    Experience,
+    ExperienceClaim,
     Job,
     JobChunk,
     LlmTriggerLog,
@@ -38,8 +38,12 @@ from app.services.chunk_display import SOURCE_LABELS, is_display_ready
 from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
 from app.services.gap_analyzer import run_gap_analysis
 from app.services.job_extractor import extract_job
-from app.services.profile_formatter import build_ranked_matches_from_chunks, format_sourced_profile
-from app.services.tailoring_generator import generate_tailoring
+from app.services.letter_generator import generate_letter
+from app.services.profile_formatter import (
+    build_ranked_matches_from_chunks,
+    format_sourced_profile,
+    sources_to_profile_dict,
+)
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -102,7 +106,7 @@ def _validate_profile(profile: dict) -> None:
     resume = profile.get("resume") or {}
     has_work = bool(resume.get("work_experience"))
     has_summary = bool((resume.get("summary") or "").strip())
-    has_github = bool(profile.get("github_repos"))
+    has_github = bool((profile.get("github") or {}).get("repos"))
     if not (has_work or has_summary or has_github):
         raise HTTPException(
             status_code=422,
@@ -499,7 +503,7 @@ def _finalize_tailoring(
                         logger.exception("ranked_matches_failed")
 
                     try:
-                        _letter_result = generate_tailoring(
+                        _letter_result = generate_letter(
                             extracted_profile,
                             extracted_job,
                             candidate_name,
@@ -759,15 +763,9 @@ async def _stream_tailoring(
     is_manual = bool(request.description and request.description.strip())
     tailoring: Tailoring | None = None
     try:
-        experience = (
-            db.query(Experience)
-            .filter(
-                Experience.user_id == user.id,
-                Experience.status == "ready",
-            )
-            .first()
-        )
-        if not experience or not experience.extracted_profile:
+        # experience_sources is loaded via selectin — no extra query needed.
+        extracted_profile = sources_to_profile_dict(user.experience_sources)
+        if not extracted_profile:
             yield _sse(
                 "error",
                 json.dumps(
@@ -778,7 +776,7 @@ async def _stream_tailoring(
             )
             return
         try:
-            _validate_profile(experience.extracted_profile)
+            _validate_profile(extracted_profile)
         except HTTPException as exc:
             yield _sse("error", json.dumps({"detail": exc.detail}))
             return
@@ -786,7 +784,6 @@ async def _stream_tailoring(
         # Capture what we need from the session before the long async scrape.
         # db.commit() closes the implicit read transaction so the connection doesn't
         # sit idle-in-transaction for the entire scraping duration (5–15s).
-        extracted_profile = experience.extracted_profile
         user_id = user.id
         candidate_name = user.candidate_name
         candidate_pronouns = user.profile.pronouns if user.profile else None
@@ -1081,8 +1078,11 @@ def get_tailoring(
             db.commit()
 
     job = tailoring.job
-    exp = db.query(Experience).filter(Experience.user_id == user.id).first()
-    resume_data = (exp.extracted_profile or {}).get("resume") or {} if exp else {}
+    resume_data: dict = {}
+    for src in user.experience_sources:
+        if src.source_type == "resume" and src.source_data:
+            resume_data = src.source_data.get("extracted") or {}
+            break
     return {
         "id": str(tailoring.id),
         "title": job.extracted_job.get("title") if job.extracted_job else None,
@@ -1385,8 +1385,8 @@ def refresh_tailoring_chunks(
     if not tailoring:
         raise HTTPException(status_code=404, detail="Tailoring not found")
 
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
+    extracted_profile = sources_to_profile_dict(user.experience_sources)
+    if not extracted_profile:
         raise HTTPException(status_code=422, detail="No experience found")
 
     candidate_name = user.candidate_name
@@ -1400,7 +1400,7 @@ def refresh_tailoring_chunks(
         refresh_job_chunks,
         tailoring.job_id,
         tailoring_id,
-        experience.extracted_profile or {},
+        extracted_profile,
         user.profile.pronouns if user.profile else None,
         user.id,
         candidate_name,
@@ -1425,7 +1425,7 @@ def submit_gap_answer(
 ):
     """
     Accept an answer to a gap question.
-    Appends the answer to experience.user_input_text, then re-scores only the
+    Persists the answer as a gap_response ExperienceClaim, then re-scores only the
     specific JobChunk linked to that gap — the full tailoring is not regenerated.
     """
     tailoring = (
@@ -1450,28 +1450,41 @@ def submit_gap_answer(
     gap = gaps[body.gap_index]
     chunk_id: str | None = gap.get("chunk_id")
 
-    # Load the user's experience record
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
-        raise HTTPException(status_code=404, detail="Experience not found")
-
-    # Append the answer to user_input_text with a labeled prefix so it reads clearly
-    # in the profile formatter and is distinguishable from freeform notes.
+    # Persist the answer as a gap_response ExperienceClaim
     requirement_label = gap.get("job_requirement", "")[:60]
     answer_entry = f"[Gap answer — {requirement_label}]: {body.answer.strip()}"
-    existing = experience.user_input_text or ""
-    new_user_input_text = (existing + "\n\n" + answer_entry).strip()
-    experience.user_input_text = new_user_input_text
+    now = datetime.now(timezone.utc)
+    from sqlalchemy import func as _func
 
-    # Keep extracted_profile["user_input"] in sync with user_input_text so the
-    # profile formatter always renders the latest direct-input text.
-    base_profile = experience.extracted_profile or {}
-    updated_profile = {**base_profile, "user_input": {"text": new_user_input_text}}
-    experience.extracted_profile = updated_profile
+    max_pos = (
+        db.query(_func.max(ExperienceClaim.position))
+        .filter(ExperienceClaim.user_id == user.id)
+        .scalar()
+    )
+    next_pos = (max_pos if max_pos is not None else -1) + 1
+    gap_claim = ExperienceClaim(
+        user_id=user.id,
+        source_type="gap_response",
+        source_ref=None,
+        claim_type="other",
+        content=answer_entry,
+        group_key=None,
+        date_range=None,
+        technologies=None,
+        chunk_metadata={"job_chunk_id": chunk_id, "tailoring_id": tailoring_id}
+        if chunk_id
+        else None,
+        position=next_pos,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(gap_claim)
     db.commit()
 
+    # Build profile for re-scoring using all experience sources
+    updated_profile = sources_to_profile_dict(user.experience_sources)
+
     # Re-score the specific chunk in the background using the updated profile.
-    # If chunk_id is None (no match found during gap analysis), skip re-enrichment.
     chunk_reenrichment_queued = False
     if chunk_id:
         gap_candidate_name = user.candidate_name
@@ -1480,7 +1493,7 @@ def submit_gap_answer(
             chunk_id,
             updated_profile,
             user.profile.pronouns if user.profile else None,
-            experience.id,
+            user.id,
             gap_candidate_name,
         )
         chunk_reenrichment_queued = True
@@ -1516,8 +1529,8 @@ def rescore_chunk(
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
+    extracted_profile = sources_to_profile_dict(user.experience_sources)
+    if not extracted_profile:
         raise HTTPException(status_code=422, detail="No experience found")
 
     candidate_name = user.candidate_name
@@ -1529,9 +1542,9 @@ def rescore_chunk(
 
     re_enrich_single_chunk(
         str(chunk.id),
-        experience.extracted_profile or {},
+        extracted_profile,
         user.profile.pronouns if user.profile else None,
-        experience.id,
+        user.id,
         candidate_name,
         force_score=body.force_score,
     )
@@ -1578,8 +1591,7 @@ def get_tailoring_debug_info(
         formatted_profile = tailoring.profile_snapshot
         profile_snapshot_source = "snapshot"
     else:
-        experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-        extracted_profile = (experience.extracted_profile if experience else None) or {}
+        extracted_profile = sources_to_profile_dict(user.experience_sources)
         formatted_profile = format_sourced_profile(
             extracted_profile,
             candidate_name=user.name,
@@ -1779,18 +1791,22 @@ def get_public_tailoring(
     }
 
     if author:
-        exp = db.query(Experience).filter(Experience.user_id == author.id).first()
-        has_resume = bool(exp and exp.storage_key)
+        has_resume = False
         github_repos_with_url = []
-        if exp and exp.github_repo_details and isinstance(exp.github_repo_details, dict):
-            for r in exp.github_repo_details.get("repos") or []:
-                if r.get("url"):
-                    github_repos_with_url.append({"name": r.get("name"), "url": r.get("url")})
+        resume_data: dict = {}
+        for src in author.experience_sources:
+            if src.source_type == "resume":
+                has_resume = bool((src.config or {}).get("storage_key"))
+                resume_data = (src.source_data or {}).get("extracted") or {}
+            elif src.source_type == "github":
+                repo_details = (src.source_data or {}).get("repo_details") or {}
+                for r in repo_details.values():
+                    if r.get("url"):
+                        github_repos_with_url.append({"name": r.get("name"), "url": r.get("url")})
         response["sources"] = {
             "has_resume": has_resume,
             "github_repos": github_repos_with_url,
         }
-        resume_data = (exp.extracted_profile or {}).get("resume") or {} if exp else {}
         response["author_title"] = resume_data.get("title") or None
         response["author_email"] = resume_data.get("email") or None
         response["author_linkedin"] = resume_data.get("linkedin") or None

@@ -69,7 +69,7 @@ def _llm_enrich_repo(
 
 def enrich_github_repos(
     github_username: str,
-    experience_id: uuid.UUID,
+    source_id: uuid.UUID,
     repo_names: list[str] | None = None,
     merge_with_existing: bool = False,
     user_id: str | None = None,
@@ -78,7 +78,7 @@ def enrich_github_repos(
     """
     Background task: fetches authenticated repo data for each of the user's repos,
     runs per-repo LLM enrichment, and stores structured results in
-    experience.github_repo_details.
+    ExperienceSource(github).source_data["repo_details"].
 
     Creates its own DB session — safe to call after the request context closes.
     Silently skips enrichment if GitHub App credentials are not configured.
@@ -96,7 +96,7 @@ def enrich_github_repos(
         return
 
     from app.clients.database import SessionLocal
-    from app.models.database import Experience
+    from app.models.database import ExperienceSource
 
     db = SessionLocal()
     _overall_start = _time.perf_counter()
@@ -104,7 +104,7 @@ def enrich_github_repos(
         with _tracer.start_as_current_span(
             "background_task.experience.github_enrichment",
             attributes={
-                "experience.id": str(experience_id),
+                "experience.source_id": str(source_id),
                 "github.username": github_username,
             },
         ):
@@ -178,58 +178,39 @@ def enrich_github_repos(
                     )
                     errors += 1
 
-            experience = db.query(Experience).filter(Experience.id == experience_id).first()
-            if not experience:
-                logger.error("github_enrichment_experience_not_found")
+            github_source = db.get(ExperienceSource, source_id)
+            if not github_source:
+                logger.error("github_enrichment_source_not_found")
                 return
 
-            if merge_with_existing and experience.github_repo_details:
-                existing_by_name = {
-                    r["name"]: r for r in experience.github_repo_details.get("repos", [])
-                }
-                for r in enriched:
-                    existing_by_name[r["name"]] = r
-                experience.github_repo_details = {
-                    **experience.github_repo_details,
-                    "repos": list(existing_by_name.values()),
-                    "request_count": experience.github_repo_details.get("request_count", 0)
-                    + github.request_count,
-                    "error_count": experience.github_repo_details.get("error_count", 0) + errors,
-                }
-            else:
-                experience.github_repo_details = {
-                    "enriched_at": datetime.now(timezone.utc).isoformat(),
-                    "repos": enriched,
-                    "request_count": github.request_count,
-                    "error_count": errors,
-                }
+            existing_data = github_source.source_data or {}
+            existing_repo_details = existing_data.get("repo_details") or {}
 
-            # Propagate scanned_at back into github_repos so the frontend can display it.
+            if merge_with_existing and existing_repo_details:
+                # Merge enriched repos into existing repo_details dict
+                for r in enriched:
+                    existing_repo_details[r["name"]] = r
+                new_repo_details = existing_repo_details
+            else:
+                new_repo_details = {r["name"]: r for r in enriched}
+
+            # Propagate scanned_at back into the repos list so the frontend can display it.
             enriched_names = {r["name"]: r["scanned_at"] for r in enriched}
-            experience.github_repos = [
+            existing_repos = existing_data.get("repos") or []
+            updated_repos = [
                 {**r, "scanned_at": enriched_names[r["name"]]}
                 if r.get("name") in enriched_names
                 else r
-                for r in (experience.github_repos or [])
+                for r in existing_repos
             ]
 
-            # Merge enriched fields into extracted_profile["github"]["repos"] so the
-            # tailoring generator and requirement matcher see the enriched data.
-            enriched_by_name = {r["name"]: r for r in enriched}
-            existing_profile = experience.extracted_profile or {}
-            github_profile = existing_profile.get("github") or {}
-            merged_repos = []
-            for repo in github_profile.get("repos") or []:
-                name = repo.get("name")
-                if name and name in enriched_by_name:
-                    merged_repos.append({**repo, **enriched_by_name[name]})
-                else:
-                    merged_repos.append(repo)
-            experience.extracted_profile = {
-                **existing_profile,
-                "github": {**github_profile, "repos": merged_repos},
+            github_source.source_data = {
+                **existing_data,
+                "repos": updated_repos,
+                "repo_details": new_repo_details,
             }
-
+            github_source.sync_status = "idle"
+            github_source.last_synced_at = datetime.now(timezone.utc)
             db.commit()
 
             from app.services.experience_chunker import chunk_github_repo
@@ -237,9 +218,9 @@ def enrich_github_repos(
 
             total_chunks = 0
             for repo_data in enriched:
-                total_chunks += chunk_github_repo(db, experience, repo_data["name"])
+                total_chunks += chunk_github_repo(db, github_source, repo_data["name"])
             db.commit()
-            embed_experience_chunks(experience.user_id, db)
+            embed_experience_chunks(github_source.user_id, db)
 
             total_ms = int((_time.perf_counter() - _overall_start) * 1000)
             GITHUB_ENRICHMENT_TOTAL.labels(status="success" if errors == 0 else "partial").inc()

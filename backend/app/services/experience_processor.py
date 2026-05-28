@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import structlog
 
 from app.clients.storage_client import get_storage_client
-from app.models.database import Experience
+from app.models.database import ExperienceSource
 from app.services.profile_extractor import extract_profile
 
 logger = structlog.get_logger(__name__)
@@ -127,11 +127,11 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
         return file_bytes.decode("utf-8", errors="replace")
 
 
-def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str) -> None:
+def process_experience(source_id: uuid.UUID, storage_key: str, filename: str) -> None:
     """
     Background task: download file from storage, extract text, run LLM extraction,
-    persist structured profile to DB. Creates its own DB session since the request
-    session is closed by the time background tasks run.
+    persist structured profile to ExperienceSource. Creates its own DB session since
+    the request session is closed by the time background tasks run.
     """
     import time as _time
 
@@ -140,8 +140,8 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
     _start = _time.perf_counter()
 
     logger.info(
-        "process_experience start: experience_id=%s storage_key=%s filename=%s",
-        experience_id,
+        "process_experience start: source_id=%s storage_key=%s filename=%s",
+        source_id,
         storage_key,
         filename,
     )
@@ -149,15 +149,15 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
 
     db = SessionLocal()
     try:
-        experience = db.get(Experience, experience_id)
-        if not experience:
-            logger.error("Experience %s not found — aborting background task", experience_id)
+        resume_source = db.get(ExperienceSource, source_id)
+        if not resume_source:
+            logger.error("ExperienceSource %s not found — aborting background task", source_id)
             return
 
         try:
-            experience.status = "processing"
+            resume_source.sync_status = "syncing"
             db.commit()
-            logger.debug("Status set to processing for experience %s", experience_id)
+            logger.debug("sync_status set to syncing for source %s", source_id)
 
             logger.debug("Downloading file from blob storage: %s", storage_key)
             file_bytes = get_storage_client().download_bytes(storage_key)
@@ -175,29 +175,32 @@ def process_experience(experience_id: uuid.UUID, storage_key: str, filename: str
 
             profile = extract_profile(normalized)
 
-            # Refresh to pick up any concurrent writes (e.g. GitHub enrichment
-            # data written while the LLM was running) before merging.
-            db.refresh(experience)
-            experience.raw_resume_text = normalized
-            experience.extracted_profile = {
-                **(experience.extracted_profile or {}),
-                "resume": profile,
+            # Refresh to pick up any concurrent writes before merging
+            db.refresh(resume_source)
+            existing_data = resume_source.source_data or {}
+            resume_source.source_data = {
+                **existing_data,
+                "extracted": profile,
+                "raw_text": normalized,
             }
-            experience.status = "ready"
-            experience.processed_at = datetime.now(timezone.utc)
+            resume_source.sync_status = "idle"
+            resume_source.connection_status = "connected"
+            resume_source.last_synced_at = datetime.now(timezone.utc)
+            resume_source.error_message = None
             db.commit()
-            logger.info("process_experience complete: experience_id=%s", experience_id)
+            logger.info("process_experience complete: source_id=%s", source_id)
             EXPERIENCE_PROCESSING_TOTAL.labels(status="success").inc()
             EXPERIENCE_PROCESSING_DURATION_MS.observe(int((_time.perf_counter() - _start) * 1000))
 
         except Exception as e:
-            logger.exception("process_experience failed for experience_id=%s: %s", experience_id, e)
-            experience.status = "error"
-            experience.error_message = _friendly_processing_error(e)
+            logger.exception("process_experience failed for source_id=%s: %s", source_id, e)
+            resume_source.sync_status = "error"
+            resume_source.connection_status = "error"
+            resume_source.error_message = _friendly_processing_error(e)
             db.commit()
             EXPERIENCE_PROCESSING_TOTAL.labels(status="error").inc()
             EXPERIENCE_PROCESSING_DURATION_MS.observe(int((_time.perf_counter() - _start) * 1000))
 
     finally:
         db.close()
-        logger.debug("DB session closed for experience_id=%s", experience_id)
+        logger.debug("DB session closed for source_id=%s", source_id)
