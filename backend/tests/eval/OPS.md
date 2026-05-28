@@ -318,10 +318,13 @@ Every successful tailoring generation writes one row to `tailoring_debug_logs`:
 | Field | Value |
 |-------|-------|
 | `event_type` | `"generation_complete"` |
-| `payload.matching_mode` | `"vector"` or `"llm"` |
-| `payload.embedding_model` | e.g. `"text-embedding-3-small"` |
-| `payload.llm_model` | e.g. `"gpt-5.4-mini"` |
-| `payload.generation_duration_ms` | wall-clock ms for the full pipeline |
+| `payload->>'matching_mode'` | `"vector"` or `"llm"` |
+| `payload->>'llm_model'` | e.g. `"gpt-5.4-mini"` |
+| `payload->>'total_duration_ms'` | wall-clock ms for the full pipeline |
+| `payload->>'batch_count'` | number of chunk-matching batches dispatched |
+| `payload->>'batch_errors'` | number of batches that errored (0 = clean run) |
+
+`embedding_model` is not written to debug logs — check `cache/scores.json` for the eval baseline model.
 
 The write is non-fatal — a failure logs a warning and does not affect the tailoring.
 
@@ -334,13 +337,29 @@ WHERE event_type = 'generation_complete'
   AND created_at > NOW() - INTERVAL '7 days'
 GROUP BY mode;
 
--- Average generation duration by mode
+-- Average generation duration + batch stats by mode (last 30 days)
 SELECT
   payload->>'matching_mode' AS mode,
-  AVG((payload->>'generation_duration_ms')::int) AS avg_ms
+  AVG((payload->>'total_duration_ms')::int) AS avg_ms,
+  AVG((payload->>'batch_count')::int) AS avg_batches,
+  SUM((payload->>'batch_errors')::int) AS total_errors
 FROM tailoring_debug_logs
 WHERE event_type = 'generation_complete'
+  AND created_at >= now() - interval '30 days'
 GROUP BY mode;
+
+-- Tailorings with unusual batch errors (potential matcher struggle — good fixture candidates)
+SELECT
+  tailoring_id,
+  user_id,
+  payload->>'total_duration_ms' AS duration_ms,
+  payload->>'batch_count' AS batch_count,
+  payload->>'batch_errors' AS batch_errors
+FROM tailoring_debug_logs
+WHERE event_type = 'generation_complete'
+  AND (payload->>'batch_errors')::int > 0
+  AND created_at >= now() - interval '30 days'
+ORDER BY (payload->>'batch_errors')::int DESC;
 ```
 
 **Planned next:** admin "Matching Quality" card in the dashboard that surfaces mode

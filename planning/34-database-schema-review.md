@@ -353,20 +353,28 @@
 
 ## `tailoring_debug_logs`
 
-**Purpose:** Schema scaffold for per-generation telemetry. Currently populated with basic events (`generation_started`, `phase_complete`, `generation_complete`, `generation_error`, `phase_error`).
+**Purpose:** Per-generation telemetry. Populated at ~12 call sites inside `_finalize_tailoring` in `tailorings.py` via `_write_debug_log()`.
 
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | |
 | `tailoring_id` | UUID FK → tailorings | no | CASCADE delete |
+| `user_id` | UUID FK → users | yes | SET NULL on user delete; backfilled from tailoring at write time |
 | `event_type` | varchar(50) | no | |
-| `payload` | JSONB | yes | Arbitrary event data |
+| `payload` | JSONB | no | Arbitrary event data; JSONB for operator support |
 | `created_at` | timestamptz | no | |
 
-**Questions / candidates for change:**
-- No `user_id` — only reachable via `tailoring_id`. For analytics queries spanning users, a `user_id` denorm would save a join.
-- No cleanup / TTL — same concern as `llm_usage_logs`.
-- `event_type` values are not enforced at the DB level (no CHECK constraint or enum). A mistake in a caller would silently write a garbage type.
+**Index:** `ix_tailoring_debug_logs_event_time` on `(event_type, created_at)` — covers eval-mining queries (`WHERE event_type = 'generation_complete' AND created_at >= ...`).
+
+**Retention:** 90 days. Amortized cleanup in `_cleanup_old_debug_logs()`, called at the end of every successful `_finalize_tailoring` run.
+
+**`generation_complete` payload keys:**
+- `total_duration_ms` — wall-clock ms for the full pipeline
+- `phase_durations` — per-phase breakdown dict
+- `matching_mode` — `"vector"` or `"llm"`
+- `llm_model` — model used for letter generation
+- `batch_count` — number of chunk-matching batches dispatched (from `generation_telemetry`)
+- `batch_errors` — number of errored batches (from `generation_telemetry`; 0 = clean run)
 
 ---
 
@@ -400,7 +408,7 @@ Every ownership check is a single-hop `WHERE user_id = ?`.
 | `tailorings` | CASCADE (added migration `a4b5c6d7e8f9`) | — |
 | `job_chunks` | — | jobs CASCADE |
 | `llm_usage_logs` | CASCADE | — |
-| `tailoring_debug_logs` | — | tailorings CASCADE |
+| `tailoring_debug_logs` | user_id SET NULL | tailorings CASCADE |
 
 > Note: `tailorings` now cascade-deletes on user delete (migration `a4b5c6d7e8f9`). `jobs` does not — `DELETE /users/me` handles jobs explicitly in application code. `jobs.user_id` is non-nullable as of the same migration.
 

@@ -190,7 +190,9 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
     return html, job_markdown, valid, reason or ""
 
 
-def _write_debug_log(tailoring_id, event_type: str, payload: dict) -> None:
+def _write_debug_log(
+    tailoring_id, event_type: str, payload: dict, *, user_id: uuid.UUID | None = None
+) -> None:
     """
     Write a single TailoringDebugLog row using its own DB session.
     Non-fatal: logs a warning on failure and never raises.
@@ -202,15 +204,29 @@ def _write_debug_log(tailoring_id, event_type: str, payload: dict) -> None:
             db.add(
                 TailoringDebugLog(
                     tailoring_id=tailoring_id,
+                    user_id=user_id,
                     event_type=event_type,
                     payload=payload,
                 )
             )
             db.commit()
     except Exception:
-        logger.warning(
+        logger.exception(
             "debug_log_write_failed", tailoring_id=str(tailoring_id), event_type=event_type
         )
+
+
+def _cleanup_old_debug_logs() -> None:
+    """Delete tailoring_debug_logs rows older than 90 days. Non-fatal."""
+    from app.clients.database import SessionLocal
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    try:
+        with SessionLocal() as db:
+            db.query(TailoringDebugLog).filter(TailoringDebugLog.created_at < cutoff).delete()
+            db.commit()
+    except Exception:
+        logger.warning("cleanup_debug_logs_failed")
 
 
 def _finalize_tailoring(
@@ -313,6 +329,7 @@ def _finalize_tailoring(
                         "llm_model": settings.llm_model,
                         "is_manual": is_manual,
                     },
+                    user_id=user_id,
                 )
 
                 if is_manual:
@@ -331,6 +348,7 @@ def _finalize_tailoring(
                                 "phase": "extract_job",
                                 "error_message": "Job extraction failed",
                             },
+                            user_id=user_id,
                         )
                         tailoring.generation_status = "error"
                         tailoring.generation_stage = None
@@ -360,6 +378,7 @@ def _finalize_tailoring(
                         "phase": "extract_job",
                         "duration_ms": phase_durations["extract_job"],
                     },
+                    user_id=user_id,
                 )
                 logger.info(
                     "phase_complete",
@@ -379,6 +398,7 @@ def _finalize_tailoring(
                     "phase": "extract_job",
                     "error_message": "Unexpected error in extraction phase",
                 },
+                user_id=user_id,
             )
             try:
                 tailoring = db.get(Tailoring, tailoring_id)
@@ -427,6 +447,7 @@ def _finalize_tailoring(
                         "duration_ms": phase_durations["enrich_job_chunks"],
                         "error_message": enrich_error,
                     },
+                    user_id=user_id,
                 )
                 # Enrich failure is fatal — abort; do not deliver partial tailorings.
                 db = SessionLocal()
@@ -456,6 +477,7 @@ def _finalize_tailoring(
                         "phase": "enrich_job_chunks",
                         "duration_ms": phase_durations["enrich_job_chunks"],
                     },
+                    user_id=user_id,
                 )
                 logger.info(
                     "phase_complete",
@@ -534,6 +556,7 @@ def _finalize_tailoring(
                                 "phase": "generate_advocacy_letter",
                                 "error_message": "Advocacy letter generation failed",
                             },
+                            user_id=user_id,
                         )
                         _letter_failed = True
             except Exception:
@@ -557,6 +580,7 @@ def _finalize_tailoring(
                     tailoring_id,
                     "phase_error",
                     {"phase": "gap_analysis", "error_message": "Gap analysis failed"},
+                    user_id=user_id,
                 )
                 _gap_failed = True
             finally:
@@ -605,6 +629,7 @@ def _finalize_tailoring(
                     "phase": "generate_advocacy_letter",
                     "error_message": "Unexpected error in letter generation phase",
                 },
+                user_id=user_id,
             )
             db = SessionLocal()
             try:
@@ -635,6 +660,7 @@ def _finalize_tailoring(
                     "phase": "gap_analysis",
                     "error_message": "Gap analysis failed or timed out",
                 },
+                user_id=user_id,
             )
             db = SessionLocal()
             try:
@@ -661,6 +687,7 @@ def _finalize_tailoring(
             tailoring_id,
             "phase_complete",
             {"phase": "generate_advocacy_letter", "duration_ms": _letter_duration_ms},
+            user_id=user_id,
         )
         logger.info(
             "phase_complete",
@@ -671,6 +698,7 @@ def _finalize_tailoring(
             tailoring_id,
             "phase_complete",
             {"phase": "gap_analysis", "duration_ms": _gap_duration_ms},
+            user_id=user_id,
         )
         logger.info(
             "phase_complete",
@@ -680,6 +708,7 @@ def _finalize_tailoring(
 
         # Write letter results and set generation_status = "ready".
         # This fires only after BOTH letter and gap analysis have completed.
+        _captured_telemetry: dict = {}
         db = SessionLocal()
         try:
             tailoring = db.get(Tailoring, tailoring_id)
@@ -705,6 +734,9 @@ def _finalize_tailoring(
             tailoring.generation_telemetry = {**(tailoring.generation_telemetry or {}), **telemetry}
             db.commit()
             _generation_success = True
+            # Capture final telemetry (includes chunk_matcher's batch_count/batch_errors)
+            # before the session closes so we can include it in the generation_complete log.
+            _captured_telemetry = tailoring.generation_telemetry or {}
         except Exception:
             logger.exception("phase_error", phase="write_letter_results")
             _write_debug_log(
@@ -714,6 +746,7 @@ def _finalize_tailoring(
                     "phase": "write_letter_results",
                     "error_message": "Unexpected error writing letter results",
                 },
+                user_id=user_id,
             )
             try:
                 tailoring = db.get(Tailoring, tailoring_id)
@@ -746,8 +779,12 @@ def _finalize_tailoring(
                 "phase_durations": phase_durations,
                 "matching_mode": settings.matching_mode,
                 "llm_model": settings.llm_model,
+                "batch_count": _captured_telemetry.get("batch_count"),
+                "batch_errors": _captured_telemetry.get("batch_errors"),
             },
+            user_id=user_id,
         )
+        _cleanup_old_debug_logs()
         TAILORING_ACTIVE_GENERATIONS.dec()
         TAILORING_GENERATIONS_TOTAL.labels(
             status="success" if _generation_success else "error",

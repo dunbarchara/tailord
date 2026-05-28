@@ -112,7 +112,8 @@ export function fitAnalysisToText(
   ].join('\n');
 
   const scored = data.chunks.filter(
-    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1 && c.should_render !== false,
+    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1
+      && c.should_render !== false && c.display_ready !== false,
   );
 
   const lines: string[] = [];
@@ -742,7 +743,8 @@ export function AnalysisView({
   );
 
   const scored = localChunks.filter(
-    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1 && c.should_render !== false,
+    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1
+      && c.should_render !== false && c.display_ready !== false,
   );
   const strongCount = scored.filter(c => c.match_score === 2).length;
   const partialCount = scored.filter(c => c.match_score === 1).length;

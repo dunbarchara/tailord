@@ -372,6 +372,11 @@ class TailoringDebugLog(Base):
     validation retry counts. Provides the raw signal the eval pipeline will aggregate.
 
     event_type values: 'generation_complete' | (planned) 'chunk_batch' | 'validation_retry' | 'error'
+
+    user_id: nullable FK (SET NULL on delete) — populated at write time for per-user analytics.
+    payload: JSONB for operator support and GIN indexing.
+    Index: ix_tailoring_debug_logs_event_time on (event_type, created_at) for eval-mining queries.
+    Retention: 90 days (amortized cleanup in _finalize_tailoring).
     """
 
     __tablename__ = "tailoring_debug_logs"
@@ -380,8 +385,11 @@ class TailoringDebugLog(Base):
     tailoring_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tailorings.id", ondelete="CASCADE"), nullable=False
     )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

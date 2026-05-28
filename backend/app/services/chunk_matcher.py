@@ -12,6 +12,7 @@ from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
+from app.services.chunk_display import is_display_ready
 from app.services.chunk_extractor import extract_chunks
 from app.services.profile_formatter import format_sourced_profile
 
@@ -387,10 +388,29 @@ def enrich_job_chunks(
         batch_count = 0
         error_count = 0
 
+        # Pre-classify chunks that won't appear in the Posting view (sectionless metadata,
+        # noise links). is_display_ready() is the single source of truth — if the frontend
+        # won't render it, there is nothing to score against the candidate.
+        _pre_classified: set[int] = set()
+        for chunk in chunks:
+            if chunk.chunk_type == "header":
+                continue
+            if not is_display_ready(chunk):
+                result_map[chunk.position] = ChunkMatchResult(
+                    score=-1,
+                    rationale="Pre-section metadata — not a scorable requirement.",
+                    semantic_type="other",
+                    include_in_scoring=False,
+                    should_render=False,
+                )
+                _pre_classified.add(chunk.position)
+
         if use_vector:
             candidate_header = _build_candidate_header(candidate_name, pronouns)
             k = settings.vector_top_k
-            scoreable = [c for c in chunks if c.chunk_type != "header"]
+            scoreable = [
+                c for c in chunks if c.chunk_type != "header" and c.position not in _pre_classified
+            ]
             batch_count += len(scoreable)
 
             _log_ctx = structlog.contextvars.get_contextvars()
@@ -451,7 +471,7 @@ def enrich_job_chunks(
 
             section_map: OrderedDict[str, list] = OrderedDict()
             for chunk in chunks:
-                if chunk.chunk_type == "header":
+                if chunk.chunk_type == "header" or chunk.position in _pre_classified:
                     continue
                 key = chunk.section or "General"
                 section_map.setdefault(key, []).append(chunk)
