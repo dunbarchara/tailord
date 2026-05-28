@@ -18,6 +18,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.clients.database import Base
+from app.core.crypto import EncryptedJSON
 
 
 class User(Base):
@@ -154,12 +155,11 @@ class UserIntegration(Base):
     One row per (user_id, provider) pair.
 
     provider values: "notion" (current); future: "github" (per-user OAuth), "jira"
-    credentials: {access_token, refresh_token?, expires_at?} — never exposed in API responses
+    credentials: {access_token, refresh_token?, expires_at?} — never exposed in API responses.
+                 Encrypted at rest via EncryptedJSON (Fernet). Set FIELD_ENCRYPTION_KEY in env.
     provider_metadata: provider-specific non-secret data
       notion: {bot_id, workspace_id, workspace_name, parent_page_id}
       github (future): {installation_id, login}
-
-    Security TODO: credentials should be encrypted at rest.
     """
 
     __tablename__ = "user_integrations"
@@ -172,7 +172,7 @@ class UserIntegration(Base):
         index=True,
     )
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
-    credentials: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    credentials: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
     # Named provider_metadata in Python to avoid shadowing SQLAlchemy's Base.metadata
     provider_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True, name="metadata")
     connected_at: Mapped[datetime] = mapped_column(

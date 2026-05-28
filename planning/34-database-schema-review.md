@@ -13,7 +13,7 @@
 | `auth_identities` | 1+ per user | Identity | Provider-neutral OAuth subjects; replaces `users.google_sub` |
 | `user_profiles` | 1 per user | Identity | Display prefs + public profile; replaces inline fields on `users` |
 | `user_integrations` | 0–N per user | Identity | Per-user OAuth tokens (Notion now; GitHub future) |
-| `experiences` | 1 per user | Ingestion | Pipeline state + raw source data |
+| `experience_sources` | 1+ per user | Ingestion | One row per (user_id, source_type); replaces monolithic `experiences` table |
 | `experience_groups` | many per user | Claims | Parent containers for grouped claims |
 | `experience_claims` | many per user | Claims | Atomic experience units; embedded |
 | `jobs` | many per user | Tailoring | One per tailoring creation |
@@ -43,7 +43,7 @@
 - → `auth_identities` (1:many, cascade delete; selectin-loaded)
 - → `user_profiles` (1:1, cascade delete; selectin-loaded)
 - → `user_integrations` (1:many, cascade delete; selectin-loaded)
-- → `experiences` (1:1)
+- → `experience_sources` (1:many, cascade delete; selectin-loaded)
 - → `jobs` (1:many)
 - → `tailorings` (1:many)
 - → `experience_claims` (1:many, cascade delete)
@@ -102,48 +102,48 @@
 | `id` | UUID PK | no | |
 | `user_id` | UUID FK → users | no | CASCADE delete; indexed |
 | `provider` | varchar(50) | no | `notion` now; future: `github`, `jira` |
-| `credentials` | JSONB | yes | `{access_token, refresh_token?, expires_at?}` — **never exposed in API responses** |
+| `credentials` | Text | yes | `{access_token, refresh_token?, expires_at?}` — **never exposed in API responses**; encrypted at rest via `EncryptedJSON` (Fernet, `backend/app/core/crypto.py`); set `FIELD_ENCRYPTION_KEY` in env |
 | `metadata` | JSONB | yes | Provider-specific non-secret data. Notion: `{bot_id, workspace_id, workspace_name, parent_page_id}` |
 | `connected_at` | timestamptz | no | |
 | `updated_at` | timestamptz | no | |
 
 **Constraints:** UNIQUE `(user_id, provider)`
 
-**Security TODO:** `credentials` should be encrypted at rest. Currently stored plaintext in JSONB.
+**Encryption:** `credentials` encrypted at rest via `EncryptedJSON` TypeDecorator (Fernet, migration `c5d6e7f8a9b0`). Column type changed JSONB → Text. Set `FIELD_ENCRYPTION_KEY` env var; unset = plaintext with warning (local dev only). Legacy plaintext rows read transparently during migration period.
 
 ---
 
-## `experiences`
+## `experience_sources`
 
-**Purpose:** Ingestion pipeline state and raw source data. One row per user, created on first upload or GitHub connect.
+**Purpose:** Ingestion pipeline state and raw source data. One row per `(user_id, source_type)` pair. Replaces the monolithic `experiences` table (dropped in migration `b4d5e6f7a8b9`). Each source tracks its own connection and sync state independently. Profile data is assembled on demand via `sources_to_profile_dict()` in `profile_formatter.py`.
 
-> Not "an experience" in the product sense. It is the **data ingestion record** — what sources the user has connected, what pipeline state those are in, and what LLM-extracted output came out before normalization into claims. A future rename to `profile_records` is under consideration (see planning/32-experience-claim-schema.md deferred section).
+> Not "an experience" in the product sense. Each row is a **data ingestion surface** — a specific source the user has connected (resume, GitHub, etc.), its pipeline state, and the LLM-extracted output for that surface before normalization into claims.
 
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | |
-| `user_id` | UUID FK → users UNIQUE | no | 1:1 enforced at DB level |
-| `storage_key` | varchar | yes | Blob storage key for uploaded file; null if no file |
-| `filename` | varchar | yes | Original filename for display |
-| `status` | varchar | no | `pending` \| `processing` \| `ready` \| `error` |
-| `extracted_profile` | JSONB | yes | LLM extraction output keyed by source: `{ "resume": {...}, "github": {...} }` |
-| `raw_resume_text` | text | yes | Normalized text extracted from the uploaded file |
+| `user_id` | UUID FK → users | no | CASCADE delete; indexed |
+| `source_type` | varchar(30) | no | `resume` \| `github`; future: `linear`, `messenger`, etc. |
+| `connection_status` | varchar(20) | no | `connected` \| `disconnected` \| `error`; default `connected` |
+| `sync_status` | varchar(20) | no | `idle` \| `syncing` \| `error`; default `idle` |
+| `last_synced_at` | timestamptz | yes | Set when a sync/process completes |
+| `last_requested_at` | timestamptz | yes | Cooldown anchor (was `last_process_requested_at` on `experiences`) |
 | `error_message` | varchar | yes | Human-readable error for UI display |
-| `github_username` | varchar | yes | Connected GitHub username |
-| `github_repos` | JSONB | yes | `[{ name, description, language, star_count, pushed_at, scanned_at }]` |
-| `github_repo_details` | JSONB | yes | Enriched per-repo LLM output (README summary, detected stack, experience claims). Large. |
-| `user_input_text` | text | yes | Plain-text blob of user's direct input |
-| `uploaded_at` | timestamptz | yes | Set when file upload completes |
-| `processed_at` | timestamptz | yes | Set when processing pipeline completes |
-| `last_process_requested_at` | timestamptz | yes | Set at request time — used for cooldown check |
+| `config` | JSONB | yes | Surface connection config (non-secret). Resume: `{storage_key, filename}`. GitHub: `{username}` |
+| `source_data` | JSONB | yes | Pipeline artifacts + extracted content. Resume: `{extracted, raw_text, corrections}`. GitHub: `{extracted, repos, repo_details}` |
+| `created_at` | timestamptz | no | |
+| `updated_at` | timestamptz | no | Set on any mutation |
 
-**Relationships out:** none (claims and groups now point to `users` directly)
+**Constraints:** UNIQUE `(user_id, source_type)`
+
+**Relationships out:** none (claims and groups point to `users` directly)
+
+**Profile assembly:** `sources_to_profile_dict(user.experience_sources)` iterates rows and assembles the legacy `{resume, github, corrections}` dict used by `format_sourced_profile()` and all LLM call sites. Callers do not need to know which row holds which data.
 
 **Questions / candidates for change:**
-- `user_input_text` — currently a plain text blob stored here for historical reference. The actual claims derived from it live in `experience_claims` with `source_type="user_input"`. These two are not kept in sync — `user_input_text` is never updated after claims are created. Consider: should it be dropped? Or kept as the raw input log?
-- `extracted_profile` JSONB — this is a pipeline artifact (LLM extraction output). It duplicates data that has been normalized into claims. Long-term, if claims become the authoritative source, this could be deprecated. Not ready yet — the tailoring generator still reads from it.
-- `github_repo_details` — potentially large JSONB (per-repo README summaries, stack signals, etc.). Worth monitoring row sizes in production.
-- The "profile record rename" decision: see open option in planning docs.
+- `source_data` is a single JSONB column for all pipeline artifacts. For resume sources this includes `raw_text` (potentially large); for GitHub sources it includes `repo_details` (per-repo README summaries — potentially very large). Worth monitoring row sizes in production.
+- `config.storage_key` for resume sources exposes the blob storage key inline. This is intentional (non-secret) but worth noting.
+- The `corrections` sub-key in `source_data.resume` is a legacy field from user-edited profile overrides. It is not currently written by any pipeline code and may be vestigial.
 
 ---
 
@@ -328,7 +328,7 @@
 
 **Questions / candidates for change:**
 - No cleanup / TTL. This table grows forever. Old rows (>24h) have no query value. A periodic cleanup job or PostgreSQL partitioning by day would keep it lean.
-- `experience_process` events are tracked but not currently rate-limited against (the cooldown is implemented via `last_process_requested_at` on `experiences`, not this table). Decide whether to consolidate or keep both mechanisms.
+- `experience_process` events are tracked but not currently rate-limited against (the cooldown is implemented via `last_requested_at` on `experience_sources`, not this table). Decide whether to consolidate or keep both mechanisms.
 
 ---
 
@@ -358,7 +358,7 @@ All user-scoped tables anchor directly to `users.id`:
 - `auth_identities` → `users.id` (cascade)
 - `user_profiles` → `users.id` (1:1, cascade)
 - `user_integrations` → `users.id` (cascade)
-- `experiences` → `users.id` (unique)
+- `experience_sources` → `users.id` (cascade)
 - `experience_claims` → `users.id`
 - `experience_groups` → `users.id`
 - `jobs` → `users.id`
@@ -374,7 +374,7 @@ Every ownership check is a single-hop `WHERE user_id = ?`.
 | `auth_identities` | CASCADE | — |
 | `user_profiles` | CASCADE | — |
 | `user_integrations` | CASCADE | — |
-| `experiences` | CASCADE | — |
+| `experience_sources` | CASCADE | — |
 | `experience_groups` | CASCADE | — |
 | `experience_claims` | CASCADE | group_id SET NULL |
 | `jobs` | — (user_id nullable) | — |
@@ -400,15 +400,36 @@ The following filter patterns are used in hot paths but may not have explicit in
 
 ---
 
+## Post-next-deploy cleanup (do not forget)
+
+These deprecated columns are safe to drop once the next deploy is confirmed stable. They are dead code — no writer creates them and no reader depends on them in the deployed version.
+
+| Column | Table | Migration action |
+|--------|-------|-----------------|
+| `group_key` | `experience_claims` | `DROP COLUMN group_key` — replaced by `group_id → experience_groups` |
+| `experience_source` | `job_chunks` | `DROP COLUMN experience_source` — replaced by `experience_sources JSONB`; verify `_serialize_chunk` in `tailorings.py` no longer reads it first |
+
+Both drops are `NOT NULL`-free so they require no data migration, just the ALTER TABLE. Add them to the same Alembic revision.
+
+---
+
 ## Decisions still open
 
 | Decision | Options | Blocker |
 |----------|---------|---------|
-| Rename `experiences` → `profile_records` | Yes / No | No — cosmetic, can be done any sprint |
-| Drop `group_key` from `experience_claims` | After backfill confirmed | Needs `group_id` population in all writers |
+| Add `position` to `experience_groups` | `integer nullable`, backfill from `created_at` order | Do before drag-and-drop reorder UI ships |
+| Add `provenance_url` + `provenance_label` to `experience_groups` | Mirror claims pattern | Low — do when building groups CRUD API |
+| Add `tags` to `experience_groups` | `JSONB nullable` | Low — add before group-level filtering lands |
+| Add `description` to `experience_groups` | `text nullable` | Low — needed for `custom` group type UX |
+| Change `experience_groups.type_meta` from `JSON` → `JSONB` | Migration + column recast | Needed if we ever query/index inside `type_meta` |
+| Rename `technologies` → `keywords` on `experience_claims` | Column rename migration | Low — do as part of next claims schema touch |
+| Add `pending` to `experience_claims.status` | `pending \| active \| archived` | Before any silent-capture surface ships |
+| Add `merged_from` to `experience_claims` | `JSONB nullable` — array of `{id, source_type, content_snapshot}` | Before dedup pipeline ships |
+| Add `original_content` to `experience_claims` | `text nullable`, set on first user edit | Low — add before experience editor edit-and-revert UX |
+| Collapse `provenance_url` + `provenance_label` + `chunk_metadata` → `provenance_metadata JSONB` | Column consolidation | Low — cosmetic; do if touching claims schema anyway |
+| Make `position` on `experience_claims` scoped to `(user_id, group_id)` | Convention change + potential backfill | Before experience editor reorder UX ships |
 | Make `jobs.user_id` non-nullable | After null-row audit | One query in prod to confirm |
 | Add cleanup for `llm_trigger_log` | Cron job / partition / TTL | No urgency; defer until table size is visible |
-| Drop `experience_source` from `job_chunks` | After frontend audit | Check `_serialize_chunk` in `tailorings.py` |
-| Drop `user_input_text` from `experiences` | After audit of read sites | Low priority; data is redundant with claims |
-| Encrypt `user_integrations.credentials` at rest | AES via pgcrypto / app-level | Security TODO — no urgency until prod users connect Notion |
+| Drop vestigial `corrections` sub-key from `experience_sources.source_data` | After confirming no write sites | Low priority; verify no pipeline code writes it |
+| ~~Encrypt `user_integrations.credentials` at rest~~ | ✅ Done — `EncryptedJSON` Fernet, migration `c5d6e7f8a9b0`, `FIELD_ENCRYPTION_KEY` env var | — |
 | Add `ON DELETE CASCADE` to `tailorings.user_id` FK | Migration to close the gap | Low risk currently — app code handles it explicitly |

@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # ── Generation ────────────────────────────────────────────────────────────
     generation_stale_threshold_minutes: int = 30
 
+    # ── Encryption ────────────────────────────────────────────────────────────
+    # Fernet key for credentials at rest. Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Required in production. Unset = plaintext (warns at runtime; local dev only).
+    field_encryption_key: str | None = None
+
     # ── Notion OAuth ──────────────────────────────────────────────────────────
     notion_client_id: str | None = None
     notion_client_secret: str | None = None

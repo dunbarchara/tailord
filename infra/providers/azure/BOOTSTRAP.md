@@ -209,6 +209,11 @@ az keyvault secret set --vault-name tailord-kv --name staging-database-url \
 # GitHub App private keys (PEM content)
 az keyvault secret set --vault-name tailord-kv --name prod-github-app-private-key    --file /path/to/prod.pem
 az keyvault secret set --vault-name tailord-kv --name staging-github-app-private-key --file /path/to/staging.pem
+
+# Field encryption keys (Fernet — one per environment, never shared between envs)
+# Generate each with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+az keyvault secret set --vault-name tailord-kv --name prod-field-encryption-key    --value "<generated-fernet-key>"
+az keyvault secret set --vault-name tailord-kv --name staging-field-encryption-key --value "<generated-fernet-key>"
 ```
 
 After uploading, the `.pem` files can be deleted — Key Vault is the source of truth.
