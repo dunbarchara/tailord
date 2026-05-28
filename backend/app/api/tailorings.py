@@ -69,6 +69,14 @@ def _get_tailoring_trigger_count(user_id, db: Session) -> int:
     )
 
 
+def _cleanup_old_trigger_logs(db: Session) -> None:
+    """Delete LlmTriggerLog rows older than 30 days. Rate limit window is 1 hour,
+    so anything older has no query value. Amortized on tailoring create/regen."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    db.query(LlmTriggerLog).filter(LlmTriggerLog.created_at < cutoff).delete()
+    db.commit()
+
+
 def _check_tailoring_rate_limit(user_id, db: Session) -> None:
     """Raise 429 if the user has hit the combined create+regen limit in the last hour."""
     count = _get_tailoring_trigger_count(user_id, db)
@@ -127,9 +135,10 @@ def _serialize_chunk(c: JobChunk) -> dict:
         "match_score": c.match_score,
         "match_rationale": c.match_rationale,
         "advocacy_blurb": c.advocacy_blurb,
-        "experience_source": c.experience_source,
         "experience_sources": c.experience_sources or [],
-        "source_label": SOURCE_LABELS.get(c.experience_source) if c.experience_source else None,
+        "source_label": SOURCE_LABELS.get((c.experience_sources or [None])[0])
+        if c.experience_sources
+        else None,
         "should_render": c.should_render,
         "is_requirement": c.is_requirement,
         "display_ready": is_display_ready(c),
@@ -939,6 +948,7 @@ async def create_tailoring(
     _check_tailoring_rate_limit(user.id, db)
     db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_create"))
     db.commit()
+    background_tasks.add_task(_cleanup_old_trigger_logs, db)
     return StreamingResponse(
         _stream_tailoring(body, user, db, background_tasks),
         media_type="text/event-stream",
@@ -966,6 +976,7 @@ async def regenerate_tailoring(
     tailoring.last_regenerated_at = datetime.now(timezone.utc)
     db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_regen"))
     db.commit()
+    background_tasks.add_task(_cleanup_old_trigger_logs, db)
 
     # Reconstruct a request from stored job data.
     # If raw_description is set it's a manual tailoring — skip re-scraping.
@@ -1450,7 +1461,13 @@ def submit_gap_answer(
     gap = gaps[body.gap_index]
     chunk_id: str | None = gap.get("chunk_id")
 
-    # Persist the answer as a gap_response ExperienceClaim
+    # Persist the answer as a gap_response ExperienceClaim.
+    # TODO: pass answer through a claim normalisation LLM step before storing.
+    # Users often phrase gap answers as conversational replies ("Yes, I did X at Y") rather
+    # than claim-speak ("Did X at Y"). A normalisation pass would rewrite all claims into
+    # first-person declarative form ("Led X at Y") — improving embedding quality and LLM
+    # context. This applies to gap_response, partial_response, and user_input source types.
+    # See planning/33-sprint-plan-20260527.md Day 5 notes.
     requirement_label = gap.get("job_requirement", "")[:60]
     answer_entry = f"[Gap answer — {requirement_label}]: {body.answer.strip()}"
     now = datetime.now(timezone.utc)
@@ -1470,8 +1487,8 @@ def submit_gap_answer(
         content=answer_entry,
         group_key=None,
         date_range=None,
-        technologies=None,
-        chunk_metadata={"job_chunk_id": chunk_id, "tailoring_id": tailoring_id}
+        keywords=None,
+        provenance_metadata={"job_chunk_id": chunk_id, "tailoring_id": tailoring_id}
         if chunk_id
         else None,
         position=next_pos,
@@ -1558,10 +1575,9 @@ def rescore_chunk(
         "match_score": chunk.match_score,
         "match_rationale": chunk.match_rationale,
         "advocacy_blurb": chunk.advocacy_blurb,
-        "experience_source": chunk.experience_source,
         "experience_sources": chunk.experience_sources or [],
-        "source_label": SOURCE_LABELS.get(chunk.experience_source)
-        if chunk.experience_source
+        "source_label": SOURCE_LABELS.get((chunk.experience_sources or [None])[0])
+        if chunk.experience_sources
         else None,
         "is_requirement": chunk.is_requirement,
         "should_render": chunk.should_render,

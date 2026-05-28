@@ -144,7 +144,6 @@ function ChunkItem({
           match_score: data.match_score,
           match_rationale: data.match_rationale,
           advocacy_blurb: data.advocacy_blurb,
-          experience_source: data.experience_source,
           experience_sources: data.experience_sources,
           source_label: data.source_label,
           is_requirement: data.is_requirement,
@@ -432,16 +431,14 @@ function ChunkItem({
               {chunk.advocacy_blurb && (
                 <p className="text-xs text-text-secondary leading-relaxed">{chunk.advocacy_blurb}</p>
               )}
-              {chunk.advocacy_blurb && !!(chunk.experience_sources?.length || chunk.experience_source) && chunk.match_score !== 0 && (
+              {chunk.advocacy_blurb && !!chunk.experience_sources?.length && chunk.match_score !== 0 && (
                 <hr className="my-1.5 border-border-strong" />
               )}
-              {!!(chunk.experience_sources?.length || chunk.experience_source) && chunk.match_score !== 0 && (
+              {!!chunk.experience_sources?.length && chunk.match_score !== 0 && (
                 <p className="text-xs text-text-tertiary">
                   Source:{' '}
                   <span className="font-medium text-text-secondary">
-                    {chunk.experience_sources?.length
-                      ? chunk.experience_sources.map(s => SOURCE_LABELS[s] ?? s).join(', ')
-                      : (chunk.source_label ?? chunk.experience_source)}
+                    {chunk.experience_sources.map(s => SOURCE_LABELS[s] ?? s).join(', ')}
                   </span>
                 </p>
               )}
@@ -581,7 +578,6 @@ function SectionBlock({
       match_score: null,
       match_rationale: null,
       advocacy_blurb: null,
-      experience_source: null,
       experience_sources: null,
       source_label: null,
       should_render: true,

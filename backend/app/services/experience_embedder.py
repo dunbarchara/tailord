@@ -24,6 +24,7 @@ All functions are non-fatal: per-chunk failures are logged as warnings and
 skipped. The pipeline continues regardless of embedding errors.
 """
 
+import re
 import time as _time
 import uuid
 
@@ -36,6 +37,27 @@ from app.clients.embedding_client import embed_text
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
+
+# Matches display prefixes added to gap/partial response claims, e.g.:
+#   "[Gap answer — CI/CD pipeline experience]: "
+#   "[Gap answer (partial): something]: "
+# Stripping these before embedding ensures cosine distance reflects the
+# actual answer content, not label noise.
+_CLAIM_PREFIX_RE = re.compile(r"^\[[^\]]+\]:\s*")
+
+
+def _embedding_text(claim) -> str:
+    """Return the text to embed for a claim.
+
+    For gap_response and partial_response claims the stored content includes a
+    display prefix (e.g. '[Gap answer — ...]: ') that adds noise to the embedding
+    and inflates cosine distance vs. job requirements. Strip it so the embedding
+    represents the raw answer.
+    """
+    if claim.source_type in ("gap_response", "partial_response"):
+        stripped = _CLAIM_PREFIX_RE.sub("", claim.content)
+        return stripped if stripped else claim.content
+    return claim.content
 
 
 def embed_experience_chunks(user_id: uuid.UUID, db: Session) -> None:
@@ -66,7 +88,7 @@ def embed_experience_chunks(user_id: uuid.UUID, db: Session) -> None:
     embedded = 0
     for chunk in chunks:
         try:
-            chunk.embedding = embed_text(chunk.content)
+            chunk.embedding = embed_text(_embedding_text(chunk))
             chunk.embedding_model = settings.embedding_model
             embedded += 1
         except Exception:
@@ -158,7 +180,7 @@ def re_embed_chunk(chunk_id: uuid.UUID) -> None:
             logger.warning("re_embed_chunk_not_found", chunk_id=str(chunk_id))
             return
 
-        chunk.embedding = embed_text(chunk.content)
+        chunk.embedding = embed_text(_embedding_text(chunk))
         chunk.embedding_model = settings.embedding_model
         db.commit()
         logger.debug("re_embed_chunk_complete", chunk_id=str(chunk_id))

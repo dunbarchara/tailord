@@ -12,7 +12,7 @@ resume      → walk ExperienceSource.source_data["extracted"]:
               work_experience  → 1 chunk per bullet (claim_type=work_experience, date_range=duration)
               skills.technical → 1 chunk per skill (claim_type=skill)
               skills.soft      → 1 chunk per skill (claim_type=skill)
-              projects         → 1 chunk per project (claim_type=project, technologies=project.technologies)
+              projects         → 1 chunk per project (claim_type=project, keywords=project.technologies)
               education        → 1 chunk per entry (claim_type=education)
               certifications   → 1 chunk per cert (claim_type=other)
 
@@ -72,7 +72,7 @@ def _resume_chunks(profile: dict) -> list[dict]:
                         "content": bullet,
                         "group_key": group_key,
                         "date_range": date_range,
-                        "technologies": None,
+                        "keywords": None,
                     }
                 )
 
@@ -86,7 +86,7 @@ def _resume_chunks(profile: dict) -> list[dict]:
                     "content": skill,
                     "group_key": None,
                     "date_range": None,
-                    "technologies": None,
+                    "keywords": None,
                 }
             )
 
@@ -101,7 +101,7 @@ def _resume_chunks(profile: dict) -> list[dict]:
                     "content": desc,
                     "group_key": name,
                     "date_range": None,
-                    "technologies": techs if techs else None,
+                    "keywords": techs if techs else None,
                 }
             )
 
@@ -118,7 +118,7 @@ def _resume_chunks(profile: dict) -> list[dict]:
                     "content": ", ".join(parts),
                     "group_key": " | ".join(edu_key_parts) or None,
                     "date_range": year or None,
-                    "technologies": None,
+                    "keywords": None,
                 }
             )
 
@@ -131,7 +131,7 @@ def _resume_chunks(profile: dict) -> list[dict]:
                     "content": cert,
                     "group_key": None,
                     "date_range": None,
-                    "technologies": None,
+                    "keywords": None,
                 }
             )
 
@@ -159,7 +159,7 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
                     "content": item,
                     "group_key": repo_name,
                     "date_range": None,
-                    "technologies": None,
+                    "keywords": None,
                 }
             )
 
@@ -172,7 +172,7 @@ def _github_repo_chunks(repo: dict) -> list[dict]:
                     "content": claim,
                     "group_key": repo_name,
                     "date_range": None,
-                    "technologies": None,
+                    "keywords": None,
                 }
             )
 

@@ -917,8 +917,8 @@ def persist_user_input_claims(
             content=text,
             group_key=None,
             date_range=None,
-            technologies=None,
-            chunk_metadata=None,
+            keywords=None,
+            provenance_metadata=None,
             position=next_pos,
             created_at=now,
             updated_at=now,
@@ -957,8 +957,10 @@ def _serialize_exp_claim(c: ExperienceClaim) -> dict:
         "content": c.content,
         "group_key": c.group_key,
         "date_range": c.date_range,
-        "technologies": c.technologies,
-        "chunk_metadata": c.chunk_metadata,
+        "keywords": c.keywords,
+        "provenance_metadata": c.provenance_metadata,
+        "original_content": c.original_content,
+        "status": c.status,
         "position": c.position,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
     }
@@ -1062,11 +1064,19 @@ class ClaimContentUpdate(BaseModel):
     content: str | None = None
     group_key: str | None = None
     date_range: str | None = None
+    status: str | None = None
 
     @model_validator(mode="after")
     def at_least_one(self) -> "ClaimContentUpdate":
-        if self.content is None and self.group_key is None and self.date_range is None:
-            raise ValueError("at least one of content, group_key, or date_range is required")
+        if (
+            self.content is None
+            and self.group_key is None
+            and self.date_range is None
+            and self.status is None
+        ):
+            raise ValueError(
+                "at least one of content, group_key, date_range, or status is required"
+            )
         return self
 
 
@@ -1101,7 +1111,15 @@ def update_experience_claim(
         content = body.content.strip()
         if not content:
             raise HTTPException(status_code=422, detail="Content cannot be empty")
+        if claim.original_content is None:
+            claim.original_content = claim.content
         claim.content = content
+        claim.updated_at = now
+
+    if body.status is not None:
+        if body.status not in ("active", "archived"):
+            raise HTTPException(status_code=422, detail="status must be 'active' or 'archived'")
+        claim.status = body.status
         claim.updated_at = now
 
     if body.group_key is not None or body.date_range is not None:
@@ -1233,7 +1251,8 @@ def create_gap_response(
         (
             c
             for c in existing_gap_chunks
-            if c.chunk_metadata and c.chunk_metadata.get("job_chunk_id") == body.job_chunk_id
+            if c.provenance_metadata
+            and c.provenance_metadata.get("job_chunk_id") == body.job_chunk_id
         ),
         None,
     )
@@ -1251,7 +1270,7 @@ def create_gap_response(
     if gap_chunk is not None:
         gap_chunk.content = answer
         gap_chunk.source_type = source_type
-        gap_chunk.chunk_metadata = metadata
+        gap_chunk.provenance_metadata = metadata
         gap_chunk.updated_at = now
     else:
         max_pos = (
@@ -1268,8 +1287,8 @@ def create_gap_response(
             content=answer,
             group_key=None,
             date_range=None,
-            technologies=None,
-            chunk_metadata=metadata,
+            keywords=None,
+            provenance_metadata=metadata,
             position=next_pos,
             created_at=now,
             updated_at=now,
@@ -1342,7 +1361,7 @@ def create_gap_response(
         "updated_score": updated_chunk.match_score if updated_chunk else None,
         "updated_rationale": updated_chunk.match_rationale if updated_chunk else None,
         "advocacy_blurb": updated_chunk.advocacy_blurb if updated_chunk else None,
-        "experience_source": updated_chunk.experience_source if updated_chunk else None,
+        "experience_sources": updated_chunk.experience_sources if updated_chunk else None,
         "partial_question": partial_question,
         "partial_context": partial_context,
     }

@@ -94,6 +94,7 @@ def _retrieve_top_k_experience_chunks(
         .filter(
             ExperienceClaim.user_id == user_id,
             ExperienceClaim.embedding.isnot(None),
+            ExperienceClaim.status == "active",
         )
         .order_by(ExperienceClaim.embedding.cosine_distance(job_chunk_embedding))
         .limit(k)
@@ -123,7 +124,7 @@ def _build_grouped_context(chunks: list) -> str:
 
     for (group_key, date_range, source_type), group_chunks in groups.items():
         if source_type == "github":
-            techs = group_chunks[0].technologies or []
+            techs = group_chunks[0].keywords or []
             tech_str = f"  ({', '.join(techs)})" if techs else ""
             header = f"GitHub: {group_key}{tech_str}"
         else:
@@ -153,6 +154,45 @@ def _build_grouped_context(chunks: list) -> str:
     return "\n".join(lines).strip()
 
 
+def _append_pinned_claims(
+    top_k: list,
+    job_chunk_id: str,
+    user_id: uuid.UUID,
+    db,
+) -> list:
+    """Append active claims explicitly linked to job_chunk_id via provenance_metadata
+    if they weren't already selected by cosine retrieval.
+
+    Gap/partial response claims are written specifically to answer a requirement —
+    they must always appear in that requirement's scoring context regardless of
+    whether they win a natural cosine slot.
+    """
+    from app.models.database import ExperienceClaim
+
+    pinned = (
+        db.query(ExperienceClaim)
+        .filter(
+            ExperienceClaim.user_id == user_id,
+            ExperienceClaim.status == "active",
+            ExperienceClaim.provenance_metadata["job_chunk_id"].astext == job_chunk_id,
+        )
+        .all()
+    )
+    if not pinned:
+        return top_k
+    existing_ids = {c.id for c in top_k}
+    result = list(top_k)
+    for claim in pinned:
+        if claim.id not in existing_ids:
+            result.append(claim)
+            logger.debug(
+                "pinned_claim_appended",
+                claim_id=str(claim.id),
+                job_chunk_id=job_chunk_id,
+            )
+    return result
+
+
 def _score_chunk_vector(
     chunk_content: str,
     chunk_type: str,
@@ -162,6 +202,7 @@ def _score_chunk_vector(
     k: int,
     force_score: bool = False,
     prompt_name: str | None = None,
+    pinned_job_chunk_id: str | None = None,
 ) -> tuple[ChunkMatchResult, list[float]]:
     """
     Score a single job chunk using vector pre-selection.
@@ -182,6 +223,8 @@ def _score_chunk_vector(
     db = SessionLocal()
     try:
         top_k_chunks = _retrieve_top_k_experience_chunks(job_chunk_embedding, user_id, db, k)
+        if pinned_job_chunk_id:
+            top_k_chunks = _append_pinned_claims(top_k_chunks, pinned_job_chunk_id, user_id, db)
     finally:
         db.close()
 
@@ -586,6 +629,7 @@ def re_enrich_single_chunk(
                 k,
                 force_score=force_score,
                 prompt_name=prompt.PROMPT_NAME_VECTOR_SINGLE,
+                pinned_job_chunk_id=chunk_id,
             )
             # Opportunistically update the chunk's embedding if it was missing
             if chunk.embedding is None and new_embedding is not None:

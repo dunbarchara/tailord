@@ -106,7 +106,7 @@ def test_resume_chunks_projects_with_technologies():
     proj = [c for c in chunks if c["claim_type"] == "project"]
     assert len(proj) == 1
     assert proj[0]["content"] == "A web app"
-    assert proj[0]["technologies"] == ["React", "FastAPI"]
+    assert proj[0]["keywords"] == ["React", "FastAPI"]
     assert proj[0]["group_key"] == "MyApp"
 
 

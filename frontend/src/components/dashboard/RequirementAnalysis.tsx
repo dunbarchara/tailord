@@ -30,7 +30,7 @@ const SCORE_LABELS: Record<number, string> = {
 
 function chunkToMarkdown(chunk: JobChunk): string {
   const score = chunk.match_score != null ? (SCORE_LABELS[chunk.match_score] ?? String(chunk.match_score)) : 'Pending';
-  const sources = chunk.experience_sources?.length ? chunk.experience_sources : chunk.experience_source ? [chunk.experience_source] : [];
+  const sources = chunk.experience_sources ?? [];
   const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
   const meta = [
     `[${chunk.chunk_type.toUpperCase()}]`,
@@ -139,7 +139,7 @@ function CopyButton({ getText }: { getText: () => string }) {
 }
 
 function ChunkRow({ chunk }: { chunk: JobChunk }) {
-  const sources = chunk.experience_sources?.length ? chunk.experience_sources : chunk.experience_source ? [chunk.experience_source] : [];
+  const sources = chunk.experience_sources ?? [];
   const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
 
   return (

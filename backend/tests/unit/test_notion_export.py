@@ -88,7 +88,7 @@ def _chunk(**kwargs):
         "section": "Requirements",
         "match_score": 1,
         "advocacy_blurb": None,
-        "experience_source": None,
+        "experience_sources": None,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -150,7 +150,7 @@ def test_advocacy_blurb_in_callout():
         _chunk(
             match_score=2,
             advocacy_blurb="Strong match because of X",
-            experience_source="resume",
+            experience_sources=["resume"],
         )
     ]
     result = chunks_to_notion_markdown(chunks)
@@ -187,6 +187,6 @@ def test_content_links_stripped_in_toggle():
     ],
 )
 def test_source_labels(source, expected_label):
-    chunks = [_chunk(match_score=1, advocacy_blurb="blurb", experience_source=source)]
+    chunks = [_chunk(match_score=1, advocacy_blurb="blurb", experience_sources=[source])]
     result = chunks_to_notion_markdown(chunks)
     assert f"Source: {expected_label}" in result

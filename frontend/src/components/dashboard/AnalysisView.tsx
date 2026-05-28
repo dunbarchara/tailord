@@ -349,7 +349,7 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
 
   const variant = scoreToVariant(chunk.match_score);
   const config = SCORE_CONFIG[variant];
-  const sources = chunk.experience_sources?.length ? chunk.experience_sources : chunk.experience_source ? [chunk.experience_source] : [];
+  const sources = chunk.experience_sources ?? [];
   const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
 
   const hasAdvocacy = !!chunk.advocacy_blurb && variant !== 'gap';
@@ -471,9 +471,9 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                   <CheckCircle2 className="h-3 w-3 shrink-0" />
                   You answered this
                 </p>
-                {(answeredChunk?.chunk_metadata?.question ?? gapQuestion.question) && (
+                {(answeredChunk?.provenance_metadata?.question ?? gapQuestion.question) && (
                   <p className="text-sm text-text-tertiary leading-relaxed italic">
-                    {answeredChunk?.chunk_metadata?.question ?? gapQuestion.question}
+                    {answeredChunk?.provenance_metadata?.question ?? gapQuestion.question}
                   </p>
                 )}
                 <p className="text-sm text-text-secondary leading-relaxed">
@@ -551,9 +551,9 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                   <CheckCircle2 className="h-3 w-3 shrink-0" />
                   You strengthened this
                 </p>
-                {(partialAnsweredChunk?.chunk_metadata?.question ?? partialQuestion.question) && (
+                {(partialAnsweredChunk?.provenance_metadata?.question ?? partialQuestion.question) && (
                   <p className="text-sm text-text-tertiary leading-relaxed italic">
-                    {partialAnsweredChunk?.chunk_metadata?.question ?? partialQuestion.question}
+                    {partialAnsweredChunk?.provenance_metadata?.question ?? partialQuestion.question}
                   </p>
                 )}
                 <p className="text-sm text-text-secondary leading-relaxed">
@@ -764,8 +764,8 @@ export function AnalysisView({
     () =>
       new Map(
         (gapResponses ?? [])
-          .filter(c => c.chunk_metadata?.job_chunk_id)
-          .map(c => [c.chunk_metadata!.job_chunk_id, c]),
+          .filter(c => c.provenance_metadata?.job_chunk_id)
+          .map(c => [c.provenance_metadata!.job_chunk_id, c]),
       ),
     [gapResponses],
   );
@@ -784,8 +784,8 @@ export function AnalysisView({
     () =>
       new Map(
         (partialResponses ?? [])
-          .filter(c => c.chunk_metadata?.job_chunk_id)
-          .map(c => [c.chunk_metadata!.job_chunk_id, c]),
+          .filter(c => c.provenance_metadata?.job_chunk_id)
+          .map(c => [c.provenance_metadata!.job_chunk_id, c]),
       ),
     [partialResponses],
   );

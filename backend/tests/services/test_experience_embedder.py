@@ -16,12 +16,14 @@ def _make_chunk(
     content: str = "Developed TypeScript microservices",
     embedding=None,
     embedding_model: str | None = None,
+    source_type: str = "resume",
 ) -> SimpleNamespace:
     chunk = SimpleNamespace(
         id=uuid.uuid4(),
         content=content,
         embedding=embedding,
         embedding_model=embedding_model,
+        source_type=source_type,
     )
     return chunk
 

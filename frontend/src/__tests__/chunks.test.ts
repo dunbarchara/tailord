@@ -53,7 +53,6 @@ function makeChunk(overrides: Partial<JobChunk> = {}): JobChunk {
     match_score: 1,
     match_rationale: null,
     advocacy_blurb: null,
-    experience_source: null,
     experience_sources: null,
     source_label: null,
     is_requirement: true,

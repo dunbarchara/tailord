@@ -271,7 +271,7 @@ def _exp_chunk(
     date_range=None,
     source_type="resume",
     source_ref=None,
-    technologies=None,
+    keywords=None,
 ):
     return SimpleNamespace(
         content=content,
@@ -279,7 +279,7 @@ def _exp_chunk(
         date_range=date_range,
         source_type=source_type,
         source_ref=source_ref,
-        technologies=technologies,
+        keywords=keywords,
     )
 
 
@@ -301,7 +301,7 @@ def test_build_grouped_context_github_source_type():
             "Full-stack web app",
             group_key="tailord",
             source_type="github",
-            technologies=["Python", "FastAPI"],
+            keywords=["Python", "FastAPI"],
         )
     ]
     result = _build_grouped_context(chunks)
@@ -456,6 +456,9 @@ def test_re_enrich_vector_path_updates_chunk_fields():
 
     mock_db = MagicMock()
     mock_db.get.return_value = mock_chunk
+    # _append_pinned_claims queries for claims linked via provenance_metadata; return empty
+    # so the top-k list from the patched _retrieve_top_k_experience_chunks is unchanged.
+    mock_db.query.return_value.filter.return_value.all.return_value = []
 
     dummy_exp_chunk = _exp_chunk("Built APIs in TypeScript", group_key="ACME | SWE")
     llm_result = ChunkMatchBatch(
@@ -464,7 +467,6 @@ def test_re_enrich_vector_path_updates_chunk_fields():
                 score=2,
                 rationale="Strong match",
                 advocacy_blurb="Expert TypeScript engineer",
-                experience_source="resume",
                 should_render=True,
             )
         ]

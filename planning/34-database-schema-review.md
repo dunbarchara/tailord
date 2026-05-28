@@ -149,7 +149,7 @@
 
 ## `experience_groups`
 
-**Purpose:** Parent containers for related claims. Context only — never embedded.
+**Purpose:** Parent containers for related claims. Context only — never embedded. Migration `f3c4d5e6a7b8` added ordering, provenance, and tag columns.
 
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
@@ -160,9 +160,14 @@
 | `start_date` | varchar(50) | yes | MM/YYYY |
 | `end_date` | varchar(50) | yes | MM/YYYY or null (= present) |
 | `location` | varchar(255) | yes | Relevant for roles and education |
-| `type_meta` | JSONB | yes | Type-specific fields (title, degree, technologies, URL, etc.) |
+| `type_meta` | **JSONB** | yes | Type-specific fields (title, degree, technologies, URL, etc.) — was `JSON`, cast to JSONB in `f3c4d5e6a7b8` |
 | `source_type` | varchar(30) | no | `resume` \| `github` \| `user_input` \| `annotation` |
 | `source_ref` | varchar(255) | yes | Repo name for github; null otherwise |
+| `position` | integer | yes | Ordered display position within user's group list; backfilled from `created_at` order; null for rows predating the migration |
+| `provenance_url` | varchar(500) | yes | Clickable evidence link for the group (e.g. GitHub org URL) |
+| `provenance_label` | varchar(255) | yes | Human-readable label for provenance_url |
+| `tags` | JSONB | yes | Group-level tags propagated to claims during retrieval (e.g. `["fintech", "open_source"]`) |
+| `description` | text | yes | Free-text context for `custom` group type — name alone isn't enough LLM context |
 | `created_at` | timestamptz | no | |
 | `updated_at` | timestamptz | no | |
 
@@ -171,8 +176,8 @@
 
 **Questions / candidates for change:**
 - Groups are currently **write-only by the pipeline** — there is no API to create, update, or delete groups manually. Building a groups CRUD API is deferred.
-- `group_key` on `experience_claims` (the old denormalized string) is still present and will shadow group data until backfill is confirmed. Dropping it is explicitly deferred.
-- No `position` column — groups are ordered by `created_at` / insertion order. If drag-and-drop reordering becomes a feature, a `position` column will be needed.
+- `group_key` on `experience_claims` (the old denormalized string) is still present and will shadow group data until backfill is confirmed. Dropping it is explicitly deferred (Phase 5 of schema cleanup sprint).
+- `position` is nullable; existing rows were backfilled from `created_at` order at migration time.
 
 ---
 
@@ -191,13 +196,13 @@
 | `content` | text | no | | The claim text |
 | `group_key` | varchar(255) | yes | null | **Deprecated** denormalized `"Company \| Title"` string. Drop after `group_id` backfill. |
 | `date_range` | varchar(100) | yes | null | Temporal context for ungrouped claims |
-| `technologies` | JSONB | yes | null | `["React", "PostgreSQL"]` |
+| `keywords` | JSON | yes | null | `["React", "PostgreSQL"]` — formerly `technologies`, renamed in `e2b3c4d5f6a7` for industry neutrality |
 | `confidence` | varchar(20) | no | `medium` | `high` \| `medium` \| `low` |
-| `status` | varchar(20) | no | `active` | `active` \| `archived` |
-| `provenance_url` | varchar(500) | yes | null | Clickable evidence link |
-| `provenance_label` | varchar(255) | yes | null | Human-readable label for URL |
-| `tags` | JSONB | yes | null | `["performance", "team-leadership"]` — no fixed taxonomy |
-| `chunk_metadata` | JSONB | yes | null | Gap/partial/annotation provenance |
+| `status` | varchar(20) | no | `active` | `pending` \| `active` \| `archived` — `pending` reserved for silent-capture pipeline |
+| `tags` | JSON | yes | null | `["performance", "team-leadership"]` — no fixed taxonomy |
+| `provenance_metadata` | JSONB | yes | null | Consolidated provenance. Replaces `chunk_metadata` + `provenance_url` + `provenance_label` (migration `e2b3c4d5f6a7`). Gap/partial: `{question, job_chunk_id, tailoring_id}`; annotation (future): `{parent_claim_id}` |
+| `original_content` | text | yes | null | Set on first user edit; null = never edited. Enables revert to extracted content. |
+| `merged_from` | JSONB | yes | null | Set by dedup pipeline: `[{id, source_type, content_snapshot}]`. Null for normal claims. |
 | `position` | integer | no | | Sort order; unique within (user_id, source_type) by convention |
 | `embedding` | vector(1536) | yes | null | pgvector; null until embed run; not in API responses |
 | `embedding_model` | varchar(100) | yes | null | Model name used for current embedding |
@@ -205,12 +210,12 @@
 | `updated_at` | timestamptz | no | | |
 
 **Questions / candidates for change:**
-- `group_key` — actively deprecated. Drop once group_id backfill is confirmed across all environments.
+- `group_key` — actively deprecated. Drop once group_id backfill is confirmed across all environments. Tracked as Phase 5 of schema cleanup sprint.
 - `position` is a global int across all source types. Insertion appends to `MAX(position) + 1` per user. This works but has a gap risk (deletes leave holes). For rendering purposes, order by position is always relative, so holes are fine.
-- `status: "archived"` — implemented in schema but the soft-delete flow is not yet wired in the API or UI. Currently claims are always hard-deleted.
+- `status: "archived"` — API PATCH now accepts `status` updates (`active` | `archived`). `pending` status is reserved for pipeline use only. Hard-delete still the primary delete path.
 - `tags` — no validation, no taxonomy. Intentionally flexible. If search/filter on tags becomes a feature, a separate `claim_tags` table with a FK would be more queryable.
-- `chunk_metadata` naming is legacy (from "chunk" era). Functionally correct; rename is cosmetic only.
 - `source_type="annotation"` — in schema docstring and lifecycle table but not yet created by any pipeline code.
+- `chunk_matcher.py` retrieval uses `status == "active"` allowlist — excludes both `pending` (silent-capture, unreviewed) and `archived` (user-dismissed) claims from LLM context.
 
 ---
 
@@ -221,7 +226,7 @@
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | |
-| `user_id` | UUID FK → users | yes | Nullable for backwards compat with pre-auth historical rows |
+| `user_id` | UUID FK → users | **no** | Made non-nullable in migration `a4b5c6d7e8f9` — confirmed 0 null rows in production before applying |
 | `job_url` | varchar | yes | Source URL; null for manually entered jobs |
 | `raw_description` | text | yes | Raw description text for manual jobs |
 | `extracted_job` | JSONB | yes | `{ title, company, requirements: [] }` |
@@ -232,7 +237,7 @@
 - → `tailorings` (1:many)
 
 **Questions / candidates for change:**
-- `user_id` is nullable for legacy reasons only. All new rows have a `user_id`. A migration to make it non-nullable + add a NOT NULL constraint is safe once legacy rows are confirmed to be migrated or irrelevant.
+- `user_id` was nullable for legacy reasons. Made non-nullable in migration `a4b5c6d7e8f9`.
 - `raw_description` — stored for manual jobs, but not used after `extracted_job` is populated. Consider whether it has any long-term audit value.
 - `extracted_job` contains `requirements` as a flat list of strings — this was the pre-chunk model. The `job_chunks` table is now authoritative for requirements. The `extracted_job.requirements` list is only used as a fallback if chunk enrichment fails.
 - A `Job` is shared across regenerations of the same tailoring (the `Tailoring` FK points back to the same `Job`). If the URL changes on regen, a new `Job` is created.
@@ -255,8 +260,7 @@
 | `match_score` | integer | yes | `-1` (not scored) \| `0` (no match) \| `1` (partial) \| `2` (strong) |
 | `match_rationale` | text | yes | LLM's scoring rationale |
 | `advocacy_blurb` | text | yes | LLM-generated 1–2 sentence advocacy statement (score ≥ 1 only) |
-| `experience_source` | varchar(50) | yes | **Deprecated.** Single source string. Replaced by `experience_sources`. |
-| `experience_sources` | JSONB | yes | `["resume", "github", "gap_response"]` — multi-source attribution |
+| `experience_sources` | JSONB | yes | `["resume", "github", "gap_response"]` — multi-source attribution. Replaced `experience_source` (dropped in migration `d1a2b3c4e5f6`) |
 | `should_render` | boolean | no | LLM flag: display this requirement in the tailoring? |
 | `is_requirement` | boolean | no | True for `requirement` type; false for headers/paragraphs |
 | `enriched_at` | timestamptz | yes | Set when scoring completes |
@@ -264,7 +268,7 @@
 | `embedding_model` | varchar(100) | yes | |
 
 **Questions / candidates for change:**
-- `experience_source` — deprecated, `experience_sources` is the live column. Remove `experience_source` in a future migration once frontend no longer reads it (check `_serialize_chunk` in `tailorings.py`).
+- `experience_source` — dropped in migration `d1a2b3c4e5f6`. `experience_sources` (array) is the only source attribution column.
 - `scored_content` vs `content` split: `scored_content` was added to snapshot the content at scoring time in case the user edits the chunk. In practice, the UI does not currently allow editing job chunks. This column may be redundant.
 - `match_score = -1` means "not evaluated" — this includes both scoring errors and header/paragraph chunks. Consider a separate `evaluation_status` column to distinguish "skipped by design" from "failed to score."
 
@@ -277,7 +281,7 @@
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | |
-| `user_id` | UUID FK → users | no | |
+| `user_id` | UUID FK → users | no | ON DELETE CASCADE (added migration `a4b5c6d7e8f9`) |
 | `job_id` | UUID FK → jobs | no | |
 | `generated_output` | text | yes | Final markdown letter |
 | `letter_content` | JSONB | yes | Structured letter; null for pre-migration rows |
@@ -327,7 +331,7 @@
 | `created_at` | timestamptz | no | |
 
 **Questions / candidates for change:**
-- No cleanup / TTL. This table grows forever. Old rows (>24h) have no query value. A periodic cleanup job or PostgreSQL partitioning by day would keep it lean.
+- TTL cleanup: rows older than 30 days are deleted as a `BackgroundTasks` call on every tailoring create/regen (amortized). See `_cleanup_old_trigger_logs` in `tailorings.py`.
 - `experience_process` events are tracked but not currently rate-limited against (the cooldown is implemented via `last_requested_at` on `experience_sources`, not this table). Decide whether to consolidate or keep both mechanisms.
 
 ---
@@ -377,16 +381,16 @@ Every ownership check is a single-hop `WHERE user_id = ?`.
 | `experience_sources` | CASCADE | — |
 | `experience_groups` | CASCADE | — |
 | `experience_claims` | CASCADE | group_id SET NULL |
-| `jobs` | — (user_id nullable) | — |
-| `tailorings` | — (user_id not FK-constrained on delete) | — |
+| `jobs` | — (user_id non-nullable; app code deletes jobs before user row) | — |
+| `tailorings` | CASCADE (added migration `a4b5c6d7e8f9`) | — |
 | `job_chunks` | — | jobs CASCADE |
 | `llm_trigger_log` | CASCADE | — |
 | `tailoring_debug_logs` | — | tailorings CASCADE |
 
-> Note: `tailorings` and `jobs` do not cascade-delete when a user is deleted. `DELETE /users/me` handles this explicitly in application code (deletes tailorings, then jobs, then experience, then claims/groups, then integrations/identities, then tombstones the user row). The FK gap on `tailorings` remains — a future migration could add `ON DELETE CASCADE` to close it.
+> Note: `tailorings` now cascade-deletes on user delete (migration `a4b5c6d7e8f9`). `jobs` does not — `DELETE /users/me` handles jobs explicitly in application code. `jobs.user_id` is non-nullable as of the same migration.
 
 ### Nullable FKs
-- `jobs.user_id` — nullable for legacy reasons. Safe to make non-nullable after confirming no null rows in production.
+- `jobs.user_id` — made non-nullable in migration `a4b5c6d7e8f9`.
 - `experience_claims.group_id` — intentionally nullable (ungrouped claims).
 
 ### String-typed enums
@@ -402,34 +406,33 @@ The following filter patterns are used in hot paths but may not have explicit in
 
 ## Post-next-deploy cleanup (do not forget)
 
-These deprecated columns are safe to drop once the next deploy is confirmed stable. They are dead code — no writer creates them and no reader depends on them in the deployed version.
+These deprecated columns are safe to drop once the next deploy is confirmed stable.
 
-| Column | Table | Migration action |
-|--------|-------|-----------------|
-| `group_key` | `experience_claims` | `DROP COLUMN group_key` — replaced by `group_id → experience_groups` |
-| `experience_source` | `job_chunks` | `DROP COLUMN experience_source` — replaced by `experience_sources JSONB`; verify `_serialize_chunk` in `tailorings.py` no longer reads it first |
-
-Both drops are `NOT NULL`-free so they require no data migration, just the ALTER TABLE. Add them to the same Alembic revision.
+| Column | Table | Status |
+|--------|-------|--------|
+| `experience_source` | `job_chunks` | ✅ **Dropped** — migration `d1a2b3c4e5f6` |
+| `group_key` | `experience_claims` | ⏳ Deferred — Phase 5 of schema cleanup sprint. Still the primary grouping mechanism in `chunk_matcher.py`; requires matching pipeline migration first. |
 
 ---
 
 ## Decisions still open
 
-| Decision | Options | Blocker |
-|----------|---------|---------|
-| Add `position` to `experience_groups` | `integer nullable`, backfill from `created_at` order | Do before drag-and-drop reorder UI ships |
-| Add `provenance_url` + `provenance_label` to `experience_groups` | Mirror claims pattern | Low — do when building groups CRUD API |
-| Add `tags` to `experience_groups` | `JSONB nullable` | Low — add before group-level filtering lands |
-| Add `description` to `experience_groups` | `text nullable` | Low — needed for `custom` group type UX |
-| Change `experience_groups.type_meta` from `JSON` → `JSONB` | Migration + column recast | Needed if we ever query/index inside `type_meta` |
-| Rename `technologies` → `keywords` on `experience_claims` | Column rename migration | Low — do as part of next claims schema touch |
-| Add `pending` to `experience_claims.status` | `pending \| active \| archived` | Before any silent-capture surface ships |
-| Add `merged_from` to `experience_claims` | `JSONB nullable` — array of `{id, source_type, content_snapshot}` | Before dedup pipeline ships |
-| Add `original_content` to `experience_claims` | `text nullable`, set on first user edit | Low — add before experience editor edit-and-revert UX |
-| Collapse `provenance_url` + `provenance_label` + `chunk_metadata` → `provenance_metadata JSONB` | Column consolidation | Low — cosmetic; do if touching claims schema anyway |
-| Make `position` on `experience_claims` scoped to `(user_id, group_id)` | Convention change + potential backfill | Before experience editor reorder UX ships |
-| Make `jobs.user_id` non-nullable | After null-row audit | One query in prod to confirm |
-| Add cleanup for `llm_trigger_log` | Cron job / partition / TTL | No urgency; defer until table size is visible |
-| Drop vestigial `corrections` sub-key from `experience_sources.source_data` | After confirming no write sites | Low priority; verify no pipeline code writes it |
-| ~~Encrypt `user_integrations.credentials` at rest~~ | ✅ Done — `EncryptedJSON` Fernet, migration `c5d6e7f8a9b0`, `FIELD_ENCRYPTION_KEY` env var | — |
-| Add `ON DELETE CASCADE` to `tailorings.user_id` FK | Migration to close the gap | Low risk currently — app code handles it explicitly |
+| Decision | Status | Notes |
+|----------|--------|-------|
+| ~~Add `position` to `experience_groups`~~ | ✅ Done — migration `f3c4d5e6a7b8` | Backfilled from `created_at` order |
+| ~~Add `provenance_url` + `provenance_label` to `experience_groups`~~ | ✅ Done — migration `f3c4d5e6a7b8` | |
+| ~~Add `tags` to `experience_groups`~~ | ✅ Done — migration `f3c4d5e6a7b8` | JSONB nullable |
+| ~~Add `description` to `experience_groups`~~ | ✅ Done — migration `f3c4d5e6a7b8` | text nullable |
+| ~~Change `experience_groups.type_meta` from `JSON` → `JSONB`~~ | ✅ Done — migration `f3c4d5e6a7b8` | Lossless cast |
+| ~~Rename `technologies` → `keywords` on `experience_claims`~~ | ✅ Done — migration `e2b3c4d5f6a7` | |
+| ~~Add `pending` to `experience_claims.status`~~ | ✅ Done — schema docstring + API filter updated | `chunk_matcher.py` excludes `pending` claims from retrieval |
+| ~~Add `merged_from` to `experience_claims`~~ | ✅ Done — migration `e2b3c4d5f6a7` | |
+| ~~Add `original_content` to `experience_claims`~~ | ✅ Done — migration `e2b3c4d5f6a7` | Set on first user PATCH of content |
+| ~~Collapse `provenance_url` + `provenance_label` + `chunk_metadata` → `provenance_metadata`~~ | ✅ Done — migration `e2b3c4d5f6a7` | `chunk_metadata` backfilled into `provenance_metadata` |
+| ~~Make `jobs.user_id` non-nullable~~ | ✅ Done — migration `a4b5c6d7e8f9` | |
+| ~~Add cleanup for `llm_trigger_log`~~ | ✅ Done — amortized cleanup in `tailorings.py` | Rows >30d deleted as BackgroundTask on create/regen |
+| ~~Add `ON DELETE CASCADE` to `tailorings.user_id` FK~~ | ✅ Done — migration `a4b5c6d7e8f9` | |
+| ~~Encrypt `user_integrations.credentials` at rest~~ | ✅ Done — migration `c5d6e7f8a9b0` | `EncryptedJSON` Fernet, `FIELD_ENCRYPTION_KEY` env var |
+| Make `position` on `experience_claims` scoped to `(user_id, group_id)` | Open | Before experience editor reorder UX ships; complex backfill |
+| Drop vestigial `corrections` sub-key from `experience_sources.source_data` | Open | Low priority; verify no pipeline code writes it |
+| Drop `group_key` from `experience_claims` | Open — Phase 5 | Requires migrating `chunk_matcher.py` grouping logic to `group_id` first |

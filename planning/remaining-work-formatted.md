@@ -81,6 +81,27 @@
 - `[ ]` Embed-before-re-enrich ordering — gap response endpoint must embed synchronously (not background task) before calling `re_enrich_single_chunk`; otherwise new chunk has no vector and cannot be retrieved in top-K
 - `[ ]` Gap response deduplication signal — after user answers a gap and regenerates, gap question may not reappear (requirement now PARTIAL/STRONG); UI should explain "this requirement was previously a gap but your added experience resolved it" rather than silently disappearing
 
+### Feature 2.6 — GitHub Repo ↔ Work Experience Identity Resolution
+
+**Problem:** A user's resume may have a "Founder @ Tailord" role entry, and GitHub may surface a `tailord` repository. These appear as separate `ExperienceGroup` rows with separate claims. When both are retrieved for a scoring context, the LLM can treat them as independent evidence and generate advocacy statements that mention each separately — doubling the signal artificially, or worse, treating the candidate as having *two* separate Tailord-related experiences rather than one unified body of work.
+
+The inverse problem also exists: sometimes a repo genuinely is a side project distinct from any role (e.g. an open-source library unrelated to any employer), and those should stay separate.
+
+**Target model:** An `ExperienceGroup` of `group_type=role` is the canonical parent container for a body of work. GitHub `group_type=repository` groups can be linked to a parent role group when they represent work done *within* that role. Claims keep their `source_type` (provenance is never erased) but the context builder presents them as a unified block. A repo that has no role parent remains a standalone `project` or `repository` group.
+
+**Resolution approaches (to evaluate — not all need to be built):**
+
+- `[ ]` **Schema: `parent_group_id` on `ExperienceGroup`** — self-referential nullable FK. A `repository` group linked to a `role` group gets `parent_group_id = role_group.id`. Alembic migration. This is the prerequisite for everything below.
+- `[ ]` **Prompt/context-builder fix (quickest win)** — in `_build_grouped_context`, when a `repository` group's name fuzzy-matches a `role` group name for the same user (e.g. Levenshtein distance or embedding similarity on group names), merge their claims into a single context block before sending to the LLM. No schema change required. Catches the most common case (founder with eponymous repo) at zero DB cost. Implement first before investing in the full model.
+- `[ ]` **Auto-linking at ingest time** — when the GitHub chunker creates a `repository` group, run a name-similarity check against the user's existing `role` groups. High-confidence matches (`tailord` repo ≈ `Tailord` employer) auto-set `parent_group_id`; low-confidence matches surface as a suggestion for user confirmation.
+- `[ ]` **User-confirmed linking UI** — on the Experience page, surface unlinked `repository` groups with a "Is this related to a role?" prompt. User selects a role from a dropdown or confirms/dismisses. One-time action per repo; stores `parent_group_id`. Low overhead if auto-linking handles the obvious cases.
+- `[~]` **Full claim deduplication across groups** — merging claims from a repo into a role's claim set (not just presenting them together) is a harder problem. Cross-group dedup would require embedding similarity comparison scoped to `(user_id, group_boundary)` and a merge strategy. Deferred — out of scope until the linking model above is stable.
+
+**Relation to existing work:**
+- `ExperienceGroup.parent_group_id` uses the same `ExperienceGroup` schema foundations added in Phase 3 of the schema cleanup sprint.
+- The `merged_from` JSONB field on `ExperienceClaim` (added in Phase 2) is the right place to record provenance if claims are ever physically merged across groups.
+- Feature 8.3 (GitHub Silent Capture) and Feature 8.4 (Pillars) should be designed with this hierarchy in mind — PR claims from a repo should be linkable to the role the user was in when the PR was merged.
+
 ---
 
 ## Epic 3 — Tailoring & Generation
@@ -164,7 +185,22 @@
 - `[ ]` Observability standards Claude hook — extend `.claude/hooks/post-edit.py` to warn (advisory, non-blocking) when backend edits add: LLM call without OTel span; FastAPI endpoint without `require_api_key` / `get_current_user`; `logging.getLogger` instead of `structlog.get_logger`
 
 ### Feature 5.2 — Testing
-- `[ ]` Backend test coverage to 80%+ — currently ~49%; remaining gap: SSE streaming, background tasks, Notion export, experience endpoints; requires additional mocking strategies
+
+Four levels of test coverage, ordered by cost. Each level catches a distinct class of bug.
+
+**Level 1 — Typed unit fixtures** *(Low cost)*
+- `[ ]` Convert `SimpleNamespace` helpers in `tests/services/` to dataclasses or actual ORM objects. Root cause of the `technologies` → `keywords` miss: `SimpleNamespace` accepts any attribute name silently, so a rename that misses both the fixture and the production code leaves tests green while production breaks. Affects `_exp_chunk()` in `test_chunk_matcher.py` and similar helpers in `test_experience_embedder.py`. Catches: attribute contract bugs. **Highest leverage per hour of work.**
+
+**Level 2 — ORM integration tests** *(Medium cost — needs a test DB in CI)*
+- `[ ]` Add `pytest` fixture that spins up a real Postgres test DB (or SQLite with pgvector stub) via `conftest.py` session setup. Run key ORM operations (insert, query, FK cascade) against the actual schema. Catches: ORM → DB round-trip bugs, migration regressions (e.g. a column rename that the ORM model missed). Prerequisite: CI Postgres service or Docker Compose in GitHub Actions.
+
+**Level 3 — Pipeline integration tests** *(Medium-high cost)*
+- `[ ]` One pytest test that runs `re_enrich_single_chunk` end-to-end with a real DB session containing seeded `ExperienceClaim` rows and a mocked `embed_text`/LLM. Validates the full embed → retrieve → score → persist loop against actual ORM objects. Catches: end-to-end scoring path bugs that unit tests with mocked sessions miss. Prerequisite: Level 2 DB fixture.
+- `[ ]` Backend test coverage to 80%+ — currently ~53%; remaining gap: SSE streaming, background tasks, Notion export, experience endpoints; requires additional mocking strategies
+
+**Level 4 — Live smoke tests** *(High cost — needs deployed env)*
+- `[~]` Post-deploy smoke test suite — after each production deploy, run a small set of authenticated HTTP requests against the live environment: scrape a known job URL, generate a tailoring, verify generation_status reaches `ready`, assert key fields are non-null. Catches: network, auth, full-stack integration, environment config bugs. Deferred until stable deployment cadence and staging environment are in place.
+
 - `[~]` Frontend API route tests with next-test-api-route-handler — routes are thin proxies; revisit if routes gain meaningful logic; deferred
 
 ### Feature 5.4 — Data Protection

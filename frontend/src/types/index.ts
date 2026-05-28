@@ -192,8 +192,7 @@ export interface JobChunk {
   match_score: number | null  // -1=n/a, 0=gap, 1=partial, 2=strong, null=pending
   match_rationale: string | null
   advocacy_blurb: string | null
-  experience_source: 'resume' | 'github' | 'user_input' | null  // legacy, kept for backward compat
-  experience_sources: string[] | null  // new: prefer over experience_source; may be null for old records
+  experience_sources: string[] | null  // prefer over experience_source; may be null for old records
   source_label: string | null
   should_render?: boolean  // undefined = treat as true (pre-enrichment or legacy records)
   is_requirement: boolean     // false = user-marked as noise/excluded from re-scoring
@@ -214,8 +213,10 @@ export interface ExperienceClaim {
   content: string
   group_key: string | null
   date_range: string | null
-  technologies: string[] | null
-  chunk_metadata: Record<string, string> | null
+  keywords: string[] | null
+  provenance_metadata: Record<string, string> | null
+  original_content: string | null
+  status: 'pending' | 'active' | 'archived'
   position: number
   updated_at: string | null
 }

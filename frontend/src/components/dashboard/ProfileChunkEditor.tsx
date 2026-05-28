@@ -814,8 +814,10 @@ function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: Ex
         content,
         group_key: null,
         date_range: null,
-        technologies: null,
-        chunk_metadata: null,
+        keywords: null,
+        provenance_metadata: null,
+        original_content: null,
+        status: 'active' as const,
         position: 9999 + i,
         updated_at: now,
       }));
@@ -1114,7 +1116,7 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
               <ExperienceTable
                 key={chunk.id}
                 chunks={[chunk]}
-                context={(c) => c.chunk_metadata?.question}
+                context={(c) => c.provenance_metadata?.question}
                 onSave={handleSave}
                 onDelete={handleDelete}
                 readOnly={readOnly}
@@ -1132,7 +1134,7 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
               <ExperienceTable
                 key={chunk.id}
                 chunks={[chunk]}
-                context={(c) => c.chunk_metadata?.question}
+                context={(c) => c.provenance_metadata?.question}
                 onSave={handleSave}
                 onDelete={handleDelete}
                 readOnly={readOnly}

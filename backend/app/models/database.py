@@ -250,15 +250,15 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     job_url: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_job: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    user: Mapped["User | None"] = relationship("User", back_populates="jobs")
+    user: Mapped["User"] = relationship("User", back_populates="jobs")
     tailorings: Mapped[list["Tailoring"]] = relationship("Tailoring", back_populates="job")
     chunks: Mapped[list["JobChunk"]] = relationship(
         "JobChunk", back_populates="job", cascade="all, delete-orphan"
@@ -269,7 +269,9 @@ class Tailoring(Base):
     __tablename__ = "tailorings"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
     job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"))
     generated_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Structured letter content — populated alongside generated_output on every generation.
@@ -408,9 +410,17 @@ class ExperienceGroup(Base):
     start_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
     end_date: Mapped[str | None] = mapped_column(String(50), nullable=True)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    type_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    type_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     source_type: Mapped[str] = mapped_column(String(30), nullable=False)
     source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Ordered position within user's group list (ascending). Null = unordered (pre-migration rows).
+    position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provenance_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    provenance_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Group-level tags — propagate context to claims during retrieval (e.g. "fintech", "open_source")
+    tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Free-text description — used by 'custom' group type; name alone isn't enough LLM context
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -445,10 +455,14 @@ class ExperienceClaim(Base):
     confidence:  high   = user directly stated (gap_response, user_input, annotation)
                  medium = LLM-extracted from structure (resume, PR description)
                  low    = inferred by pipeline (GitHub stack detection)
-    status:      active | archived (soft delete)
+    status:      pending | active | archived
 
-    chunk_metadata: null for resume/github/user_input; JSON provenance for gap_response
-                    and annotation — e.g. {question, job_chunk_id, tailoring_id}
+    provenance_metadata: null for resume/github/user_input; JSONB provenance for gap_response
+                         and annotation — e.g. {question, job_chunk_id, tailoring_id}
+
+    original_content: set on first user edit (null = never edited); enables revert.
+    merged_from: [{id, source_type, content_snapshot}] — set when claim is created by
+                 dedup merge pipeline; null for all normal claims.
     """
 
     __tablename__ = "experience_claims"
@@ -473,21 +487,28 @@ class ExperienceClaim(Base):
     # Kept until backfill is verified; will be dropped in a future migration.
     group_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     date_range: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    technologies: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Formerly 'technologies' — renamed to 'keywords' for industry neutrality
+    # (PostgreSQL, Watercolor, GAAP, and Ableton all belong here, not just tech stacks).
+    keywords: Mapped[list | None] = mapped_column(JSON, nullable=True, name="keywords")
     confidence: Mapped[str] = mapped_column(
         String(20), nullable=False, default="medium", server_default="medium"
     )
+    # pending | active | archived  ('pending' = silent-capture pipeline, not shown to user yet)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default="active"
     )
-    provenance_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    provenance_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    # Provenance metadata for gap_response and annotation claims.
-    # gap_response: {question: str, job_chunk_id: str, tailoring_id: str}
-    # annotation:   {parent_claim_id: str}  (future)
+    # Consolidated provenance field. Replaces chunk_metadata (legacy), provenance_url, provenance_label.
+    # gap_response/partial_response: {question: str, job_chunk_id: str, tailoring_id: str}
+    # annotation (future):           {parent_claim_id: str}
+    # With link:                     {..., url: str, label: str}
     # Null for resume, github, user_input.
-    chunk_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    provenance_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Set on first user edit (null = never edited). Enables revert to original extracted content.
+    original_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set by dedup pipeline when this claim is created from merged duplicates.
+    # Shape: [{id: str, source_type: str, content_snapshot: str}, ...]
+    merged_from: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     # Populated by experience_embedder.py after chunking. Null until first embed run.
     # Not exposed in API responses — internal to the matching pipeline.
@@ -518,7 +539,6 @@ class JobChunk(Base):
     match_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     match_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     advocacy_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
-    experience_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     experience_sources: Mapped[list | None] = mapped_column(
         JSON, nullable=True
     )  # list[str]: resume, github, user_input, gap_response, additional_experience
