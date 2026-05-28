@@ -337,7 +337,7 @@ def enrich_job_chunks(
 ) -> None:
     """
     Background task: extract chunks from job markdown, match against candidate profile,
-    and persist JobChunk rows to DB. Sets enrichment_status on related tailorings.
+    and persist JobChunk rows to DB.
 
     Dispatches based on settings.matching_mode:
       - "vector": cosine pre-selection → focused grouped context → one LLM call per chunk.
@@ -347,7 +347,7 @@ def enrich_job_chunks(
     Creates its own DB session — do not pass a session across thread boundaries.
     """
     from app.clients.database import SessionLocal
-    from app.models.database import JobChunk, Tailoring
+    from app.models.database import JobChunk
 
     logger.info("enrich_job_chunks_start", job_id=str(job_id), mode=settings.matching_mode)
 
@@ -370,7 +370,6 @@ def enrich_job_chunks(
         )
         if not chunks:
             logger.info("enrich_no_chunks", job_id=str(job_id))
-            _set_enrichment_status(db, Tailoring, job_id, "complete")
             db.commit()
             return
 
@@ -595,12 +594,19 @@ def enrich_job_chunks(
             )
             db.add(job_chunk)
 
-        db.query(Tailoring).filter(Tailoring.job_id == job_id).update(
-            {
-                "enrichment_status": "complete",
-                "chunk_batch_count": batch_count,
-                "chunk_error_count": error_count,
-            }
+        # Merge batch telemetry into generation_telemetry JSONB (duration_ms / matching_mode
+        # are written by _finalize_tailoring; we only add batch_count and batch_errors here).
+        db.execute(
+            text(
+                """
+                UPDATE tailorings
+                SET generation_telemetry =
+                    COALESCE(generation_telemetry, '{}'::jsonb)
+                    || jsonb_build_object('batch_count', :batch_count, 'batch_errors', :error_count)
+                WHERE job_id = :job_id
+                """
+            ),
+            {"batch_count": batch_count, "error_count": error_count, "job_id": str(job_id)},
         )
         db.commit()
 
@@ -627,12 +633,8 @@ def enrich_job_chunks(
         logger.exception("enrich_job_chunks_failed", job_id=str(job_id))
         try:
             db.rollback()  # required: session is in aborted-txn state after QueryCanceled
-            from app.models.database import Tailoring as _Tailoring
-
-            _set_enrichment_status(db, _Tailoring, job_id, "error")
-            db.commit()
         except Exception:
-            logger.exception("enrich_job_chunks_status_update_failed", job_id=str(job_id))
+            logger.exception("enrich_job_chunks_rollback_failed", job_id=str(job_id))
         raise
     finally:
         db.close()
@@ -762,7 +764,7 @@ def refresh_job_chunks(
     Creates its own DB session — do not pass a session across thread boundaries.
     """
     from app.clients.database import SessionLocal
-    from app.models.database import JobChunk, Tailoring
+    from app.models.database import JobChunk
 
     logger.info(
         "refresh_job_chunks_start",
@@ -780,9 +782,6 @@ def refresh_job_chunks(
 
         if not scoreable:
             logger.info("refresh_job_chunks_no_scoreable", job_id=str(job_id))
-            db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
-                {"enrichment_status": "complete"}
-            )
             db.commit()
             return
 
@@ -957,9 +956,6 @@ def refresh_job_chunks(
             chunk.enriched_at = now
             chunk.scored_content = chunk.content
 
-        db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
-            {"enrichment_status": "complete"}
-        )
         db.commit()
 
         logger.info(
@@ -971,18 +967,5 @@ def refresh_job_chunks(
 
     except Exception:
         logger.exception("refresh_job_chunks_failed", job_id=str(job_id))
-        try:
-            db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
-                {"enrichment_status": "error"}
-            )
-            db.commit()
-        except Exception:
-            logger.exception("refresh_job_chunks_status_update_failed", tailoring_id=tailoring_id)
     finally:
         db.close()
-
-
-def _set_enrichment_status(db, tailoring_model, job_id: uuid.UUID, status: str) -> None:
-    db.query(tailoring_model).filter(tailoring_model.job_id == job_id).update(
-        {"enrichment_status": status}
-    )

@@ -110,6 +110,20 @@ function NotionViewRow({
   );
 }
 
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
+
+function letterContentToText(content: import('@/types').LetterContent): string {
+  const lines: string[] = [];
+  for (const stmt of content.advocacy_statements) {
+    lines.push(stmt.header);
+    lines.push('');
+    lines.push(stmt.body);
+    lines.push('');
+  }
+  if (content.closing) lines.push(content.closing);
+  return lines.join('\n');
+}
+
 /* ─── Main component ────────────────────────────────────────────────────── */
 
 interface TailoringDetailProps {
@@ -131,6 +145,8 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   const [copiedLink, setCopiedLink] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regenSsePhase, setRegenSsePhase] = useState<string | null>(null);
+  const [letterRegening, setLetterRegening] = useState(false);
+  const [letterRegenSsePhase, setLetterRegenSsePhase] = useState<string | null>(null);
   const [, setElapsedTick] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
@@ -164,7 +180,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     // When initialTailoring is provided (demo/readOnly mode), skip the API fetch.
     if (initialTailoring) {
       setTailoring(initialTailoring);
-      if (initialTailoring.gap_analysis_status === 'complete' || initialTailoring.gap_analysis_status === 'error') setGapAnalysisSettled(true);
+      if (initialTailoring.gap_analysis != null) setGapAnalysisSettled(true);
       setLoading(false);
       return;
     }
@@ -184,7 +200,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
           userRes.ok ? userRes.json() : null,
         ]);
         setTailoring(tailoringData);
-        if (tailoringData.gap_analysis_status === 'complete' || tailoringData.gap_analysis_status === 'error') {
+        if (tailoringData.gap_analysis != null) {
           setGapAnalysisSettled(true);
         }
         if (tailoringData.generation_status === 'error') {
@@ -306,8 +322,8 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
       .catch(() => {});
   }, [tailoring?.generation_status, readOnly]);
 
-  // Poll for gap_analysis_status after enrichment completes.
-  // Gap analysis runs after chunk enrichment — we must not reveal the full UI until it finishes.
+  // Poll for gap analysis completion after enrichment completes.
+  // Uses gap_analysis !== null as the settled signal (backend sets it on completion or early exit).
   useEffect(() => {
     if (readOnly) return;
     if (gapAnalysisSettled) return;
@@ -319,18 +335,18 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
       try {
         const res = await fetch(`/api/tailorings/${tailoringId}`);
         if (!res.ok) {
-          setGapAnalysisSettled(true); // don't block forever on error
+          setGapAnalysisSettled(true);
           if (interval) clearInterval(interval);
           return;
         }
         const data = await res.json();
         setTailoring(data);
-        if (data.gap_analysis_status === 'complete' || data.gap_analysis_status === 'error') {
+        if (data.gap_analysis != null || data.generation_status === 'error') {
           setGapAnalysisSettled(true);
           if (interval) clearInterval(interval);
         }
       } catch {
-        setGapAnalysisSettled(true); // don't block forever on network error
+        setGapAnalysisSettled(true);
         if (interval) clearInterval(interval);
       }
     }
@@ -399,6 +415,69 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
       toastError('Could not reach the server.');
       setRegenerating(false);
       setRegenSsePhase(null);
+    }
+  }
+
+  async function handleLetterRegen() {
+    setLetterRegening(true);
+    setLetterRegenSsePhase(null);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}/regenerate-letter`, { method: 'POST' });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        toastError(data?.detail ?? 'Letter regeneration failed.');
+        setLetterRegening(false);
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const boundary = buffer.lastIndexOf('\n\n');
+        if (boundary === -1) continue;
+        const complete = buffer.slice(0, boundary + 2);
+        buffer = buffer.slice(boundary + 2);
+        for (const block of complete.split('\n\n')) {
+          if (!block.trim()) continue;
+          let event: string | null = null;
+          let data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event: ')) event = line.slice(7).trim();
+            else if (line.startsWith('data: ')) data = line.slice(6);
+          }
+          if (!data) continue;
+          if (event === 'stage') {
+            setLetterRegenSsePhase(data);
+          } else if (event === 'ready') {
+            setLetterRegenSsePhase(null);
+            setLetterRegening(false);
+            setGapAnalysisSettled(false);
+            setTailoring(prev => prev ? {
+              ...prev,
+              generated_output: null,
+              letter_content: null,
+              generation_status: 'generating',
+              generation_stage: 'generating',
+              generation_error: null,
+            } : null);
+            router.refresh();
+            return;
+          } else if (event === 'error') {
+            const payload = JSON.parse(data);
+            toastError(payload.detail ?? 'Letter regeneration failed.');
+            setLetterRegening(false);
+            setLetterRegenSsePhase(null);
+            return;
+          }
+        }
+      }
+    } catch {
+      toastError('Could not reach the server.');
+      setLetterRegening(false);
+      setLetterRegenSsePhase(null);
     }
   }
 
@@ -615,6 +694,8 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
     if (!tailoring) return;
     if (activeTab === 'analysis' && chunksData) {
       navigator.clipboard.writeText(fitAnalysisToText(chunksData, tailoring.title, tailoring.company));
+    } else if (tailoring.letter_content) {
+      navigator.clipboard.writeText(letterContentToText(tailoring.letter_content));
     } else if (tailoring.generated_output) {
       navigator.clipboard.writeText(tailoring.generated_output);
     }
@@ -703,7 +784,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   const postingOn = tailoring.posting_public;
   const anyPublic = letterOn || postingOn;
 
-  const canCopy = activeTab === 'letter' && !!tailoring.generated_output;
+  const canCopy = activeTab === 'letter' && (!!tailoring.letter_content || !!tailoring.generated_output);
 
   // In edit mode, show draft data to child components; otherwise show server-fetched data.
   const displayChunksData = (editMode && draftChunks && chunksData)
@@ -1089,10 +1170,30 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
         {!showGenerationView && !generationFailed && (
           <>
             {activeTab === 'letter' && (
-              <AdvocacyLetter
-                tailoring={tailoring}
-                authorName={userName}
-              />
+              <>
+                <AdvocacyLetter
+                  tailoring={tailoring}
+                  authorName={userName}
+                />
+                {!readOnly && tailoring.generation_status === 'ready' && !tailoring.letter_content && tailoring.generated_output && (
+                  <div className="mx-6 mt-4 mb-6 flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-base border border-border-subtle text-sm text-text-primary">
+                    <Info className="h-4 w-4 text-text-tertiary shrink-0" />
+                    <span className="flex-1 text-text-secondary">
+                      This letter was generated with an older version of Tailord.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleLetterRegen}
+                      disabled={letterRegening}
+                      className={textBtnCls}
+                    >
+                      {letterRegening
+                        ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />{letterRegenSsePhase ?? 'Upgrading…'}</>
+                        : 'Upgrade Letter'}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
             {activeTab === 'posting' && (
               <JobPosting
@@ -1108,27 +1209,6 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             )}
             {activeTab === 'analysis' && (
               <>
-                {!readOnly && tailoring.gap_analysis_status === 'error' && (
-                  <div className="mx-6 mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-error-bg border border-error/30 text-sm text-text-primary">
-                    <AlertCircle className="h-4 w-4 text-error shrink-0" />
-                    <span className="flex-1 text-text-secondary">
-                      Gap analysis failed — questions may be missing.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setGapAnalysisSettled(false);
-                        const res = await fetch(`/api/tailorings/${tailoring.id}/retry-gap`, { method: 'POST' });
-                        if (!res.ok) {
-                          setGapAnalysisSettled(true);
-                        }
-                      }}
-                      className={textBtnCls}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                )}
                 <AnalysisView
                   data={displayChunksData}
                   error={effectiveChunksError}

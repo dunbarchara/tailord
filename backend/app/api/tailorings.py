@@ -1,6 +1,7 @@
 import json
 import random
 import re
+import secrets
 import string
 import time
 import uuid
@@ -35,7 +36,7 @@ from app.models.database import (
 )
 from app.schemas.tailoring_schemas import TailoringCreate
 from app.services.chunk_display import SOURCE_LABELS, is_display_ready
-from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk
+from app.services.chunk_matcher import enrich_job_chunks, re_enrich_single_chunk, refresh_job_chunks
 from app.services.gap_analyzer import run_gap_analysis
 from app.services.job_extractor import extract_job
 from app.services.letter_generator import generate_letter
@@ -691,15 +692,15 @@ def _finalize_tailoring(
             now = datetime.now(timezone.utc)
             tailoring.generated_output = generated_output
             tailoring.letter_content = letter_content
-            tailoring.model = settings.llm_model
+            tailoring.models = {"letter": settings.llm_model}
             tailoring.generation_status = "ready"
             tailoring.generation_stage = None
             tailoring.generated_at = now
-            tailoring.enrichment_status = "complete"  # backward compat — enrichment ran inline
-            tailoring.matching_mode = settings.matching_mode
+            telemetry: dict = {"matching_mode": settings.matching_mode}
             if tailoring.generation_started_at:
                 delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
-                tailoring.generation_duration_ms = int(delta_ms)
+                telemetry["duration_ms"] = int(delta_ms)
+            tailoring.generation_telemetry = {**(tailoring.generation_telemetry or {}), **telemetry}
             db.commit()
             _generation_success = True
         except Exception:
@@ -840,8 +841,6 @@ async def _stream_tailoring(
                 tailoring.generation_status = "generating"
                 tailoring.generation_stage = "extracting"
                 tailoring.generation_error = None
-                tailoring.enrichment_status = "pending"
-                tailoring.gap_analysis_status = "pending"
                 db.commit()
                 job_record = db.get(Job, existing_job_id)
             else:
@@ -923,7 +922,7 @@ async def _stream_tailoring(
         )
 
 
-def _generate_slug(company: str | None, title: str | None) -> str:
+def _compute_base_slug(company: str | None, title: str | None) -> str:
     def slugify(s: str) -> str:
         s = s.lower().strip()
         s = re.sub(r"[^\w\s-]", "", s)
@@ -931,8 +930,30 @@ def _generate_slug(company: str | None, title: str | None) -> str:
         return s[:20]
 
     parts = [p for p in [slugify(company or ""), slugify(title or "")] if p]
+    return "-".join(parts)
+
+
+def _generate_slug(
+    company: str | None,
+    title: str | None,
+    db: Session | None = None,
+    user_id: uuid.UUID | None = None,
+) -> str:
+    base = _compute_base_slug(company, title)
     suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
-    return "-".join(parts + [suffix])
+    if db is None or user_id is None:
+        return f"{base}-{suffix}" if base else suffix
+    slug = f"{base}-{suffix}" if base else suffix
+    for _ in range(5):
+        existing = (
+            db.query(Tailoring)
+            .filter(Tailoring.user_id == user_id, Tailoring.public_slug == slug)
+            .first()
+        )
+        if not existing:
+            return slug
+        slug = f"{base}-{secrets.token_urlsafe(4)}"
+    return f"{base}-{secrets.token_urlsafe(6)}"
 
 
 @router.post("/tailorings")
@@ -999,6 +1020,220 @@ async def regenerate_tailoring(
     )
 
 
+def _run_letter_regen(
+    tailoring_id: str,
+    job_id: str,
+    extracted_profile: dict,
+    candidate_name: str,
+    job_url: str | None,
+    pronouns: str | None,
+    user_id: uuid.UUID,
+) -> None:
+    """
+    Background task: re-score chunks (in-place) + re-generate letter + re-run gap analysis.
+    Used by the regenerate-letter endpoint to upgrade old tailorings without a full regen.
+
+    Creates its own DB sessions — do not pass a session across thread boundaries.
+    """
+    from app.clients.database import SessionLocal
+
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(tailoring_id=tailoring_id)
+    logger.info("letter_regen_started", tailoring_id=tailoring_id)
+
+    # Phase 1: re-score chunks in-place
+    db = SessionLocal()
+    try:
+        tailoring = db.get(Tailoring, tailoring_id)
+        if not tailoring:
+            return
+        tailoring.generation_stage = "enriching"
+        db.commit()
+    except Exception:
+        logger.exception("letter_regen_stage_update_failed")
+        return
+    finally:
+        db.close()
+
+    try:
+        refresh_job_chunks(
+            uuid.UUID(job_id),
+            tailoring_id,
+            extracted_profile,
+            pronouns=pronouns,
+            user_id=user_id,
+            candidate_name=candidate_name,
+        )
+    except Exception:
+        logger.exception("letter_regen_refresh_failed", tailoring_id=tailoring_id)
+        db = SessionLocal()
+        try:
+            tailoring = db.get(Tailoring, tailoring_id)
+            if tailoring:
+                tailoring.generation_status = "error"
+                tailoring.generation_stage = None
+                tailoring.generation_error = "Requirement re-scoring failed. Please regenerate."
+                db.commit()
+        except Exception:
+            pass
+        finally:
+            db.close()
+        return
+
+    # Phase 2: build ranked matches + generate letter
+    db = SessionLocal()
+    try:
+        tailoring = db.get(Tailoring, tailoring_id)
+        if not tailoring:
+            return
+        tailoring.generation_stage = "generating"
+        db.commit()
+        job = db.get(Job, job_id)
+        extracted_job = (job.extracted_job or {}) if job else {}
+    except Exception:
+        logger.exception("letter_regen_stage_update_failed")
+        return
+    finally:
+        db.close()
+
+    ranked: list[dict] = []
+    try:
+        with SessionLocal() as _cdb:
+            ranked = build_ranked_matches_from_chunks(uuid.UUID(job_id), _cdb)
+    except Exception:
+        logger.exception("letter_regen_ranked_matches_failed")
+
+    try:
+        generated_output, letter_content = generate_letter(
+            extracted_profile,
+            extracted_job,
+            candidate_name,
+            ranked_matches=ranked,
+            job_url=job_url,
+            pronouns=pronouns,
+        )
+    except Exception:
+        logger.exception("letter_regen_generate_failed", tailoring_id=tailoring_id)
+        db = SessionLocal()
+        try:
+            tailoring = db.get(Tailoring, tailoring_id)
+            if tailoring:
+                tailoring.generation_status = "error"
+                tailoring.generation_stage = None
+                tailoring.generation_error = "Letter generation failed. Please regenerate."
+                db.commit()
+        except Exception:
+            pass
+        finally:
+            db.close()
+        return
+
+    # Phase 3: gap analysis (non-fatal)
+    try:
+        run_gap_analysis(tailoring_id)
+    except Exception:
+        logger.exception("letter_regen_gap_analysis_failed", tailoring_id=tailoring_id)
+
+    # Write results
+    now = datetime.now(timezone.utc)
+    db = SessionLocal()
+    try:
+        tailoring = db.get(Tailoring, tailoring_id)
+        if not tailoring:
+            return
+        tailoring.generated_output = generated_output
+        tailoring.letter_content = letter_content
+        tailoring.models = {"letter": settings.llm_model}
+        tailoring.generation_status = "ready"
+        tailoring.generation_stage = None
+        tailoring.generated_at = now
+        tailoring.profile_snapshot = format_sourced_profile(
+            extracted_profile, candidate_name=candidate_name, pronouns=pronouns
+        )
+        db.commit()
+        logger.info("letter_regen_complete", tailoring_id=tailoring_id)
+    except Exception:
+        logger.exception("letter_regen_write_failed", tailoring_id=tailoring_id)
+        try:
+            tailoring = db.get(Tailoring, tailoring_id)
+            if tailoring:
+                tailoring.generation_status = "error"
+                tailoring.generation_stage = None
+                tailoring.generation_error = "An unexpected error occurred."
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@router.post("/tailorings/{tailoring_id}/regenerate-letter")
+async def regenerate_letter(
+    tailoring_id: str,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Regenerate only the letter (re-score chunks + letter generation + gap analysis),
+    skipping job scraping/extraction. Intended for upgrading old tailorings that have
+    generated_output but no letter_content.
+    """
+    tailoring = (
+        db.query(Tailoring)
+        .filter(Tailoring.id == tailoring_id, Tailoring.user_id == user.id)
+        .first()
+    )
+    if not tailoring:
+        raise HTTPException(status_code=404, detail="Tailoring not found")
+    if tailoring.generation_status == "generating":
+        raise HTTPException(status_code=409, detail="Tailoring is currently being generated.")
+
+    job = tailoring.job
+    if not job or not job.extracted_job:
+        raise HTTPException(
+            status_code=422, detail="Job data not available for letter regeneration."
+        )
+
+    extracted_profile = sources_to_profile_dict(user.experience_sources)
+    if not extracted_profile:
+        raise HTTPException(status_code=422, detail="No experience found.")
+
+    _check_tailoring_rate_limit(user.id, db)
+
+    tailoring.generation_status = "generating"
+    tailoring.generation_stage = "enriching"
+    tailoring.generation_error = None
+    tailoring.last_regenerated_at = datetime.now(timezone.utc)
+    db.add(LlmTriggerLog(user_id=user.id, event_type="tailoring_regen"))
+    db.commit()
+    background_tasks.add_task(_cleanup_old_trigger_logs, db)
+
+    candidate_name = user.candidate_name
+    pronouns = user.profile.pronouns if user.profile else None
+
+    background_tasks.add_task(
+        _run_letter_regen,
+        str(tailoring.id),
+        str(job.id),
+        extracted_profile,
+        candidate_name,
+        job.job_url,
+        pronouns,
+        user.id,
+    )
+
+    async def _sse_ready() -> AsyncGenerator[str, None]:
+        yield _sse("ready", json.dumps({"id": tailoring_id}))
+
+    return StreamingResponse(
+        _sse_ready(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
 @router.delete("/tailorings/{tailoring_id}", status_code=204)
 def delete_tailoring(
     tailoring_id: str,
@@ -1046,14 +1281,13 @@ def retry_gap_analysis(
             status_code=409,
             detail="Gap analysis can only be retried after generation completes.",
         )
-    tailoring.gap_analysis_status = "pending"
+    tailoring.gap_analysis = None  # Reset so frontend polls again
     db.commit()
     background_tasks.add_task(run_gap_analysis, tailoring_id)
     job = tailoring.job
     return {
         "id": str(tailoring.id),
         "generation_status": tailoring.generation_status,
-        "gap_analysis_status": tailoring.gap_analysis_status,
         "title": job.extracted_job.get("title") if job and job.extracted_job else None,
         "company": job.extracted_job.get("company") if job and job.extracted_job else None,
     }
@@ -1097,6 +1331,25 @@ def get_tailoring(
         if src.source_type == "resume" and src.source_data:
             resume_data = src.source_data.get("extracted") or {}
             break
+
+    # Filter stale gap_analysis chunk refs (chunks may have been deleted on regen)
+    if tailoring.gap_analysis and isinstance(tailoring.gap_analysis, dict):
+        valid_chunk_ids = {
+            str(row.id)
+            for row in db.query(JobChunk.id).filter(JobChunk.job_id == tailoring.job_id).all()
+        }
+        ga = tailoring.gap_analysis
+        gap_analysis: dict | list | None = {
+            **ga,
+            "gaps": [g for g in (ga.get("gaps") or []) if g.get("chunk_id") in valid_chunk_ids],
+            "partials": [
+                g for g in (ga.get("partials") or []) if g.get("chunk_id") in valid_chunk_ids
+            ],
+        }
+    else:
+        gap_analysis = tailoring.gap_analysis
+
+    notion = tailoring.notion_export or {}
     return {
         "id": str(tailoring.id),
         "title": job.extracted_job.get("title") if job.extracted_job else None,
@@ -1107,7 +1360,7 @@ def get_tailoring(
         "author_email": resume_data.get("email") or None,
         "author_title": resume_data.get("title") or None,
         "author_linkedin": resume_data.get("linkedin") or None,
-        "model": tailoring.model,
+        "models": tailoring.models,
         "generation_status": tailoring.generation_status,
         "generation_stage": tailoring.generation_stage,
         "generation_error": tailoring.generation_error,
@@ -1123,10 +1376,10 @@ def get_tailoring(
             if tailoring.user and tailoring.user.profile
             else None
         ),
-        "notion_page_url": tailoring.notion_page_url,
-        "notion_posting_page_url": tailoring.notion_posting_page_url,
-        "gap_analysis": tailoring.gap_analysis,
-        "gap_analysis_status": tailoring.gap_analysis_status,
+        "notion_page_url": notion.get("page_url"),
+        "notion_posting_page_url": notion.get("posting_page_url"),
+        "gap_analysis": gap_analysis,
+        "updated_at": tailoring.updated_at.isoformat() if tailoring.updated_at else None,
         "created_at": tailoring.created_at.isoformat(),
     }
 
@@ -1153,8 +1406,10 @@ def get_tailoring_chunks(
         .all()
     )
 
+    # Derive enrichment_status from chunk data (column removed from tailorings table)
+    enrichment_status = "complete" if chunks else "pending"
     return {
-        "enrichment_status": tailoring.enrichment_status,
+        "enrichment_status": enrichment_status,
         "chunks": [_serialize_chunk(c) for c in chunks],
     }
 
@@ -1406,13 +1661,12 @@ def refresh_tailoring_chunks(
 
     candidate_name = user.candidate_name
 
-    tailoring.enrichment_status = "pending"
     db.commit()
 
-    from app.services.chunk_matcher import refresh_job_chunks
+    from app.services.chunk_matcher import refresh_job_chunks as _refresh_job_chunks
 
     background_tasks.add_task(
-        refresh_job_chunks,
+        _refresh_job_chunks,
         tailoring.job_id,
         tailoring_id,
         extracted_profile,
@@ -1631,8 +1885,10 @@ def get_tailoring_debug_info(
         .all()
     )
     scored_chunks = [c for c in chunks if c.chunk_type != "header" and c.match_score is not None]
-    if tailoring.matching_mode is not None:
-        used_vector = tailoring.matching_mode == "vector"
+    _telemetry = tailoring.generation_telemetry or {}
+    _stored_mode = _telemetry.get("matching_mode")
+    if _stored_mode is not None:
+        used_vector = _stored_mode == "vector"
     else:
         # Historical tailoring — infer from rationale prefix (pre-migration data only)
         used_vector = any(
@@ -1677,11 +1933,12 @@ def get_tailoring_debug_info(
     from app.prompts import gap_analysis as gap_prompt
     from app.prompts import job_extraction as prompt_job_extraction
 
+    _debug_telemetry = tailoring.generation_telemetry or {}
     return {
-        "model": tailoring.model or settings.llm_model,
-        "generation_duration_ms": tailoring.generation_duration_ms,
-        "chunk_batch_count": tailoring.chunk_batch_count,
-        "chunk_error_count": tailoring.chunk_error_count,
+        "model": (tailoring.models or {}).get("letter") or settings.llm_model,
+        "generation_duration_ms": _debug_telemetry.get("duration_ms"),
+        "chunk_batch_count": _debug_telemetry.get("batch_count"),
+        "chunk_error_count": _debug_telemetry.get("batch_errors"),
         "formatted_profile": formatted_profile,
         "profile_snapshot_source": profile_snapshot_source,
         "matching_mode": matching_mode,
@@ -1724,7 +1981,7 @@ def share_tailoring(
         job = tailoring.job
         company = job.extracted_job.get("company") if job and job.extracted_job else None
         title = job.extracted_job.get("title") if job and job.extracted_job else None
-        tailoring.public_slug = _generate_slug(company, title)
+        tailoring.public_slug = _generate_slug(company, title, db, user.id)
 
     db.commit()
     db.refresh(tailoring)

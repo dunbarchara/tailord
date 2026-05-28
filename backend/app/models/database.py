@@ -277,11 +277,11 @@ class Tailoring(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
     )
     job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"))
+    # Deprecated: rendered markdown kept for backward compat with pre-letter_content rows.
+    # New generations continue writing this as a derived artifact alongside letter_content.
     generated_output: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Structured letter content — populated alongside generated_output on every generation.
-    # Null for tailorings created before this column was added (fall back to generated_output).
-    letter_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Structured letter content (JSONB). Null for rows created before this column was added.
+    letter_content: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # generation lifecycle: pending | generating | ready | error
     generation_status: Mapped[str] = mapped_column(String, default="ready", server_default="ready")
     generation_stage: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -289,34 +289,17 @@ class Tailoring(Base):
     generation_started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Set when generation completes (status → "ready"). Pairs with generation_started_at
-    # to give wall-clock generation time without log parsing.
+    # Set when generation completes (status → "ready"). Pairs with generation_started_at.
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Set at the API boundary when a regen is triggered — UI "last refreshed" display field.
     last_regenerated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    enrichment_status: Mapped[str] = mapped_column(
-        String, default="pending", server_default="pending"
-    )
-    # Matching mode used during chunk enrichment: "vector" | "llm" | null (pre-migration historical)
-    matching_mode: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Generation telemetry — populated on completion, overwritten on regen
-    generation_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    chunk_batch_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    chunk_error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Profile snapshot — exact formatted_profile string passed to the LLM at generation time.
-    # Populated on generation/regen; null for tailorings created before this column was added.
     profile_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Gap analysis — stored as JSON after generation completes. Null until gap analysis runs
-    # or if gap analysis fails (non-fatal). Contains ProfileGapWithChunk[] with chunk_id refs.
+    # Gap analysis — stored as JSON after generation completes. Null until gap analysis runs.
+    # Set to [] on early exits or errors so frontend polling stops on gap_analysis !== null.
     gap_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    # gap_analysis_status: pending | complete
-    # "complete" is set by run_gap_analysis regardless of success/failure — signals the
-    # frontend that gap analysis has finished and the tailoring is fully ready to display.
-    gap_analysis_status: Mapped[str] = mapped_column(
-        String, default="pending", server_default="pending"
-    )
     letter_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
@@ -324,17 +307,21 @@ class Tailoring(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     public_slug: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_container_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_page_url: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_posting_page_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    notion_posting_page_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Generation telemetry JSONB. Keys: duration_ms, matching_mode, batch_count, batch_errors.
+    generation_telemetry: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Notion export JSONB. Keys: container_page_id, page_id, page_url, posting_page_id, posting_page_url.
+    notion_export: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # LLM models used. Keys: letter (scoring model planned).
+    models: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     @hybrid_property
     def is_public(self) -> bool:
         return self.letter_public or self.posting_public
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "public_slug", name="uq_tailorings_user_public_slug"),

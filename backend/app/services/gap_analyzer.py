@@ -41,21 +41,21 @@ def run_gap_analysis(tailoring_id: str) -> None:
         job = tailoring.job
         if not job:
             logger.info("run_gap_analysis_no_job", tailoring_id=tailoring_id)
-            tailoring.gap_analysis_status = "complete"
+            tailoring.gap_analysis = []
             db.commit()
             return
 
         user = tailoring.user
         if not user or not user.experience_sources:
             logger.info("run_gap_analysis_no_experience", tailoring_id=tailoring_id)
-            tailoring.gap_analysis_status = "complete"
+            tailoring.gap_analysis = []
             db.commit()
             return
 
         extracted_profile = sources_to_profile_dict(user.experience_sources)
         if not extracted_profile:
             logger.info("run_gap_analysis_no_experience", tailoring_id=tailoring_id)
-            tailoring.gap_analysis_status = "complete"
+            tailoring.gap_analysis = []
             db.commit()
             return
 
@@ -86,7 +86,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
                 "run_gap_analysis_no_scored_chunks",
                 tailoring_id=tailoring_id,
             )
-            tailoring.gap_analysis_status = "complete"
+            tailoring.gap_analysis = []
             db.commit()
             return
 
@@ -161,7 +161,6 @@ def run_gap_analysis(tailoring_id: str) -> None:
             unsourced_claim_count=len(gap_chunks),
         )
         tailoring.gap_analysis = gap_analysis.model_dump()
-        tailoring.gap_analysis_status = "complete"
         db.commit()
 
         logger.info(
@@ -178,7 +177,7 @@ def run_gap_analysis(tailoring_id: str) -> None:
         try:
             tailoring = db.get(Tailoring, tailoring_id)
             if tailoring:
-                tailoring.gap_analysis_status = "error"
+                tailoring.gap_analysis = []  # Signal completion so frontend stops polling
                 db.commit()
         except Exception:
             pass

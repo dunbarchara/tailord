@@ -121,7 +121,6 @@ def test_run_gap_analysis_zero_gaps_empty_result():
     assert saved["gaps"] == []
     assert saved["sourced_claim_count"] == 2
     assert saved["unsourced_claim_count"] == 0
-    assert tailoring.gap_analysis_status == "complete"
 
 
 # ---------------------------------------------------------------------------

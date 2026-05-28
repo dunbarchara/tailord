@@ -226,10 +226,11 @@
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | |
-| `user_id` | UUID FK → users | **no** | Made non-nullable in migration `a4b5c6d7e8f9` — confirmed 0 null rows in production before applying |
+| `user_id` | UUID FK → users | **no** | Made non-nullable in migration `a4b5c6d7e8f9` |
 | `job_url` | varchar | yes | Source URL; null for manually entered jobs |
 | `raw_description` | text | yes | Raw description text for manual jobs |
 | `extracted_job` | JSONB | yes | `{ title, company, requirements: [] }` |
+| `source_type` | varchar(20) | no | `url` \| `manual`; default `url`; added migration `c9d0e1f2a3b4` |
 | `created_at` | timestamptz | no | |
 
 **Relationships out:**
@@ -237,10 +238,9 @@
 - → `tailorings` (1:many)
 
 **Questions / candidates for change:**
-- `user_id` was nullable for legacy reasons. Made non-nullable in migration `a4b5c6d7e8f9`.
 - `raw_description` — stored for manual jobs, but not used after `extracted_job` is populated. Consider whether it has any long-term audit value.
-- `extracted_job` contains `requirements` as a flat list of strings — this was the pre-chunk model. The `job_chunks` table is now authoritative for requirements. The `extracted_job.requirements` list is only used as a fallback if chunk enrichment fails.
-- A `Job` is shared across regenerations of the same tailoring (the `Tailoring` FK points back to the same `Job`). If the URL changes on regen, a new `Job` is created.
+- `extracted_job` contains `requirements` as a flat list of strings — the pre-chunk model. `job_chunks` is now authoritative. The `extracted_job.requirements` fallback was only referenced in the now-deleted `requirement_matcher.py` (dead code — never called from active app paths). No runtime fallback exists; chunk enrichment failure surfaces explicitly.
+- A `Job` is shared across regenerations of the same tailoring. If the URL changes on regen, a new `Job` is created.
 
 ---
 
@@ -261,16 +261,21 @@
 | `match_rationale` | text | yes | LLM's scoring rationale |
 | `advocacy_blurb` | text | yes | LLM-generated 1–2 sentence advocacy statement (score ≥ 1 only) |
 | `experience_sources` | JSONB | yes | `["resume", "github", "gap_response"]` — multi-source attribution. Replaced `experience_source` (dropped in migration `d1a2b3c4e5f6`) |
-| `should_render` | boolean | no | LLM flag: display this requirement in the tailoring? |
-| `is_requirement` | boolean | no | True for `requirement` type; false for headers/paragraphs |
+| `should_render` | boolean | no | LLM flag: display this chunk in the tailoring? Overridden by `SEMANTIC_TYPE_RULES` for most types |
+| `include_in_scoring` | boolean | no | Controls whether this chunk participates in scoring runs. Overridden by `SEMANTIC_TYPE_RULES`; mutable (user can force-include a chunk). Renamed from `is_requirement` in migration `c9d0e1f2a3b4` |
+| `semantic_type` | varchar(30) | yes | `job_requirement` \| `role_description` \| `company_description` \| `compensation` \| `location` \| `application_info` \| `legal` \| `other`. Set once at extraction; never updated by refresh. Null for pre-migration rows |
+| `evaluation_status` | varchar(20) | yes | `scored` \| `skipped` \| `error`. `scored` = match_score in {0,1,2}; `skipped` = excluded by design (header, non-scoreable type); `error` = scoring attempted but failed. Null for pre-migration rows. Resolves the `match_score=-1` ambiguity |
 | `enriched_at` | timestamptz | yes | Set when scoring completes |
+| `created_at` | timestamptz | no | Added migration `c9d0e1f2a3b4` |
+| `updated_at` | timestamptz | no | Added migration `c9d0e1f2a3b4` |
 | `embedding` | vector(1536) | yes | pgvector; populated by embed_job_chunks |
 | `embedding_model` | varchar(100) | yes | |
 
 **Questions / candidates for change:**
 - `experience_source` — dropped in migration `d1a2b3c4e5f6`. `experience_sources` (array) is the only source attribution column.
 - `scored_content` vs `content` split: `scored_content` was added to snapshot the content at scoring time in case the user edits the chunk. In practice, the UI does not currently allow editing job chunks. This column may be redundant.
-- `match_score = -1` means "not evaluated" — this includes both scoring errors and header/paragraph chunks. Consider a separate `evaluation_status` column to distinguish "skipped by design" from "failed to score."
+- ~~`match_score = -1` ambiguity~~ — resolved. `evaluation_status` now distinguishes `skipped` (by design: headers, non-scoreable types) from `error` (scoring attempted but failed). `match_score=-1` is still written for skipped/error chunks as the sentinel but `evaluation_status` is authoritative.
+- `semantic_type` is set-once during `enrich_job_chunks` and never updated by `refresh_job_chunks` or `re_enrich_single_chunk`. `SEMANTIC_TYPE_RULES` in `chunk_matcher.py` deterministically overrides `include_in_scoring` and `should_render` for all types except `other` and `company_description.include_in_scoring`.
 
 ---
 
@@ -278,44 +283,40 @@
 
 **Purpose:** AI-generated document mapping a candidate to a specific job. The primary product artifact.
 
+> Schema cleaned up in migration `d0e1f2a3b4c5`: flat telemetry, Notion, and model columns collapsed into JSONB objects; `enrichment_status` and `gap_analysis_status` dropped; `updated_at` added; `letter_content` promoted to JSONB.
+
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
 | `id` | UUID PK | no | |
 | `user_id` | UUID FK → users | no | ON DELETE CASCADE (added migration `a4b5c6d7e8f9`) |
 | `job_id` | UUID FK → jobs | no | |
-| `generated_output` | text | yes | Final markdown letter |
-| `letter_content` | JSONB | yes | Structured letter; null for pre-migration rows |
-| `model` | varchar | yes | LLM model name used |
+| `generated_output` | text | yes | **Deprecated** — rendered markdown kept as fallback for pre-`letter_content` rows and derived artifact on new generations. Drop once all rows have `letter_content`. |
+| `letter_content` | **JSONB** | yes | Structured letter (`AdvocacyStatement[]` + `closing`). Source of truth for new rows. Was `JSON`; promoted to JSONB in `d0e1f2a3b4c5`. |
+| `models` | JSONB | yes | `{ letter: "model-id", scoring: "model-id" }`. Replaced flat `model` varchar (dropped `d0e1f2a3b4c5`). |
 | `generation_status` | varchar | no | `pending` \| `generating` \| `ready` \| `error` |
 | `generation_stage` | varchar | yes | `extracting` \| `enriching` \| `generating` (null when idle) |
 | `generation_error` | text | yes | User-facing error message |
 | `generation_started_at` | timestamptz | yes | |
 | `generated_at` | timestamptz | yes | Set on completion |
 | `last_regenerated_at` | timestamptz | yes | Set on regen trigger |
-| `enrichment_status` | varchar | no | `pending` \| `complete` \| `error` |
-| `matching_mode` | varchar | yes | `vector` \| `llm`; null for pre-migration rows |
-| `generation_duration_ms` | integer | yes | Wall-clock time for generation phase |
-| `chunk_batch_count` | integer | yes | Number of LLM scoring batches |
-| `chunk_error_count` | integer | yes | Number of batches that failed |
-| `profile_snapshot` | text | yes | Exact formatted profile passed to LLM at generation time |
-| `gap_analysis` | JSONB | yes | `ProfileGapWithChunk[]`; null until gap analysis runs |
-| `gap_analysis_status` | varchar | no | `pending` \| `complete` |
+| `generation_telemetry` | JSONB | yes | `{ duration_ms, matching_mode, batch_count, batch_errors }`. Replaced flat `generation_duration_ms`, `chunk_batch_count`, `chunk_error_count`, `matching_mode` (all dropped `d0e1f2a3b4c5`). |
+| `profile_snapshot` | text | yes | Exact formatted profile passed to LLM at generation time. Debug/audit only; not in API responses. |
+| `gap_analysis` | JSONB | yes | `ProfileGapWithChunk[]`. `null` = not yet run; `[]` = ran but no gaps (or early exit/error). Backend always sets this to a non-null value on completion — `!= null` is the frontend polling signal. |
 | `letter_public` | boolean | no | |
 | `posting_public` | boolean | no | |
-| `public_slug` | varchar | yes | UNIQUE per user (`uq_tailorings_user_public_slug`) |
-| `notion_container_page_id` | varchar | yes | |
-| `notion_page_id` | varchar | yes | |
-| `notion_page_url` | varchar | yes | |
-| `notion_posting_page_id` | varchar | yes | |
-| `notion_posting_page_url` | varchar | yes | |
+| `public_slug` | varchar | yes | UNIQUE per user (`uq_tailorings_user_public_slug`). Collision-safe generation via `_generate_slug()` with retry loop. |
+| `notion_export` | JSONB | yes | `{ container_page_id, page_id, page_url, posting_page_id, posting_page_url }`. Replaced 5 flat `notion_*` columns (dropped `d0e1f2a3b4c5`). |
 | `created_at` | timestamptz | no | |
+| `updated_at` | timestamptz | yes | Added `d0e1f2a3b4c5`; `server_default=now()`, `onupdate=now()`. |
 
-**Questions / candidates for change:**
-- Notion fields (5 columns) are only populated for Notion-connected users. Same pattern as `users` — extraction to a separate table would only make sense if Notion becomes significantly more complex.
-- `enrichment_status` on `Tailoring` — this is redundant with `generation_status` in most flows (enrichment runs inline during generation). It exists because enrichment used to be a separate async step. Consider collapsing into `generation_status`.
-- `profile_snapshot` — a text blob of the formatted profile at generation time. Useful for debug/audit. No API exposure; only visible in the debug panel.
-- `gap_analysis_status` has only two values and is always set to `complete` by `run_gap_analysis` regardless of success/failure. The real signal is whether `gap_analysis` is null or not.
+**Dropped in migration `d0e1f2a3b4c5`:**
+`enrichment_status`, `gap_analysis_status`, `generation_duration_ms`, `chunk_batch_count`, `chunk_error_count`, `matching_mode`, `model`, `notion_container_page_id`, `notion_page_id`, `notion_page_url`, `notion_posting_page_id`, `notion_posting_page_url`
+
+**Notes:**
+- `enrichment_status` was redundant with job_chunks existence — derived at read time: `"complete" if chunks else "pending"`.
+- `gap_analysis_status` was always `"complete"` regardless of success/failure — replaced by the `gap_analysis != null` sentinel.
 - `letter_public` and `posting_public` are separate flags allowing partial sharing. `is_public` is a hybrid property (`letter_public OR posting_public`).
+- Notion export uses `notion_export` JSONB; SQLAlchemy mutation detection requires creating a new dict (not mutating in-place) before reassigning.
 
 ---
 
@@ -411,6 +412,8 @@ These deprecated columns are safe to drop once the next deploy is confirmed stab
 | Column | Table | Status |
 |--------|-------|--------|
 | `experience_source` | `job_chunks` | ✅ **Dropped** — migration `d1a2b3c4e5f6` |
+| `enrichment_status`, `gap_analysis_status`, `generation_duration_ms`, `chunk_batch_count`, `chunk_error_count`, `matching_mode`, `model`, 5× `notion_*` | `tailorings` | ✅ **Dropped** — migration `d0e1f2a3b4c5` |
+| `generated_output` | `tailorings` | ⏳ Deferred — kept as fallback for pre-`letter_content` rows and derived artifact. Drop once all prod rows have `letter_content`. |
 | `group_key` | `experience_claims` | ⏳ Deferred — Phase 5 of schema cleanup sprint. Still the primary grouping mechanism in `chunk_matcher.py`; requires matching pipeline migration first. |
 
 ---
@@ -433,6 +436,18 @@ These deprecated columns are safe to drop once the next deploy is confirmed stab
 | ~~Add cleanup for `llm_trigger_log`~~ | ✅ Done — amortized cleanup in `tailorings.py` | Rows >30d deleted as BackgroundTask on create/regen |
 | ~~Add `ON DELETE CASCADE` to `tailorings.user_id` FK~~ | ✅ Done — migration `a4b5c6d7e8f9` | |
 | ~~Encrypt `user_integrations.credentials` at rest~~ | ✅ Done — migration `c5d6e7f8a9b0` | `EncryptedJSON` Fernet, `FIELD_ENCRYPTION_KEY` env var |
+| ~~Rename `is_requirement` → `include_in_scoring` on `job_chunks`~~ | ✅ Done — migration `c9d0e1f2a3b4` | Semantics: "include in scoring runs" vs the ambiguous "is a requirement" |
+| ~~Add `semantic_type` to `job_chunks`~~ | ✅ Done — migration `c9d0e1f2a3b4` | 8-value taxonomy; set once at extraction; `SEMANTIC_TYPE_RULES` applies deterministic overrides |
+| ~~Add `evaluation_status` to `job_chunks`~~ | ✅ Done — migration `c9d0e1f2a3b4` | Resolves `match_score=-1` ambiguity; `scored` \| `skipped` \| `error`; backfilled from `match_score` at migration time |
+| ~~Add `created_at` / `updated_at` to `job_chunks`~~ | ✅ Done — migration `c9d0e1f2a3b4` | Standard audit columns; consistent with all other tables |
+| ~~Add `source_type` to `jobs`~~ | ✅ Done — migration `c9d0e1f2a3b4` | `url` \| `manual`; replaces `job_url IS NULL` inference |
+| ~~Remove dead `requirement_matcher.py` and `requirement_matching.py`~~ | ✅ Done | Never called from active app code; only referenced by its own test file |
+| ~~Collapse `tailorings` telemetry/Notion/model fields into JSONB~~ | ✅ Done — migration `d0e1f2a3b4c5` | `generation_telemetry`, `notion_export`, `models` JSONB; 13 flat columns dropped |
+| ~~Drop `enrichment_status` and `gap_analysis_status` from `tailorings`~~ | ✅ Done — migration `d0e1f2a3b4c5` | `enrichment_status` derived at read time; `gap_analysis != null` replaces status polling |
+| ~~Add `updated_at` to `tailorings`~~ | ✅ Done — migration `d0e1f2a3b4c5` | `server_default=now()`, `onupdate=now()` |
+| ~~Promote `tailorings.letter_content` from JSON → JSONB~~ | ✅ Done — migration `d0e1f2a3b4c5` | Lossless cast |
+| ~~Fix `public_slug` collision risk~~ | ✅ Done | `_generate_slug()` now checks uniqueness per user with retry loop |
+| Drop `generated_output` once all rows have `letter_content` | Open | Requires confirming all prod rows upgraded via "Upgrade Letter" feature or regen |
 | Make `position` on `experience_claims` scoped to `(user_id, group_id)` | Open | Before experience editor reorder UX ships; complex backfill |
 | Drop vestigial `corrections` sub-key from `experience_sources.source_data` | Open | Low priority; verify no pipeline code writes it |
 | Drop `group_key` from `experience_claims` | Open — Phase 5 | Requires migrating `chunk_matcher.py` grouping logic to `group_id` first |

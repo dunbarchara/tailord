@@ -131,7 +131,7 @@ def test_header_chunks_get_minus_one_score():
 
 
 def test_batch_error_increments_error_count():
-    """LLM failure → chunk_error_count=1 written to Tailoring update."""
+    """LLM failure → batch_errors=1 merged into generation_telemetry JSONB."""
     job_id = uuid.uuid4()
     chunks = [_chunk(0), _chunk(1), _chunk(2)]
     mock_db = MagicMock()
@@ -149,11 +149,18 @@ def test_batch_error_increments_error_count():
                     ):
                         enrich_job_chunks(job_id, "# Job\n\nContent", {})
 
-    update_call = mock_db.query.return_value.filter.return_value.update.call_args
-    assert update_call is not None
-    update_dict = update_call[0][0]
-    assert update_dict["chunk_error_count"] == 1
-    assert update_dict["enrichment_status"] == "complete"
+    # Telemetry is now written via db.execute(text(...), params) to merge into JSONB.
+    # Find the telemetry update call among all execute() calls (skip single-arg SET LOCAL call).
+    telemetry_params = next(
+        (
+            c.args[1]
+            for c in mock_db.execute.call_args_list
+            if len(c.args) > 1 and isinstance(c.args[1], dict) and "error_count" in c.args[1]
+        ),
+        None,
+    )
+    assert telemetry_params is not None, "Expected db.execute telemetry call not found"
+    assert telemetry_params["error_count"] == 1
 
 
 def test_batch_error_pads_chunks_with_minus_one():

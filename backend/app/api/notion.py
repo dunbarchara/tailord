@@ -12,6 +12,8 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import get_current_user, require_approved_user
 from app.models.database import JobChunk, Tailoring, User, UserIntegration
+from app.schemas.llm_outputs import TailoringContent
+from app.services.letter_generator import _render_tailoring
 from app.services.notion_export import (
     NotionAuthError,
     chunks_to_notion_markdown,
@@ -150,8 +152,26 @@ def export_tailoring_to_notion(
     container_title = " — ".join(p for p in [job_title, company] if p) or "Tailoring"
 
     if view == "letter":
-        markdown = tailoring.generated_output
-        existing_page_id = tailoring.notion_page_id
+        if tailoring.letter_content:
+            # Re-render from structured content so the Notion export always reflects current format
+            resume_data: dict = {}
+            for src in user.experience_sources:
+                if src.source_type == "resume" and src.source_data:
+                    resume_data = src.source_data.get("extracted") or {}
+                    break
+            markdown = _render_tailoring(
+                content=TailoringContent(**tailoring.letter_content),
+                candidate_name=user.candidate_name,
+                candidate_email=resume_data.get("email") or None,
+                candidate_linkedin=resume_data.get("linkedin") or None,
+                candidate_title=resume_data.get("title") or None,
+                company=company or "the company",
+                job_title=job_title or "this role",
+                job_url=job.job_url if job else None,
+            )
+        else:
+            markdown = tailoring.generated_output
+        existing_page_id = (tailoring.notion_export or {}).get("page_id")
     else:
         chunks = (
             db.query(JobChunk)
@@ -168,7 +188,7 @@ def export_tailoring_to_notion(
                 status_code=422, detail="No enriched chunks available for posting export"
             )
         markdown = chunks_to_notion_markdown(chunks)
-        existing_page_id = tailoring.notion_posting_page_id
+        existing_page_id = (tailoring.notion_export or {}).get("posting_page_id")
 
     page_title = "Advocacy Letter" if view == "letter" else "Job Posting"
     access_token = integration.credentials["access_token"]
@@ -189,10 +209,11 @@ def export_tailoring_to_notion(
                     existing_page_id,
                     tailoring_id,
                 )
+                notion_export = tailoring.notion_export or {}
                 page_url = (
-                    tailoring.notion_page_url
+                    notion_export.get("page_url")
                     if view == "letter"
-                    else tailoring.notion_posting_page_url
+                    else notion_export.get("posting_page_url")
                 )
                 return {"page_url": page_url}
 
@@ -221,34 +242,36 @@ def export_tailoring_to_notion(
             integration.provider_metadata = {**meta, "parent_page_id": parent_page_id}
             meta = integration.provider_metadata
 
-        is_new_container = not tailoring.notion_container_page_id
+        _notion_export = dict(tailoring.notion_export or {})
+        is_new_container = not _notion_export.get("container_page_id")
 
         container_page_id = get_or_create_tailoring_container(
             access_token=access_token,
             parent_page_id=parent_page_id,
-            existing_container_id=tailoring.notion_container_page_id,
+            existing_container_id=_notion_export.get("container_page_id"),
             title=container_title,
             tailoring_id=tailoring_id,
             job_title=job_title,
             company=company,
             job_url=job.job_url if job else None,
         )
-        if container_page_id != tailoring.notion_container_page_id:
-            tailoring.notion_container_page_id = container_page_id
+        if container_page_id != _notion_export.get("container_page_id"):
+            _notion_export["container_page_id"] = container_page_id
+            tailoring.notion_export = _notion_export
 
         # Enforce page order: Posting must be created before Letter so it
         # holds the top position in the Notion sidebar. If this is a new
         # container and we're exporting the Letter first, create an empty
         # Posting placeholder first so the ordering is preserved.
-        if is_new_container and view == "letter" and not tailoring.notion_posting_page_id:
+        if is_new_container and view == "letter" and not _notion_export.get("posting_page_id"):
             stub_id, stub_url = create_notion_page(
                 access_token=access_token,
                 parent_page_id=container_page_id,
                 title="Job Posting",
                 markdown="*Export the Job Posting view from Tailord to populate this page.*",
             )
-            tailoring.notion_posting_page_id = stub_id
-            tailoring.notion_posting_page_url = stub_url
+            _notion_export.update({"posting_page_id": stub_id, "posting_page_url": stub_url})
+            tailoring.notion_export = _notion_export
             logger.info(
                 "Created Posting stub %s to reserve top position for tailoring %s",
                 stub_id,
@@ -271,12 +294,12 @@ def export_tailoring_to_notion(
         logger.error("Notion export failed for tailoring %s (%s): %s", tailoring_id, view, e)
         raise HTTPException(status_code=502, detail=str(e))
 
+    _export = dict(tailoring.notion_export or {})
     if view == "letter":
-        tailoring.notion_page_id = page_id
-        tailoring.notion_page_url = page_url
+        _export.update({"page_id": page_id, "page_url": page_url})
     else:
-        tailoring.notion_posting_page_id = page_id
-        tailoring.notion_posting_page_url = page_url
+        _export.update({"posting_page_id": page_id, "posting_page_url": page_url})
+    tailoring.notion_export = _export
     db.commit()
 
     logger.info(

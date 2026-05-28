@@ -36,11 +36,15 @@ export interface Tailoring {
   author_username_slug: string | null
   notion_page_url: string | null
   notion_posting_page_url: string | null
-  generation_duration_ms: number | null
-  chunk_batch_count: number | null
-  chunk_error_count: number | null
+  models?: { letter?: string; scoring?: string } | null
+  generation_telemetry?: {
+    duration_ms?: number
+    matching_mode?: string
+    batch_count?: number
+    batch_errors?: number
+  } | null
   gap_analysis?: GapAnalysis | null
-  gap_analysis_status?: 'pending' | 'complete' | 'error'
+  updated_at?: string | null
   created_at: string
 }
 
