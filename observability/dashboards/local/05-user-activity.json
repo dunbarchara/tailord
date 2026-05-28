@@ -31,7 +31,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT COUNT(*) AS value FROM users",
+          "rawSql": "SELECT COUNT(*) AS value FROM users WHERE deleted_at IS NULL",
           "format": "table"
         }
       ],
@@ -66,7 +66,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT COUNT(*) AS value FROM users WHERE status = 'approved'",
+          "rawSql": "SELECT COUNT(*) AS value FROM users WHERE status = 'approved' AND deleted_at IS NULL",
           "format": "table"
         }
       ],
@@ -86,7 +86,7 @@
     },
     {
       "id": 3,
-      "title": "Experience Success Rate (7d)",
+      "title": "Pending Approval",
       "type": "stat",
       "gridPos": {
         "x": 8,
@@ -101,7 +101,125 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'ready') / NULLIF(COUNT(*), 0), 1) AS value FROM experiences WHERE processed_at >= NOW() - INTERVAL '7 days'",
+          "rawSql": "SELECT COUNT(*) AS value FROM users WHERE status = 'pending' AND deleted_at IS NULL",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Total Tailorings",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT COUNT(*) AS value FROM tailorings",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Shared Tailorings",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT COUNT(*) AS value FROM tailorings WHERE letter_public OR posting_public",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Resume Sync Success (7d)",
+      "type": "stat",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE sync_status = 'idle' AND last_synced_at IS NOT NULL) / NULLIF(COUNT(*) FILTER (WHERE last_synced_at IS NOT NULL), 0), 1) AS value FROM experience_sources WHERE source_type = 'resume' AND last_synced_at >= NOW() - INTERVAL '7 days'",
           "format": "table"
         }
       ],
@@ -137,43 +255,7 @@
       }
     },
     {
-      "id": 4,
-      "title": "Generation Status Distribution",
-      "type": "bargauge",
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 12,
-        "h": 4
-      },
-      "datasource": {
-        "uid": "__POSTGRES_UID__",
-        "type": "postgres"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "rawSql": "SELECT generation_status AS metric, COUNT(*) AS value FROM tailorings GROUP BY generation_status",
-          "format": "table"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "orientation": "horizontal"
-      }
-    },
-    {
-      "id": 5,
+      "id": 7,
       "title": "Tailorings per Day (30d)",
       "type": "timeseries",
       "gridPos": {
@@ -201,7 +283,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 8,
       "title": "Active Users per Day (30d)",
       "type": "timeseries",
       "gridPos": {
@@ -226,6 +308,144 @@
           "unit": "short"
         },
         "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "LLM Events per Day by Type (30d)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 16,
+        "h": 9
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS tailoring_create FROM llm_usage_logs WHERE event_type = 'tailoring_create' AND created_at >= NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS tailoring_regen FROM llm_usage_logs WHERE event_type = 'tailoring_regen' AND created_at >= NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS letter_regen FROM llm_usage_logs WHERE event_type = 'letter_regen' AND created_at >= NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS resume_process FROM llm_usage_logs WHERE event_type = 'resume_process' AND created_at >= NOW() - INTERVAL '30 days' GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "New Signups per Week (12w)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 16,
+        "y": 13,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('week', created_at) AS time, COUNT(*) AS signups FROM users WHERE created_at >= NOW() - INTERVAL '12 weeks' AND deleted_at IS NULL GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "title": "Top 10 Users by Tailoring Count",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 14,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT u.email, COUNT(t.id) AS tailorings, MAX(t.created_at) AS last_tailoring FROM users u LEFT JOIN tailorings t ON t.user_id = u.id WHERE u.deleted_at IS NULL GROUP BY u.id, u.email ORDER BY tailorings DESC LIMIT 10",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Experience Sources by Type / Status",
+      "type": "bargauge",
+      "gridPos": {
+        "x": 14,
+        "y": 22,
+        "w": 10,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT source_type || ' / ' || connection_status AS metric, COUNT(*) AS value FROM experience_sources GROUP BY 1 ORDER BY 1",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal"
       }
     }
   ]

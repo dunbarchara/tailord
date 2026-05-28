@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, MousePointerClick, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ChunksResponse, ExperienceChunk, GapAnalysis, JobChunk } from '@/types';
+import type { ChunksResponse, ExperienceClaim, GapAnalysis, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
 import { JobPosting } from '@/components/dashboard/JobPosting';
 
@@ -18,8 +18,8 @@ interface AnalysisViewProps {
   authorName?: string | null;
   tailoringId?: string;
   gapAnalysis?: GapAnalysis | null;
-  gapResponses?: ExperienceChunk[] | null;
-  partialResponses?: ExperienceChunk[] | null;
+  gapResponses?: ExperienceClaim[] | null;
+  partialResponses?: ExperienceClaim[] | null;
   generationReady?: boolean;
   readOnly?: boolean;
   editMode?: boolean;
@@ -48,9 +48,9 @@ interface ChunkContextPanelProps {
   chunk: JobChunk;
   tailoringId?: string;
   gapQuestion?: { question: string; context: string } | null;
-  answeredChunk?: ExperienceChunk | null;
+  answeredChunk?: ExperienceClaim | null;
   partialQuestion?: { question: string; context: string } | null;
-  partialAnsweredChunk?: ExperienceChunk | null;
+  partialAnsweredChunk?: ExperienceClaim | null;
   persistedPartialAnswer?: string | null;
   onScoreChange: (chunkId: string, score: number | null, rationale: string | null, blurb?: string | null, partialQuestion?: string | null, partialContext?: string | null, answerText?: string) => void;
   readOnly?: boolean;
@@ -112,7 +112,8 @@ export function fitAnalysisToText(
   ].join('\n');
 
   const scored = data.chunks.filter(
-    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1 && c.should_render !== false,
+    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1
+      && c.should_render !== false && c.display_ready !== false,
   );
 
   const lines: string[] = [];
@@ -349,7 +350,7 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
 
   const variant = scoreToVariant(chunk.match_score);
   const config = SCORE_CONFIG[variant];
-  const sources = chunk.experience_sources?.length ? chunk.experience_sources : chunk.experience_source ? [chunk.experience_source] : [];
+  const sources = chunk.experience_sources ?? [];
   const source = sources.length ? sources.map(s => SOURCE_LABELS[s] ?? s).join(', ') : null;
 
   const hasAdvocacy = !!chunk.advocacy_blurb && variant !== 'gap';
@@ -471,9 +472,9 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                   <CheckCircle2 className="h-3 w-3 shrink-0" />
                   You answered this
                 </p>
-                {(answeredChunk?.chunk_metadata?.question ?? gapQuestion.question) && (
+                {(answeredChunk?.provenance_metadata?.question ?? gapQuestion.question) && (
                   <p className="text-sm text-text-tertiary leading-relaxed italic">
-                    {answeredChunk?.chunk_metadata?.question ?? gapQuestion.question}
+                    {answeredChunk?.provenance_metadata?.question ?? gapQuestion.question}
                   </p>
                 )}
                 <p className="text-sm text-text-secondary leading-relaxed">
@@ -551,9 +552,9 @@ function ChunkContextPanel({ chunk, tailoringId, gapQuestion, answeredChunk, par
                   <CheckCircle2 className="h-3 w-3 shrink-0" />
                   You strengthened this
                 </p>
-                {(partialAnsweredChunk?.chunk_metadata?.question ?? partialQuestion.question) && (
+                {(partialAnsweredChunk?.provenance_metadata?.question ?? partialQuestion.question) && (
                   <p className="text-sm text-text-tertiary leading-relaxed italic">
-                    {partialAnsweredChunk?.chunk_metadata?.question ?? partialQuestion.question}
+                    {partialAnsweredChunk?.provenance_metadata?.question ?? partialQuestion.question}
                   </p>
                 )}
                 <p className="text-sm text-text-secondary leading-relaxed">
@@ -742,7 +743,8 @@ export function AnalysisView({
   );
 
   const scored = localChunks.filter(
-    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1 && c.should_render !== false,
+    c => c.match_score !== null && c.match_score !== undefined && c.match_score !== -1
+      && c.should_render !== false && c.display_ready !== false,
   );
   const strongCount = scored.filter(c => c.match_score === 2).length;
   const partialCount = scored.filter(c => c.match_score === 1).length;
@@ -764,8 +766,8 @@ export function AnalysisView({
     () =>
       new Map(
         (gapResponses ?? [])
-          .filter(c => c.chunk_metadata?.job_chunk_id)
-          .map(c => [c.chunk_metadata!.job_chunk_id, c]),
+          .filter(c => c.provenance_metadata?.job_chunk_id)
+          .map(c => [c.provenance_metadata!.job_chunk_id, c]),
       ),
     [gapResponses],
   );
@@ -784,8 +786,8 @@ export function AnalysisView({
     () =>
       new Map(
         (partialResponses ?? [])
-          .filter(c => c.chunk_metadata?.job_chunk_id)
-          .map(c => [c.chunk_metadata!.job_chunk_id, c]),
+          .filter(c => c.provenance_metadata?.job_chunk_id)
+          .map(c => [c.provenance_metadata!.job_chunk_id, c]),
       ),
     [partialResponses],
   );

@@ -27,11 +27,11 @@ from app.metrics import (
     GAP_RESPONSE_DURATION_MS,
 )
 from app.models.database import (
-    Experience,
-    ExperienceChunk,
+    ExperienceClaim,
+    ExperienceSource,
     Job,
     JobChunk,
-    LlmTriggerLog,
+    LlmUsageLog,
     Tailoring,
     User,
 )
@@ -56,6 +56,7 @@ from app.services.experience_processor import (
 )
 from app.services.gap_analyzer import _build_job_context, _generate_question
 from app.services.profile_extractor import extract_profile
+from app.services.profile_formatter import format_sourced_profile, sources_to_profile_dict
 from app.telemetry import get_tracer as _get_tracer
 
 router = APIRouter()
@@ -67,38 +68,134 @@ ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "txt"}
 # Minimum gap between experience processing triggers per user.
 _EXPERIENCE_PROCESS_COOLDOWN_MINUTES = 5
 
+
+def _cleanup_old_usage_logs(db: Session) -> None:
+    """Delete LlmUsageLog rows older than 90 days. Amortized on experience processing."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    db.query(LlmUsageLog).filter(LlmUsageLog.created_at < cutoff).delete()
+    db.commit()
+
+
 # Resumes are typically < 500 KB. 10 MB is a generous ceiling that still
 # blocks accidental or malicious oversized uploads before text extraction.
 _MAX_RESUME_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
-def _has_non_resume_sources(e: Experience) -> bool:
-    """Return True if the experience row has data from any source other than the uploaded file."""
-    if e.github_username:
-        return True
-    if e.user_input_text:
-        return True
-    # Any extracted_profile keys other than "resume" indicate another source
-    if e.extracted_profile and any(k != "resume" for k in e.extracted_profile):
-        return True
-    return False
+# ---------------------------------------------------------------------------
+# Response helpers
+# ---------------------------------------------------------------------------
 
 
-def _clear_resume_fields(e: Experience, db: Session) -> None:
-    """Remove all file-upload data from the experience row, preserving other sources.
+def _source_status(src: ExperienceSource) -> str:
+    """Derive a legacy status string from an ExperienceSource."""
+    if src.sync_status == "syncing":
+        return "processing"
+    if src.sync_status == "error" or src.connection_status == "error":
+        return "error"
+    if src.connection_status == "connected":
+        return "ready"
+    return "pending"
 
-    Also deletes associated resume ExperienceChunk rows. Does not commit.
+
+def _experience_response(sources: list) -> dict:
+    """Build the experience API response from a list of ExperienceSource rows.
+
+    Returns both the new `sources` array (for updated frontends) and the
+    legacy flat fields (for backward compat with existing frontend code).
     """
-    e.storage_key = None
-    e.filename = None
-    e.raw_resume_text = None
-    e.error_message = None
-    e.processed_at = None
-    e.last_process_requested_at = None
-    e.extracted_profile = {
-        k: v for k, v in (e.extracted_profile or {}).items() if k != "resume"
-    } or None
-    delete_resume_chunks(db, e.id)
+    resume_src = next((s for s in sources if s.source_type == "resume"), None)
+    github_src = next((s for s in sources if s.source_type == "github"), None)
+
+    resume_data = (resume_src.source_data or {}) if resume_src else {}
+    resume_cfg = (resume_src.config or {}) if resume_src else {}
+    github_data = (github_src.source_data or {}) if github_src else {}
+    github_cfg = (github_src.config or {}) if github_src else {}
+
+    # Derive legacy status: resume takes precedence over github
+    if resume_src:
+        status = _source_status(resume_src)
+    elif github_src:
+        status = _source_status(github_src)
+    else:
+        status = "pending"
+
+    # Assemble legacy extracted_profile shape from source_data
+    extracted_profile: dict = {}
+    if resume_data.get("extracted"):
+        extracted_profile["resume"] = resume_data["extracted"]
+    if resume_data.get("corrections"):
+        extracted_profile["corrections"] = resume_data["corrections"]
+    if github_data.get("repos"):
+        extracted_profile["github"] = {
+            **(github_data.get("extracted") or {}),
+            "repos": github_data["repos"],
+        }
+
+    # New per-source status array
+    sources_list = []
+    if resume_src:
+        sources_list.append(
+            {
+                "id": str(resume_src.id),
+                "source_type": "resume",
+                "connection_status": resume_src.connection_status,
+                "sync_status": resume_src.sync_status,
+                "config": {"filename": resume_cfg.get("filename")},
+                "error_message": resume_src.error_message,
+                "last_synced_at": resume_src.last_synced_at.isoformat()
+                if resume_src.last_synced_at
+                else None,
+            }
+        )
+    if github_src:
+        sources_list.append(
+            {
+                "id": str(github_src.id),
+                "source_type": "github",
+                "connection_status": github_src.connection_status,
+                "sync_status": github_src.sync_status,
+                "config": {"username": github_cfg.get("username")},
+                "error_message": github_src.error_message,
+                "last_synced_at": github_src.last_synced_at.isoformat()
+                if github_src.last_synced_at
+                else None,
+            }
+        )
+
+    primary_id = str(resume_src.id) if resume_src else (str(github_src.id) if github_src else None)
+
+    return {
+        # New format
+        "sources": sources_list,
+        # Legacy format (backward compat)
+        "id": primary_id,
+        "filename": resume_cfg.get("filename"),
+        "status": status,
+        "extracted_profile": extracted_profile or None,
+        "raw_resume_text": resume_data.get("raw_text"),
+        "error_message": resume_src.error_message if resume_src else None,
+        "github_username": github_cfg.get("username"),
+        "github_repos": github_data.get("repos"),
+        "github_repo_details": github_data.get("repo_details"),
+        "user_input_text": None,  # dropped — claims are the source of truth
+        "uploaded_at": resume_src.created_at.isoformat() if resume_src else None,
+        "processed_at": resume_src.last_synced_at.isoformat()
+        if (resume_src and resume_src.last_synced_at)
+        else None,
+        "last_process_requested_at": resume_src.last_requested_at.isoformat()
+        if (resume_src and resume_src.last_requested_at)
+        else None,
+    }
+
+
+def _all_sources(user: User, db: Session) -> list:
+    """Load all ExperienceSource rows for the user."""
+    return db.query(ExperienceSource).filter(ExperienceSource.user_id == user.id).all()
+
+
+# ---------------------------------------------------------------------------
+# Request schemas
+# ---------------------------------------------------------------------------
 
 
 class UploadUrlRequest(BaseModel):
@@ -149,24 +246,9 @@ class ProfileUpdate(BaseModel):
     yoe_override: float | None = None
 
 
-def _experience_response(e: Experience) -> dict:
-    return {
-        "id": str(e.id),
-        "filename": e.filename,
-        "status": e.status,
-        "extracted_profile": e.extracted_profile,
-        "raw_resume_text": e.raw_resume_text,
-        "error_message": e.error_message,
-        "github_username": e.github_username,
-        "github_repos": e.github_repos,
-        "github_repo_details": e.github_repo_details,
-        "user_input_text": e.user_input_text,
-        "uploaded_at": e.uploaded_at.isoformat() if e.uploaded_at else None,
-        "processed_at": e.processed_at.isoformat() if e.processed_at else None,
-        "last_process_requested_at": e.last_process_requested_at.isoformat()
-        if e.last_process_requested_at
-        else None,
-    }
+# ---------------------------------------------------------------------------
+# Upload URL
+# ---------------------------------------------------------------------------
 
 
 @router.post("/experience/upload-url")
@@ -183,52 +265,67 @@ def get_upload_url(
             detail=f"File type .{ext} not allowed. Supported: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    existing = db.query(Experience).filter(Experience.user_id == user.id).first()
+    resume_src = next((s for s in user.experience_sources if s.source_type == "resume"), None)
+    storage_key = f"users/{user.id}/{uuid.uuid4()}.{ext}"
 
-    storage_key = f"users/{user.google_sub}/{uuid.uuid4()}.{ext}"
+    now = datetime.now(timezone.utc)
 
-    if existing:
-        # Clean up old file but preserve GitHub data on the existing row
-        if existing.storage_key:
+    if resume_src:
+        # Clean up old storage file
+        old_storage_key = (resume_src.config or {}).get("storage_key")
+        if old_storage_key:
             try:
-                get_storage_client().delete_object(existing.storage_key)
+                get_storage_client().delete_object(old_storage_key)
             except Exception:
-                logger.warning("storage_cleanup_failed", storage_key=existing.storage_key)
-        _clear_resume_fields(existing, db)
-        existing.storage_key = storage_key
-        existing.filename = body.filename
-        existing.status = "pending"
-        existing.uploaded_at = datetime.now(timezone.utc)
-        experience = existing
+                logger.warning("storage_cleanup_failed", storage_key=old_storage_key)
+        # Reset resume source — preserve corrections across re-uploads
+        existing_data = resume_src.source_data or {}
+        resume_src.config = {"storage_key": storage_key, "filename": body.filename}
+        resume_src.source_data = {
+            k: v for k, v in existing_data.items() if k == "corrections"
+        } or None
+        resume_src.connection_status = "disconnected"
+        resume_src.sync_status = "idle"
+        resume_src.error_message = None
+        resume_src.updated_at = now
     else:
-        experience = Experience(
+        resume_src = ExperienceSource(
             user_id=user.id,
-            storage_key=storage_key,
-            filename=body.filename,
-            status="pending",
+            source_type="resume",
+            connection_status="disconnected",
+            sync_status="idle",
+            config={"storage_key": storage_key, "filename": body.filename},
+            created_at=now,
+            updated_at=now,
         )
-        db.add(experience)
+        db.add(resume_src)
+
     db.commit()
-    db.refresh(experience)
+    db.refresh(resume_src)
 
     try:
         upload_url = get_storage_client().generate_upload_url(storage_key)
     except Exception as exc:
-        logger.exception("generate_upload_url_failed", experience_id=str(experience.id))
-        experience.status = "error"
-        experience.error_message = "Failed to prepare upload. Please try again."
+        logger.exception("generate_upload_url_failed", source_id=str(resume_src.id))
+        resume_src.sync_status = "error"
+        resume_src.error_message = "Failed to prepare upload. Please try again."
         db.commit()
         raise HTTPException(
             status_code=500, detail="Failed to prepare upload. Please try again."
         ) from exc
 
-    logger.info("upload_url_created", experience_id=str(experience.id))
+    logger.info("upload_url_created", source_id=str(resume_src.id))
 
     return {
         "upload_url": upload_url,
         "storage_key": storage_key,
-        "experience_id": str(experience.id),
+        "experience_id": str(resume_src.id),
     }
+
+
+# ---------------------------------------------------------------------------
+# Process (SSE)
+# ---------------------------------------------------------------------------
 
 
 @router.post("/experience/process")
@@ -239,20 +336,22 @@ async def trigger_process(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    experience = (
-        db.query(Experience)
-        .filter(
-            Experience.user_id == user.id,
-            Experience.storage_key == body.storage_key,
-        )
-        .first()
-    )
+    try:
+        source_uuid = uuid.UUID(body.experience_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid experience_id")
 
-    if not experience:
+    resume_src = db.get(ExperienceSource, source_uuid)
+    if (
+        not resume_src
+        or resume_src.user_id != user.id
+        or resume_src.source_type != "resume"
+        or (resume_src.config or {}).get("storage_key") != body.storage_key
+    ):
         raise HTTPException(status_code=404, detail="Experience record not found")
 
-    if experience.last_process_requested_at:
-        cooldown_end = experience.last_process_requested_at + timedelta(
+    if resume_src.last_requested_at:
+        cooldown_end = resume_src.last_requested_at + timedelta(
             minutes=_EXPERIENCE_PROCESS_COOLDOWN_MINUTES
         )
         if datetime.now(timezone.utc) < cooldown_end:
@@ -265,13 +364,16 @@ async def trigger_process(
                 detail=f"Please wait {remaining} minute(s) before re-processing your experience.",
             )
 
-    experience.last_process_requested_at = datetime.now(timezone.utc)
-    experience.status = "processing"
-    db.add(LlmTriggerLog(user_id=user.id, event_type="experience_process"))
+    now = datetime.now(timezone.utc)
+    resume_src.last_requested_at = now
+    resume_src.sync_status = "syncing"
+    resume_src.updated_at = now
+    db.add(LlmUsageLog(user_id=user.id, event_type="resume_process"))
     db.commit()
+    background_tasks.add_task(_cleanup_old_usage_logs, db)
 
     storage_key = body.storage_key
-    filename = experience.filename or "file.txt"
+    filename = (resume_src.config or {}).get("filename") or "file.txt"
 
     async def _stream():
         completed = False
@@ -284,7 +386,7 @@ async def trigger_process(
 
             with _exp_tracer.start_as_current_span(
                 "experience.phase.extracting",
-                attributes={"experience.id": str(experience.id)},
+                attributes={"experience.id": str(resume_src.id)},
             ):
                 file_bytes = await anyio.to_thread.run_sync(
                     lambda: get_storage_client().download_bytes(storage_key)
@@ -293,12 +395,14 @@ async def trigger_process(
                 if len(file_bytes) > _MAX_RESUME_BYTES:
                     mb = len(file_bytes) / 1024 / 1024
                     logger.warning("file_too_large", size_mb=round(mb, 1))
-                    experience.status = "error"
-                    experience.error_message = (
+                    resume_src.sync_status = "error"
+                    resume_src.connection_status = "error"
+                    resume_src.error_message = (
                         f"File is too large ({mb:.1f} MB). Please upload a file under 10 MB."
                     )
+                    resume_src.updated_at = datetime.now(timezone.utc)
                     db.commit()
-                    yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+                    yield f"event: error\ndata: {json.dumps({'message': resume_src.error_message})}\n\n"
                     completed = True
                     return
 
@@ -320,11 +424,10 @@ async def trigger_process(
             with _exp_tracer.start_as_current_span("experience.phase.analyzing"):
                 profile = await anyio.to_thread.run_sync(lambda: extract_profile(normalized))
 
-                # Preserve non-resume keys (github, corrections, user_input, etc.) across reprocessing.
                 # Re-apply any saved corrections to the freshly extracted resume so the user's
                 # manual overrides aren't silently discarded when they re-upload.
-                existing_profile = experience.extracted_profile or {}
-                corrections = existing_profile.get("corrections") or {}
+                existing_data = resume_src.source_data or {}
+                corrections = existing_data.get("corrections") or {}
                 if corrections:
                     correctable = (
                         "title",
@@ -344,15 +447,18 @@ async def trigger_process(
                         },
                     }
 
-                experience.raw_resume_text = normalized
-                experience.extracted_profile = {
-                    **{k: v for k, v in existing_profile.items() if k != "resume"},
-                    "resume": profile,
+                resume_src.source_data = {
+                    **existing_data,
+                    "extracted": profile,
+                    "raw_text": normalized,
                 }
-                experience.status = "ready"
-                experience.processed_at = datetime.now(timezone.utc)
+                resume_src.sync_status = "idle"
+                resume_src.connection_status = "connected"
+                resume_src.last_synced_at = datetime.now(timezone.utc)
+                resume_src.error_message = None
+                resume_src.updated_at = datetime.now(timezone.utc)
                 db.commit()
-                db.refresh(experience)
+                db.refresh(resume_src)
 
             phase_durations["analyzing"] = int((_time.perf_counter() - _phase_start) * 1000)
             EXPERIENCE_PHASE_DURATION_MS.labels(phase="analyzing").observe(
@@ -365,13 +471,12 @@ async def trigger_process(
             # --- chunking ---
             _phase_start = _time.perf_counter()
             with _exp_tracer.start_as_current_span("experience.phase.chunking"):
-                chunk_count = chunk_resume(db, experience)
+                chunk_count = chunk_resume(db, resume_src)
                 db.commit()
                 _ctx = structlog.contextvars.get_contextvars()
                 background_tasks.add_task(
                     embed_experience_chunks_task,
-                    experience.id,
-                    user_id=_ctx.get("user_id"),
+                    resume_src.user_id,
                     correlation_id=_ctx.get("correlation_id"),
                 )
 
@@ -395,22 +500,26 @@ async def trigger_process(
                 phase_durations=phase_durations,
             )
 
-            yield f"event: ready\ndata: {json.dumps(_experience_response(experience))}\n\n"
+            all_sources = _all_sources(user, db)
+            yield f"event: ready\ndata: {json.dumps(_experience_response(all_sources))}\n\n"
             completed = True
 
         except Exception as exc:
             EXPERIENCE_PROCESSING_TOTAL.labels(status="error").inc()
             logger.exception("processing_error")
-            experience.status = "error"
-            experience.error_message = _friendly_processing_error(exc)
+            resume_src.sync_status = "error"
+            resume_src.connection_status = "error"
+            resume_src.error_message = _friendly_processing_error(exc)
+            resume_src.updated_at = datetime.now(timezone.utc)
             db.commit()
-            yield f"event: error\ndata: {json.dumps({'message': experience.error_message})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'message': resume_src.error_message})}\n\n"
             completed = True
         finally:
-            if not completed and experience.status == "processing":
+            if not completed and resume_src.sync_status == "syncing":
                 logger.warning("processing_interrupted")
-                experience.status = "error"
-                experience.error_message = "Processing was interrupted. Please try again."
+                resume_src.sync_status = "error"
+                resume_src.error_message = "Processing was interrupted. Please try again."
+                resume_src.updated_at = datetime.now(timezone.utc)
                 try:
                     db.commit()
                 except Exception:
@@ -423,16 +532,20 @@ async def trigger_process(
     )
 
 
+# ---------------------------------------------------------------------------
+# GET / DELETE experience
+# ---------------------------------------------------------------------------
+
+
 @router.get("/experience")
 def get_experience(
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
 ):
     logger.debug("get_experience")
-    e = user.experience
-    if not e:
+    if not user.experience_sources:
         return None
-    return _experience_response(e)
+    return _experience_response(user.experience_sources)
 
 
 @router.delete("/experience", status_code=204)
@@ -441,25 +554,26 @@ def delete_experience(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    e = user.experience
-    if not e:
+    resume_src = next((s for s in user.experience_sources if s.source_type == "resume"), None)
+    if not resume_src:
         raise HTTPException(status_code=404, detail="No experience found")
 
-    if e.storage_key:
+    storage_key = (resume_src.config or {}).get("storage_key")
+    if storage_key:
         try:
-            get_storage_client().delete_object(e.storage_key)
+            get_storage_client().delete_object(storage_key)
         except Exception:
-            logger.warning("storage_delete_failed", storage_key=e.storage_key)
+            logger.warning("storage_delete_failed", storage_key=storage_key)
 
-    if _has_non_resume_sources(e):
-        # Other sources exist — clear only the file upload fields
-        _clear_resume_fields(e, db)
-        e.status = "ready"
-    else:
-        db.delete(e)
-
+    delete_resume_chunks(db, user.id)
+    db.delete(resume_src)
     db.commit()
     logger.info("delete_experience_complete")
+
+
+# ---------------------------------------------------------------------------
+# Profile corrections
+# ---------------------------------------------------------------------------
 
 
 @router.patch("/experience/profile")
@@ -469,12 +583,19 @@ def update_profile(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
+    resume_src = (
+        db.query(ExperienceSource)
+        .filter(
+            ExperienceSource.user_id == user.id,
+            ExperienceSource.source_type == "resume",
+        )
+        .first()
+    )
+    if not resume_src:
         raise HTTPException(status_code=404, detail="No experience found")
 
-    existing = experience.extracted_profile or {}
-    corrections = dict(existing.get("corrections") or {})
+    existing_data = resume_src.source_data or {}
+    corrections = dict(existing_data.get("corrections") or {})
 
     # None means "clear this correction" — remove the key so the field falls back to extracted.
     # Unset fields (not in the request at all) are left untouched.
@@ -484,25 +605,31 @@ def update_profile(
         else:
             corrections[k] = v
 
-    # Apply text corrections into the resume block so all consumers see corrected values
-    # without needing to know about the corrections layer. Cleared fields (absent from
-    # corrections) are not overwritten — the raw extracted value is preserved.
-    resume = dict(existing.get("resume") or {})
+    # Apply text corrections into the extracted block so all consumers see corrected values
     correctable = ("title", "headline", "summary", "location", "email", "phone", "linkedin")
-    resume.update(
+    extracted = dict(existing_data.get("extracted") or {})
+    extracted.update(
         {k: v for k, v in corrections.items() if k in correctable and v is not None and v != ""}
     )
 
-    experience.extracted_profile = {
-        **existing,
+    resume_src.source_data = {
+        **existing_data,
         "corrections": corrections,
-        "resume": resume,
+        "extracted": extracted,
     }
-    experience.processed_at = datetime.now(timezone.utc)
+    resume_src.last_synced_at = datetime.now(timezone.utc)
+    resume_src.updated_at = datetime.now(timezone.utc)
     db.commit()
-    db.refresh(experience)
+    db.refresh(resume_src)
+
     logger.info("update_profile_complete")
-    return _experience_response(experience)
+    all_sources = _all_sources(user, db)
+    return _experience_response(all_sources)
+
+
+# ---------------------------------------------------------------------------
+# GitHub
+# ---------------------------------------------------------------------------
 
 
 @router.get("/experience/github/{username}/repos")
@@ -543,24 +670,36 @@ def set_github(
     from app.clients.github_client import get_github_client
     from app.services.github_enricher import enrich_github_repos
 
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
+    github_src = (
+        db.query(ExperienceSource)
+        .filter(
+            ExperienceSource.user_id == user.id,
+            ExperienceSource.source_type == "github",
+        )
+        .first()
+    )
+
+    _ctx = structlog.contextvars.get_contextvars()
 
     # Rescan path: re-enrich specific repos without touching the connected repos list.
     if body.rescan_repo_names is not None:
-        if not experience or not experience.github_username:
+        if not github_src:
             raise HTTPException(status_code=404, detail="No GitHub connection found")
         now_iso = datetime.now(timezone.utc).isoformat()
         rescan_set = set(body.rescan_repo_names)
-        experience.github_repos = [
+        existing_repos = (github_src.source_data or {}).get("repos") or []
+        updated_repos = [
             {**r, "scanning_started_at": now_iso} if r["name"] in rescan_set else r
-            for r in (experience.github_repos or [])
+            for r in existing_repos
         ]
+        github_src.source_data = {**(github_src.source_data or {}), "repos": updated_repos}
+        github_src.sync_status = "syncing"
+        github_src.updated_at = datetime.now(timezone.utc)
         db.commit()
-        _ctx = structlog.contextvars.get_contextvars()
         background_tasks.add_task(
             enrich_github_repos,
             github_username=body.github_username,
-            experience_id=experience.id,
+            source_id=github_src.id,
             repo_names=body.rescan_repo_names,
             merge_with_existing=True,
             user_id=_ctx.get("user_id"),
@@ -568,9 +707,9 @@ def set_github(
         )
         logger.info("github_rescan_queued", repo_count=len(body.rescan_repo_names or []))
         return {
-            "experience_id": str(experience.id),
-            "status": experience.status,
-            "github_username": experience.github_username,
+            "experience_id": str(github_src.id),
+            "status": "ready",
+            "github_username": body.github_username,
         }
 
     client = get_github_client()
@@ -594,60 +733,66 @@ def set_github(
         selected = set(body.selected_repo_names)
         repos = [r for r in repos if r["name"] in selected]
 
-    # When enrich_only_repo_names is set (additions-only modify), preserve existing
-    # enrichment and merge new repos in. Otherwise clear stale enrichment.
     additions_only = body.enrich_only_repo_names is not None
+    now = datetime.now(timezone.utc)
 
-    if experience:
-        # Delete chunks for repos being removed whenever the selection changes
+    if github_src:
+        # Delete chunks for repos being removed when selection changes
         if body.selected_repo_names is not None:
-            old_repo_names = {r["name"] for r in (experience.github_repos or [])}
+            old_repo_names = {
+                r["name"] for r in ((github_src.source_data or {}).get("repos") or [])
+            }
             new_repo_names = set(body.selected_repo_names)
             for removed_repo in old_repo_names - new_repo_names:
-                delete_github_chunks(db, experience.id, repo_name=removed_repo)
+                delete_github_chunks(db, user.id, repo_name=removed_repo)
 
-        experience.github_username = body.github_username
-        experience.github_repos = repos
-        if not additions_only:
-            experience.github_repo_details = None
-        profile = experience.extracted_profile or {}
-        experience.extracted_profile = {**profile, "github": {"repos": repos}}
-        if experience.status not in ("ready", "processing"):
-            experience.status = "ready"
+        github_src.config = {"username": body.github_username}
+        if additions_only:
+            github_src.source_data = {**(github_src.source_data or {}), "repos": repos}
+        else:
+            github_src.source_data = {"repos": repos}
+        github_src.connection_status = "connected"
+        github_src.updated_at = now
     else:
-        experience = Experience(
+        github_src = ExperienceSource(
             user_id=user.id,
-            storage_key=None,
-            filename=None,
-            status="ready",
-            github_username=body.github_username,
-            github_repos=repos,
-            extracted_profile={"github": {"repos": repos}},
+            source_type="github",
+            connection_status="connected",
+            sync_status="idle",
+            config={"username": body.github_username},
+            source_data={"repos": repos},
+            created_at=now,
+            updated_at=now,
         )
-        db.add(experience)
+        db.add(github_src)
 
     db.commit()
-    db.refresh(experience)
+    db.refresh(github_src)
 
+    # Mark repos about to be enriched with scanning_started_at
     repo_names_to_enrich = (
         body.enrich_only_repo_names if additions_only else body.selected_repo_names
     )
-    now_iso = datetime.now(timezone.utc).isoformat()
     enrich_set = (
         set(repo_names_to_enrich)
         if repo_names_to_enrich is not None
-        else {r["name"] for r in (experience.github_repos or [])}
+        else {r["name"] for r in repos}
     )
-    experience.github_repos = [
+    now_iso = now.isoformat()
+    existing_repos = (github_src.source_data or {}).get("repos") or []
+    updated_repos = [
         {**r, "scanning_started_at": now_iso} if r["name"] in enrich_set else r
-        for r in (experience.github_repos or [])
+        for r in existing_repos
     ]
+    github_src.source_data = {**(github_src.source_data or {}), "repos": updated_repos}
+    github_src.sync_status = "syncing"
+    github_src.updated_at = datetime.now(timezone.utc)
     db.commit()
-    _ctx = structlog.contextvars.get_contextvars()
+
     background_tasks.add_task(
         enrich_github_repos,
         github_username=body.github_username,
-        experience_id=experience.id,
+        source_id=github_src.id,
         repo_names=repo_names_to_enrich,
         merge_with_existing=additions_only,
         user_id=_ctx.get("user_id"),
@@ -656,9 +801,9 @@ def set_github(
     logger.info("github_enrichment_queued", github_username=body.github_username)
 
     return {
-        "experience_id": str(experience.id),
-        "status": experience.status,
-        "github_username": experience.github_username,
+        "experience_id": str(github_src.id),
+        "status": "ready",
+        "github_username": body.github_username,
     }
 
 
@@ -668,18 +813,19 @@ def remove_github(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience or not experience.github_username:
+    github_src = (
+        db.query(ExperienceSource)
+        .filter(
+            ExperienceSource.user_id == user.id,
+            ExperienceSource.source_type == "github",
+        )
+        .first()
+    )
+    if not github_src:
         raise HTTPException(status_code=404, detail="No GitHub profile connected")
 
-    experience.github_username = None
-    experience.github_repos = None
-    experience.github_repo_details = None
-    if experience.extracted_profile and "github" in experience.extracted_profile:
-        experience.extracted_profile = {
-            k: v for k, v in experience.extracted_profile.items() if k != "github"
-        } or None
-    delete_github_chunks(db, experience.id)
+    delete_github_chunks(db, user.id)
+    db.delete(github_src)
     db.commit()
 
 
@@ -689,17 +835,8 @@ def remove_user_input(
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    """Delete all user_input chunks for the experience."""
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
-        raise HTTPException(status_code=404, detail="No experience found")
-
-    experience.user_input_text = None
-    if experience.extracted_profile and "user_input" in experience.extracted_profile:
-        experience.extracted_profile = {
-            k: v for k, v in experience.extracted_profile.items() if k != "user_input"
-        } or None
-    deleted = delete_user_input_chunks(db, experience.id)
+    """Delete all user_input claims."""
+    deleted = delete_user_input_chunks(db, user.id)
     db.commit()
     logger.info("user_input_removed", chunk_count=deleted)
 
@@ -753,45 +890,27 @@ def parse_user_input(
     return {"chunks": claims}
 
 
-def _ensure_experience(user: User, db: Session) -> Experience:
-    """Return the user's Experience row, creating one if it doesn't exist."""
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
-        experience = Experience(
-            user_id=user.id,
-            storage_key=None,
-            filename=None,
-            status="ready",
-            processed_at=datetime.now(timezone.utc),
-        )
-        db.add(experience)
-        db.flush()
-    return experience
-
-
-@router.post("/experience/user-input/chunks")
-def persist_user_input_chunks(
+@router.post("/experience/user-input/claims")
+def persist_user_input_claims(
     body: UserInputChunksRequest,
     background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    """Persist a list of user_input claim strings as individual ExperienceChunks.
+    """Persist a list of user_input claim strings as individual ExperienceClaims.
 
-    Additive — does not replace existing user_input chunks.
-    Each chunk is embedded in a background task.
+    Additive — does not replace existing user_input claims.
+    Each claim is embedded in a background task.
     """
     chunks_text = [c.strip() for c in body.chunks if c.strip()]
     if not chunks_text:
         raise HTTPException(status_code=422, detail="chunks cannot be empty")
 
-    experience = _ensure_experience(user, db)
-
     # Append after the highest existing position across all source types
     max_pos = (
-        db.query(func.max(ExperienceChunk.position))
-        .filter(ExperienceChunk.experience_id == experience.id)
+        db.query(func.max(ExperienceClaim.position))
+        .filter(ExperienceClaim.user_id == user.id)
         .scalar()
     )
     next_pos = (max_pos if max_pos is not None else -1) + 1
@@ -799,16 +918,16 @@ def persist_user_input_chunks(
     now = datetime.now(timezone.utc)
     created_ids: list[str] = []
     for text in chunks_text:
-        chunk = ExperienceChunk(
-            experience_id=experience.id,
+        chunk = ExperienceClaim(
+            user_id=user.id,
             source_type="user_input",
             source_ref=None,
             claim_type="other",
             content=text,
             group_key=None,
             date_range=None,
-            technologies=None,
-            chunk_metadata=None,
+            keywords=None,
+            provenance_metadata=None,
             position=next_pos,
             created_at=now,
             updated_at=now,
@@ -817,19 +936,20 @@ def persist_user_input_chunks(
         created_ids.append(str(chunk.id))
         next_pos += 1
 
-    if experience.status not in ("ready", "processing"):
-        experience.status = "ready"
-
     db.commit()
     _ctx = structlog.contextvars.get_contextvars()
     background_tasks.add_task(
         embed_experience_chunks_task,
-        experience.id,
-        user_id=_ctx.get("user_id"),
+        user.id,
         correlation_id=_ctx.get("correlation_id"),
     )
-    logger.info("user_input_chunks_persisted", chunk_count=len(chunks_text))
-    return {"experience_id": str(experience.id), "chunk_ids": created_ids}
+    logger.info("user_input_claims_persisted", claim_count=len(chunks_text))
+    # Return any source id as experience_id for backward compat; None if no sources yet
+    any_src = next(iter(user.experience_sources), None)
+    return {
+        "experience_id": str(any_src.id) if any_src else None,
+        "claim_ids": created_ids,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -837,7 +957,7 @@ def persist_user_input_chunks(
 # ---------------------------------------------------------------------------
 
 
-def _serialize_exp_chunk(c: ExperienceChunk) -> dict:
+def _serialize_exp_claim(c: ExperienceClaim) -> dict:
     return {
         "id": str(c.id),
         "source_type": c.source_type,
@@ -846,15 +966,17 @@ def _serialize_exp_chunk(c: ExperienceChunk) -> dict:
         "content": c.content,
         "group_key": c.group_key,
         "date_range": c.date_range,
-        "technologies": c.technologies,
-        "chunk_metadata": c.chunk_metadata,
+        "keywords": c.keywords,
+        "provenance_metadata": c.provenance_metadata,
+        "original_content": c.original_content,
+        "status": c.status,
         "position": c.position,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
     }
 
 
-def _group_experience_chunks(chunks: list) -> dict:
-    """Group ExperienceChunk rows into a render-ready structure.
+def _group_experience_claims(chunks: list) -> dict:
+    """Group ExperienceClaim rows into a render-ready structure.
 
     Maintains insertion order so work-experience roles and projects appear in the
     same sequence they were chunked (i.e. as they appeared in the resume).
@@ -873,7 +995,7 @@ def _group_experience_chunks(chunks: list) -> dict:
     partial_response_chunks: list = []
 
     for c in chunks:
-        s = _serialize_exp_chunk(c)
+        s = _serialize_exp_claim(c)
         if c.source_type == "resume":
             if c.claim_type == "work_experience":
                 key = (c.group_key, c.date_range)
@@ -932,71 +1054,65 @@ def _group_experience_chunks(chunks: list) -> dict:
     }
 
 
-@router.get("/experience/chunks")
-def get_experience_chunks(
+@router.get("/experience/claims")
+def get_experience_claims(
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
-        return {
-            "resume": None,
-            "github": None,
-            "user_input": None,
-            "gap_response": None,
-            "partial_response": None,
-        }
-
     chunks = (
-        db.query(ExperienceChunk)
-        .filter(ExperienceChunk.experience_id == experience.id)
-        .order_by(ExperienceChunk.source_type, ExperienceChunk.position)
+        db.query(ExperienceClaim)
+        .filter(ExperienceClaim.user_id == user.id)
+        .order_by(ExperienceClaim.source_type, ExperienceClaim.position)
         .all()
     )
-    return _group_experience_chunks(chunks)
+    return _group_experience_claims(chunks)
 
 
-class ChunkContentUpdate(BaseModel):
+class ClaimContentUpdate(BaseModel):
     content: str | None = None
     group_key: str | None = None
     date_range: str | None = None
+    status: str | None = None
 
     @model_validator(mode="after")
-    def at_least_one(self) -> "ChunkContentUpdate":
-        if self.content is None and self.group_key is None and self.date_range is None:
-            raise ValueError("at least one of content, group_key, or date_range is required")
+    def at_least_one(self) -> "ClaimContentUpdate":
+        if (
+            self.content is None
+            and self.group_key is None
+            and self.date_range is None
+            and self.status is None
+        ):
+            raise ValueError(
+                "at least one of content, group_key, date_range, or status is required"
+            )
         return self
 
 
-@router.patch("/experience/chunks/{chunk_id}")
-def update_experience_chunk(
-    chunk_id: str,
-    body: ChunkContentUpdate,
+@router.patch("/experience/claims/{claim_id}")
+def update_experience_claim(
+    claim_id: str,
+    body: ClaimContentUpdate,
     background_tasks: BackgroundTasks,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
-        raise HTTPException(status_code=404, detail="No experience found")
-
     try:
-        chunk_uuid = uuid.UUID(chunk_id)
+        claim_uuid = uuid.UUID(claim_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid chunk ID")
+        raise HTTPException(status_code=400, detail="Invalid claim ID")
 
-    chunk = (
-        db.query(ExperienceChunk)
+    claim = (
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.id == chunk_uuid,
-            ExperienceChunk.experience_id == experience.id,
+            ExperienceClaim.id == claim_uuid,
+            ExperienceClaim.user_id == user.id,
         )
         .first()
     )
-    if not chunk:
-        raise HTTPException(status_code=404, detail="Chunk not found")
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
 
     now = datetime.now(timezone.utc)
 
@@ -1004,20 +1120,28 @@ def update_experience_chunk(
         content = body.content.strip()
         if not content:
             raise HTTPException(status_code=422, detail="Content cannot be empty")
-        chunk.content = content
-        chunk.updated_at = now
+        if claim.original_content is None:
+            claim.original_content = claim.content
+        claim.content = content
+        claim.updated_at = now
+
+    if body.status is not None:
+        if body.status not in ("active", "archived"):
+            raise HTTPException(status_code=422, detail="status must be 'active' or 'archived'")
+        claim.status = body.status
+        claim.updated_at = now
 
     if body.group_key is not None or body.date_range is not None:
-        old_group_key = chunk.group_key
+        old_group_key = claim.group_key
         new_group_key = body.group_key if body.group_key is not None else old_group_key
-        new_date_range = body.date_range if body.date_range is not None else chunk.date_range
+        new_date_range = body.date_range if body.date_range is not None else claim.date_range
         siblings = (
-            db.query(ExperienceChunk)
+            db.query(ExperienceClaim)
             .filter(
-                ExperienceChunk.experience_id == experience.id,
-                ExperienceChunk.source_type == chunk.source_type,
-                ExperienceChunk.source_ref == chunk.source_ref,
-                ExperienceChunk.group_key == old_group_key,
+                ExperienceClaim.user_id == user.id,
+                ExperienceClaim.source_type == claim.source_type,
+                ExperienceClaim.source_ref == claim.source_ref,
+                ExperienceClaim.group_key == old_group_key,
             )
             .all()
         )
@@ -1027,44 +1151,40 @@ def update_experience_chunk(
             sibling.updated_at = now
 
     db.commit()
-    db.refresh(chunk)
+    db.refresh(claim)
     if body.content is not None:
-        background_tasks.add_task(re_embed_chunk, chunk.id)
-    logger.info("update_experience_chunk", chunk_id=str(chunk.id))
-    return _serialize_exp_chunk(chunk)
+        background_tasks.add_task(re_embed_chunk, claim.id)
+    logger.info("update_experience_claim", claim_id=str(claim.id))
+    return _serialize_exp_claim(claim)
 
 
-@router.delete("/experience/chunks/{chunk_id}", status_code=204)
-def delete_experience_chunk(
-    chunk_id: str,
+@router.delete("/experience/claims/{claim_id}", status_code=204)
+def delete_experience_claim(
+    claim_id: str,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    """Delete a single ExperienceChunk by ID. Works for any source_type."""
-    experience = db.query(Experience).filter(Experience.user_id == user.id).first()
-    if not experience:
-        raise HTTPException(status_code=404, detail="No experience found")
-
+    """Delete a single ExperienceClaim by ID. Works for any source_type."""
     try:
-        chunk_uuid = uuid.UUID(chunk_id)
+        claim_uuid = uuid.UUID(claim_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid chunk ID")
+        raise HTTPException(status_code=400, detail="Invalid claim ID")
 
-    chunk = (
-        db.query(ExperienceChunk)
+    claim = (
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.id == chunk_uuid,
-            ExperienceChunk.experience_id == experience.id,
+            ExperienceClaim.id == claim_uuid,
+            ExperienceClaim.user_id == user.id,
         )
         .first()
     )
-    if not chunk:
-        raise HTTPException(status_code=404, detail="Chunk not found")
+    if not claim:
+        raise HTTPException(status_code=404, detail="Claim not found")
 
-    db.delete(chunk)
+    db.delete(claim)
     db.commit()
-    logger.info("delete_experience_chunk", chunk_id=str(chunk_uuid))
+    logger.info("delete_experience_claim", claim_id=str(claim_uuid))
 
 
 # ---------------------------------------------------------------------------
@@ -1082,7 +1202,7 @@ def create_gap_response(
     """
     Record a user's answer to a gap question.
 
-    Creates a gap_response ExperienceChunk, embeds it synchronously, then re-scores
+    Creates a gap_response ExperienceClaim, embeds it synchronously, then re-scores
     the specific JobChunk that triggered the gap question. Returns the new score inline
     so the UI can update the requirement badge without a full page reload.
     """
@@ -1122,17 +1242,15 @@ def create_gap_response(
     if not job_chunk:
         raise HTTPException(status_code=404, detail="Job chunk not found")
 
-    experience = _ensure_experience(user, db)
-
     structlog.contextvars.bind_contextvars(tailoring_id=body.tailoring_id)
     _gap_start = _time.perf_counter()
 
     # Upsert: reuse any existing response chunk for this job_chunk_id regardless of source type
     existing_gap_chunks = (
-        db.query(ExperienceChunk)
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.experience_id == experience.id,
-            ExperienceChunk.source_type.in_(
+            ExperienceClaim.user_id == user.id,
+            ExperienceClaim.source_type.in_(
                 ["gap_response", "additional_experience", "partial_response"]
             ),
         )
@@ -1142,7 +1260,8 @@ def create_gap_response(
         (
             c
             for c in existing_gap_chunks
-            if c.chunk_metadata and c.chunk_metadata.get("job_chunk_id") == body.job_chunk_id
+            if c.provenance_metadata
+            and c.provenance_metadata.get("job_chunk_id") == body.job_chunk_id
         ),
         None,
     )
@@ -1160,25 +1279,25 @@ def create_gap_response(
     if gap_chunk is not None:
         gap_chunk.content = answer
         gap_chunk.source_type = source_type
-        gap_chunk.chunk_metadata = metadata
+        gap_chunk.provenance_metadata = metadata
         gap_chunk.updated_at = now
     else:
         max_pos = (
-            db.query(func.max(ExperienceChunk.position))
-            .filter(ExperienceChunk.experience_id == experience.id)
+            db.query(func.max(ExperienceClaim.position))
+            .filter(ExperienceClaim.user_id == user.id)
             .scalar()
         )
         next_pos = (max_pos if max_pos is not None else -1) + 1
-        gap_chunk = ExperienceChunk(
-            experience_id=experience.id,
+        gap_chunk = ExperienceClaim(
+            user_id=user.id,
             source_type=source_type,
             source_ref=None,
             claim_type="other",
             content=answer,
             group_key=None,
             date_range=None,
-            technologies=None,
-            chunk_metadata=metadata,
+            keywords=None,
+            provenance_metadata=metadata,
             position=next_pos,
             created_at=now,
             updated_at=now,
@@ -1194,15 +1313,18 @@ def create_gap_response(
         },
     ):
         # Embed synchronously — must complete before re_enrich so the new vector is retrievable
-        embed_experience_chunks(experience.id, db)
+        embed_experience_chunks(user.id, db)
+
+        # Build profile from all sources (loaded via selectin on user)
+        extracted_profile = sources_to_profile_dict(user.experience_sources)
 
         # Re-score the requirement synchronously — user is waiting for the result
         candidate_name = user.candidate_name
         re_enrich_single_chunk(
             str(job_chunk_uuid),
-            experience.extracted_profile or {},
-            user.pronouns,
-            experience.id,
+            extracted_profile,
+            user.profile.pronouns if user.profile else None,
+            user.id,
             candidate_name,
         )
 
@@ -1217,13 +1339,10 @@ def create_gap_response(
                 job = db.query(Job).filter(Job.id == tailoring.job_id).first()
                 extracted_job = (job.extracted_job or {}) if job else {}
                 job_context = _build_job_context(extracted_job)
-                candidate_name = user.candidate_name
-                from app.services.profile_formatter import format_sourced_profile
-
                 formatted_profile = format_sourced_profile(
-                    experience.extracted_profile or {},
+                    extracted_profile,
                     candidate_name=candidate_name,
-                    pronouns=user.pronouns,
+                    pronouns=user.profile.pronouns if user.profile else None,
                 )
                 pq = _generate_question(
                     "partial",
@@ -1247,11 +1366,11 @@ def create_gap_response(
         partial_question_generated=partial_question is not None,
     )
     return {
-        "chunk_id": str(gap_chunk.id),
+        "claim_id": str(gap_chunk.id),
         "updated_score": updated_chunk.match_score if updated_chunk else None,
         "updated_rationale": updated_chunk.match_rationale if updated_chunk else None,
         "advocacy_blurb": updated_chunk.advocacy_blurb if updated_chunk else None,
-        "experience_source": updated_chunk.experience_source if updated_chunk else None,
+        "experience_sources": updated_chunk.experience_sources if updated_chunk else None,
         "partial_question": partial_question,
         "partial_context": partial_context,
     }

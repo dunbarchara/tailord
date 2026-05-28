@@ -1,13 +1,13 @@
 """
-experience_embedder.py — embed ExperienceChunk and JobChunk rows after write.
+experience_embedder.py — embed ExperienceClaim and JobChunk rows after write.
 
 Public functions
 ----------------
-embed_experience_chunks(experience_id, db)
-    Embed all unembedded / stale ExperienceChunks. Uses provided session.
+embed_experience_chunks(user_id, db)
+    Embed all unembedded / stale ExperienceClaims. Uses provided session.
     Called inline from background tasks (SSE stream, github_enricher).
 
-embed_experience_chunks_task(experience_id)
+embed_experience_chunks_task(user_id)
     Background-task variant: creates its own DB session.
     Used from request handlers (set_user_input) where the request session
     must not be held open across async work.
@@ -17,13 +17,14 @@ embed_job_chunks(job_id, db)
     Called inline from chunk_matcher.enrich_job_chunks.
 
 re_embed_chunk(chunk_id)
-    Re-embed a single ExperienceChunk. Creates its own DB session.
+    Re-embed a single ExperienceClaim. Creates its own DB session.
     Used as a BackgroundTask from PATCH /experience/chunks/{id}.
 
 All functions are non-fatal: per-chunk failures are logged as warnings and
 skipped. The pipeline continues regardless of embedding errors.
 """
 
+import re
 import time as _time
 import uuid
 
@@ -37,23 +38,44 @@ from app.config import settings
 
 logger = structlog.get_logger(__name__)
 
+# Matches display prefixes added to gap/partial response claims, e.g.:
+#   "[Gap answer — CI/CD pipeline experience]: "
+#   "[Gap answer (partial): something]: "
+# Stripping these before embedding ensures cosine distance reflects the
+# actual answer content, not label noise.
+_CLAIM_PREFIX_RE = re.compile(r"^\[[^\]]+\]:\s*")
 
-def embed_experience_chunks(experience_id: uuid.UUID, db: Session) -> None:
+
+def _embedding_text(claim) -> str:
+    """Return the text to embed for a claim.
+
+    For gap_response and partial_response claims the stored content includes a
+    display prefix (e.g. '[Gap answer — ...]: ') that adds noise to the embedding
+    and inflates cosine distance vs. job requirements. Strip it so the embedding
+    represents the raw answer.
     """
-    Embed all ExperienceChunks for the experience that are unembedded or were
+    if claim.source_type in ("gap_response", "partial_response"):
+        stripped = _CLAIM_PREFIX_RE.sub("", claim.content)
+        return stripped if stripped else claim.content
+    return claim.content
+
+
+def embed_experience_chunks(user_id: uuid.UUID, db: Session) -> None:
+    """
+    Embed all ExperienceClaims for the user that are unembedded or were
     embedded with a different model than settings.embedding_model.
 
     Commits after processing. Non-fatal — per-chunk failures are logged and skipped.
     """
-    from app.models.database import ExperienceChunk
+    from app.models.database import ExperienceClaim
 
     chunks = (
-        db.query(ExperienceChunk)
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.experience_id == experience_id,
+            ExperienceClaim.user_id == user_id,
             or_(
-                ExperienceChunk.embedding.is_(None),
-                ExperienceChunk.embedding_model != settings.embedding_model,
+                ExperienceClaim.embedding.is_(None),
+                ExperienceClaim.embedding_model != settings.embedding_model,
             ),
         )
         .all()
@@ -66,7 +88,7 @@ def embed_experience_chunks(experience_id: uuid.UUID, db: Session) -> None:
     embedded = 0
     for chunk in chunks:
         try:
-            chunk.embedding = embed_text(chunk.content)
+            chunk.embedding = embed_text(_embedding_text(chunk))
             chunk.embedding_model = settings.embedding_model
             embedded += 1
         except Exception:
@@ -85,24 +107,21 @@ def embed_experience_chunks(experience_id: uuid.UUID, db: Session) -> None:
 
 
 def embed_experience_chunks_task(
-    experience_id: uuid.UUID,
-    user_id: str | None = None,
+    user_id: uuid.UUID,
     correlation_id: str | None = None,
 ) -> None:
     """Background-task variant of embed_experience_chunks. Creates its own DB session."""
     from app.clients.database import SessionLocal
 
     structlog.contextvars.clear_contextvars()
-    ctx: dict = {}
-    if user_id:
-        ctx["user_id"] = user_id
+    ctx: dict = {"user_id": str(user_id)}
     if correlation_id:
         ctx["correlation_id"] = correlation_id
     structlog.contextvars.bind_contextvars(**ctx)
 
     db = SessionLocal()
     try:
-        embed_experience_chunks(experience_id, db)
+        embed_experience_chunks(user_id, db)
     except Exception:
         logger.exception("embed_experience_chunks_task_failed")
     finally:
@@ -148,20 +167,20 @@ def embed_job_chunks(job_id: uuid.UUID, db: Session) -> None:
 
 def re_embed_chunk(chunk_id: uuid.UUID) -> None:
     """
-    Re-embed a single ExperienceChunk. Creates its own DB session.
+    Re-embed a single ExperienceClaim. Creates its own DB session.
     Called as a BackgroundTask when chunk content is updated via PATCH.
     """
     from app.clients.database import SessionLocal
-    from app.models.database import ExperienceChunk
+    from app.models.database import ExperienceClaim
 
     db = SessionLocal()
     try:
-        chunk = db.get(ExperienceChunk, chunk_id)
+        chunk = db.get(ExperienceClaim, chunk_id)
         if not chunk:
             logger.warning("re_embed_chunk_not_found", chunk_id=str(chunk_id))
             return
 
-        chunk.embedding = embed_text(chunk.content)
+        chunk.embedding = embed_text(_embedding_text(chunk))
         chunk.embedding_model = settings.embedding_model
         db.commit()
         logger.debug("re_embed_chunk_complete", chunk_id=str(chunk_id))

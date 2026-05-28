@@ -30,6 +30,22 @@ Set should_render to true (default) for all legitimate job posting content inclu
 
 When in doubt, default to true. The purpose is to remove obvious web chrome, not to editorialize about content quality.
 
+SEMANTIC_TYPE:
+Classify each chunk as exactly one of:
+- job_requirement   — a skill, qualification, or experience requirement the candidate must demonstrate
+- role_description  — responsibilities, duties, what the person will do day-to-day
+- company_description — information about the company (products, scale, mission, culture, team)
+- compensation      — salary range, equity, bonuses, 401K, benefits, PTO
+- location          — office location, remote/hybrid policy, relocation
+- application_info  — how to apply, EEO statements, deadlines, contact details
+- legal             — legal boilerplate, criminal history disclosures, compliance text
+- other             — anything that doesn't fit the above
+
+For company_description chunks: set include_in_scoring=true only if the chunk describes operational
+scale or technical context a candidate could align experience with (e.g. "We process 10M events/second",
+"Our stack is Go/Kubernetes/Postgres"). Set include_in_scoring=false for identity or history statements
+("Founded in 2006", "We are a mission-driven company").
+
 CRITICAL RULES — read before scoring:
 1. Read EVERY bullet in the candidate's work experience before scoring. Evidence is often in a non-obvious bullet.
 2. The COMPUTED SIGNALS block contains pre-calculated facts (total YOE, role list). Use these as ground truth — do not re-derive from dates.
@@ -96,7 +112,7 @@ Chunks:
 3. [PARAGRAPH] It's our policy to provide equal employment opportunity for all applicants...
 4. [BULLET] Base salary range between $161,500 - $227,000 USD + equity + 401K with company match
 Correct output:
-{"results": [{"score": 2, "rationale": "Bachelor of Science in Computer Science confirmed in education.", "advocacy_blurb": "[FIRST_NAME] holds a Bachelor of Science in Computer Science from State University, directly satisfying this requirement.", "experience_sources": ["resume"]}, {"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_sources": [], "should_render": true}, {"score": -1, "rationale": "EEO statement, not job content.", "experience_sources": [], "should_render": false}, {"score": -1, "rationale": "Compensation information — candidates need this to evaluate the role.", "experience_sources": [], "should_render": true}]}
+{"results": [{"score": 2, "rationale": "Bachelor of Science in Computer Science confirmed in education.", "advocacy_blurb": "[FIRST_NAME] holds a Bachelor of Science in Computer Science from State University, directly satisfying this requirement.", "experience_sources": ["resume"], "should_render": true, "include_in_scoring": true, "semantic_type": "job_requirement"}, {"score": -1, "rationale": "Company perk, not a candidate requirement.", "experience_sources": [], "should_render": true, "include_in_scoring": false, "semantic_type": "compensation"}, {"score": -1, "rationale": "EEO statement, not job content.", "experience_sources": [], "should_render": false, "include_in_scoring": false, "semantic_type": "application_info"}, {"score": -1, "rationale": "Compensation information — candidates need this to evaluate the role.", "experience_sources": [], "should_render": true, "include_in_scoring": false, "semantic_type": "compensation"}]}
 
 EXAMPLE 4 (Job board chrome — should_render false):
 Profile excerpt: [any profile]
@@ -166,7 +182,7 @@ CHUNKS:
 {chunks_block}
 {force_score_note}
 Score each chunk. Return a JSON object with exactly as many results as chunks:
-{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false}}]}}
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false, "include_in_scoring": true|false, "semantic_type": "job_requirement|role_description|company_description|compensation|location|application_info|legal|other"}}]}}
 """
 
 # Used by the vector matching path (MATCHING_MODE=vector).
@@ -182,5 +198,5 @@ RELEVANT EXPERIENCE (top-{k} results by semantic similarity):
 {grouped_context}
 {force_score_note}
 Score this single requirement. Return a JSON object with exactly one result:
-{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false}}]}}
+{{"results": [{{"score": 2|1|0|-1, "rationale": "...", "advocacy_blurb": "1-2 sentence personal advocacy or null", "experience_sources": ["resume"]|["github"]|["resume","github"]|[], "should_render": true|false, "include_in_scoring": true|false, "semantic_type": "job_requirement|role_description|company_description|compensation|location|application_info|legal|other"}}]}}
 """

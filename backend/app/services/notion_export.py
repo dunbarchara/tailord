@@ -101,15 +101,17 @@ def chunks_to_notion_markdown(chunks: list) -> str:
         lines.append(f"<details{color_attr}>")
         lines.append(f"<summary>{content}</summary>")
 
-        if chunk.advocacy_blurb or chunk.experience_source:
+        sources = chunk.experience_sources or []
+        source = sources[0] if sources else None
+        if chunk.advocacy_blurb or source:
             lines.append('\t<callout color="gray_bg">')
             if chunk.advocacy_blurb:
                 advocacy = _escape(_strip_links(chunk.advocacy_blurb.strip()))
                 lines.append(f"\t\t{advocacy}")
-            if chunk.advocacy_blurb and chunk.experience_source:
+            if chunk.advocacy_blurb and source:
                 lines.append("\t\t---")
-            if chunk.experience_source:
-                label = _SOURCE_LABELS.get(chunk.experience_source, chunk.experience_source)
+            if source:
+                label = _SOURCE_LABELS.get(source, source)
                 lines.append(f"\t\t*Source: {label}*")
             lines.append("\t</callout>")
 

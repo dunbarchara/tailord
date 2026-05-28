@@ -282,6 +282,10 @@ resource "azurerm_container_app" "backend_prod" {
         secret_name = "prod-github-app-private-key"
       }
       env {
+        name        = "FIELD_ENCRYPTION_KEY"
+        secret_name = "prod-field-encryption-key"
+      }
+      env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
       }
@@ -326,6 +330,11 @@ resource "azurerm_container_app" "backend_prod" {
   secret {
     name                = "prod-github-app-private-key"
     key_vault_secret_id = data.azurerm_key_vault_secret.prod_github_app_private_key.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "prod-field-encryption-key"
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_field_encryption_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
@@ -446,6 +455,10 @@ resource "azurerm_container_app" "backend_staging" {
         secret_name = "staging-github-app-private-key"
       }
       env {
+        name        = "FIELD_ENCRYPTION_KEY"
+        secret_name = "staging-field-encryption-key"
+      }
+      env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
       }
@@ -490,6 +503,11 @@ resource "azurerm_container_app" "backend_staging" {
   secret {
     name                = "staging-github-app-private-key"
     key_vault_secret_id = data.azurerm_key_vault_secret.staging_github_app_private_key.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "staging-field-encryption-key"
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_field_encryption_key.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {

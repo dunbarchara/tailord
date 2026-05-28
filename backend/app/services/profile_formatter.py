@@ -5,6 +5,10 @@ Moved from tailoring_generator.py. These helpers are used by multiple
 services (chunk_matcher, requirement_matcher, gap_analyzer, tailorings API)
 and were awkwardly private (_format_sourced_profile) despite being shared.
 Public names are used throughout.
+
+sources_to_profile_dict() assembles the legacy {resume, github, corrections}
+dict shape from a list of ExperienceSource rows, keeping all downstream
+formatting and LLM code unchanged.
 """
 
 import json
@@ -298,6 +302,38 @@ def format_sourced_profile(
             sections.append(f"[Source: {key}]\n{json.dumps(data)}")
 
     return "\n\n".join(sections) if sections else json.dumps(sourced_profile)
+
+
+def sources_to_profile_dict(sources: list) -> dict:
+    """Assemble a legacy {resume, github, corrections} profile dict from ExperienceSource rows.
+
+    Maintains the same dict shape that format_sourced_profile() and all downstream
+    LLM code expects, so no changes are needed to the formatting or scoring pipeline.
+
+    For github, enriched repo_details are merged into the repos list so
+    fmt_github_prose() sees detected_stack, readme_summary, experience_claims, etc.
+    """
+    profile: dict = {}
+    for src in sources:
+        if src.source_type == "resume" and src.source_data:
+            if src.source_data.get("extracted"):
+                profile["resume"] = src.source_data["extracted"]
+            if src.source_data.get("corrections"):
+                profile["corrections"] = src.source_data["corrections"]
+        elif src.source_type == "github" and src.source_data:
+            repos = src.source_data.get("repos") or []
+            repo_details = src.source_data.get("repo_details") or {}
+            # Merge enriched details into repo objects for the LLM and chunker
+            merged_repos = []
+            for r in repos:
+                name = r.get("name")
+                detail = repo_details.get(name) if name else None
+                merged_repos.append({**r, **(detail or {})})
+            profile["github"] = {
+                **(src.source_data.get("extracted") or {}),
+                "repos": merged_repos,
+            }
+    return profile
 
 
 def build_ranked_matches_from_chunks(job_id, db) -> list[dict]:

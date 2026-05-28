@@ -21,8 +21,31 @@ from app.services.experience_chunker import (
 # ---------------------------------------------------------------------------
 
 
-def _make_experience(extracted_profile: dict | None = None) -> SimpleNamespace:
-    return SimpleNamespace(id=uuid.uuid4(), extracted_profile=extracted_profile)
+def _make_resume_source(extracted: dict | None = None) -> SimpleNamespace:
+    """Minimal ExperienceSource(resume) stub for chunker tests."""
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        source_type="resume",
+        source_data={"extracted": extracted} if extracted is not None else None,
+    )
+
+
+def _make_github_source(
+    repos: list | None = None, repo_details: dict | None = None
+) -> SimpleNamespace:
+    """Minimal ExperienceSource(github) stub for chunker tests."""
+    source_data: dict = {}
+    if repos is not None:
+        source_data["repos"] = repos
+    if repo_details is not None:
+        source_data["repo_details"] = repo_details
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        source_type="github",
+        source_data=source_data if source_data else None,
+    )
 
 
 def _make_db() -> MagicMock:
@@ -83,7 +106,7 @@ def test_resume_chunks_projects_with_technologies():
     proj = [c for c in chunks if c["claim_type"] == "project"]
     assert len(proj) == 1
     assert proj[0]["content"] == "A web app"
-    assert proj[0]["technologies"] == ["React", "FastAPI"]
+    assert proj[0]["keywords"] == ["React", "FastAPI"]
     assert proj[0]["group_key"] == "MyApp"
 
 
@@ -164,7 +187,7 @@ def test_chunk_resume_inserts_chunks():
         "work_experience": [{"bullets": ["Did stuff"], "duration": "2021-2022"}],
         "skills": {"technical": ["Python"], "soft": []},
     }
-    exp = _make_experience(extracted_profile={"resume": profile})
+    exp = _make_resume_source(extracted=profile)
     db = _make_db()
 
     count = chunk_resume(db, exp)
@@ -178,7 +201,7 @@ def test_chunk_resume_inserts_chunks():
 
 def test_chunk_resume_sets_correct_source_fields():
     profile = {"skills": {"technical": ["Python"]}}  # summary alone produces no chunks
-    exp = _make_experience(extracted_profile={"resume": profile})
+    exp = _make_resume_source(extracted=profile)
     db = _make_db()
 
     chunk_resume(db, exp)
@@ -186,7 +209,7 @@ def test_chunk_resume_sets_correct_source_fields():
     chunk = db._added[0]
     assert chunk.source_type == "resume"
     assert chunk.source_ref is None
-    assert chunk.experience_id == exp.id
+    assert chunk.user_id == exp.user_id
 
 
 def test_chunk_resume_positions_are_sequential():
@@ -194,7 +217,7 @@ def test_chunk_resume_positions_are_sequential():
         "summary": "s",
         "work_experience": [{"bullets": ["b1", "b2"], "duration": ""}],
     }
-    exp = _make_experience(extracted_profile={"resume": profile})
+    exp = _make_resume_source(extracted=profile)
     db = _make_db()
 
     chunk_resume(db, exp)
@@ -204,7 +227,7 @@ def test_chunk_resume_positions_are_sequential():
 
 
 def test_chunk_resume_noop_when_no_resume_profile():
-    exp = _make_experience(extracted_profile={"github": {}})
+    exp = _make_resume_source(extracted=None)
     db = _make_db()
 
     count = chunk_resume(db, exp)
@@ -214,7 +237,7 @@ def test_chunk_resume_noop_when_no_resume_profile():
 
 
 def test_chunk_resume_noop_when_extracted_profile_none():
-    exp = _make_experience(extracted_profile=None)
+    exp = _make_resume_source(extracted=None)
     db = _make_db()
 
     count = chunk_resume(db, exp)
@@ -229,18 +252,14 @@ def test_chunk_resume_noop_when_extracted_profile_none():
 
 
 def test_chunk_github_repo_inserts_chunks():
-    profile = {
-        "github": {
-            "repos": [
-                {
-                    "name": "tailord",
-                    "readme_summary": "AI tailoring tool.",  # skipped — not embedded
-                    "detected_stack": ["Python", "FastAPI"],
-                }
-            ]
+    repos = [
+        {
+            "name": "tailord",
+            "readme_summary": "AI tailoring tool.",  # skipped — not embedded
+            "detected_stack": ["Python", "FastAPI"],
         }
-    }
-    exp = _make_experience(extracted_profile=profile)
+    ]
+    exp = _make_github_source(repos=repos)
     db = _make_db()
 
     count = chunk_github_repo(db, exp, "tailord")
@@ -249,12 +268,11 @@ def test_chunk_github_repo_inserts_chunks():
     for chunk in db._added:
         assert chunk.source_type == "github"
         assert chunk.source_ref == "tailord"
-        assert chunk.experience_id == exp.id
+        assert chunk.user_id == exp.user_id
 
 
 def test_chunk_github_repo_noop_when_repo_not_found():
-    profile = {"github": {"repos": [{"name": "other-repo"}]}}
-    exp = _make_experience(extracted_profile=profile)
+    exp = _make_github_source(repos=[{"name": "other-repo"}])
     db = _make_db()
 
     count = chunk_github_repo(db, exp, "nonexistent")
@@ -264,18 +282,14 @@ def test_chunk_github_repo_noop_when_repo_not_found():
 
 
 def test_chunk_github_repo_positions_are_sequential():
-    profile = {
-        "github": {
-            "repos": [
-                {
-                    "name": "repo",
-                    "readme_summary": "Summary.",
-                    "detected_stack": ["Go", "Docker"],
-                }
-            ]
+    repos = [
+        {
+            "name": "repo",
+            "readme_summary": "Summary.",
+            "detected_stack": ["Go", "Docker"],
         }
-    }
-    exp = _make_experience(extracted_profile=profile)
+    ]
+    exp = _make_github_source(repos=repos)
     db = _make_db()
 
     chunk_github_repo(db, exp, "repo")

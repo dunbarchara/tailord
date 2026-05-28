@@ -88,6 +88,11 @@ data "azurerm_key_vault_secret" "prod_github_app_private_key" {
   key_vault_id = azurerm_key_vault.tailord.id
 }
 
+data "azurerm_key_vault_secret" "prod_field_encryption_key" {
+  name         = "prod-field-encryption-key"
+  key_vault_id = azurerm_key_vault.tailord.id
+}
+
 # -----------------------------
 # STAGING SECRETS (data sources)
 # Fully isolated from prod: separate database user, separate storage account,
@@ -130,5 +135,10 @@ data "azurerm_key_vault_secret" "staging_notion_client_secret" {
 
 data "azurerm_key_vault_secret" "staging_github_app_private_key" {
   name         = "staging-github-app-private-key"
+  key_vault_id = azurerm_key_vault.tailord.id
+}
+
+data "azurerm_key_vault_secret" "staging_field_encryption_key" {
+  name         = "staging-field-encryption-key"
   key_vault_id = azurerm_key_vault.tailord.id
 }

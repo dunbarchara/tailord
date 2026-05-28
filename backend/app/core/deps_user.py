@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps_database import get_db
-from app.models.database import User
+from app.models.database import AuthIdentity, User, UserProfile
 
 logger = structlog.get_logger(__name__)
 
@@ -25,7 +25,7 @@ def _generate_username_slug(name: str | None, db: Session) -> str:
     base = _slugify(name or "") or "user"
     slug = base
     counter = 2
-    while db.query(User).filter(User.username_slug == slug).first():
+    while db.query(UserProfile).filter(UserProfile.username_slug == slug).first():
         slug = f"{base}-{counter}"
         counter += 1
     return slug
@@ -40,44 +40,85 @@ def get_current_user(
 ) -> User:
     """
     Reads X-User-Id (google_sub) from request headers and upserts the User record.
+    Looks up the user via auth_identities (provider="google", subject=x_user_id).
     Also accepts optional X-User-Email, X-User-Name, X-User-Image for profile enrichment.
     Trusted because all routes already require X-API-Key.
     """
-    user = db.query(User).filter(User.google_sub == x_user_id).first()
-    if user:
+    identity = (
+        db.query(AuthIdentity)
+        .filter(AuthIdentity.provider == "google", AuthIdentity.subject == x_user_id)
+        .first()
+    )
+
+    if identity:
+        user = identity.user
         if x_user_email:
             user.email = x_user_email
         if x_user_name:
             user.name = x_user_name
-        if x_user_image:
-            user.avatar_url = x_user_image
-        if not user.username_slug:
+        if x_user_image and user.profile:
+            user.profile.avatar_url = x_user_image
+        if user.profile and not user.profile.username_slug:
             display_name = (
-                " ".join(filter(None, [user.preferred_first_name, user.preferred_last_name]))
+                " ".join(
+                    filter(
+                        None, [user.profile.preferred_first_name, user.profile.preferred_last_name]
+                    )
+                )
                 or user.name
             )
-            user.username_slug = _generate_username_slug(display_name, db)
+            user.profile.username_slug = _generate_username_slug(display_name, db)
         db.commit()
         db.refresh(user)
     else:
         logger.info("user_created", email=x_user_email)
         user = User(
-            google_sub=x_user_id,
             email=x_user_email or x_user_id,
             name=x_user_name,
-            avatar_url=x_user_image,
         )
         db.add(user)
         try:
-            db.flush()  # get id before generating slug
+            db.flush()  # get id before creating dependents
         except IntegrityError:
-            # Another concurrent request inserted the same google_sub — re-query and continue.
+            # Concurrent request created the same user — re-query via identity.
             db.rollback()
-            user = db.query(User).filter(User.google_sub == x_user_id).first()
-            structlog.contextvars.bind_contextvars(user_id=str(user.id))
-            return user
-        display_name = x_user_name
-        user.username_slug = _generate_username_slug(display_name, db)
+            identity = (
+                db.query(AuthIdentity)
+                .filter(AuthIdentity.provider == "google", AuthIdentity.subject == x_user_id)
+                .first()
+            )
+            if identity:
+                structlog.contextvars.bind_contextvars(user_id=str(identity.user_id))
+                return identity.user
+            raise
+
+        profile = UserProfile(user_id=user.id, avatar_url=x_user_image)
+        db.add(profile)
+
+        identity = AuthIdentity(
+            user_id=user.id,
+            provider="google",
+            subject=x_user_id,
+            email=x_user_email or None,
+        )
+        db.add(identity)
+
+        try:
+            db.flush()
+        except IntegrityError:
+            # Race: another request created the same identity simultaneously.
+            db.rollback()
+            identity = (
+                db.query(AuthIdentity)
+                .filter(AuthIdentity.provider == "google", AuthIdentity.subject == x_user_id)
+                .first()
+            )
+            if identity:
+                structlog.contextvars.bind_contextvars(user_id=str(identity.user_id))
+                return identity.user
+            raise
+
+        profile.username_slug = _generate_username_slug(x_user_name, db)
         db.commit()
         db.refresh(user)
 

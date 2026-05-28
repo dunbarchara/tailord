@@ -51,28 +51,43 @@ API_HEADERS = {"X-API-Key": "test-key"}  # for public endpoints (no user require
 
 
 def make_user(db, google_sub=TEST_GOOGLE_SUB, status="approved", username_slug=None, **kwargs):
-    from app.models.database import User
+    from app.models.database import AuthIdentity, User, UserProfile
 
     user = User(
-        google_sub=google_sub,
         email=f"{google_sub}@example.com",
-        username_slug=username_slug or google_sub[:20],
         status=status,
         **kwargs,
     )
     db.add(user)
+    db.flush()  # get id before creating dependents
+
+    profile = UserProfile(
+        user_id=user.id,
+        username_slug=username_slug or google_sub[:20],
+    )
+    db.add(profile)
+
+    identity = AuthIdentity(
+        user_id=user.id,
+        provider="google",
+        subject=google_sub,
+        email=f"{google_sub}@example.com",
+    )
+    db.add(identity)
+
     db.commit()
     db.refresh(user)
     return user
 
 
-def make_job(db, user, extracted_job=None, job_url=None):
+def make_job(db, user, extracted_job=None, job_url=None, source_type="url"):
     from app.models.database import Job
 
     job = Job(
         user_id=user.id,
         job_url=job_url or "https://example.com/job",
         extracted_job=extracted_job or {"title": "Engineer", "company": "Acme"},
+        source_type=source_type,
     )
     db.add(job)
     db.commit()
@@ -113,28 +128,43 @@ def make_chunk(db, job, position=0, **kwargs):
     return chunk
 
 
-def make_experience(db, user, **kwargs):
-    from app.models.database import Experience
+def make_experience_source(db, user, source_type="resume", **kwargs):
+    from datetime import datetime, timezone
 
-    defaults = {
-        "status": "ready",
-        "extracted_profile": {"resume": {"work_experience": [{"title": "Engineer"}]}},
+    from app.models.database import ExperienceSource
+
+    now = datetime.now(timezone.utc)
+    defaults: dict = {
+        "connection_status": "connected",
+        "sync_status": "idle",
+        "created_at": now,
+        "updated_at": now,
     }
+    if source_type == "resume" and "source_data" not in kwargs:
+        defaults["source_data"] = {"extracted": {"work_experience": [{"title": "Engineer"}]}}
     defaults.update(kwargs)
-    experience = Experience(user_id=user.id, **defaults)
-    db.add(experience)
+    src = ExperienceSource(user_id=user.id, source_type=source_type, **defaults)
+    db.add(src)
     db.commit()
-    db.refresh(experience)
-    return experience
+    db.refresh(src)
+    return src
 
 
-def make_llm_trigger_log(db, user, n=1, event_type="tailoring_create"):
-    from app.models.database import LlmTriggerLog
+# Backward-compat alias used by existing tests
+def make_experience(db, user, **kwargs):
+    return make_experience_source(db, user, source_type="resume", **kwargs)
+
+
+def make_llm_usage_log(db, user, n=1, event_type="tailoring_create"):
+    from app.models.database import LlmUsageLog
 
     logs = []
     for _ in range(n):
-        log = LlmTriggerLog(user_id=user.id, event_type=event_type)
+        log = LlmUsageLog(user_id=user.id, event_type=event_type)
         db.add(log)
         logs.append(log)
     db.commit()
     return logs
+
+
+make_llm_trigger_log = make_llm_usage_log  # backward compat alias

@@ -41,7 +41,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT id, generation_status, generation_stage, generation_duration_ms, model, created_at, generated_at FROM tailorings WHERE id = '$tailoring_id'::uuid",
+          "rawSql": "SELECT id, generation_status, generation_stage, generation_telemetry->>'duration_ms' AS generation_duration_ms, models->>'letter' AS model, created_at, generated_at FROM tailorings WHERE id = '$tailoring_id'::uuid",
           "format": "table"
         }
       ],

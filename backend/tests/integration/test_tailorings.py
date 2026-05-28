@@ -156,7 +156,7 @@ def test_get_public_tailoring_not_shared_returns_404(client, approved_user, db):
     make_tailoring(db, approved_user, job, public_slug="some-slug")
     # Not shared (letter_public and posting_public default to False)
     response = client.get(
-        f"/tailorings/public/{approved_user.username_slug}/some-slug", headers=API_HEADERS
+        f"/tailorings/public/{approved_user.profile.username_slug}/some-slug", headers=API_HEADERS
     )
     assert response.status_code == 404
 
@@ -169,7 +169,7 @@ def test_get_public_tailoring_after_share(client, approved_user, db):
     )
     slug = share_resp.json()["public_slug"]
     response = client.get(
-        f"/tailorings/public/{approved_user.username_slug}/{slug}", headers=API_HEADERS
+        f"/tailorings/public/{approved_user.profile.username_slug}/{slug}", headers=API_HEADERS
     )
     assert response.status_code == 200
     data = response.json()
@@ -432,7 +432,7 @@ def test_get_public_tailoring_posting_includes_chunks(client, approved_user, db)
     )
     slug = share_resp.json()["public_slug"]
     response = client.get(
-        f"/tailorings/public/{approved_user.username_slug}/{slug}", headers=API_HEADERS
+        f"/tailorings/public/{approved_user.profile.username_slug}/{slug}", headers=API_HEADERS
     )
     assert response.status_code == 200
     data = response.json()

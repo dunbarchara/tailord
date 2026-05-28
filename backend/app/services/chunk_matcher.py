@@ -12,10 +12,56 @@ from app.config import settings
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
+from app.services.chunk_display import is_display_ready
 from app.services.chunk_extractor import extract_chunks
 from app.services.profile_formatter import format_sourced_profile
 
 logger = structlog.get_logger(__name__)
+
+# (include_in_scoring, should_render) — None means "use LLM-returned value"
+SEMANTIC_TYPE_RULES: dict[str, tuple[bool | None, bool | None]] = {
+    "job_requirement": (True, True),
+    "role_description": (True, True),
+    "company_description": (None, False),  # LLM decides include_in_scoring; render always False
+    "compensation": (False, False),
+    "location": (False, False),
+    "application_info": (False, False),
+    "legal": (False, False),
+    "other": (None, None),  # LLM decides both
+}
+
+
+def resolve_chunk_flags(result: ChunkMatchResult) -> ChunkMatchResult:
+    """Apply SEMANTIC_TYPE_RULES to override include_in_scoring and should_render."""
+    include_override, render_override = SEMANTIC_TYPE_RULES.get(
+        result.semantic_type, SEMANTIC_TYPE_RULES["other"]
+    )
+    return ChunkMatchResult(
+        score=result.score,
+        rationale=result.rationale,
+        advocacy_blurb=result.advocacy_blurb,
+        experience_sources=result.experience_sources,
+        should_render=render_override if render_override is not None else result.should_render,
+        include_in_scoring=include_override
+        if include_override is not None
+        else result.include_in_scoring,
+        semantic_type=result.semantic_type,
+    )
+
+
+def _derive_evaluation_status(match: ChunkMatchResult, chunk_type: str) -> str | None:
+    if chunk_type == "header":
+        return "skipped"
+    if not match.include_in_scoring:
+        return "skipped"
+    if match.score in (0, 1, 2):
+        return "scored"
+    if match.score == -1 and "error" in (match.rationale or "").lower():
+        return "error"
+    if match.score == -1:
+        return "skipped"
+    return None
+
 
 BATCH_SIZE = (
     3  # Smaller batches reduce output token count — advocacy_blurb roughly doubles output length
@@ -77,25 +123,26 @@ def _build_candidate_header(candidate_name: str | None, pronouns: str | None) ->
 
 def _retrieve_top_k_experience_chunks(
     job_chunk_embedding: list[float],
-    experience_id: uuid.UUID,
+    user_id: uuid.UUID,
     db,
     k: int,
 ) -> list:
     """
-    Return the top-K ExperienceChunk rows most similar to job_chunk_embedding,
+    Return the top-K ExperienceClaim rows most similar to job_chunk_embedding,
     ordered by cosine similarity (closest first).
 
-    Scoped to the given experience_id. Skips chunks with null embeddings.
+    Scoped to the given user_id. Skips chunks with null embeddings.
     """
-    from app.models.database import ExperienceChunk
+    from app.models.database import ExperienceClaim
 
     return (
-        db.query(ExperienceChunk)
+        db.query(ExperienceClaim)
         .filter(
-            ExperienceChunk.experience_id == experience_id,
-            ExperienceChunk.embedding.isnot(None),
+            ExperienceClaim.user_id == user_id,
+            ExperienceClaim.embedding.isnot(None),
+            ExperienceClaim.status == "active",
         )
-        .order_by(ExperienceChunk.embedding.cosine_distance(job_chunk_embedding))
+        .order_by(ExperienceClaim.embedding.cosine_distance(job_chunk_embedding))
         .limit(k)
         .all()
     )
@@ -103,7 +150,7 @@ def _retrieve_top_k_experience_chunks(
 
 def _build_grouped_context(chunks: list) -> str:
     """
-    Format a list of ExperienceChunk rows into a grouped, human-readable context block.
+    Format a list of ExperienceClaim rows into a grouped, human-readable context block.
 
     Groups chunks by (group_key, date_range, source_type) so the LLM sees them as
     coherent work-experience entries / projects / GitHub repos, not isolated facts.
@@ -123,7 +170,7 @@ def _build_grouped_context(chunks: list) -> str:
 
     for (group_key, date_range, source_type), group_chunks in groups.items():
         if source_type == "github":
-            techs = group_chunks[0].technologies or []
+            techs = group_chunks[0].keywords or []
             tech_str = f"  ({', '.join(techs)})" if techs else ""
             header = f"GitHub: {group_key}{tech_str}"
         else:
@@ -153,20 +200,60 @@ def _build_grouped_context(chunks: list) -> str:
     return "\n".join(lines).strip()
 
 
+def _append_pinned_claims(
+    top_k: list,
+    job_chunk_id: str,
+    user_id: uuid.UUID,
+    db,
+) -> list:
+    """Append active claims explicitly linked to job_chunk_id via provenance_metadata
+    if they weren't already selected by cosine retrieval.
+
+    Gap/partial response claims are written specifically to answer a requirement —
+    they must always appear in that requirement's scoring context regardless of
+    whether they win a natural cosine slot.
+    """
+    from app.models.database import ExperienceClaim
+
+    pinned = (
+        db.query(ExperienceClaim)
+        .filter(
+            ExperienceClaim.user_id == user_id,
+            ExperienceClaim.status == "active",
+            ExperienceClaim.provenance_metadata["job_chunk_id"].astext == job_chunk_id,
+        )
+        .all()
+    )
+    if not pinned:
+        return top_k
+    existing_ids = {c.id for c in top_k}
+    result = list(top_k)
+    for claim in pinned:
+        if claim.id not in existing_ids:
+            result.append(claim)
+            logger.debug(
+                "pinned_claim_appended",
+                claim_id=str(claim.id),
+                job_chunk_id=job_chunk_id,
+            )
+    return result
+
+
 def _score_chunk_vector(
     chunk_content: str,
     chunk_type: str,
     chunk_section: str | None,
-    experience_id: uuid.UUID,
+    user_id: uuid.UUID,
     candidate_header: str,
     k: int,
     force_score: bool = False,
     prompt_name: str | None = None,
+    pinned_job_chunk_id: str | None = None,
 ) -> tuple[ChunkMatchResult, list[float]]:
     """
     Score a single job chunk using vector pre-selection.
 
-    Embeds chunk_content, retrieves the top-K most similar ExperienceChunks,
+    Embeds chunk_content, retrieves the top-K most similar ExperienceClaims,
     builds a grouped context block, then calls the LLM for a single score + blurb.
 
     Creates its own DB session — safe to call from threads.
@@ -181,7 +268,9 @@ def _score_chunk_vector(
 
     db = SessionLocal()
     try:
-        top_k_chunks = _retrieve_top_k_experience_chunks(job_chunk_embedding, experience_id, db, k)
+        top_k_chunks = _retrieve_top_k_experience_chunks(job_chunk_embedding, user_id, db, k)
+        if pinned_job_chunk_id:
+            top_k_chunks = _append_pinned_claims(top_k_chunks, pinned_job_chunk_id, user_id, db)
     finally:
         db.close()
 
@@ -228,6 +317,8 @@ def _score_chunk_vector(
         advocacy_blurb=raw.advocacy_blurb,
         experience_sources=raw.experience_sources,
         should_render=raw.should_render,
+        include_in_scoring=raw.include_in_scoring,
+        semantic_type=raw.semantic_type,
     )
     return annotated, job_chunk_embedding
 
@@ -242,22 +333,22 @@ def enrich_job_chunks(
     job_markdown: str,
     extracted_profile: dict,
     pronouns: str | None = None,
-    experience_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
 ) -> None:
     """
     Background task: extract chunks from job markdown, match against candidate profile,
-    and persist JobChunk rows to DB. Sets enrichment_status on related tailorings.
+    and persist JobChunk rows to DB.
 
     Dispatches based on settings.matching_mode:
       - "vector": cosine pre-selection → focused grouped context → one LLM call per chunk.
-                  Requires experience_id; falls back to llm mode if missing.
+                  Requires user_id; falls back to llm mode if missing.
       - "llm":    full formatted profile → batched LLM calls (default).
 
     Creates its own DB session — do not pass a session across thread boundaries.
     """
     from app.clients.database import SessionLocal
-    from app.models.database import JobChunk, Tailoring
+    from app.models.database import JobChunk
 
     logger.info("enrich_job_chunks_start", job_id=str(job_id), mode=settings.matching_mode)
 
@@ -280,15 +371,14 @@ def enrich_job_chunks(
         )
         if not chunks:
             logger.info("enrich_no_chunks", job_id=str(job_id))
-            _set_enrichment_status(db, Tailoring, job_id, "complete")
             db.commit()
             return
 
         # Determine effective mode
-        use_vector = settings.matching_mode == "vector" and experience_id is not None
-        if settings.matching_mode == "vector" and experience_id is None:
+        use_vector = settings.matching_mode == "vector" and user_id is not None
+        if settings.matching_mode == "vector" and user_id is None:
             logger.warning(
-                "enrich_job_chunks: MATCHING_MODE=vector but experience_id not provided"
+                "enrich_job_chunks: MATCHING_MODE=vector but user_id not provided"
                 " — falling back to llm mode for job_id=%s",
                 job_id,
             )
@@ -298,10 +388,29 @@ def enrich_job_chunks(
         batch_count = 0
         error_count = 0
 
+        # Pre-classify chunks that won't appear in the Posting view (sectionless metadata,
+        # noise links). is_display_ready() is the single source of truth — if the frontend
+        # won't render it, there is nothing to score against the candidate.
+        _pre_classified: set[int] = set()
+        for chunk in chunks:
+            if chunk.chunk_type == "header":
+                continue
+            if not is_display_ready(chunk):
+                result_map[chunk.position] = ChunkMatchResult(
+                    score=-1,
+                    rationale="Pre-section metadata — not a scorable requirement.",
+                    semantic_type="other",
+                    include_in_scoring=False,
+                    should_render=False,
+                )
+                _pre_classified.add(chunk.position)
+
         if use_vector:
             candidate_header = _build_candidate_header(candidate_name, pronouns)
             k = settings.vector_top_k
-            scoreable = [c for c in chunks if c.chunk_type != "header"]
+            scoreable = [
+                c for c in chunks if c.chunk_type != "header" and c.position not in _pre_classified
+            ]
             batch_count += len(scoreable)
 
             _log_ctx = structlog.contextvars.get_contextvars()
@@ -313,7 +422,7 @@ def enrich_job_chunks(
                     chunk.content,
                     chunk.chunk_type,
                     chunk.section,
-                    experience_id,
+                    user_id,
                     candidate_header,
                     k,
                     prompt_name=prompt.PROMPT_NAME_VECTOR_BATCH,
@@ -362,7 +471,7 @@ def enrich_job_chunks(
 
             section_map: OrderedDict[str, list] = OrderedDict()
             for chunk in chunks:
-                if chunk.chunk_type == "header":
+                if chunk.chunk_type == "header" or chunk.position in _pre_classified:
                     continue
                 key = chunk.section or "General"
                 section_map.setdefault(key, []).append(chunk)
@@ -482,6 +591,7 @@ def enrich_job_chunks(
         # embed_job_chunks at the end skips chunks already embedded.
         now = datetime.now(timezone.utc)
         for chunk, match in all_results:
+            match = resolve_chunk_flags(match)
             embedding = embedding_map.get(chunk.position) if use_vector else None
             job_chunk = JobChunk(
                 job_id=job_id,
@@ -494,6 +604,9 @@ def enrich_job_chunks(
                 advocacy_blurb=match.advocacy_blurb,
                 experience_sources=match.experience_sources or [],
                 should_render=match.should_render,
+                include_in_scoring=match.include_in_scoring,
+                semantic_type=match.semantic_type,
+                evaluation_status=_derive_evaluation_status(match, chunk.chunk_type),
                 enriched_at=now,
                 scored_content=chunk.content,
                 embedding=embedding,
@@ -501,12 +614,19 @@ def enrich_job_chunks(
             )
             db.add(job_chunk)
 
-        db.query(Tailoring).filter(Tailoring.job_id == job_id).update(
-            {
-                "enrichment_status": "complete",
-                "chunk_batch_count": batch_count,
-                "chunk_error_count": error_count,
-            }
+        # Merge batch telemetry into generation_telemetry JSONB (duration_ms / matching_mode
+        # are written by _finalize_tailoring; we only add batch_count and batch_errors here).
+        db.execute(
+            text(
+                """
+                UPDATE tailorings
+                SET generation_telemetry =
+                    COALESCE(generation_telemetry, '{}'::jsonb)
+                    || jsonb_build_object('batch_count', :batch_count, 'batch_errors', :error_count)
+                WHERE job_id = :job_id
+                """
+            ),
+            {"batch_count": batch_count, "error_count": error_count, "job_id": str(job_id)},
         )
         db.commit()
 
@@ -533,12 +653,8 @@ def enrich_job_chunks(
         logger.exception("enrich_job_chunks_failed", job_id=str(job_id))
         try:
             db.rollback()  # required: session is in aborted-txn state after QueryCanceled
-            from app.models.database import Tailoring as _Tailoring
-
-            _set_enrichment_status(db, _Tailoring, job_id, "error")
-            db.commit()
         except Exception:
-            logger.exception("enrich_job_chunks_status_update_failed", job_id=str(job_id))
+            logger.exception("enrich_job_chunks_rollback_failed", job_id=str(job_id))
         raise
     finally:
         db.close()
@@ -549,7 +665,7 @@ def re_enrich_single_chunk(
     chunk_id: str,
     extracted_profile: dict,
     pronouns: str | None = None,
-    experience_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
     force_score: bool = False,
 ) -> None:
@@ -572,7 +688,7 @@ def re_enrich_single_chunk(
             logger.warning("re_enrich_single_chunk_not_found", chunk_id=chunk_id)
             return
 
-        use_vector = settings.matching_mode == "vector" and experience_id is not None
+        use_vector = settings.matching_mode == "vector" and user_id is not None
 
         if use_vector:
             candidate_header = _build_candidate_header(candidate_name, pronouns)
@@ -581,11 +697,12 @@ def re_enrich_single_chunk(
                 chunk.content,
                 chunk.chunk_type,
                 chunk.section,
-                experience_id,
+                user_id,
                 candidate_header,
                 k,
                 force_score=force_score,
                 prompt_name=prompt.PROMPT_NAME_VECTOR_SINGLE,
+                pinned_job_chunk_id=chunk_id,
             )
             # Opportunistically update the chunk's embedding if it was missing
             if chunk.embedding is None and new_embedding is not None:
@@ -632,6 +749,7 @@ def re_enrich_single_chunk(
         chunk.advocacy_blurb = match.advocacy_blurb
         chunk.experience_sources = match.experience_sources or []
         chunk.should_render = match.should_render
+        chunk.evaluation_status = "scored" if match.score in (0, 1, 2) else "error"
         chunk.enriched_at = now
         chunk.scored_content = chunk.content
         db.commit()
@@ -654,19 +772,19 @@ def refresh_job_chunks(
     tailoring_id: str,
     extracted_profile: dict,
     pronouns: str | None = None,
-    experience_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
 ) -> None:
     """
     Re-score existing JobChunk rows in-place without deleting them.
 
-    Only chunks where is_requirement=True are re-scored; is_requirement=False chunks
+    Only chunks where include_in_scoring=True are re-scored; include_in_scoring=False chunks
     are left untouched. Sets enrichment_status on the specific tailoring.
 
     Creates its own DB session — do not pass a session across thread boundaries.
     """
     from app.clients.database import SessionLocal
-    from app.models.database import JobChunk, Tailoring
+    from app.models.database import JobChunk
 
     logger.info(
         "refresh_job_chunks_start",
@@ -680,17 +798,14 @@ def refresh_job_chunks(
         chunks = (
             db.query(JobChunk).filter(JobChunk.job_id == job_id).order_by(JobChunk.position).all()
         )
-        scoreable = [c for c in chunks if c.is_requirement and c.chunk_type != "header"]
+        scoreable = [c for c in chunks if c.include_in_scoring and c.chunk_type != "header"]
 
         if not scoreable:
             logger.info("refresh_job_chunks_no_scoreable", job_id=str(job_id))
-            db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
-                {"enrichment_status": "complete"}
-            )
             db.commit()
             return
 
-        use_vector = settings.matching_mode == "vector" and experience_id is not None
+        use_vector = settings.matching_mode == "vector" and user_id is not None
 
         result_map: dict[str, ChunkMatchResult] = {}
         error_count = 0
@@ -708,7 +823,7 @@ def refresh_job_chunks(
                     chunk.content,
                     chunk.chunk_type,
                     chunk.section,
-                    experience_id,
+                    user_id,
                     candidate_header,
                     k,
                     prompt_name=prompt.PROMPT_NAME_VECTOR_BATCH,
@@ -846,7 +961,7 @@ def refresh_job_chunks(
                 for chunk, match in zip(batch, batch_results):
                     result_map[str(chunk.id)] = match
 
-        # Update chunks in-place
+        # Update chunks in-place (do NOT touch semantic_type or include_in_scoring — set at extraction)
         now = datetime.now(timezone.utc)
         for chunk in scoreable:
             match = result_map.get(str(chunk.id))
@@ -857,12 +972,10 @@ def refresh_job_chunks(
             chunk.advocacy_blurb = match.advocacy_blurb
             chunk.experience_sources = match.experience_sources or []
             chunk.should_render = match.should_render
+            chunk.evaluation_status = "scored" if match.score in (0, 1, 2) else "error"
             chunk.enriched_at = now
             chunk.scored_content = chunk.content
 
-        db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
-            {"enrichment_status": "complete"}
-        )
         db.commit()
 
         logger.info(
@@ -874,18 +987,5 @@ def refresh_job_chunks(
 
     except Exception:
         logger.exception("refresh_job_chunks_failed", job_id=str(job_id))
-        try:
-            db.query(Tailoring).filter(Tailoring.id == tailoring_id).update(
-                {"enrichment_status": "error"}
-            )
-            db.commit()
-        except Exception:
-            logger.exception("refresh_job_chunks_status_update_failed", tailoring_id=tailoring_id)
     finally:
         db.close()
-
-
-def _set_enrichment_status(db, tailoring_model, job_id: uuid.UUID, status: str) -> None:
-    db.query(tailoring_model).filter(tailoring_model.job_id == job_id).update(
-        {"enrichment_status": status}
-    )

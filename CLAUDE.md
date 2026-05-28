@@ -121,10 +121,10 @@ frontend/src/app/
     ├── experience/github/                          # → POST/DELETE /experience/github
     ├── experience/github/[username]/repos/         # → GET /experience/github/{username}/repos
     ├── experience/user-input/                      # → POST /experience/user-input
-    ├── experience/user-input/chunks/               # → GET /experience/user-input/chunks
+    ├── experience/user-input/claims/               # → POST /experience/user-input/claims
     ├── experience/user-input/parse/                # → POST /experience/user-input/parse
-    ├── experience/chunks/                          # → GET /experience/chunks
-    ├── experience/chunks/[id]/                     # → GET/PATCH/DELETE /experience/chunks/{id}
+    ├── experience/claims/                          # → GET /experience/claims
+    ├── experience/claims/[id]/                     # → PATCH/DELETE /experience/claims/{id}
     ├── experience/gap-response/                    # → POST /experience/gap-response
     ├── tailorings/                                 # → GET/POST /tailorings
     ├── tailorings/[id]/                            # → GET/POST(regenerate)/DELETE /tailorings/{id}
@@ -165,12 +165,12 @@ frontend/src/app/
 | `backend/app/config.py` | Pydantic Settings (env vars) |
 | `backend/app/clients/llm_client.py` | OpenAI SDK wrapper (configurable `LLM_BASE_URL`) |
 | `backend/app/clients/storage_client.py` | Storage abstraction — `AzureStorageClient` / `S3StorageClient` |
-| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `Experience`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
-| `backend/app/api/experience.py` | Experience CRUD, GitHub enrichment, SSE processing stream |
+| `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `AuthIdentity`, `UserProfile`, `UserIntegration`, `ExperienceSource`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
+| `backend/app/api/experience.py` | ExperienceSource CRUD, GitHub enrichment, SSE processing stream |
 | `backend/app/api/tailorings.py` | Tailoring CRUD, SSE generation stream, sharing, Notion export |
 | `backend/app/api/admin.py` | Admin user management — `require_admin()` dependency, approve/revoke |
 | `backend/app/services/experience_processor.py` | Text extraction (PDF/DOCX/TXT) + background processing |
-| `backend/app/services/tailoring_generator.py` | LLM tailoring generation — profile formatting, ranked match rendering |
+| `backend/app/services/letter_generator.py` | LLM letter generation — profile formatting, ranked match rendering (`tailoring_generator.py` is a compat stub) |
 | `backend/app/services/requirement_matcher.py` | Scores job requirements against candidate experience (STRONG/PARTIAL) |
 | `backend/app/services/profile_extractor.py` | LLM profile extraction, bullet post-processing |
 | `backend/app/prompts/profile_extraction.py` | Profile extraction prompt + temperature |
@@ -183,25 +183,41 @@ frontend/src/app/
 
 **SQLAlchemy ORM (`backend/app/models/database.py`):**
 
-- `User` — `id` (UUID), `google_sub` (unique, indexed), `email`, `name`, `preferred_first_name`, `preferred_last_name`, `pronouns`, `avatar_url`, `username_slug` (unique, nullable), `profile_public`, `status` (pending/approved), `is_admin`, Notion OAuth fields (`notion_access_token`, `notion_bot_id`, `notion_workspace_*`, `notion_parent_page_id`), `created_at`
+- `User` — `id` (UUID), `email` (nullable — cleared on delete tombstone), `name` (nullable), `status` (pending/approved), `is_admin`, `created_at`, `updated_at`, `deleted_at` (nullable — set on account deletion; PII cleared, row kept as tombstone). No auth or profile fields — those live in dedicated tables.
 
-- `Experience` — `id`, `user_id` (FK, 1:1), `storage_key` (blob key, nullable), `filename` (nullable), `status` (pending/processing/ready/error), `extracted_profile` (JSON — keyed by source: `"resume"`, `"github"`, `"user_input"`, etc.), `raw_resume_text`, `github_username`, `github_repos` (JSON), `user_input_text`, `error_message`, `uploaded_at`, `processed_at`, `last_process_requested_at`
+- `AuthIdentity` — `id`, `user_id` (FK → users CASCADE), `provider` (varchar 50 — `"google"` now; future: `"linkedin"`, `"magic_link"`), `subject` (google_sub for google; email for magic_link), `email` (provider-supplied at auth time), `connected_at`, `updated_at`; UNIQUE `(provider, subject)`. Replaces `users.google_sub`.
+
+- `UserProfile` — `id`, `user_id` (FK → users CASCADE, UNIQUE — 1:1), `preferred_first_name`, `preferred_last_name`, `pronouns`, `avatar_url`, `username_slug` (UNIQUE nullable, indexed), `profile_public` (bool, default false), `communication_email` (future: digest email), `created_at`, `updated_at`. Loaded via `lazy="selectin"` — always co-loaded with User.
+
+- `UserIntegration` — `id`, `user_id` (FK → users CASCADE, indexed), `provider` (varchar 50 — `"notion"` now; future: `"github"`, `"jira"`), `credentials` (Text — `{access_token, ...}`, never exposed in API, encrypted at rest via `EncryptedJSON` Fernet; set `FIELD_ENCRYPTION_KEY` in env — see `backend/app/core/crypto.py`), `provider_metadata` (JSONB — `{workspace_id, workspace_name, bot_id, parent_page_id}` for Notion), `connected_at`, `updated_at`; UNIQUE `(user_id, provider)`. Replaces all `notion_*` fields on User. Loaded via `lazy="selectin"`.
+
+- `ExperienceSource` — `id`, `user_id` (FK → users CASCADE, indexed), `source_type` (varchar 30 — `"resume"` | `"github"` | future surfaces), `connection_status` (connected/disconnected/error), `sync_status` (idle/syncing/error), `last_synced_at` (timestamptz, nullable), `last_requested_at` (timestamptz, nullable — cooldown anchor), `error_message` (nullable), `config` (JSONB — surface connection config: `{storage_key, filename}` for resume; `{username}` for github), `source_data` (JSONB — pipeline artifacts: `{extracted, raw_text, corrections}` for resume; `{repos, repo_details, extracted}` for github), `created_at`, `updated_at`; UNIQUE `(user_id, source_type)`. Replaces the monolithic `experiences` table. Profile dict assembled on demand via `sources_to_profile_dict()` in `profile_formatter.py`.
 
 - `Job` — `id`, `user_id` (FK), `job_url`, `extracted_job` (JSON), `created_at`; one-to-many with `JobChunk`
 
 - `Tailoring` — `id`, `user_id` (FK), `job_id` (FK), `model` (LLM model name), `generated_output` (markdown), `generation_status` (pending/generating/ready/error), `generation_stage`, `generation_error`, `generation_started_at`, `generated_at`, `last_regenerated_at`, `enrichment_status` (pending/complete), `profile_snapshot` (formatted profile string passed to LLM — for debug), telemetry (`generation_duration_ms`, `chunk_batch_count`, `chunk_error_count`), sharing (`letter_public`, `posting_public`, `public_slug`), Notion export fields, `created_at`
 
+- `ExperienceGroup` — `id`, `user_id` (FK → users.id, CASCADE on user delete), `group_type` (role/project/repository/education/custom), `name`, `start_date`, `end_date`, `location`, `type_meta` (JSONB, type-specific fields), `source_type`, `source_ref`, `created_at`, `updated_at`
+
+- `ExperienceClaim` — `id`, `user_id` (FK → users.id, CASCADE on user delete), `group_id` (FK → experience_groups, nullable, SET NULL on group delete), `source_type`, `source_ref`, `claim_type` (work_experience/skill/project/education/other), `content`, `group_key` (deprecated — kept until group_id backfill), `date_range`, `technologies` (JSON), `confidence` (high/medium/low), `status` (active/archived), `provenance_url`, `provenance_label`, `tags` (JSON), `chunk_metadata` (JSON), `position`, `embedding` (vector 1536), `embedding_model`, `created_at`, `updated_at`
+
 - `LlmTriggerLog` — tracks LLM events per user for rate limiting; `event_type` (`tailoring_create`, `tailoring_regen`), `user_id`, `created_at`
 
 - `TailoringDebugLog` — schema-only scaffold for future LLM telemetry (Level 3); no data written yet
 
-**Relationships:** `User` → one `Experience`, many `Tailorings`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
+**Relationships:** `User` → one `UserProfile` (selectin), many `AuthIdentity`, many `UserIntegration` (selectin), many `ExperienceSource` (selectin), many `Tailorings`, many `ExperienceClaim`, many `ExperienceGroup`; `ExperienceGroup` → many `ExperienceClaim`; `Tailoring` → one `Job`; `Job` → many `JobChunk`
+
+**Profile assembly:** `sources_to_profile_dict(user.experience_sources)` assembles the legacy `{resume, github, corrections}` dict used by `format_sourced_profile()` and all LLM calls. Call sites do not need to know which `ExperienceSource` row holds which data.
+
+**Identity lookup pattern:** `X-User-Id` header = google_sub. Backend looks up `AuthIdentity(provider="google", subject=x_user_id)` → loads `user`. Frontend/header contract unchanged.
 
 ---
 
 ## Domain Concepts
 
 - **Experience**: A user's professional background (resume upload, GitHub, manual input). Reusable across all Tailorings.
+- **Experience Claim** (`ExperienceClaim`): The atomic unit of experience — one row per bullet, skill, project, or education entry. Has a `group_id` FK to an `ExperienceGroup` (null = ungrouped/standalone). URL segment: `/claims`.
+- **Experience Group** (`ExperienceGroup`): Parent container for related claims. Types: role, project, repository, education, custom. Groups are context only — not embedded; their data is prepended to the LLM prompt when a grouped claim is retrieved.
 - **Tailoring**: An AI-generated, role-specific document derived from Experience + a job description. Persisted, viewable, regeneratable.
 - **Dashboard** (`/dashboard`): The authenticated workspace. This route is a stable product surface — do not remove or rename it.
 

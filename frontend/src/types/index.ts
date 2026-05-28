@@ -36,11 +36,15 @@ export interface Tailoring {
   author_username_slug: string | null
   notion_page_url: string | null
   notion_posting_page_url: string | null
-  generation_duration_ms: number | null
-  chunk_batch_count: number | null
-  chunk_error_count: number | null
+  models?: { letter?: string; scoring?: string } | null
+  generation_telemetry?: {
+    duration_ms?: number
+    matching_mode?: string
+    batch_count?: number
+    batch_errors?: number
+  } | null
   gap_analysis?: GapAnalysis | null
-  gap_analysis_status?: 'pending' | 'complete' | 'error'
+  updated_at?: string | null
   created_at: string
 }
 
@@ -192,11 +196,12 @@ export interface JobChunk {
   match_score: number | null  // -1=n/a, 0=gap, 1=partial, 2=strong, null=pending
   match_rationale: string | null
   advocacy_blurb: string | null
-  experience_source: 'resume' | 'github' | 'user_input' | null  // legacy, kept for backward compat
-  experience_sources: string[] | null  // new: prefer over experience_source; may be null for old records
+  experience_sources: string[] | null  // prefer over experience_source; may be null for old records
   source_label: string | null
   should_render?: boolean  // undefined = treat as true (pre-enrichment or legacy records)
-  is_requirement: boolean     // false = user-marked as noise/excluded from re-scoring
+  include_in_scoring: boolean  // false = excluded from re-scoring (user-marked or semantic rule)
+  semantic_type: string | null  // null for pre-migration records
+  evaluation_status: string | null  // 'scored' | 'skipped' | 'error' | null
   display_ready: boolean   // computed by backend: not a header, has a section, not noise
   scored_content: string | null  // content at time of last scoring; null = scored before this field existed
 }
@@ -206,7 +211,7 @@ export interface ChunksResponse {
   chunks: JobChunk[]
 }
 
-export interface ExperienceChunk {
+export interface ExperienceClaim {
   id: string
   source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'partial_response' | 'additional_experience'
   source_ref: string | null
@@ -214,8 +219,10 @@ export interface ExperienceChunk {
   content: string
   group_key: string | null
   date_range: string | null
-  technologies: string[] | null
-  chunk_metadata: Record<string, string> | null
+  keywords: string[] | null
+  provenance_metadata: Record<string, string> | null
+  original_content: string | null
+  status: 'pending' | 'active' | 'archived'
   position: number
   updated_at: string | null
 }
@@ -223,41 +230,51 @@ export interface ExperienceChunk {
 export interface WorkExperienceGroup {
   group_key: string | null
   date_range: string | null
-  chunks: ExperienceChunk[]
+  chunks: ExperienceClaim[]
 }
 
 export interface ProjectGroup {
   group_key: string | null
-  chunks: ExperienceChunk[]
+  chunks: ExperienceClaim[]
 }
 
 export interface GitHubRepoGroup {
   group_key: string | null
-  chunks: ExperienceChunk[]
+  chunks: ExperienceClaim[]
 }
 
-export interface ResumeChunksSection {
+export interface ResumeClaimsSection {
   work_experience: WorkExperienceGroup[]
-  skills: ExperienceChunk[]
+  skills: ExperienceClaim[]
   projects: ProjectGroup[]
-  education: ExperienceChunk[]
-  other: ExperienceChunk[]
+  education: ExperienceClaim[]
+  other: ExperienceClaim[]
 }
 
-export interface GitHubChunksSection {
+export interface GitHubClaimsSection {
   repos: GitHubRepoGroup[]
 }
 
-export interface ExperienceChunksResponse {
-  resume: ResumeChunksSection | null
-  github: GitHubChunksSection | null
-  user_input: ExperienceChunk[] | null
-  gap_response: ExperienceChunk[] | null
-  partial_response: ExperienceChunk[] | null
+export interface ExperienceClaimsResponse {
+  resume: ResumeClaimsSection | null
+  github: GitHubClaimsSection | null
+  user_input: ExperienceClaim[] | null
+  gap_response: ExperienceClaim[] | null
+  partial_response: ExperienceClaim[] | null
+}
+
+export interface ExperienceSourceStatus {
+  id: string
+  source_type: 'resume' | 'github'
+  connection_status: 'connected' | 'disconnected' | 'error'
+  sync_status: 'idle' | 'syncing' | 'error'
+  config: { filename?: string | null; username?: string | null }
+  error_message: string | null
+  last_synced_at: string | null
 }
 
 export interface ExperienceRecord {
-  id: string
+  id: string | null
   filename: string | null
   status: ExperienceStatus
   extracted_profile: SourcedProfile | null
@@ -270,4 +287,6 @@ export interface ExperienceRecord {
   uploaded_at: string | null
   processed_at: string | null
   last_process_requested_at: string | null
+  // New: per-source status (alongside legacy flat fields for backward compat)
+  sources?: ExperienceSourceStatus[]
 }

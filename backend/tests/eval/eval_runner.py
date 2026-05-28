@@ -298,11 +298,11 @@ def _run_fixture_llm(fixture: dict, profiles: dict[str, EvalCandidateProfile]) -
 
 def _build_exp_chunks_from_profile(profile_dict: dict) -> list[SimpleNamespace]:
     """
-    Convert a profile dict into ExperienceChunk-like SimpleNamespace objects
+    Convert a profile dict into ExperienceClaim-like SimpleNamespace objects
     for in-memory embedding and retrieval during eval.
 
     Mirrors the shape expected by _build_grouped_context:
-    group_key, date_range, source_type, technologies, content.
+    group_key, date_range, source_type, keywords, content.
     """
     chunks = []
     pos = 0
@@ -320,7 +320,7 @@ def _build_exp_chunks_from_profile(profile_dict: dict) -> list[SimpleNamespace]:
                     date_range=date_range,
                     source_type="resume",
                     source_ref=None,
-                    technologies=None,
+                    keywords=None,
                     position=pos,
                 )
             )
@@ -334,7 +334,7 @@ def _build_exp_chunks_from_profile(profile_dict: dict) -> list[SimpleNamespace]:
                 date_range=None,
                 source_type="resume",
                 source_ref=None,
-                technologies=None,
+                keywords=None,
                 position=pos,
             )
         )
@@ -352,7 +352,7 @@ def _build_exp_chunks_from_profile(profile_dict: dict) -> list[SimpleNamespace]:
                 date_range=edu.get("year"),
                 source_type="resume",
                 source_ref=None,
-                technologies=None,
+                keywords=None,
                 position=pos,
             )
         )
@@ -367,7 +367,7 @@ def _build_exp_chunks_from_profile(profile_dict: dict) -> list[SimpleNamespace]:
                     date_range=None,
                     source_type="github",
                     source_ref=repo["name"],
-                    technologies=repo.get("detected_stack", []),
+                    keywords=repo.get("detected_stack", []),
                     position=pos,
                 )
             )
@@ -381,7 +381,7 @@ def _build_exp_chunks_from_profile(profile_dict: dict) -> list[SimpleNamespace]:
                 date_range=None,
                 source_type="user_input",
                 source_ref=None,
-                technologies=None,
+                keywords=None,
                 position=pos,
             )
         )

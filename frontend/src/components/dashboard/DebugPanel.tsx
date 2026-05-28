@@ -16,7 +16,6 @@ interface DebugInfo {
   formatted_profile: string;
   profile_snapshot_source: 'snapshot' | 'reconstructed';
   job_extraction_system_prompt: string;
-  requirement_matching_system_prompt: string;
   chunk_matching_system_prompt: string;
   sample_chunk_user_message: string;
   tailoring_system_prompt: string | null;
@@ -250,15 +249,6 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
             </DebugSection>
           )}
 
-          {debugInfo.requirement_matching_system_prompt && (
-            <DebugSection
-              label="Requirement Matching — System Prompt"
-              onCopy={() => debugInfo.requirement_matching_system_prompt}
-            >
-              <CodeBlock text={debugInfo.requirement_matching_system_prompt} />
-            </DebugSection>
-          )}
-
           <DebugSection
             label="Chunk Matching — System Prompt"
             onCopy={() => debugInfo.chunk_matching_system_prompt}
@@ -346,9 +336,6 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
               '',
               '## Job Extraction — System Prompt',
               debugInfo.job_extraction_system_prompt,
-              '',
-              '## Requirement Matching — System Prompt',
-              debugInfo.requirement_matching_system_prompt,
               '',
               '## Chunk Matching — System Prompt',
               debugInfo.chunk_matching_system_prompt,

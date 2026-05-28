@@ -13,8 +13,10 @@ from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
 from app.services.chunk_matcher import (
     _build_candidate_header,
     _build_grouped_context,
+    _derive_evaluation_status,
     enrich_job_chunks,
     re_enrich_single_chunk,
+    resolve_chunk_flags,
 )
 
 # ---------------------------------------------------------------------------
@@ -129,7 +131,7 @@ def test_header_chunks_get_minus_one_score():
 
 
 def test_batch_error_increments_error_count():
-    """LLM failure → chunk_error_count=1 written to Tailoring update."""
+    """LLM failure → batch_errors=1 merged into generation_telemetry JSONB."""
     job_id = uuid.uuid4()
     chunks = [_chunk(0), _chunk(1), _chunk(2)]
     mock_db = MagicMock()
@@ -147,11 +149,18 @@ def test_batch_error_increments_error_count():
                     ):
                         enrich_job_chunks(job_id, "# Job\n\nContent", {})
 
-    update_call = mock_db.query.return_value.filter.return_value.update.call_args
-    assert update_call is not None
-    update_dict = update_call[0][0]
-    assert update_dict["chunk_error_count"] == 1
-    assert update_dict["enrichment_status"] == "complete"
+    # Telemetry is now written via db.execute(text(...), params) to merge into JSONB.
+    # Find the telemetry update call among all execute() calls (skip single-arg SET LOCAL call).
+    telemetry_params = next(
+        (
+            c.args[1]
+            for c in mock_db.execute.call_args_list
+            if len(c.args) > 1 and isinstance(c.args[1], dict) and "error_count" in c.args[1]
+        ),
+        None,
+    )
+    assert telemetry_params is not None, "Expected db.execute telemetry call not found"
+    assert telemetry_params["error_count"] == 1
 
 
 def test_batch_error_pads_chunks_with_minus_one():
@@ -271,7 +280,7 @@ def _exp_chunk(
     date_range=None,
     source_type="resume",
     source_ref=None,
-    technologies=None,
+    keywords=None,
 ):
     return SimpleNamespace(
         content=content,
@@ -279,7 +288,7 @@ def _exp_chunk(
         date_range=date_range,
         source_type=source_type,
         source_ref=source_ref,
-        technologies=technologies,
+        keywords=keywords,
     )
 
 
@@ -301,7 +310,7 @@ def test_build_grouped_context_github_source_type():
             "Full-stack web app",
             group_key="tailord",
             source_type="github",
-            technologies=["Python", "FastAPI"],
+            keywords=["Python", "FastAPI"],
         )
     ]
     result = _build_grouped_context(chunks)
@@ -369,7 +378,7 @@ def _run_enrich_vector(job_id, chunks, llm_result, experience_id=None):
                                     job_id,
                                     "# Job\n\nContent",
                                     {},
-                                    experience_id=experience_id,
+                                    user_id=experience_id,
                                 )
 
     return added, mock_db
@@ -456,6 +465,9 @@ def test_re_enrich_vector_path_updates_chunk_fields():
 
     mock_db = MagicMock()
     mock_db.get.return_value = mock_chunk
+    # _append_pinned_claims queries for claims linked via provenance_metadata; return empty
+    # so the top-k list from the patched _retrieve_top_k_experience_chunks is unchanged.
+    mock_db.query.return_value.filter.return_value.all.return_value = []
 
     dummy_exp_chunk = _exp_chunk("Built APIs in TypeScript", group_key="ACME | SWE")
     llm_result = ChunkMatchBatch(
@@ -464,7 +476,6 @@ def test_re_enrich_vector_path_updates_chunk_fields():
                 score=2,
                 rationale="Strong match",
                 advocacy_blurb="Expert TypeScript engineer",
-                experience_source="resume",
                 should_render=True,
             )
         ]
@@ -487,7 +498,7 @@ def test_re_enrich_vector_path_updates_chunk_fields():
                             mock_settings.vector_top_k = 8
                             mock_settings.llm_model = "gpt-4o-mini"
                             mock_settings.embedding_model = "text-embedding-3-small"
-                            re_enrich_single_chunk("fake-chunk-id", {}, experience_id=experience_id)
+                            re_enrich_single_chunk("fake-chunk-id", {}, user_id=experience_id)
 
     assert mock_chunk.match_score == 2
     assert mock_chunk.match_rationale
@@ -496,3 +507,154 @@ def test_re_enrich_vector_path_updates_chunk_fields():
     # Embedding was null — should be populated opportunistically
     assert mock_chunk.embedding is not None
     mock_db.commit.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# resolve_chunk_flags
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_job_requirement_forces_include_in_scoring_true():
+    """Even if LLM says include_in_scoring=False, job_requirement overrides to True."""
+    result = ChunkMatchResult(
+        score=0, rationale="Gap", semantic_type="job_requirement", include_in_scoring=False
+    )
+    resolved = resolve_chunk_flags(result)
+    assert resolved.include_in_scoring is True
+    assert resolved.should_render is True
+
+
+def test_resolve_company_description_render_always_false():
+    """company_description: should_render always False; include_in_scoring passes through."""
+    result = ChunkMatchResult(
+        score=-1,
+        rationale="About us",
+        semantic_type="company_description",
+        include_in_scoring=True,
+        should_render=True,
+    )
+    resolved = resolve_chunk_flags(result)
+    assert resolved.should_render is False
+    assert resolved.include_in_scoring is True  # LLM value preserved
+
+
+def test_resolve_compensation_both_false():
+    """compensation: both flags forced False regardless of LLM values."""
+    result = ChunkMatchResult(
+        score=-1,
+        rationale="Salary",
+        semantic_type="compensation",
+        include_in_scoring=True,
+        should_render=True,
+    )
+    resolved = resolve_chunk_flags(result)
+    assert resolved.include_in_scoring is False
+    assert resolved.should_render is False
+
+
+def test_resolve_other_passes_through_llm_values():
+    """other: LLM decides both flags."""
+    result = ChunkMatchResult(
+        score=-1,
+        rationale="Misc",
+        semantic_type="other",
+        include_in_scoring=False,
+        should_render=False,
+    )
+    resolved = resolve_chunk_flags(result)
+    assert resolved.include_in_scoring is False
+    assert resolved.should_render is False
+
+
+# ---------------------------------------------------------------------------
+# _derive_evaluation_status
+# ---------------------------------------------------------------------------
+
+
+def test_derive_evaluation_status_header_returns_skipped():
+    match = ChunkMatchResult(score=-1, rationale="Section header")
+    assert _derive_evaluation_status(match, "header") == "skipped"
+
+
+def test_derive_evaluation_status_not_scored_returns_skipped():
+    match = ChunkMatchResult(score=-1, rationale="Company perk", include_in_scoring=False)
+    assert _derive_evaluation_status(match, "bullet") == "skipped"
+
+
+def test_derive_evaluation_status_score_2_returns_scored():
+    match = ChunkMatchResult(score=2, rationale="Strong", include_in_scoring=True)
+    assert _derive_evaluation_status(match, "bullet") == "scored"
+
+
+def test_derive_evaluation_status_error_rationale_returns_error():
+    match = ChunkMatchResult(score=-1, rationale="LLM error occurred", include_in_scoring=True)
+    assert _derive_evaluation_status(match, "bullet") == "error"
+
+
+# ---------------------------------------------------------------------------
+# enrich_job_chunks — evaluation_status and semantic_type
+# ---------------------------------------------------------------------------
+
+
+def test_enrich_sets_evaluation_status_scored():
+    """enrich_job_chunks sets evaluation_status='scored' on score=2 chunk."""
+    job_id = uuid.uuid4()
+    chunks = [_chunk(0, "Python 5+ years")]
+    llm_result = ChunkMatchBatch(
+        results=[
+            ChunkMatchResult(
+                score=2,
+                rationale="Strong",
+                advocacy_blurb="Expert",
+                semantic_type="job_requirement",
+            )
+        ]
+    )
+
+    added, _ = _run_enrich(job_id, chunks, llm_result)
+
+    assert added[0].evaluation_status == "scored"
+
+
+def test_enrich_header_gets_evaluation_status_skipped():
+    """Header chunks get evaluation_status='skipped'."""
+    job_id = uuid.uuid4()
+    chunks = [_chunk(0, "Requirements", chunk_type="header", section=None)]
+    llm_result = ChunkMatchBatch(results=[])
+
+    added, _ = _run_enrich(job_id, chunks, llm_result)
+
+    assert added[0].evaluation_status == "skipped"
+
+
+def test_refresh_does_not_modify_semantic_type():
+    """refresh_job_chunks must not touch semantic_type or include_in_scoring."""
+    from app.services.chunk_matcher import refresh_job_chunks
+
+    mock_chunk = MagicMock()
+    mock_chunk.chunk_type = "bullet"
+    mock_chunk.section = "Requirements"
+    mock_chunk.content = "Python"
+    mock_chunk.include_in_scoring = True
+    mock_chunk.semantic_type = "job_requirement"
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
+        mock_chunk
+    ]
+
+    llm_result = ChunkMatchBatch(
+        results=[ChunkMatchResult(score=2, rationale="Strong", advocacy_blurb="Expert")]
+    )
+
+    with patch("app.clients.database.SessionLocal", return_value=mock_db):
+        with patch("app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result):
+            with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+                with patch(
+                    "app.services.chunk_matcher.format_sourced_profile",
+                    return_value="profile",
+                ):
+                    refresh_job_chunks(uuid.uuid4(), "tailoring-id", {})
+
+    # semantic_type must not have been assigned
+    assert mock_chunk.semantic_type == "job_requirement"  # unchanged original value

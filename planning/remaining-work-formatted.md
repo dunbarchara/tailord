@@ -23,6 +23,34 @@
 - `[~]` Admin "Matching Quality" observability card in admin panel — deferred; needs sufficient data volume in `tailoring_debug_logs` first
 - `[~]` Gap detection retrospective — fixture 04 N/A→GAP edge case; `should_render` filter mitigates production impact; low priority
 
+### Feature 1.5 — Tailoring Review Mode & Iteration Queue
+**Context:** The smoke test (Feature 1.6) surfaces quality issues but provides no fast path to fixing them. Without structured tooling, the iteration loop is: notice a bad output → manually inspect → guess at a prompt fix → re-run → hope nothing regressed. This feature closes that loop — flag issues with context, queue them for iteration, validate fixes against the full corpus.
+
+**Admin Review Mode (local only)**
+- `[ ]` Per-tailoring pipeline step inspector in the admin panel — replay each stage of a tailoring: raw scraped content → job chunk extraction → candidate evidence list → per-chunk scores → final generation. Each step shows its input, output, and the model/prompt used. Uses `TailoringDebugLog` as the backing store — this is the feature that actually populates it.
+- `[ ]` Step-level diff view — when a tailoring is re-run after a prompt change, show before/after output side-by-side for each pipeline step. Makes regressions visible immediately rather than requiring manual comparison.
+- `[ ]` "Review mode" navigation — in the admin panel, a dedicated view that pages through flagged tailorings one at a time (or tailorings from the smoke test corpus). Keyboard shortcuts to flag, approve, or skip. Designed for rapid review sessions, not incidental one-off inspection.
+
+**Flag Mechanism**
+- `[ ]` `TailoringFlag` model — `tailoring_id` (FK), `scope` (`whole_tailoring | pipeline_step | chunk`), `step_name` (nullable — e.g. `"scrape"`, `"chunk_extraction"`, `"scoring"`, `"generation"`), `chunk_id` (nullable FK), `flag_type` (enum — see below), `notes` (free text, nullable), `status` (`open | in_progress | resolved | wont_fix`), `created_at`, `resolved_at`. Alembic migration.
+- `[ ]` Flag type enum — structured categories that map to specific pipeline components: `webpage_noise_not_removed`, `item_misclassified_as_requirement`, `requirement_missed`, `score_incorrect` (STRONG/PARTIAL/Gap wrong), `hallucinated_claim`, `letter_missing_context` (wrong company/role/title), `extraction_incomplete`, `other`. New types can be added; the enum is a hint for prioritization not a constraint.
+- `[ ]` Flag UI — a "Flag" button on tailoring detail (admin only) and on individual chunk/score rows in the admin debug view. Opens a small popover: flag type dropdown + optional notes field. One click for the common case, notes optional. Flags attach at the appropriate scope automatically (chunk-level flag from a chunk row, step-level flag from a step inspector).
+
+**Iteration Queue**
+- `[ ]` Iteration queue view in admin panel — lists all `open` and `in_progress` flags grouped by `flag_type`, with count per type. Shows which pipeline component has the most outstanding issues at a glance. Clicking a flag type shows the associated tailorings/steps.
+- `[ ]` Queue-driven iteration workflow for Claude — the iteration queue is the input to prompt/pipeline work. A Claude Code session starts by reading the open flags, groups them by root cause (e.g. 12 `webpage_noise_not_removed` flags → scraper or pre-processing issue), proposes a fix, then re-runs the affected tailorings and marks flags `resolved` or `wont_fix`. The smoke test corpus (Feature 1.6) serves as the regression set — pass rate must not drop after a fix.
+- `[ ]` Flag resolution — when a fix is verified, flags are marked `resolved` with a `resolved_at` timestamp. If a fix causes a regression elsewhere, new flags are opened. No flag is silently dropped; the queue grows and shrinks explicitly.
+- `[ ]` Export iteration queue as markdown — `GET /admin/flags/export?format=md` returns a Claude-readable summary of all open flags with tailoring IDs, flag types, and notes. Intended to be pasted into a Claude Code session as the starting context for an iteration pass.
+
+### Feature 1.6 — Pre-Launch Tailoring Quality Gate
+**Context:** Tailorings are the primary output artifact and the centrepiece of conversion — especially for free-tier users with a limited number of generations (e.g. 2 free tailorings). A bad first Tailoring doesn't just lose a paid conversion; it destroys trust in the platform. The gate for public launch must be a large-scale smoke test across the breadth of job postings real users will bring.
+
+- `[ ]` Build a smoke test corpus of 200+ job postings spanning the dev/software engineering domain — include: senior IC roles (SWE, SRE, platform, ML, data), engineering management, DevOps/infra, product-adjacent roles (TPM, solutions engineer), and a sample of adjacent non-dev roles (product manager, data analyst). Source from Greenhouse, Lever, Workday, LinkedIn, and direct company careers pages to cover ATS scraping diversity. Store as fixtures in `backend/tests/fixtures/jobs/`.
+- `[ ]` Automated quality scoring pass over the corpus — for each fixture job + a representative synthetic candidate profile, generate a Tailoring and score it across: (a) no generation errors or timeouts, (b) STRONG/PARTIAL/Gap ratio is within expected range (no all-Gap or all-STRONG outputs), (c) generated letter references the job role and company correctly, (d) no hallucinated claims (requires evidence extraction from Feature 1.1). Pass rate threshold: 95% before public launch.
+- `[ ]` Scraper coverage check — separately track what fraction of the 200+ URLs the Playwright/Firecrawl scraper successfully extracts from. A Tailoring can't be good if the job content wasn't scraped. Target: 90%+ successful extractions across ATS types. Failures should be categorized (timeout, JS-blocked, empty content) to prioritize scraper fixes.
+- `[ ]` Treat this as a **launch gate, not a CI gate** — the corpus run is manual/scheduled, not per-commit. Run it: (1) before opening registration to the public, (2) before enabling paid plans, (3) after any significant prompt or pipeline change. Document the last run date and pass rate in `planning/launch-readiness.md`.
+- `[ ]` Create `planning/launch-readiness.md` — checklist of conditions that must be true before public launch: smoke test pass rate, scraper coverage, free tier limits defined, payment infrastructure live, privacy policy published, feedback mechanism in place. Single source of truth for "are we ready?"
+
 ---
 
 ## Epic 2 — Experience Capture
@@ -39,10 +67,40 @@
 - `[ ]` `query` intent handler: profile Q&A using formatted profile snapshot as LLM context; no tool calls needed; answers "what's my strongest skill for backend roles?", "do I have any ML experience?"
 - `[ ]` Attribution clarification loop (two-turn max): agent asks for employer/project when no attribution inferred; claims saved with `group_key = null` if user skips
 
+### Feature 2.4 — File and Image Attachments for Claims
+- `[ ]` Allow users to attach images, screenshots, or files to individual experience claims as supporting evidence — e.g. a screenshot of a Slack message, a performance review PDF, a design artifact. Attachments are stored in blob storage and linked via `source_urls` on the chunk. Rendered as expandable evidence links in the claim detail view and on the public tailoring/profile page. Not sent to the LLM — evidence only.
+- `[ ]` Attachment upload endpoint: `POST /experience/chunks/{id}/attachments` → presigned PUT URL → client uploads directly to blob storage → `PATCH /experience/chunks/{id}` to append URL to `source_urls`. Mirror the existing resume upload pattern.
+- `[ ]` Attachment display in chunk UI: collapsed by default, expandable "View evidence" toggle showing thumbnail or file icon + label.
+
+### Feature 2.5 — Multiple Output Content Types
+- `[ ]` Tailord generates Tailorings today (job application documents). The same experience repository should support additional output types: performance review self-assessments, interview story prep (STAR format), resume bullet generation, LinkedIn summary drafts. Design a `GenerationTarget` abstraction so the generation pipeline accepts a target type alongside the job context. Prerequisite: stable experience chunk model.
+- `[ ]` UI surface for on-demand generation: from the dashboard, allow "Generate from experience" with a type selector (Tailoring, Performance Review, Interview Stories, Resume Bullets). Each type has its own prompt template and output format.
+
 ### Feature 2.3 — Experience Chunk Correctness
 - `[ ]` Position ordering for user_input chunks — new chunks should set `position = max(position for all source_types) + 1`; currently resets to 0
 - `[ ]` Embed-before-re-enrich ordering — gap response endpoint must embed synchronously (not background task) before calling `re_enrich_single_chunk`; otherwise new chunk has no vector and cannot be retrieved in top-K
 - `[ ]` Gap response deduplication signal — after user answers a gap and regenerates, gap question may not reappear (requirement now PARTIAL/STRONG); UI should explain "this requirement was previously a gap but your added experience resolved it" rather than silently disappearing
+
+### Feature 2.6 — GitHub Repo ↔ Work Experience Identity Resolution
+
+**Problem:** A user's resume may have a "Founder @ Tailord" role entry, and GitHub may surface a `tailord` repository. These appear as separate `ExperienceGroup` rows with separate claims. When both are retrieved for a scoring context, the LLM can treat them as independent evidence and generate advocacy statements that mention each separately — doubling the signal artificially, or worse, treating the candidate as having *two* separate Tailord-related experiences rather than one unified body of work.
+
+The inverse problem also exists: sometimes a repo genuinely is a side project distinct from any role (e.g. an open-source library unrelated to any employer), and those should stay separate.
+
+**Target model:** An `ExperienceGroup` of `group_type=role` is the canonical parent container for a body of work. GitHub `group_type=repository` groups can be linked to a parent role group when they represent work done *within* that role. Claims keep their `source_type` (provenance is never erased) but the context builder presents them as a unified block. A repo that has no role parent remains a standalone `project` or `repository` group.
+
+**Resolution approaches (to evaluate — not all need to be built):**
+
+- `[ ]` **Schema: `parent_group_id` on `ExperienceGroup`** — self-referential nullable FK. A `repository` group linked to a `role` group gets `parent_group_id = role_group.id`. Alembic migration. This is the prerequisite for everything below.
+- `[ ]` **Prompt/context-builder fix (quickest win)** — in `_build_grouped_context`, when a `repository` group's name fuzzy-matches a `role` group name for the same user (e.g. Levenshtein distance or embedding similarity on group names), merge their claims into a single context block before sending to the LLM. No schema change required. Catches the most common case (founder with eponymous repo) at zero DB cost. Implement first before investing in the full model.
+- `[ ]` **Auto-linking at ingest time** — when the GitHub chunker creates a `repository` group, run a name-similarity check against the user's existing `role` groups. High-confidence matches (`tailord` repo ≈ `Tailord` employer) auto-set `parent_group_id`; low-confidence matches surface as a suggestion for user confirmation.
+- `[ ]` **User-confirmed linking UI** — on the Experience page, surface unlinked `repository` groups with a "Is this related to a role?" prompt. User selects a role from a dropdown or confirms/dismisses. One-time action per repo; stores `parent_group_id`. Low overhead if auto-linking handles the obvious cases.
+- `[~]` **Full claim deduplication across groups** — merging claims from a repo into a role's claim set (not just presenting them together) is a harder problem. Cross-group dedup would require embedding similarity comparison scoped to `(user_id, group_boundary)` and a merge strategy. Deferred — out of scope until the linking model above is stable.
+
+**Relation to existing work:**
+- `ExperienceGroup.parent_group_id` uses the same `ExperienceGroup` schema foundations added in Phase 3 of the schema cleanup sprint.
+- The `merged_from` JSONB field on `ExperienceClaim` (added in Phase 2) is the right place to record provenance if claims are ever physically merged across groups.
+- Feature 8.3 (GitHub Silent Capture) and Feature 8.4 (Pillars) should be designed with this hierarchy in mind — PR claims from a repo should be linkable to the role the user was in when the PR was merged.
 
 ---
 
@@ -61,6 +119,12 @@
 - `[ ]` Notion database export mode — export to a Notion database (not just page); creates row with company, role, date, job URL as properties; optional toggle after page export is stable
 - `[~]` Notion public integration review submission — deferred; submit once screenshots ready and usage justifies unlocking beyond 10 workspaces
 
+### Feature 3.4 — Tailoring Archiving
+- `[ ]` Archive state on `Tailoring` — `archived_at` timestamp column (Alembic migration); archived tailorings are hidden from the default dashboard list but retrievable via `?include_archived=true`
+- `[ ]` Manual archive action — archive/unarchive button on tailoring list item and tailoring detail header; confirm dialog for archive
+- `[ ]` Smart archive suggestions on dashboard home — surface a "Clean up" notification tray when the user has tailorings for jobs that appear stale (no activity in 30+ days, or job URL returns 404). One-click bulk archive. Home screen should be actionable, not just a list.
+- `[ ]` Archived tailorings view — accessible via sidebar toggle or `/dashboard?view=archived`; soft-delete, not permanent; user can restore at any time
+
 ---
 
 ## Epic 4 — Frontend UX
@@ -68,6 +132,9 @@
 
 ### Feature 4.1 — Experience Page
 - `[ ]` My Experience: always-visible section shells — render all experience section shells (Resume, GitHub, Additional Experience, Inferred Profile) with empty states and descriptions even when unpopulated; users understand the full surface area on first page scan
+- `[ ]` Experience claims table view — the current source-as-section layout does not scale as claims accumulate. Redesign as a filterable table/list where `source_type` is a column (not a section header), with view options: grouped by `group_key` (employer/project) or flat by date. Nesting should be preserved in the grouped view — sub-rows under each employer/project group. Source, date range, and status (pending/approved) are visible at a glance.
+- `[ ]` Experience claims filtering — filter by source (`resume`, `github`, `user_input`, etc.), date range, status (`pending`, `approved`, `archived`), and group/employer. Search within claim text. Prerequisite: table view above.
+- `[ ]` Copy button on experience claims — one-click copy of claim text to clipboard; rendered as an icon button on hover in the claim row/card
 
 ### Feature 4.2 — LinkedIn URL Fix
 - `[ ]` LinkedIn URL missing protocol — normalize `authorLinkedin` in `CandidateFooter` with `startsWith('http') ? url : 'https://${url}'`; strip protocol/www at extraction in `profile_extractor.py` so values stored consistently; always prepend `https://` at render
@@ -85,7 +152,25 @@
 - `[~]` `GET /jobs/{job_id}/chunks` endpoint — deferred; `GET /tailorings/{id}/chunks` already serves this data
 - `[~]` Remove `extracted_profile` / `extracted_job` from API responses — still consumed by tailoring generator internally; deferred
 
-### Feature 4.6 — Homepage
+### Feature 4.6 — Onboarding & Getting Started
+- `[ ]` Getting started progress bar on dashboard home — task checklist for new users: (1) Add your experience, (2) Create your first Tailoring, (3) Share a Tailoring. Each step links to the relevant surface. Dismissed once all three are complete or the user explicitly dismisses it. Makes the home screen actionable on first visit.
+- `[ ]` Empty state copy throughout dashboard — when tailoring list is empty, show an actionable prompt ("Create your first tailoring — paste a job URL to get started") rather than a blank surface
+
+### Feature 4.7 — Usage Visibility
+- `[ ]` Usage summary visible to the user — show at all times (sidebar or settings): tailorings generated (total + this month), experience claims stored, integrations connected. Contextualizes platform value and sets expectations around any future usage limits.
+- `[ ]` Usage displayed in account settings page alongside plan status — free / premium tier indicator, limits remaining if applicable
+
+### Feature 4.8 — User Feedback
+- `[ ]` In-app feedback mechanism — a persistent, low-friction way for users to submit feedback (bug report, feature request, general comment). Options: floating "?" button → short textarea overlay, or a dedicated `/dashboard/feedback` route. Feedback stored in DB or forwarded via webhook (e.g. to a Discord channel or email). Design the data model before building.
+
+### Feature 4.9 — Resources & Documentation
+- `[ ]` Resources / documentation section within the app — `/dashboard/resources` or a Help link in the sidebar linking to articles explaining: how GitHub integration works and what it extracts, how Tailorings are generated, what experience claims are and how to get the most out of them, privacy model (what data is stored, how to export/delete). Can be static MDX pages or an external docs site. Reduces support load and builds user trust.
+
+### Feature 4.10 — Demo Video
+- `[ ]` Product demo video — short walkthrough showing the core flow: add experience → create a Tailoring → review the fit analysis → share. To be embedded on the homepage and optionally within the app onboarding. Record after UI is stable enough not to require frequent updates.
+
+### Feature 4.11 — Homepage
+- `[ ]` Homepage revamp — full product homepage that communicates the value proposition clearly, showcases the UI, and converts visitors. Existing items below are components of this; treat as a single design pass once the product surface is stable enough to screenshot.
 - `[ ]` Homepage ProductPreview — replace stylized mockup with real screenshot of Fit Analysis view showing STRONG/PARTIAL/Gap scoring; deferred until UI is stable
 - `[ ]` Homepage social proof section — "X tailorings generated", "X job requirements matched"; testimonials with concrete outcomes; blocked on real usage numbers
 - `[ ]` Interactive homepage demo — visitor pastes job URL → preview analysis without sign-up; blocked on guest/anonymous analysis flow; Day P4+ feature
@@ -100,8 +185,27 @@
 - `[ ]` Observability standards Claude hook — extend `.claude/hooks/post-edit.py` to warn (advisory, non-blocking) when backend edits add: LLM call without OTel span; FastAPI endpoint without `require_api_key` / `get_current_user`; `logging.getLogger` instead of `structlog.get_logger`
 
 ### Feature 5.2 — Testing
-- `[ ]` Backend test coverage to 80%+ — currently ~49%; remaining gap: SSE streaming, background tasks, Notion export, experience endpoints; requires additional mocking strategies
+
+Four levels of test coverage, ordered by cost. Each level catches a distinct class of bug.
+
+**Level 1 — Typed unit fixtures** *(Low cost)*
+- `[ ]` Convert `SimpleNamespace` helpers in `tests/services/` to dataclasses or actual ORM objects. Root cause of the `technologies` → `keywords` miss: `SimpleNamespace` accepts any attribute name silently, so a rename that misses both the fixture and the production code leaves tests green while production breaks. Affects `_exp_chunk()` in `test_chunk_matcher.py` and similar helpers in `test_experience_embedder.py`. Catches: attribute contract bugs. **Highest leverage per hour of work.**
+
+**Level 2 — ORM integration tests** *(Medium cost — needs a test DB in CI)*
+- `[ ]` Add `pytest` fixture that spins up a real Postgres test DB (or SQLite with pgvector stub) via `conftest.py` session setup. Run key ORM operations (insert, query, FK cascade) against the actual schema. Catches: ORM → DB round-trip bugs, migration regressions (e.g. a column rename that the ORM model missed). Prerequisite: CI Postgres service or Docker Compose in GitHub Actions.
+
+**Level 3 — Pipeline integration tests** *(Medium-high cost)*
+- `[ ]` One pytest test that runs `re_enrich_single_chunk` end-to-end with a real DB session containing seeded `ExperienceClaim` rows and a mocked `embed_text`/LLM. Validates the full embed → retrieve → score → persist loop against actual ORM objects. Catches: end-to-end scoring path bugs that unit tests with mocked sessions miss. Prerequisite: Level 2 DB fixture.
+- `[ ]` Backend test coverage to 80%+ — currently ~53%; remaining gap: SSE streaming, background tasks, Notion export, experience endpoints; requires additional mocking strategies
+
+**Level 4 — Live smoke tests** *(High cost — needs deployed env)*
+- `[~]` Post-deploy smoke test suite — after each production deploy, run a small set of authenticated HTTP requests against the live environment: scrape a known job URL, generate a tailoring, verify generation_status reaches `ready`, assert key fields are non-null. Catches: network, auth, full-stack integration, environment config bugs. Deferred until stable deployment cadence and staging environment are in place.
+
 - `[~]` Frontend API route tests with next-test-api-route-handler — routes are thin proxies; revisit if routes gain meaningful logic; deferred
+
+### Feature 5.4 — Data Protection
+- `[ ]` Tier 1 baseline (Startup Standard): verify Transparent Data Encryption (TDE) is active on Azure PostgreSQL Flexible Server (enabled by default on Azure — confirm in Terraform config); enforce RBAC so only the backend Container App identity has DB access; document the current posture in `infra/providers/azure/SECURITY.md`.
+- `[ ]` Tier 2 roadmap (Mid-Market Standard): field-level / application-layer encryption (ALE) for highest-sensitivity user data — specifically `raw_resume_text`, `extracted_profile`, and any PII fields (`email`, `name`) stored in the `users` table. Design the key management approach (Azure Key Vault + envelope encryption) before implementing. Deferred until compliance requirements or enterprise customer demand.
 
 ### Feature 5.3 — Infrastructure
 - `[ ]` GitHub App Terraform wiring — add `github_app_id_prod/staging`, `github_app_installation_id_prod/staging` as variables; `data "azurerm_key_vault_secret"` sources for private key secrets; wire `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY` into backend Container Apps (prod + staging); then `az keyvault secret set` manual step for `.pem` files
@@ -196,3 +300,44 @@
 
 ### Feature 9.8 — Partnership
 - `[ ]` Platform partnership pitch to Simplify / Teal / Ashby — approach one platform (Simplify recommended) with usage evidence: user count, output samples, API readiness; prerequisite: working B2C product with real users
+
+---
+
+## Epic 10 — Monetization
+**Vision:** Sustainable platform with a free tier that demonstrates value and premium features that justify ongoing payment. Free users experience the core product fully; premium unlocks high-value integrations and usage expansion.
+
+### Feature 10.1 — Tier Definition
+*Full pricing model and open questions live in `planning/private/pricing-model.md` (gitignored). Summary here for planning purposes.*
+
+**Three tiers:**
+- **Free** — 2 resume uploads, GitHub light scan (2 repos, README + metadata only), 2 tailoring generations (no sharing), unlimited public profile page, 10 additional experience claims from any source
+- **Capture** *(name TBD)* — continuous experience capture: unlimited claims, GitHub deep scan + silent capture (webhook), future integrations; no tailoring generation included; Tailoring packs purchasable as one-time add-ons from this tier
+- **Premium** *(name TBD)* — everything in Capture plus high-limit/unlimited tailoring generation and sharing
+
+**Tailoring packs:** one-time purchases available to Capture-tier users; include sharing; sized and priced to nudge conversion to Premium if bought repeatedly.
+
+- `[ ]` Finalize tier names, Tailoring pack sizes/prices, and Premium generation limit — see `planning/private/pricing-model.md`
+- `[ ]` Confirm per-user cost floor before setting prices — requires June cost tracking (see Feature 10.5)
+
+### Feature 10.2 — Payment Infrastructure
+- `[ ]` [CONVERSATION TODO] Select payment provider — Stripe is the default choice (subscriptions, customer portal, webhooks). Evaluate once tier definition is confirmed.
+- `[ ]` Add `subscription_status` and `subscription_tier` to `User` model (Alembic migration) — `free / premium / trial`; `trial_ends_at` timestamp; set by Stripe webhook handler
+- `[ ]` Stripe webhook endpoint (`POST /webhooks/stripe`) — handle `customer.subscription.created`, `customer.subscription.deleted`, `invoice.payment_failed`; update `User.subscription_status` accordingly
+- `[ ]` Premium feature gate dependency — FastAPI dependency `require_premium()` analogous to `require_api_key()`; returns 402 with structured error if user is not on premium tier; apply to gated endpoints (GitHub integration, future connectors)
+- `[ ]` Frontend premium gate — when a user hits a premium-gated feature, show an upgrade prompt (modal or inline) explaining what the feature does and linking to the upgrade flow; never a dead end
+
+### Feature 10.3 — Free Trial
+- `[ ]` Free trial flow — new users get a time-limited trial of premium features (e.g. 14 days) before payment is required; `trial_ends_at` set at registration; trial expiry shows a gentle conversion prompt, not a hard lock
+- `[ ]` Trial expiry notification — in-app banner when trial is within 3 days of expiring; email notification on expiry (requires email infrastructure from Feature 8.7)
+
+### Feature 10.4 — Billing UI
+- `[ ]` Account settings billing section — current plan, next billing date, upgrade/downgrade button, cancel subscription. Prefer Stripe Customer Portal (hosted) over building a custom billing UI from scratch.
+- `[ ]` Plan status visible in sidebar or top-level settings at all times — connects to Feature 4.7 (usage visibility)
+
+### Feature 10.5 — Per-Operation Cost Tracking (June)
+**Context:** Pricing cannot be set responsibly without knowing the per-user cost floor. June is a full-time iteration period running `gpt-5.4` in prod — the most expensive model, giving the upper bound. Track every LLM operation so costs can be extrapolated to a typical active user/month.
+
+- `[ ]` Extend `LlmTriggerLog` with `input_tokens`, `output_tokens`, `cost_usd`, and `operation_type` columns (Alembic migration) — `operation_type` enum: `profile_extraction`, `github_enrichment`, `job_extraction`, `evidence_extraction`, `fact_sheet`, `requirement_scoring`, `tailoring_generation`, `gap_enrichment`, `chat_message`, `pr_claim_extraction`
+- `[ ]` Populate token counts in all existing LLM call sites — `llm_client.py` wrapper should capture `usage` from the OpenAI response and write to `LlmTriggerLog`; `cost_usd` calculated at log time from a config-driven token price table (so price updates don't require code changes)
+- `[ ]` Admin cost dashboard — aggregate view: cost per operation type (last 30 days), cost per tailoring (total pipeline cost averaged), estimated monthly cost per active user. Read from `LlmTriggerLog`. Used to validate pricing assumptions before launch.
+- `[ ]` After June: run the same key operations with `gpt-5.4-mini` against eval fixtures; measure quality delta; identify which operations can drop to the smaller model without regression. Document findings in `planning/private/pricing-model.md`.

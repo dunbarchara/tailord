@@ -115,7 +115,7 @@ function ChunkItem({
 
   /** Apply a local field change and notify parent — no API call. */
   function applyChunkEdit(
-    fields: Partial<Pick<JobChunk, 'content' | 'should_render' | 'is_requirement' | 'chunk_type'>>,
+    fields: Partial<Pick<JobChunk, 'content' | 'should_render' | 'include_in_scoring' | 'chunk_type'>>,
   ) {
     onChunkUpdate?.({ ...chunk, ...fields });
   }
@@ -144,10 +144,9 @@ function ChunkItem({
           match_score: data.match_score,
           match_rationale: data.match_rationale,
           advocacy_blurb: data.advocacy_blurb,
-          experience_source: data.experience_source,
           experience_sources: data.experience_sources,
           source_label: data.source_label,
-          is_requirement: data.is_requirement,
+          include_in_scoring: data.include_in_scoring,
           should_render: data.should_render,
           display_ready: data.display_ready,
         });
@@ -331,16 +330,16 @@ function ChunkItem({
       </button>
       <button
         type="button"
-        title={chunk.is_requirement ? 'Mark as not a requirement' : 'Mark as requirement'}
-        onClick={() => applyChunkEdit({ is_requirement: !chunk.is_requirement })}
+        title={chunk.include_in_scoring ? 'Mark as not a requirement' : 'Mark as requirement'}
+        onClick={() => applyChunkEdit({ include_in_scoring: !chunk.include_in_scoring })}
         className={cn(
           'h-5 px-1.5 rounded text-[10px] inline-flex items-center gap-0.5 border transition-colors',
-          chunk.is_requirement
+          chunk.include_in_scoring
             ? 'border-border-subtle text-text-disabled hover:text-text-secondary hover:border-border-default'
             : 'border-border-subtle text-text-disabled bg-surface-sunken',
         )}
       >
-        {chunk.is_requirement ? 'Requirement' : 'Not a req.'}
+        {chunk.include_in_scoring ? 'Requirement' : 'Not a req.'}
       </button>
       {tailoringId && chunk.chunk_type !== 'header' && (chunk.match_score === null || chunk.match_score === -1) && (
         <button
@@ -432,16 +431,14 @@ function ChunkItem({
               {chunk.advocacy_blurb && (
                 <p className="text-xs text-text-secondary leading-relaxed">{chunk.advocacy_blurb}</p>
               )}
-              {chunk.advocacy_blurb && !!(chunk.experience_sources?.length || chunk.experience_source) && chunk.match_score !== 0 && (
+              {chunk.advocacy_blurb && !!chunk.experience_sources?.length && chunk.match_score !== 0 && (
                 <hr className="my-1.5 border-border-strong" />
               )}
-              {!!(chunk.experience_sources?.length || chunk.experience_source) && chunk.match_score !== 0 && (
+              {!!chunk.experience_sources?.length && chunk.match_score !== 0 && (
                 <p className="text-xs text-text-tertiary">
                   Source:{' '}
                   <span className="font-medium text-text-secondary">
-                    {chunk.experience_sources?.length
-                      ? chunk.experience_sources.map(s => SOURCE_LABELS[s] ?? s).join(', ')
-                      : (chunk.source_label ?? chunk.experience_source)}
+                    {chunk.experience_sources.map(s => SOURCE_LABELS[s] ?? s).join(', ')}
                   </span>
                 </p>
               )}
@@ -581,11 +578,12 @@ function SectionBlock({
       match_score: null,
       match_rationale: null,
       advocacy_blurb: null,
-      experience_source: null,
       experience_sources: null,
       source_label: null,
       should_render: true,
-      is_requirement: true,
+      include_in_scoring: true,
+      semantic_type: null,
+      evaluation_status: null,
       display_ready: false,
       scored_content: null,
     };
