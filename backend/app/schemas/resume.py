@@ -8,6 +8,7 @@ class EducationEntry(BaseModel):
     degree: str | None = None
     end_date: str | None = None
     location: str | None = None
+    distinction: str | None = None  # e.g. "3.8 GPA · Magna Cum Laude"
 
 
 class ResumeSection(BaseModel):

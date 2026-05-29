@@ -38,6 +38,7 @@ export interface EducationEntry {
   degree: string | null
   end_date: string | null
   location: string | null
+  distinction: string | null
 }
 
 export interface ResumeDraft {

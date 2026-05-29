@@ -107,8 +107,18 @@ def _validate_single_chunk(r: ChunkMatchBatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_candidate_header(candidate_name: str | None, pronouns: str | None) -> str:
-    """Build the [CANDIDATE] block for the vector scoring prompt."""
+def _build_candidate_header(
+    candidate_name: str | None,
+    pronouns: str | None,
+    signals: str | None = None,
+) -> str:
+    """Build the [CANDIDATE] + [COMPUTED SIGNALS] block for the vector scoring prompt.
+
+    signals should be the output of compute_profile_signals() — total YOE and role
+    list. Including it in the vector path ensures YOE threshold requirements are
+    scored correctly without requiring the LLM to re-derive totals from partial
+    context (the top-K claims alone don't cover all roles).
+    """
     lines = []
     if candidate_name:
         lines.append(f"Name: {candidate_name}")
@@ -116,9 +126,18 @@ def _build_candidate_header(candidate_name: str | None, pronouns: str | None) ->
         lines.append(
             f"Pronouns: {pronouns} — use these when referring to the candidate in third person."
         )
-    if not lines:
-        return ""
-    return "[CANDIDATE]\n" + "\n".join(lines)
+    parts = []
+    if lines:
+        parts.append("[CANDIDATE]\n" + "\n".join(lines))
+    if signals:
+        parts.append(f"[COMPUTED SIGNALS — treat as ground truth]\n{signals}")
+    return "\n\n".join(parts)
+
+
+# Maximum matched skill claims to retrieve per chunk evaluation.
+# Skills are aggregated into one line per source in the context, so this does not
+# consume substantive claim slots — it is a separate, capped retrieval pass.
+K_SKILLS = 6
 
 
 def _retrieve_top_k_experience_chunks(
@@ -128,10 +147,18 @@ def _retrieve_top_k_experience_chunks(
     k: int,
 ) -> list:
     """
-    Return the top-K ExperienceClaim rows most similar to job_chunk_embedding,
-    ordered by cosine similarity (closest first).
+    Return the top-K substantive ExperienceClaim rows most similar to
+    job_chunk_embedding, plus up to K_SKILLS matched skill claims.
 
-    Scoped to the given user_id. Skips chunks with null embeddings.
+    Two separate queries are run so skill claims never displace substantive
+    work-experience/project bullets in the top-K slots:
+      1. Non-skill claims (work_experience, project, other): top-k by cosine distance
+      2. Skill claims only: top-K_SKILLS by cosine distance
+
+    Both result sets are returned combined. Skill claims are rendered as a single
+    aggregated line in _build_grouped_context rather than as individual bullets.
+
+    Scoped to the given user_id. Skips claims with null embeddings.
     Groups (and their parents) are eager-loaded so they remain accessible
     after the session is closed.
     """
@@ -139,18 +166,73 @@ def _retrieve_top_k_experience_chunks(
 
     from app.models.database import ExperienceClaim, ExperienceGroup
 
-    return (
+    base_filters = [
+        ExperienceClaim.user_id == user_id,
+        ExperienceClaim.embedding.isnot(None),
+        ExperienceClaim.status == "active",
+    ]
+    opts = joinedload(ExperienceClaim.group).joinedload(ExperienceGroup.parent)
+
+    substantive = (
         db.query(ExperienceClaim)
-        .options(joinedload(ExperienceClaim.group).joinedload(ExperienceGroup.parent))
-        .filter(
-            ExperienceClaim.user_id == user_id,
-            ExperienceClaim.embedding.isnot(None),
-            ExperienceClaim.status == "active",
-        )
+        .options(opts)
+        .filter(*base_filters, ExperienceClaim.claim_type != "skill")
         .order_by(ExperienceClaim.embedding.cosine_distance(job_chunk_embedding))
         .limit(k)
         .all()
     )
+
+    skills = (
+        db.query(ExperienceClaim)
+        .options(opts)
+        .filter(*base_filters, ExperienceClaim.claim_type == "skill")
+        .order_by(ExperienceClaim.embedding.cosine_distance(job_chunk_embedding))
+        .limit(K_SKILLS)
+        .all()
+    )
+
+    return substantive + skills
+
+
+def _source_label(chunk) -> str:
+    """Return the inline source label for a claim, e.g. '[resume]' or '[github: tailord]'."""
+    if chunk.source_type == "github":
+        ref = getattr(chunk, "source_ref", None)
+        group_obj = getattr(chunk, "group", None)
+        ref = ref or (group_obj.name if group_obj else "github")
+        return f"[github: {ref}]"
+    return f"[{chunk.source_type}]"
+
+
+def _format_skill_lines(skill_chunks: list, *, bullet: str = "  •") -> list[str]:
+    """
+    Aggregate skill claims into one line per source ref so they don't consume
+    individual context slots.
+
+    Default (ungrouped global section):
+      • TypeScript, React, PostgreSQL  [resume]
+
+    Inline within a role bucket (bullet="  Skills:"):
+      Skills: TypeScript, React, PostgreSQL  [resume]
+    """
+    # Group by (source_type, source_ref) to keep source attribution accurate
+    from collections import defaultdict
+
+    buckets: dict = defaultdict(list)
+    for c in skill_chunks:
+        ref = getattr(c, "source_ref", None) or c.source_type
+        key = (c.source_type, ref)
+        buckets[key].append(c.content)
+
+    lines = []
+    for (source_type, ref), contents in buckets.items():
+        joined = ", ".join(contents)
+        if source_type == "github":
+            label = f"  [github: {ref}]"
+        else:
+            label = f"  [{source_type}]"
+        lines.append(f"{bullet} {joined}{label}")
+    return lines
 
 
 def _build_grouped_context(chunks: list) -> str:
@@ -164,8 +246,13 @@ def _build_grouped_context(chunks: list) -> str:
     Legacy path: claims without group_id fall back to (group_key, date_range,
     source_type) tuple grouping (unchanged from before).
 
-    When a group contains claims from multiple source_types, inline source labels
-    are appended so the LLM can distinguish resume bullets from GitHub evidence.
+    Skill claims are aggregated into one line per source within each bucket rather
+    than rendered individually — this prevents skills from displacing substantive
+    work-experience bullets in the LLM's reasoning context.
+
+    When a bucket contains non-skill claims from multiple source_types, inline
+    source labels are appended so the LLM can distinguish resume bullets from
+    GitHub evidence.
     """
     # Each bucket is either:
     #   FK-based:     {"fk": True, "group": ExperienceGroup, "claims": [...]}
@@ -209,6 +296,8 @@ def _build_grouped_context(chunks: list) -> str:
     for key in bucket_order:
         bucket = buckets[key]
         group_chunks = bucket["claims"]
+        skill_chunks = [c for c in group_chunks if getattr(c, "claim_type", None) == "skill"]
+        substantive_chunks = [c for c in group_chunks if getattr(c, "claim_type", None) != "skill"]
 
         if bucket["fk"]:
             g = bucket["group"]
@@ -238,35 +327,50 @@ def _build_grouped_context(chunks: list) -> str:
 
         lines.append(header)
 
-        # Add source label only when multiple source_types are present in a FK bucket
-        has_mixed = bucket["fk"] and len({c.source_type for c in group_chunks}) > 1
-        for c in group_chunks:
+        # Render substantive claims as individual bullets.
+        # Add source label when multiple source_types are present in a FK bucket.
+        has_mixed = bucket["fk"] and len({c.source_type for c in substantive_chunks}) > 1
+        for c in substantive_chunks:
             if has_mixed:
-                c_group = getattr(c, "group", None)
-                if c.source_type == "github":
-                    ref = getattr(c, "source_ref", None) or (c_group.name if c_group else "github")
-                    label = f"  [github: {ref}]"
-                else:
-                    label = f"  [{c.source_type}]"
+                label = f"  {_source_label(c)}"
                 lines.append(f"  • {c.content}{label}")
             else:
                 lines.append(f"  • {c.content}")
+
+        # Aggregate skill claims inline: "  Skills: TypeScript, React  [resume]"
+        # Using bullet="  Skills:" merges the label onto the same line as the content.
+        lines.extend(_format_skill_lines(skill_chunks, bullet="  Skills:"))
+
         lines.append("")
 
     if ungrouped:
         candidate_notes = [
             c for c in ungrouped if c.source_type in ("gap_response", "additional_experience")
         ]
-        other = [
+        other_ungrouped = [
             c for c in ungrouped if c.source_type not in ("gap_response", "additional_experience")
         ]
+        skill_ungrouped = [c for c in other_ungrouped if getattr(c, "claim_type", None) == "skill"]
+        substantive_ungrouped = [
+            c for c in other_ungrouped if getattr(c, "claim_type", None) != "skill"
+        ]
+
         if candidate_notes:
             lines.append("Candidate Notes")
             for c in candidate_notes:
                 lines.append(f"  • {c.content}")
             lines.append("")
-        for c in other:
-            lines.append(f"  • {c.content}")
+
+        if skill_ungrouped:
+            lines.append("Skills")
+            lines.extend(_format_skill_lines(skill_ungrouped))
+            lines.append("")
+
+        if substantive_ungrouped:
+            lines.append("Additional Context")
+            for c in substantive_ungrouped:
+                lines.append(f"  • {c.content}")
+            lines.append("")
 
     return "\n".join(lines).strip()
 
@@ -480,7 +584,10 @@ def enrich_job_chunks(
                 _pre_classified.add(chunk.position)
 
         if use_vector:
-            candidate_header = _build_candidate_header(candidate_name, pronouns)
+            from app.services.profile_formatter import compute_profile_signals
+
+            signals = compute_profile_signals(extracted_profile) if extracted_profile else None
+            candidate_header = _build_candidate_header(candidate_name, pronouns, signals=signals)
             k = settings.vector_top_k
             scoreable = [
                 c for c in chunks if c.chunk_type != "header" and c.position not in _pre_classified
@@ -765,7 +872,10 @@ def re_enrich_single_chunk(
         use_vector = settings.matching_mode == "vector" and user_id is not None
 
         if use_vector:
-            candidate_header = _build_candidate_header(candidate_name, pronouns)
+            from app.services.profile_formatter import compute_profile_signals
+
+            signals = compute_profile_signals(extracted_profile) if extracted_profile else None
+            candidate_header = _build_candidate_header(candidate_name, pronouns, signals=signals)
             k = settings.vector_top_k
             match, new_embedding = _score_chunk_vector(
                 chunk.content,
@@ -885,7 +995,10 @@ def refresh_job_chunks(
         error_count = 0
 
         if use_vector:
-            candidate_header = _build_candidate_header(candidate_name, pronouns)
+            from app.services.profile_formatter import compute_profile_signals
+
+            signals = compute_profile_signals(extracted_profile) if extracted_profile else None
+            candidate_header = _build_candidate_header(candidate_name, pronouns, signals=signals)
             k = settings.vector_top_k
 
             _log_ctx = structlog.contextvars.get_contextvars()

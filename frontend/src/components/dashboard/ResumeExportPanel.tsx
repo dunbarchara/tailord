@@ -203,7 +203,7 @@ export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, compan
           </div>
 
           {/* Right: live preview */}
-          <div className="flex-1 overflow-auto bg-[#e8e8e8] dark:bg-surface-sunken flex justify-center items-start py-8 px-6">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden bg-[#e8e8e8] dark:bg-surface-sunken flex justify-center items-start py-8 px-2">
             {draft ? (
               <div className="relative flex-shrink-0 shadow-xl">
                 {previewLoading && (

@@ -19,7 +19,7 @@ Rules:
 - For work_experience location: extract city/state or remote if present (e.g. "New York, NY"). Leave null if not found.
 - For work_experience duration: extract the date range exactly as written (e.g. "Jan 2020 – Apr 2023"). Do not normalise or reformat.
 - For education location: extract city/state of the institution if present. Leave null if not found.
-- For education distinction, extract GPA, honours, or academic distinctions if present (e.g. "3.8 GPA · Magna Cum Laude"). Leave null if not found.
+- For education distinction, extract GPA, honours, or academic distinctions if present (e.g. "3.8 GPA · Magna Cum Laude"). Leave null if not found. If the resume line uses "|" or "," to separate the degree name from GPA/honours (e.g. "Bachelor of Science in Computer Science | GPA: 3.8 (Magna Cum Laude)"), put only the degree name in "degree" and put the GPA/honours in "distinction".
 - For skills.technical, list specific technologies, tools, and languages.
 - For skills.soft, list interpersonal and workplace skills.
 - certifications is a list of strings.

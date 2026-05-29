@@ -14,6 +14,8 @@ from app.services.chunk_matcher import (
     _build_candidate_header,
     _build_grouped_context,
     _derive_evaluation_status,
+    _format_skill_lines,
+    _source_label,
     enrich_job_chunks,
     re_enrich_single_chunk,
     resolve_chunk_flags,
@@ -267,6 +269,23 @@ def test_build_candidate_header_pronouns_only():
 
 def test_build_candidate_header_neither_returns_empty():
     assert _build_candidate_header(None, None) == ""
+
+
+def test_build_candidate_header_with_signals():
+    signals = "Total professional experience: 5.2 years\nRoles (chronological):\n  - SWE @ Acme (2019–2024) [5.0 yrs]"
+    result = _build_candidate_header("Alex", None, signals=signals)
+    assert "[CANDIDATE]" in result
+    assert "Alex" in result
+    assert "[COMPUTED SIGNALS — treat as ground truth]" in result
+    assert "5.2 years" in result
+
+
+def test_build_candidate_header_signals_without_name():
+    """signals block still emitted even when no name/pronouns."""
+    signals = "Total professional experience: 3.0 years"
+    result = _build_candidate_header(None, None, signals=signals)
+    assert "[COMPUTED SIGNALS — treat as ground truth]" in result
+    assert "[CANDIDATE]" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -731,6 +750,202 @@ def test_enrich_header_gets_evaluation_status_skipped():
     added, _ = _run_enrich(job_id, chunks, llm_result)
 
     assert added[0].evaluation_status == "skipped"
+
+
+# ---------------------------------------------------------------------------
+# _source_label
+# ---------------------------------------------------------------------------
+
+
+def test_source_label_resume():
+    c = SimpleNamespace(source_type="resume", source_ref=None)
+    assert _source_label(c) == "[resume]"
+
+
+def test_source_label_github_with_ref():
+    c = SimpleNamespace(source_type="github", source_ref="tailord")
+    assert _source_label(c) == "[github: tailord]"
+
+
+def test_source_label_github_falls_back_to_group_name():
+    group = SimpleNamespace(name="my-repo")
+    c = SimpleNamespace(source_type="github", source_ref=None, group=group)
+    assert _source_label(c) == "[github: my-repo]"
+
+
+# ---------------------------------------------------------------------------
+# _format_skill_lines
+# ---------------------------------------------------------------------------
+
+
+def _skill(content, source_type="resume", source_ref=None):
+    return SimpleNamespace(content=content, source_type=source_type, source_ref=source_ref)
+
+
+def test_format_skill_lines_empty_returns_empty():
+    assert _format_skill_lines([]) == []
+
+
+def test_format_skill_lines_single_resume_source():
+    chunks = [_skill("TypeScript"), _skill("React"), _skill("PostgreSQL")]
+    lines = _format_skill_lines(chunks)
+    assert len(lines) == 1
+    assert "TypeScript, React, PostgreSQL" in lines[0]
+    assert "[resume]" in lines[0]
+
+
+def test_format_skill_lines_github_source_uses_ref():
+    chunks = [_skill("Next.js", source_type="github", source_ref="tailord")]
+    lines = _format_skill_lines(chunks)
+    assert len(lines) == 1
+    assert "Next.js" in lines[0]
+    assert "[github: tailord]" in lines[0]
+
+
+def test_format_skill_lines_multiple_sources_produce_separate_lines():
+    chunks = [
+        _skill("TypeScript"),
+        _skill("React"),
+        _skill("FastAPI", source_type="github", source_ref="tailord"),
+        _skill("Docker", source_type="github", source_ref="tailord"),
+    ]
+    lines = _format_skill_lines(chunks)
+    assert len(lines) == 2
+    resume_line = next(line for line in lines if "[resume]" in line)
+    github_line = next(line for line in lines if "[github: tailord]" in line)
+    assert "TypeScript" in resume_line and "React" in resume_line
+    assert "FastAPI" in github_line and "Docker" in github_line
+
+
+def test_format_skill_lines_different_github_repos_produce_separate_lines():
+    chunks = [
+        _skill("Python", source_type="github", source_ref="backend"),
+        _skill("React", source_type="github", source_ref="frontend"),
+    ]
+    lines = _format_skill_lines(chunks)
+    assert len(lines) == 2
+
+
+# ---------------------------------------------------------------------------
+# _build_grouped_context — skill aggregation
+# ---------------------------------------------------------------------------
+
+
+def _exp_chunk_skill(content, group_key=None, source_type="resume", source_ref=None):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        content=content,
+        claim_type="skill",
+        group_key=group_key,
+        group_id=None,
+        group=None,
+        date_range=None,
+        source_type=source_type,
+        source_ref=source_ref,
+        keywords=None,
+    )
+
+
+def _exp_chunk_substantive(content, group_key=None, date_range=None, source_type="resume"):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        content=content,
+        claim_type="work_experience",
+        group_key=group_key,
+        group_id=None,
+        group=None,
+        date_range=date_range,
+        source_type=source_type,
+        source_ref=None,
+        keywords=None,
+    )
+
+
+def test_build_grouped_context_skills_in_group_are_aggregated():
+    """Skill claims in a grouped bucket produce an inline 'Skills: content  [source]' line."""
+    chunks = [
+        _exp_chunk_substantive("Built REST APIs", group_key="ACME | SWE", date_range="2022–2024"),
+        _exp_chunk_skill("TypeScript", group_key="ACME | SWE"),
+        _exp_chunk_skill("React", group_key="ACME | SWE"),
+    ]
+    result = _build_grouped_context(chunks)
+    # Inline label + content on the same line
+    assert "Skills: TypeScript, React" in result
+    # Substantive bullet appears individually
+    assert "Built REST APIs" in result
+    # Skills should NOT appear as individual bullet lines
+    skill_lines = [
+        line
+        for line in result.splitlines()
+        if line.strip().startswith("•") and "TypeScript" in line and "React" not in line
+    ]
+    assert len(skill_lines) == 0, "Skills should be aggregated, not individual bullets"
+
+
+def test_build_grouped_context_ungrouped_skills_get_skills_header():
+    """Ungrouped skill claims appear under a 'Skills' header."""
+    chunks = [
+        _exp_chunk_skill("TypeScript"),
+        _exp_chunk_skill("Go"),
+    ]
+    result = _build_grouped_context(chunks)
+    assert "Skills" in result
+    assert "TypeScript, Go" in result
+
+
+def test_build_grouped_context_ungrouped_substantive_gets_additional_context_header():
+    """Ungrouped substantive claims appear under an 'Additional Context' header."""
+    chunks = [_exp_chunk_substantive("The platform was designed to be extensible.")]
+    result = _build_grouped_context(chunks)
+    assert "Additional Context" in result
+    assert "The platform was designed to be extensible." in result
+
+
+def test_build_grouped_context_ungrouped_skills_separate_from_substantive():
+    """Ungrouped skills get 'Skills' header; ungrouped substantive gets 'Additional Context'."""
+    chunks = [
+        _exp_chunk_substantive("Led cross-functional team"),
+        _exp_chunk_skill("Python"),
+    ]
+    result = _build_grouped_context(chunks)
+    assert "Skills" in result
+    assert "Python" in result
+    assert "Additional Context" in result
+    assert "Led cross-functional team" in result
+
+
+def test_build_grouped_context_fk_skills_do_not_create_extra_sections():
+    """In FK-bucketed groups, skills and substantive claims share one header with a Skills: sub-label."""
+    gid = uuid.uuid4()
+    group = _make_group(gid, "Corp | Eng")
+
+    def _fk_skill(content):
+        return SimpleNamespace(
+            content=content,
+            claim_type="skill",
+            group_id=gid,
+            group=group,
+            group_key=None,
+            date_range=None,
+            source_type="resume",
+            source_ref=None,
+            keywords=None,
+        )
+
+    chunks = [
+        _exp_chunk_fk(
+            "Shipped 3 products", gid, group, source_type="resume", date_range="2021–2023"
+        ),
+        _fk_skill("TypeScript"),
+        _fk_skill("PostgreSQL"),
+    ]
+    result = _build_grouped_context(chunks)
+    # Only one group header
+    assert result.count("Corp | Eng") == 1
+    # Inline skills label + content on the same line
+    assert "Skills: TypeScript, PostgreSQL" in result
+    # Substantive bullet present
+    assert "Shipped 3 products" in result
 
 
 def test_refresh_does_not_modify_semantic_type():

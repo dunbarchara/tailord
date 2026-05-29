@@ -223,8 +223,9 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
         total_groups=len(all_groups),
     )
 
-    # ── Location lookup: build "Company | Title" → location map from resume extracted profile ──
+    # ── Location + distinction lookup from resume extracted profile ──────────────────────────────
     location_lookup: dict[str, str] = {}
+    distinction_lookup: dict[str, str] = {}  # "Degree | Institution" → distinction string
     resume_source = (
         db.query(ExperienceSource)
         .filter(
@@ -247,12 +248,14 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
         for edu in extracted.get("education") or []:
             degree = (edu.get("degree") or "").strip()
             institution = (edu.get("institution") or "").strip()
+            edu_key_parts = [p for p in [degree, institution] if p]
+            edu_key = " | ".join(edu_key_parts) or None
             loc = (edu.get("location") or "").strip() or None
-            if loc:
-                parts = [p for p in [degree, institution] if p]
-                key = " | ".join(parts) or None
-                if key:
-                    location_lookup[key] = loc
+            if loc and edu_key:
+                location_lookup[edu_key] = loc
+            dist = (edu.get("distinction") or "").strip() or None
+            if dist and edu_key:
+                distinction_lookup[edu_key] = dist
 
     # ── Classify claims ────────────────────────────────────────────────────
     skill_claim_ids_raw: list[str] = []
@@ -281,28 +284,40 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
             if group.group_type == "education":
                 # Handled separately — skip here
                 continue
-            if gid not in role_groups:
+
+            # If this repo group is linked to a parent role, merge its claims under the parent.
+            # This prevents repos associated with a role from appearing as separate Projects entries.
+            effective_gid = gid
+            effective_group = group
+            if group.parent_group_id:
+                parent_gid = str(group.parent_group_id)
+                parent_group = all_groups.get(parent_gid)
+                if parent_group and parent_group.group_type != "education":
+                    effective_gid = parent_gid
+                    effective_group = parent_group
+
+            if effective_gid not in role_groups:
                 # group.name stores "Company | Title" — extract company for display;
                 # title lives in type_meta or is parsed from the name as fallback.
-                display_name = _parse_group_name_from_key(group.name)
-                type_meta = dict(group.type_meta or {})
-                if "title" not in type_meta and " | " in (group.name or ""):
-                    inferred_title = _parse_job_title_from_key(group.name)
+                display_name = _parse_group_name_from_key(effective_group.name)
+                type_meta = dict(effective_group.type_meta or {})
+                if "title" not in type_meta and " | " in (effective_group.name or ""):
+                    inferred_title = _parse_job_title_from_key(effective_group.name)
                     if inferred_title:
                         type_meta["title"] = inferred_title
-                role_groups[gid] = {
-                    "id": gid,
+                role_groups[effective_gid] = {
+                    "id": effective_gid,
                     "name": display_name,
-                    "start_date": group.start_date,
-                    "end_date": group.end_date,
-                    "location": group.location,
+                    "start_date": effective_group.start_date,
+                    "end_date": effective_group.end_date,
+                    "location": effective_group.location,
                     "type_meta": type_meta or None,
-                    "group_type": group.group_type,
+                    "group_type": effective_group.group_type,
                     "claims": [],
                     "relevance": 0.0,
                 }
-            role_groups[gid]["claims"].append(cid)
-            role_groups[gid]["relevance"] += claim_relevance.get(cid, 0.0)
+            role_groups[effective_gid]["claims"].append(cid)
+            role_groups[effective_gid]["relevance"] += claim_relevance.get(cid, 0.0)
 
         else:
             # Fallback: group by deprecated group_key
@@ -313,15 +328,31 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
 
             if claim.claim_type == "education":
                 # group_key = "Degree | Institution" (from experience_chunker)
-                parts = gkey.split("|", 1)
-                institution = parts[1].strip() if len(parts) > 1 else parts[0].strip()
-                degree = parts[0].strip() if len(parts) > 1 else None
+                # Edge case: if the LLM included GPA/honours in the degree field, the chunker
+                # produces "Degree | GPA: 3.8 (Magna Cum Laude) | Institution" (three segments).
+                # Detect this and re-parse so institution and distinction are correct.
+                parts = gkey.split("|")
+                degree = parts[0].strip()
+                if len(parts) == 1:
+                    institution = degree
+                    degree = None
+                    inferred_dist = None
+                elif len(parts) == 2:
+                    institution = parts[1].strip()
+                    inferred_dist = None
+                else:
+                    # Three or more segments — middle segment(s) are GPA/honours data
+                    institution = parts[-1].strip()
+                    inferred_dist = " | ".join(p.strip() for p in parts[1:-1])
+                # Prefer lookup distinction over inferred; fall back to inline
+                resolved_dist = distinction_lookup.get(gkey) or inferred_dist
                 if gkey not in ungrouped_edu:
                     ungrouped_edu[gkey] = {
                         "name": institution,
                         "degree": degree,
                         "end_date": claim.date_range,
                         "location": location_lookup.get(gkey),
+                        "distinction": resolved_dist,
                     }
                 continue
 
@@ -436,12 +467,15 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
             degree = (group.type_meta or {}).get("degree") or (
                 parts[0].strip() if len(parts) > 1 else None
             )
+            edu_key_parts = [p for p in [degree, institution] if p]
+            edu_key = " | ".join(edu_key_parts) or None
             education_data.append(
                 EducationEntry(
                     name=institution,
                     degree=degree,
                     end_date=group.end_date,
                     location=group.location,
+                    distinction=distinction_lookup.get(edu_key) if edu_key else None,
                 )
             )
 

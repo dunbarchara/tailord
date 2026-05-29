@@ -21,8 +21,9 @@
     body {
       padding: 0.5in;
       width: 8.5in;
-      min-height: 11in;
+      height: 11in;
       box-sizing: border-box;
+      overflow: hidden;
     }
   }
 
@@ -95,6 +96,9 @@
 
   /* ── Skills ── */
   .skills-text { font-size: 10pt; line-height: 1.5; }
+
+  /* ── Education distinction (GPA, honours) ── */
+  .entry-distinction { font-size: 9.5pt; color: #444; margin-top: 1px; }
 
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -174,6 +178,9 @@
         <span class="entry-sub">{{ edu.degree or '' }}</span>
         {%- if edu.end_date %}<span class="entry-dates">{{ edu.end_date }}</span>{%- endif %}
       </div>
+      {%- endif %}
+      {%- if edu.distinction %}
+      <div class="entry-distinction">{{ edu.distinction }}</div>
       {%- endif %}
     </div>
     {% endfor %}
