@@ -104,6 +104,7 @@ export interface Tailoring {
     matching_mode?: string
     batch_count?: number
     batch_errors?: number
+    detect_bounds_ms?: number
   } | null
   gap_analysis?: GapAnalysis | null
   resume_draft?: ResumeDraft | null
@@ -267,6 +268,7 @@ export interface JobChunk {
   evaluation_status: string | null  // 'scored' | 'skipped' | 'error' | null
   display_ready: boolean   // computed by backend: not a header, has a section, not noise
   scored_content: string | null  // content at time of last scoring; null = scored before this field existed
+  excluded_reason?: string | null  // 'pre_content' | 'post_content' | null — set by LLM bounds detection
 }
 
 export interface ChunksResponse {

@@ -1,8 +1,9 @@
 """Unit tests for chunk_matcher.enrich_job_chunks and re_enrich_single_chunk.
 
 Both functions create their own DB sessions internally, so SessionLocal is
-patched at app.clients.database.SessionLocal. extract_chunks and
-_format_sourced_profile are also patched to keep tests self-contained.
+patched at app.clients.database.SessionLocal. extract_chunks,
+detect_job_content_bounds, and _format_sourced_profile are also patched to
+keep tests self-contained.
 """
 
 import uuid
@@ -46,15 +47,25 @@ def _run_enrich(job_id, chunks, llm_result, mock_db=None):
     added = []
     mock_db.add.side_effect = lambda obj: added.append(obj)
 
+    from app.services.job_bounds_detector import JobContentBounds
+
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.extract_chunks", return_value=chunks):
-            with patch("app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result):
-                with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+            with patch(
+                "app.services.chunk_matcher.detect_job_content_bounds",
+                return_value=JobContentBounds(),
+            ):
+                with patch(
+                    "app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result
+                ):
                     with patch(
-                        "app.services.chunk_matcher.format_sourced_profile",
-                        return_value="formatted profile",
+                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
                     ):
-                        enrich_job_chunks(job_id, "# Job\n\nContent", {})
+                        with patch(
+                            "app.services.chunk_matcher.format_sourced_profile",
+                            return_value="formatted profile",
+                        ):
+                            enrich_job_chunks(job_id, "# Job\n\nContent", {})
 
     return added, mock_db
 
@@ -134,6 +145,8 @@ def test_header_chunks_get_minus_one_score():
 
 def test_batch_error_increments_error_count():
     """LLM failure → batch_errors=1 merged into generation_telemetry JSONB."""
+    from app.services.job_bounds_detector import JobContentBounds
+
     job_id = uuid.uuid4()
     chunks = [_chunk(0), _chunk(1), _chunk(2)]
     mock_db = MagicMock()
@@ -141,15 +154,21 @@ def test_batch_error_increments_error_count():
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.extract_chunks", return_value=chunks):
             with patch(
-                "app.services.chunk_matcher.llm_parse_with_retry",
-                side_effect=RuntimeError("LLM down"),
+                "app.services.chunk_matcher.detect_job_content_bounds",
+                return_value=JobContentBounds(),
             ):
-                with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+                with patch(
+                    "app.services.chunk_matcher.llm_parse_with_retry",
+                    side_effect=RuntimeError("LLM down"),
+                ):
                     with patch(
-                        "app.services.chunk_matcher.format_sourced_profile",
-                        return_value="profile",
+                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
                     ):
-                        enrich_job_chunks(job_id, "# Job\n\nContent", {})
+                        with patch(
+                            "app.services.chunk_matcher.format_sourced_profile",
+                            return_value="profile",
+                        ):
+                            enrich_job_chunks(job_id, "# Job\n\nContent", {})
 
     # Telemetry is now written via db.execute(text(...), params) to merge into JSONB.
     # Find the telemetry update call among all execute() calls (skip single-arg SET LOCAL call).
@@ -167,6 +186,8 @@ def test_batch_error_increments_error_count():
 
 def test_batch_error_pads_chunks_with_minus_one():
     """On LLM failure, all chunks in the failed batch are persisted with score=-1."""
+    from app.services.job_bounds_detector import JobContentBounds
+
     job_id = uuid.uuid4()
     chunks = [_chunk(0, "req A"), _chunk(1, "req B")]
     mock_db = MagicMock()
@@ -176,15 +197,21 @@ def test_batch_error_pads_chunks_with_minus_one():
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.extract_chunks", return_value=chunks):
             with patch(
-                "app.services.chunk_matcher.llm_parse_with_retry",
-                side_effect=RuntimeError("LLM down"),
+                "app.services.chunk_matcher.detect_job_content_bounds",
+                return_value=JobContentBounds(),
             ):
-                with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+                with patch(
+                    "app.services.chunk_matcher.llm_parse_with_retry",
+                    side_effect=RuntimeError("LLM down"),
+                ):
                     with patch(
-                        "app.services.chunk_matcher.format_sourced_profile",
-                        return_value="profile",
+                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
                     ):
-                        enrich_job_chunks(job_id, "# Job\n\nContent", {})
+                        with patch(
+                            "app.services.chunk_matcher.format_sourced_profile",
+                            return_value="profile",
+                        ):
+                            enrich_job_chunks(job_id, "# Job\n\nContent", {})
 
     assert len(added) == 2
     assert all(c.match_score == -1 for c in added)
@@ -472,6 +499,8 @@ def test_build_grouped_context_fk_no_mixed_labels_when_single_source():
 
 def _run_enrich_vector(job_id, chunks, llm_result, experience_id=None):
     """Run enrich_job_chunks in vector mode with all external deps mocked."""
+    from app.services.job_bounds_detector import JobContentBounds
+
     if experience_id is None:
         experience_id = uuid.uuid4()
 
@@ -484,27 +513,35 @@ def _run_enrich_vector(job_id, chunks, llm_result, experience_id=None):
 
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.extract_chunks", return_value=chunks):
-            with patch("app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result):
-                with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+            with patch(
+                "app.services.chunk_matcher.detect_job_content_bounds",
+                return_value=JobContentBounds(),
+            ):
+                with patch(
+                    "app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result
+                ):
                     with patch(
-                        "app.services.chunk_matcher._retrieve_top_k_experience_chunks",
-                        return_value=[dummy_exp_chunk],
+                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
                     ):
                         with patch(
-                            "app.clients.embedding_client.embed_text", return_value=[0.1] * 1536
+                            "app.services.chunk_matcher._retrieve_top_k_experience_chunks",
+                            return_value=[dummy_exp_chunk],
                         ):
-                            with patch("app.services.chunk_matcher.settings") as mock_settings:
-                                mock_settings.matching_mode = "vector"
-                                mock_settings.vector_top_k = 8
-                                mock_settings.llm_model = "gpt-4o-mini"
-                                mock_settings.embedding_model = "text-embedding-3-small"
-                                mock_settings.chunk_scorer_concurrency = 8
-                                enrich_job_chunks(
-                                    job_id,
-                                    "# Job\n\nContent",
-                                    {},
-                                    user_id=experience_id,
-                                )
+                            with patch(
+                                "app.clients.embedding_client.embed_text", return_value=[0.1] * 1536
+                            ):
+                                with patch("app.services.chunk_matcher.settings") as mock_settings:
+                                    mock_settings.matching_mode = "vector"
+                                    mock_settings.vector_top_k = 8
+                                    mock_settings.llm_model = "gpt-4o-mini"
+                                    mock_settings.embedding_model = "text-embedding-3-small"
+                                    mock_settings.chunk_scorer_concurrency = 8
+                                    enrich_job_chunks(
+                                        job_id,
+                                        "# Job\n\nContent",
+                                        {},
+                                        user_id=experience_id,
+                                    )
 
     return added, mock_db
 
@@ -543,6 +580,8 @@ def test_vector_mode_header_chunks_get_minus_one():
 
 def test_vector_mode_falls_back_to_llm_when_no_experience_id():
     """MATCHING_MODE=vector but experience_id=None → llm path used (no embed_text call)."""
+    from app.services.job_bounds_detector import JobContentBounds
+
     job_id = uuid.uuid4()
     chunks = [_chunk(0, "Python experience")]
     llm_result = ChunkMatchBatch(results=[ChunkMatchResult(score=1, rationale="Partial")])
@@ -555,21 +594,29 @@ def test_vector_mode_falls_back_to_llm_when_no_experience_id():
 
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.extract_chunks", return_value=chunks):
-            with patch("app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result):
-                with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+            with patch(
+                "app.services.chunk_matcher.detect_job_content_bounds",
+                return_value=JobContentBounds(),
+            ):
+                with patch(
+                    "app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result
+                ):
                     with patch(
-                        "app.services.chunk_matcher.format_sourced_profile",
-                        return_value="profile",
+                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
                     ):
-                        with patch("app.clients.embedding_client.embed_text", embed_text_mock):
-                            with patch("app.services.chunk_matcher.settings") as mock_settings:
-                                mock_settings.matching_mode = "vector"
-                                mock_settings.vector_top_k = 8
-                                mock_settings.llm_model = "gpt-4o-mini"
-                                mock_settings.embedding_model = "text-embedding-3-small"
-                                mock_settings.chunk_scorer_concurrency = 8
-                                # No experience_id — should fall back to llm path
-                                enrich_job_chunks(job_id, "# Job\n\nContent", {})
+                        with patch(
+                            "app.services.chunk_matcher.format_sourced_profile",
+                            return_value="profile",
+                        ):
+                            with patch("app.clients.embedding_client.embed_text", embed_text_mock):
+                                with patch("app.services.chunk_matcher.settings") as mock_settings:
+                                    mock_settings.matching_mode = "vector"
+                                    mock_settings.vector_top_k = 8
+                                    mock_settings.llm_model = "gpt-4o-mini"
+                                    mock_settings.embedding_model = "text-embedding-3-small"
+                                    mock_settings.chunk_scorer_concurrency = 8
+                                    # No experience_id — should fall back to llm path
+                                    enrich_job_chunks(job_id, "# Job\n\nContent", {})
 
     embed_text_mock.assert_not_called()
     assert len(added) == 1

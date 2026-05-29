@@ -596,5 +596,8 @@ class JobChunk(Base):
     # Populated by experience_embedder.py after job chunk extraction.
     embedding = mapped_column(Vector(1536), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Set by bounds detection when a chunk falls outside the detected job content region.
+    # Values: "pre_content" | "post_content" | null (not excluded by bounds detection).
+    excluded_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     job: Mapped["Job"] = relationship("Job", back_populates="chunks")

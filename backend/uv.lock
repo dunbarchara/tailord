@@ -2077,6 +2077,7 @@ dependencies = [
     { name = "boto3" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "markdownify" },
     { name = "openai" },
@@ -2105,7 +2106,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
-    { name = "httpx" },
     { name = "pip-audit" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -2125,6 +2125,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.43.14" },
     { name = "cryptography", specifier = "==47.0.0" },
     { name = "fastapi", specifier = "==0.136.1" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "markdownify", specifier = ">=1.2.2" },
     { name = "openai" },
@@ -2153,7 +2154,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", extras = ["toml"] },
-    { name = "httpx" },
     { name = "pip-audit" },
     { name = "pre-commit" },
     { name = "pytest" },

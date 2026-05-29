@@ -14,6 +14,11 @@ from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
 from app.services.chunk_display import is_display_ready
 from app.services.chunk_extractor import extract_chunks
+from app.services.job_bounds_detector import (
+    JobContentBounds,
+    apply_bounds,
+    detect_job_content_bounds,
+)
 from app.services.profile_formatter import format_sourced_profile
 
 logger = structlog.get_logger(__name__)
@@ -513,6 +518,7 @@ def enrich_job_chunks(
     pronouns: str | None = None,
     user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
+    precomputed_bounds: JobContentBounds | None = None,
 ) -> None:
     """
     Background task: extract chunks from job markdown, match against candidate profile,
@@ -539,14 +545,47 @@ def enrich_job_chunks(
         db.commit()
         logger.debug("enrich_delete_committed", job_id=str(job_id))
 
+        # Use pre-computed bounds if provided (set by _finalize_tailoring as a named stage);
+        # otherwise detect bounds here (e.g. during refresh or standalone calls).
+        bounds = (
+            precomputed_bounds
+            if precomputed_bounds is not None
+            else detect_job_content_bounds(job_markdown)
+        )
+        pre_seg, core_seg, post_seg = apply_bounds(job_markdown, bounds)
+        logger.info(
+            "job_bounds_applied",
+            job_id=str(job_id),
+            has_pre=bool(pre_seg.strip()),
+            has_post=bool(post_seg.strip()),
+        )
+
+        pre_raw = extract_chunks(pre_seg) if pre_seg.strip() else []
+        post_raw = extract_chunks(post_seg) if post_seg.strip() else []
+
         t0 = time.perf_counter()
-        chunks = extract_chunks(job_markdown)
+        chunks = extract_chunks(core_seg)
         logger.info(
             "chunks_extracted",
             job_id=str(job_id),
             chunk_count=len(chunks),
+            excluded_pre=len(pre_raw),
+            excluded_post=len(post_raw),
             duration_ms=int((time.perf_counter() - t0) * 1000),
         )
+
+        # Re-number positions sequentially: pre → core → post
+        pos = 0
+        for c in pre_raw:
+            c.position = pos
+            pos += 1
+        for c in chunks:
+            c.position = pos
+            pos += 1
+        for c in post_raw:
+            c.position = pos
+            pos += 1
+
         if not chunks:
             logger.info("enrich_no_chunks", job_id=str(job_id))
             db.commit()
@@ -794,6 +833,33 @@ def enrich_job_chunks(
                 embedding_model=settings.embedding_model if embedding is not None else None,
             )
             db.add(job_chunk)
+
+        # Persist pre/post-content chunks (excluded from scoring by bounds detection).
+        for excluded_reason, excluded_chunks in [
+            ("pre_content", pre_raw),
+            ("post_content", post_raw),
+        ]:
+            for chunk in excluded_chunks:
+                db.add(
+                    JobChunk(
+                        job_id=job_id,
+                        chunk_type=chunk.chunk_type,
+                        content=chunk.content,
+                        position=chunk.position,
+                        section=chunk.section,
+                        match_score=None,
+                        match_rationale=None,
+                        advocacy_blurb=None,
+                        experience_sources=[],
+                        should_render=False,
+                        include_in_scoring=False,
+                        semantic_type="other",
+                        evaluation_status="skipped",
+                        excluded_reason=excluded_reason,
+                        enriched_at=now,
+                        scored_content=None,
+                    )
+                )
 
         # Merge batch telemetry into generation_telemetry JSONB (duration_ms / matching_mode
         # are written by _finalize_tailoring; we only add batch_count and batch_errors here).
