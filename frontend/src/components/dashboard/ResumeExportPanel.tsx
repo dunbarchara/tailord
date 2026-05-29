@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ResumeDraftPreview } from '@/components/dashboard/ResumeDraftPreview';
 import { ResumeCanvas } from '@/components/dashboard/ResumeCanvas';
 import type { ResumeDraft } from '@/types';
 
@@ -130,82 +129,76 @@ export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, compan
           </div>
         </DialogHeader>
 
+        {/* Hint banner — only when a draft is loaded */}
+        {draft && (
+          <div className="shrink-0 flex items-center justify-center px-5 py-2 border-b border-border-subtle bg-surface-elevated">
+            <p className="text-xs text-text-tertiary text-center">
+              Click any text in the preview to edit it. Hover bullets for AI polish.
+            </p>
+          </div>
+        )}
+
         {/* Body */}
-        <div className="flex-1 flex overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
 
-          {/* Left: structural controls */}
-          <div className="w-[280px] shrink-0 overflow-y-auto border-r border-border-subtle px-4 py-4 space-y-4 custom-scrollbar">
+          {draft ? (
+            <ResumeCanvas
+              draft={draft}
+              userName={userName}
+              contactEmail={contactEmail}
+              tailoringPublicLink={tailoringPublicLink}
+              profilePublicLink={profilePublicLink}
+              tailoringId={tailoringId}
+              onDraftChange={setDraft}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+              {noActiveClaims && (
+                <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-surface-elevated border border-border-default max-w-sm">
+                  <AlertCircle className="h-4 w-4 text-text-tertiary shrink-0 mt-0.5" />
+                  <p className="text-text-secondary text-xs text-left">
+                    No experience claims found. Add your experience in{' '}
+                    <a href="/dashboard/experience" className="text-text-link hover:underline">My Experience</a>{' '}
+                    first, then generate a resume.
+                  </p>
+                </div>
+              )}
 
-            {noActiveClaims && (
-              <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-surface-elevated border border-border-default text-sm">
-                <AlertCircle className="h-4 w-4 text-text-tertiary shrink-0 mt-0.5" />
-                <p className="text-text-secondary text-xs">
-                  No experience claims found. Add your experience in{' '}
-                  <a href="/dashboard/experience" className="text-text-link hover:underline">My Experience</a>{' '}
-                  first, then generate a resume.
-                </p>
-              </div>
-            )}
+              {error && !noActiveClaims && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-surface-elevated border border-border-default text-xs text-error max-w-sm">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
 
-            {error && !noActiveClaims && (
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface-elevated border border-border-default text-xs text-error">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+              {generating && (
+                <div className="flex items-center gap-2 text-sm text-text-secondary">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  Selecting your most relevant experience…
+                </div>
+              )}
 
-            {!draft && !error && !generating && (
-              <div className="space-y-3">
-                <p className="text-sm text-text-secondary">
-                  Generates a one-page resume pre-filled with the experience most relevant to this role.
-                  Original claim content is never modified — edits are kept separately.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleGenerate}
-                  disabled={generating}
-                  className={cn(primaryBtnCls, 'w-full justify-center h-9')}
-                >
-                  Generate Resume
-                </button>
-              </div>
-            )}
-
-            {generating && !draft && (
-              <div className="flex items-center gap-2 text-sm text-text-secondary py-2">
-                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                Selecting your most relevant experience…
-              </div>
-            )}
-
-            {draft && !error && (
-              <ResumeDraftPreview
-                draft={draft}
-                tailoringId={tailoringId}
-                onDraftChange={setDraft}
-              />
-            )}
-          </div>
-
-          {/* Right: editable canvas */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden bg-[#e8e8e8] dark:bg-surface-sunken flex justify-center items-start py-8 px-4">
-            {draft ? (
-              <ResumeCanvas
-                draft={draft}
-                userName={userName}
-                contactEmail={contactEmail}
-                tailoringPublicLink={tailoringPublicLink}
-                profilePublicLink={profilePublicLink}
-                tailoringId={tailoringId}
-                onDraftChange={setDraft}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-text-tertiary gap-3">
-                <FileText className="h-10 w-10 opacity-20" />
-                <p className="text-sm">Your resume preview will appear here</p>
-              </div>
-            )}
-          </div>
+              {!error && !generating && (
+                <>
+                  <div className="flex flex-col items-center gap-2">
+                    <FileText className="h-10 w-10 text-text-tertiary opacity-30" />
+                    <p className="text-sm text-text-secondary max-w-xs">
+                      Generates a resume pre-filled with the experience most relevant to this role.
+                      Original content is never modified — edits are kept separately.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={generating}
+                    className={cn(primaryBtnCls, 'px-5 h-9')}
+                  >
+                    Generate Resume
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
         </div>
       </DialogContent>
