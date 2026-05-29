@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Download, AlertCircle, FileText, X, RefreshCw } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { Loader2, Download, AlertCircle, FileText, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -11,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ResumeDraftPreview } from '@/components/dashboard/ResumeDraftPreview';
+import { ResumeCanvas } from '@/components/dashboard/ResumeCanvas';
 import type { ResumeDraft } from '@/types';
 
 interface Props {
@@ -20,6 +22,8 @@ interface Props {
   jobTitle?: string | null;
   company?: string | null;
   initialDraft?: ResumeDraft | null;
+  tailoringPublicLink?: string | null;
+  profilePublicLink?: string | null;
 }
 
 const textBtnCls =
@@ -35,13 +39,12 @@ const primaryBtnCls =
   'text-sm font-normal tracking-[-0.1px] ' +
   'hover:opacity-90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
 
-export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, company, initialDraft }: Props) {
+export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, company, initialDraft, tailoringPublicLink, profilePublicLink }: Props) {
+  const { data: session } = useSession();
   const [draft, setDraft] = useState<ResumeDraft | null>(initialDraft ?? null);
   const [generating, setGenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [previewKey, setPreviewKey] = useState(0);
-  const [previewLoading, setPreviewLoading] = useState(true);
 
   const noActiveClaims = error === 'no_active_claims';
 
@@ -55,10 +58,7 @@ export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, compan
         setError(data?.detail ?? 'Generation failed.');
         return;
       }
-      const newDraft = await res.json();
-      setDraft(newDraft);
-      setPreviewKey(k => k + 1);
-      setPreviewLoading(true);
+      setDraft(await res.json());
     } catch {
       setError('Could not reach the server.');
     } finally {
@@ -91,16 +91,12 @@ export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, compan
     }
   }
 
-  function handleDraftChange(updated: ResumeDraft) {
-    setDraft(updated);
-    setPreviewKey(k => k + 1);
-    setPreviewLoading(true);
-  }
-
   const subtitle = [jobTitle, company].filter(Boolean).join(' · ');
+  const userName = session?.user?.name ?? null;
+  const contactEmail = session?.user?.email ?? null;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-[92vw] w-[1140px] max-h-[90vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden">
 
         {/* Header */}
@@ -131,24 +127,15 @@ export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, compan
                 </button>
               </>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-7 w-7 rounded-lg flex items-center justify-center text-text-tertiary hover:text-text-primary hover:bg-surface-overlay transition-colors"
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </div>
         </DialogHeader>
 
         {/* Body */}
         <div className="flex-1 flex overflow-hidden min-h-0">
 
-          {/* Left: controls */}
-          <div className="w-[300px] shrink-0 overflow-y-auto border-r border-border-subtle px-4 py-4 space-y-4 custom-scrollbar">
+          {/* Left: structural controls */}
+          <div className="w-[280px] shrink-0 overflow-y-auto border-r border-border-subtle px-4 py-4 space-y-4 custom-scrollbar">
 
-            {/* Error states */}
             {noActiveClaims && (
               <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl bg-surface-elevated border border-border-default text-sm">
                 <AlertCircle className="h-4 w-4 text-text-tertiary shrink-0 mt-0.5" />
@@ -167,12 +154,11 @@ export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, compan
               </div>
             )}
 
-            {/* Pre-generation state */}
             {!draft && !error && !generating && (
               <div className="space-y-3">
                 <p className="text-sm text-text-secondary">
                   Generates a one-page resume pre-filled with the experience most relevant to this role.
-                  Original claim content is never modified — AI rewrites are kept separately.
+                  Original claim content is never modified — edits are kept separately.
                 </p>
                 <button
                   type="button"
@@ -192,38 +178,27 @@ export function ResumeExportPanel({ open, onClose, tailoringId, jobTitle, compan
               </div>
             )}
 
-            {/* Draft controls */}
             {draft && !error && (
               <ResumeDraftPreview
                 draft={draft}
                 tailoringId={tailoringId}
-                onDraftChange={handleDraftChange}
+                onDraftChange={setDraft}
               />
             )}
           </div>
 
-          {/* Right: live preview */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden bg-[#e8e8e8] dark:bg-surface-sunken flex justify-center items-start py-8 px-2">
+          {/* Right: editable canvas */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden bg-[#e8e8e8] dark:bg-surface-sunken flex justify-center items-start py-8 px-4">
             {draft ? (
-              <div className="relative flex-shrink-0 shadow-xl">
-                {previewLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                    <Loader2 className="h-5 w-5 animate-spin text-text-tertiary" />
-                  </div>
-                )}
-                <iframe
-                  key={previewKey}
-                  src={`/api/tailorings/${tailoringId}/resume/html`}
-                  title="Resume preview"
-                  onLoad={() => setPreviewLoading(false)}
-                  style={{
-                    width: '8.5in',
-                    height: '11in',
-                    border: 'none',
-                    display: 'block',
-                  }}
-                />
-              </div>
+              <ResumeCanvas
+                draft={draft}
+                userName={userName}
+                contactEmail={contactEmail}
+                tailoringPublicLink={tailoringPublicLink}
+                profilePublicLink={profilePublicLink}
+                tailoringId={tailoringId}
+                onDraftChange={setDraft}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-text-tertiary gap-3">
                 <FileText className="h-10 w-10 opacity-20" />

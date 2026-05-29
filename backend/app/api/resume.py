@@ -27,6 +27,15 @@ router = APIRouter(prefix="/tailorings", tags=["resume"])
 logger = structlog.get_logger(__name__)
 
 
+def _candidate_email(user: User) -> str:
+    """Resolve contact email using the same priority as render_resume_html."""
+    if user.profile and user.profile.communication_email:
+        return user.profile.communication_email
+    if user.auth_identities:
+        return user.auth_identities[0].email or ""
+    return user.email or ""
+
+
 def _get_tailoring_or_404(tailoring_id: uuid.UUID, user_id: uuid.UUID, db: Session) -> Tailoring:
     tailoring = (
         db.query(Tailoring)
@@ -108,6 +117,12 @@ def _apply_patch(draft: ResumeDraft, body: ResumePatchRequest) -> ResumeDraft:
                 if cid in s["claim_ids"]:
                     s["rewrites"][cid] = rewrite
 
+    if body.skills_rewrites is not None:
+        data["skills_rewrites"] = {**data.get("skills_rewrites", {}), **body.skills_rewrites}
+
+    if body.education_data is not None:
+        data["education_data"] = [e.model_dump() for e in body.education_data]
+
     return ResumeDraft(**data)
 
 
@@ -123,6 +138,11 @@ def generate_resume(
     if not prereqs["can_generate"]:
         raise HTTPException(status_code=422, detail="no_active_claims")
     draft = generate_resume_selection(tailoring, user.id, db)
+    # Snapshot identity fields so the canvas matches what the PDF renders
+    draft_data = draft.model_dump()
+    draft_data["candidate_name"] = user.candidate_name
+    draft_data["candidate_email"] = _candidate_email(user)
+    draft = ResumeDraft(**draft_data)
     tailoring.resume_draft = draft.model_dump()
     db.commit()
     logger.info("resume_draft_generated", tailoring_id=str(tailoring_id), user_id=str(user.id))

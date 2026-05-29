@@ -28,16 +28,21 @@ class ResumeSection(BaseModel):
 
 class ResumeContactOverride(BaseModel):
     linkedin_url: str | None = None
+    linkedin_display: str | None = None  # custom display text; falls back to linkedin_url
     location: str | None = None
+    tailord_link_type: str | None = None  # 'tailoring' | 'profile' | None (auto — prefers profile)
 
 
 class ResumeDraft(BaseModel):
     generated_at: str
     polished: bool = False
+    candidate_name: str = ""  # snapshot of user.candidate_name at generation time
+    candidate_email: str = ""  # snapshot of contact email at generation time
     contact_override: ResumeContactOverride = ResumeContactOverride()
     sections: list[ResumeSection]
     skills_claim_ids: list[str]
     skills_snapshots: dict[str, str] = {}  # {claim_id: content} — frozen at generation time
+    skills_rewrites: dict[str, str] = {}  # {claim_id: user-edited content}
     education_data: list[EducationEntry] = []  # embedded at generation time — no DB lookup needed
     education_group_ids: list[str] = []  # legacy — kept for backward compat
     warnings: list[str] = []  # e.g. "no_resume_source" → triggers soft callout in UI
@@ -50,8 +55,10 @@ class ResumePatchRequest(BaseModel):
     sections: list[ResumeSection] | None = None
     skills_claim_ids: list[str] | None = None
     education_group_ids: list[str] | None = None
+    education_data: list[EducationEntry] | None = None  # full replacement of education list
     contact_override: ResumeContactOverride | None = None
     rewrites: dict[str, str] | None = None  # {claim_id: rewrite} merged into matching section
+    skills_rewrites: dict[str, str] | None = None  # {claim_id: rewrite} for skill content
 
 
 class PolishRequest(BaseModel):

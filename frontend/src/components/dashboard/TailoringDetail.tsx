@@ -1162,6 +1162,8 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
           jobTitle={tailoring.title}
           company={tailoring.company}
           initialDraft={tailoring.resume_draft}
+          tailoringPublicLink={tailoring.is_public && tailoring.public_slug && tailoring.author_username_slug ? `tailord.app/u/${tailoring.author_username_slug}/${tailoring.public_slug}` : null}
+          profilePublicLink={tailoring.author_username_slug ? `tailord.app/u/${tailoring.author_username_slug}` : null}
         />
       )}
 

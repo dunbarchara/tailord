@@ -26,11 +26,14 @@ export interface ResumeSection {
   included: boolean
   claim_ids: string[]
   rewrites: Record<string, string>
+  bullet_snapshots: Record<string, string>
 }
 
 export interface ResumeContactOverride {
   linkedin_url: string | null
+  linkedin_display: string | null
   location: string | null
+  tailord_link_type: 'tailoring' | 'profile' | null
 }
 
 export interface EducationEntry {
@@ -44,12 +47,17 @@ export interface EducationEntry {
 export interface ResumeDraft {
   generated_at: string
   polished: boolean
+  candidate_name: string
+  candidate_email: string
   contact_override: ResumeContactOverride
   sections: ResumeSection[]
   skills_claim_ids: string[]
+  skills_snapshots: Record<string, string>
+  skills_rewrites: Record<string, string>
   education_group_ids: string[]
   education_data?: EducationEntry[]
   warnings: string[]
+  experience_snapshot_at: string | null
 }
 
 export interface ExperienceGroup {

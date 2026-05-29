@@ -175,12 +175,9 @@
       </div>
       {%- if edu.degree or edu.end_date %}
       <div class="entry-row">
-        <span class="entry-sub">{{ edu.degree or '' }}</span>
+        <span class="entry-sub">{{ edu.degree or '' }}{% if edu.distinction %} | {{ edu.distinction }}{% endif %}</span>
         {%- if edu.end_date %}<span class="entry-dates">{{ edu.end_date }}</span>{%- endif %}
       </div>
-      {%- endif %}
-      {%- if edu.distinction %}
-      <div class="entry-distinction">{{ edu.distinction }}</div>
       {%- endif %}
     </div>
     {% endfor %}

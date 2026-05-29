@@ -24,12 +24,25 @@ def render_resume_html(
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), autoescape=True)
     template = env.get_template("resume.html.j2")
 
-    # Resolve public link
-    public_link = None
-    if tailoring.public_slug and tailoring.is_public:
-        public_link = f"tailord.app/t/{tailoring.public_slug}"
-    elif user.profile and user.profile.username_slug and user.profile.profile_public:
-        public_link = f"tailord.app/u/{user.profile.username_slug}"
+    # Resolve public link — tailoring URL is /u/<user-slug>/<tailoring-slug>
+    # Display text is always tailord.app/u/<user-slug> regardless of which href is used.
+    profile_slug = user.profile.username_slug if user.profile else None
+    profile_public = bool(user.profile and user.profile.profile_public)
+    tailoring_link_href = (
+        f"tailord.app/u/{profile_slug}/{tailoring.public_slug}"
+        if tailoring.public_slug and tailoring.is_public and profile_slug
+        else None
+    )
+    profile_link_href = f"tailord.app/u/{profile_slug}" if profile_slug and profile_public else None
+    link_type = draft.contact_override.tailord_link_type
+    if link_type == "tailoring":
+        public_link_href = tailoring_link_href
+    elif link_type == "profile":
+        public_link_href = profile_link_href
+    else:
+        public_link_href = profile_link_href or tailoring_link_href
+    # Display text is always the shorter profile URL form
+    public_link_display = f"tailord.app/u/{profile_slug}" if profile_slug else None
 
     # Contact email: communication_email → auth identity → user.email
     contact_email = None
@@ -65,11 +78,13 @@ def render_resume_html(
             }
         )
 
-    # Skills: resolve content strings, fall back to snapshot if claim was deleted/rechunked
+    # Skills: user rewrite → live claim → snapshot fallback
     skills = [
-        claims[cid].content if cid in claims else draft.skills_snapshots.get(cid)
+        draft.skills_rewrites.get(cid)
+        or (claims[cid].content if cid in claims else None)
+        or draft.skills_snapshots.get(cid)
         for cid in draft.skills_claim_ids
-        if cid in claims or cid in draft.skills_snapshots
+        if cid in draft.skills_rewrites or cid in claims or cid in draft.skills_snapshots
     ]
 
     # Education: embedded in draft at generation time — no DB lookup needed
@@ -79,6 +94,7 @@ def render_resume_html(
             "degree": edu.degree,
             "end_date": edu.end_date,
             "location": edu.location,
+            "distinction": edu.distinction,
         }
         for edu in draft.education_data
     ]
@@ -89,12 +105,15 @@ def render_resume_html(
     # Bandit cannot infer the escape() call, so nosec suppresses the false positive.
     if contact_email:
         contact_parts.append(Markup(escape(contact_email)))  # nosec B704
-    if public_link:
-        url = f"https://{public_link}"
-        contact_parts.append(Markup(f'<a href="{escape(url)}">{escape(public_link)}</a>'))  # nosec B704
+    if public_link_href and public_link_display:
+        url = f"https://{public_link_href}"
+        contact_parts.append(Markup(f'<a href="{escape(url)}">{escape(public_link_display)}</a>'))  # nosec B704
     linkedin_url = draft.contact_override.linkedin_url
     if linkedin_url:
-        contact_parts.append(Markup(f'<a href="{escape(linkedin_url)}">{escape(linkedin_url)}</a>'))  # nosec B704
+        linkedin_display = draft.contact_override.linkedin_display or linkedin_url
+        contact_parts.append(
+            Markup(f'<a href="{escape(linkedin_url)}">{escape(linkedin_display)}</a>')  # nosec B704
+        )
     location = draft.contact_override.location
     if location:
         contact_parts.append(Markup(escape(location)))  # nosec B704
