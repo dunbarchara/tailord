@@ -57,6 +57,7 @@ class ResumePatchRequest(BaseModel):
     education_group_ids: list[str] | None = None
     education_data: list[EducationEntry] | None = None  # full replacement of education list
     contact_override: ResumeContactOverride | None = None
+    candidate_email: str | None = None  # user-edited contact email override
     rewrites: dict[str, str] | None = None  # {claim_id: rewrite} merged into matching section
     skills_rewrites: dict[str, str] | None = None  # {claim_id: rewrite} for skill content
 

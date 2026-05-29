@@ -123,6 +123,9 @@ def _apply_patch(draft: ResumeDraft, body: ResumePatchRequest) -> ResumeDraft:
     if body.education_data is not None:
         data["education_data"] = [e.model_dump() for e in body.education_data]
 
+    if body.candidate_email is not None:
+        data["candidate_email"] = body.candidate_email
+
     return ResumeDraft(**data)
 
 
