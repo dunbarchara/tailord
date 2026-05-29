@@ -181,3 +181,55 @@ def test_export_pdf_not_generated_returns_404(client, approved_user, db):
     tailoring = make_tailoring(db, approved_user, job)
     res = client.post(f"/tailorings/{tailoring.id}/resume/pdf", headers=AUTH_HEADERS)
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# snapshot fallback
+# ---------------------------------------------------------------------------
+
+
+def test_resume_renders_from_snapshot_after_claims_deleted(client, approved_user, db):
+    """Existing resume_draft snapshots should still render after all claims are deleted/rechunked."""
+    from app.models.database import ExperienceClaim
+
+    job = make_job(db, approved_user)
+    tailoring = make_tailoring(db, approved_user, job)
+    group = make_group(db, approved_user, group_type="role", name="Snapshot Corp")
+    make_claim(
+        db,
+        approved_user,
+        group=group,
+        content="Reduced p99 latency by 40% via query optimisation.",
+    )
+
+    with patch("app.services.resume_selector._retrieve_top_k_experience_chunks", return_value=[]):
+        gen_res = client.post(
+            f"/tailorings/{tailoring.id}/resume/generate",
+            headers=AUTH_HEADERS,
+        )
+    assert gen_res.status_code == 200
+    draft = gen_res.json()
+
+    # Snapshots must be populated at generation time
+    for section in draft["sections"]:
+        for cid in section["claim_ids"]:
+            assert cid in section["bullet_snapshots"], f"snapshot missing for claim {cid}"
+
+    # Simulate rechunk: delete all claims for this user
+    db.query(ExperienceClaim).filter(ExperienceClaim.user_id == approved_user.id).delete()
+    db.commit()
+
+    # Render HTML — should fall back to snapshots, not blank
+    with patch(
+        "app.api.resume.render_resume_pdf",
+        new=AsyncMock(return_value=b"%PDF-1.4 fake"),
+    ):
+        html_res = client.get(
+            f"/tailorings/{tailoring.id}/resume/html",
+            headers=AUTH_HEADERS,
+        )
+
+    assert html_res.status_code == 200
+    html = html_res.text
+    assert "Reduced p99 latency" in html, "snapshot content missing from rendered HTML"
+    assert "Snapshot Corp" in html, "group name missing from rendered HTML"

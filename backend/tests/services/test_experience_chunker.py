@@ -332,3 +332,109 @@ def test_delete_github_chunks_single_repo():
     delete_github_chunks(db, exp_id, repo_name="tailord")
 
     db.query.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# chunk_resume — ExperienceGroup creation + group_id assignment
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_group(group_type: str, source_type: str, name: str = "test") -> SimpleNamespace:
+    """Return a SimpleNamespace that passes the group_type string comparisons in chunk_resume."""
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        group_type=group_type,
+        source_type=source_type,
+        name=name,
+        parent_group_id=None,
+        type_meta=None,
+    )
+
+
+def test_chunk_resume_sets_group_id_on_work_experience_claims():
+    """chunk_resume assigns the group's id to group_id on each created claim."""
+    profile = {
+        "work_experience": [
+            {
+                "title": "SWE",
+                "company": "ACME",
+                "duration": "2020–2023",
+                "bullets": ["Built REST APIs"],
+            }
+        ]
+    }
+    exp = _make_resume_source(extracted=profile)
+    db = _make_db()
+    mock_group = _make_mock_group("role", "resume", "ACME | SWE")
+    db.query.return_value.filter.return_value.first.return_value = mock_group
+    db.query.return_value.filter.return_value.all.return_value = []
+
+    chunk_resume(db, exp)
+
+    # Only the ExperienceClaim is added (group was "found" by mock)
+    assert len(db._added) == 1
+    assert db._added[0].group_id == mock_group.id
+
+
+def test_chunk_resume_creates_group_when_not_found():
+    """When no existing group is found, chunk_resume creates a new ExperienceGroup via db.add."""
+    from app.models.database import ExperienceClaim, ExperienceGroup
+
+    profile = {
+        "work_experience": [
+            {"title": "Dev", "company": "Corp", "duration": "", "bullets": ["Did work"]}
+        ]
+    }
+    exp = _make_resume_source(extracted=profile)
+    db = _make_db()
+    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.all.return_value = []
+
+    chunk_resume(db, exp)
+
+    added_groups = [a for a in db._added if isinstance(a, ExperienceGroup)]
+    added_claims = [a for a in db._added if isinstance(a, ExperienceClaim)]
+    assert len(added_groups) == 1
+    assert added_groups[0].group_type == "role"
+    assert added_groups[0].source_type == "resume"
+    assert len(added_claims) == 1
+
+
+# ---------------------------------------------------------------------------
+# chunk_github_repo — ExperienceGroup creation + group_id assignment
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_github_repo_sets_group_id_on_claims():
+    """chunk_github_repo assigns the repo group's id to group_id on each created claim."""
+    repos = [{"name": "myrepo", "detected_stack": ["Python", "FastAPI"]}]
+    exp = _make_github_source(repos=repos)
+    db = _make_db()
+    mock_group = _make_mock_group("repository", "github", "myrepo")
+    db.query.return_value.filter.return_value.first.return_value = mock_group
+    db.query.return_value.filter.return_value.all.return_value = []
+
+    count = chunk_github_repo(db, exp, "myrepo")
+
+    assert count == 2  # 2 skills from detected_stack
+    assert all(c.group_id == mock_group.id for c in db._added)
+
+
+def test_chunk_github_repo_creates_repository_group():
+    """When no existing group is found, chunk_github_repo creates a 'repository' ExperienceGroup."""
+    from app.models.database import ExperienceGroup
+
+    repos = [{"name": "myrepo", "detected_stack": ["Go"]}]
+    exp = _make_github_source(repos=repos)
+    db = _make_db()
+    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.all.return_value = []
+
+    chunk_github_repo(db, exp, "myrepo")
+
+    added_groups = [a for a in db._added if isinstance(a, ExperienceGroup)]
+    assert len(added_groups) == 1
+    assert added_groups[0].group_type == "repository"
+    assert added_groups[0].source_type == "github"
+    assert added_groups[0].name == "myrepo"
+    assert added_groups[0].source_ref == "myrepo"

@@ -28,6 +28,7 @@ from app.metrics import (
 )
 from app.models.database import (
     ExperienceClaim,
+    ExperienceGroup,
     ExperienceSource,
     Job,
     JobChunk,
@@ -41,6 +42,7 @@ from app.services.chunk_matcher import re_enrich_single_chunk
 from app.services.experience_chunker import (
     chunk_resume,
     delete_github_chunks,
+    delete_github_groups,
     delete_resume_chunks,
     delete_user_input_chunks,
 )
@@ -745,6 +747,7 @@ def set_github(
             new_repo_names = set(body.selected_repo_names)
             for removed_repo in old_repo_names - new_repo_names:
                 delete_github_chunks(db, user.id, repo_name=removed_repo)
+                delete_github_groups(db, user.id, repo_name=removed_repo)
 
         github_src.config = {"username": body.github_username}
         if additions_only:
@@ -825,6 +828,7 @@ def remove_github(
         raise HTTPException(status_code=404, detail="No GitHub profile connected")
 
     delete_github_chunks(db, user.id)
+    delete_github_groups(db, user.id)
     db.delete(github_src)
     db.commit()
 
@@ -965,6 +969,7 @@ def _serialize_exp_claim(c: ExperienceClaim) -> dict:
         "claim_type": c.claim_type,
         "content": c.content,
         "group_key": c.group_key,
+        "group_id": str(c.group_id) if c.group_id else None,
         "date_range": c.date_range,
         "keywords": c.keywords,
         "provenance_metadata": c.provenance_metadata,
@@ -972,6 +977,22 @@ def _serialize_exp_claim(c: ExperienceClaim) -> dict:
         "status": c.status,
         "position": c.position,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+    }
+
+
+def _serialize_exp_group(g: ExperienceGroup) -> dict:
+    type_meta = g.type_meta or {}
+    return {
+        "id": str(g.id),
+        "name": g.name,
+        "group_type": g.group_type,
+        "source_type": g.source_type,
+        "source_ref": g.source_ref,
+        "parent_group_id": str(g.parent_group_id) if g.parent_group_id else None,
+        "suggested_parent_id": type_meta.get("suggested_parent_id"),
+        "suggestion_confidence": type_meta.get("suggestion_confidence"),
+        "position": g.position,
+        "description": g.description,
     }
 
 
@@ -1074,6 +1095,8 @@ class ClaimContentUpdate(BaseModel):
     group_key: str | None = None
     date_range: str | None = None
     status: str | None = None
+    # Pass a UUID string to move to a group; pass "" to move to ungrouped.
+    group_id: str | None = None
 
     @model_validator(mode="after")
     def at_least_one(self) -> "ClaimContentUpdate":
@@ -1082,9 +1105,10 @@ class ClaimContentUpdate(BaseModel):
             and self.group_key is None
             and self.date_range is None
             and self.status is None
+            and self.group_id is None
         ):
             raise ValueError(
-                "at least one of content, group_key, date_range, or status is required"
+                "at least one of content, group_key, date_range, status, or group_id is required"
             )
         return self
 
@@ -1150,12 +1174,131 @@ def update_experience_claim(
             sibling.date_range = new_date_range
             sibling.updated_at = now
 
+    if body.group_id is not None:
+        if body.group_id == "":
+            # Rehome to ungrouped — clear group_id and group_key
+            claim.group_id = None
+            claim.group_key = None
+            claim.updated_at = now
+        else:
+            try:
+                target_group_uuid = uuid.UUID(body.group_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid group_id")
+            target_group = (
+                db.query(ExperienceGroup)
+                .filter(
+                    ExperienceGroup.id == target_group_uuid,
+                    ExperienceGroup.user_id == user.id,
+                )
+                .first()
+            )
+            if not target_group:
+                raise HTTPException(status_code=404, detail="Target group not found")
+            claim.group_id = target_group_uuid
+            # Keep group_key in sync for legacy rendering compatibility
+            claim.group_key = target_group.name
+            claim.updated_at = now
+
     db.commit()
     db.refresh(claim)
     if body.content is not None:
         background_tasks.add_task(re_embed_chunk, claim.id)
     logger.info("update_experience_claim", claim_id=str(claim.id))
     return _serialize_exp_claim(claim)
+
+
+@router.get("/experience/groups")
+def get_experience_groups(
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Return all ExperienceGroup rows for the user."""
+    groups = (
+        db.query(ExperienceGroup)
+        .filter(ExperienceGroup.user_id == user.id)
+        .order_by(ExperienceGroup.source_type, ExperienceGroup.group_type, ExperienceGroup.name)
+        .all()
+    )
+    return [_serialize_exp_group(g) for g in groups]
+
+
+class GroupUpdate(BaseModel):
+    parent_group_id: str | None = None  # UUID string to associate; "" or null to clear
+    name: str | None = None
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def at_least_one(self) -> "GroupUpdate":
+        if self.parent_group_id is None and self.name is None and self.description is None:
+            raise ValueError("at least one of parent_group_id, name, or description is required")
+        return self
+
+
+@router.patch("/experience/groups/{group_id}")
+def update_experience_group(
+    group_id: str,
+    body: GroupUpdate,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Update an ExperienceGroup — primarily used to set/clear parent_group_id."""
+    try:
+        group_uuid = uuid.UUID(group_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid group ID")
+
+    group = (
+        db.query(ExperienceGroup)
+        .filter(ExperienceGroup.id == group_uuid, ExperienceGroup.user_id == user.id)
+        .first()
+    )
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if body.parent_group_id is not None:
+        if body.parent_group_id == "":
+            # Clear association
+            group.parent_group_id = None
+        else:
+            try:
+                parent_uuid = uuid.UUID(body.parent_group_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid parent_group_id")
+
+            if parent_uuid == group.id:
+                raise HTTPException(status_code=422, detail="A group cannot be its own parent")
+
+            parent = (
+                db.query(ExperienceGroup)
+                .filter(ExperienceGroup.id == parent_uuid, ExperienceGroup.user_id == user.id)
+                .first()
+            )
+            if not parent:
+                raise HTTPException(status_code=404, detail="Parent group not found")
+            if parent.group_type != "role":
+                raise HTTPException(status_code=422, detail="Parent group must be a role group")
+            if parent.parent_group_id is not None:
+                raise HTTPException(
+                    status_code=422, detail="Only one level of hierarchy is supported"
+                )
+            group.parent_group_id = parent_uuid
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Name cannot be empty")
+        group.name = name
+
+    if body.description is not None:
+        group.description = body.description.strip() or None
+
+    db.commit()
+    db.refresh(group)
+    logger.info("update_experience_group", group_id=str(group.id))
+    return _serialize_exp_group(group)
 
 
 @router.delete("/experience/claims/{claim_id}", status_code=204)

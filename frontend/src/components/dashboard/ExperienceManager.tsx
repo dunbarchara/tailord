@@ -9,7 +9,7 @@ import { ResumeUploadSection } from '@/components/dashboard/ResumeUploadSection'
 import type { UploadPhase } from '@/components/dashboard/ResumeUploadSection';
 import { GitHubSection } from '@/components/dashboard/GitHubSection';
 import type { GithubState } from '@/components/dashboard/GitHubSection';
-import type { ExperienceRecord, ExperienceClaimsResponse, GitHubRepo, ProfileCorrections } from '@/types';
+import type { ExperienceRecord, ExperienceClaimsResponse, ExperienceGroup, GitHubRepo, ProfileCorrections } from '@/types';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -150,6 +150,7 @@ export function ExperienceManager({
   const [scanningRepos, setScanningRepos] = useState<Record<string, number>>({});
   const scanningReposRef = useRef<Record<string, number>>({});
   const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const suggestionToastShownRef = useRef(false);
 
   const _emptyProfile = { yoe_override: '', title: '', location: '', headline: '', summary: '', email: '', phone: '', linkedin: '' };
   const [profileFields, setProfileFields] = useState(_emptyProfile);
@@ -230,6 +231,25 @@ export function ExperienceManager({
     if (scanPollRef.current) { clearInterval(scanPollRef.current); scanPollRef.current = null; }
   }, []);
 
+  const checkAndShowSuggestionToast = useCallback(async () => {
+    if (suggestionToastShownRef.current) return;
+    try {
+      const res = await fetch('/api/experience/groups');
+      if (!res.ok) return;
+      const groups: ExperienceGroup[] = await res.json();
+      const pending = groups.filter(
+        (g) => g.group_type === 'repository' && g.suggested_parent_id && !g.parent_group_id
+      );
+      if (pending.length > 0) {
+        suggestionToastShownRef.current = true;
+        toast(
+          `${pending.length} GitHub repo${pending.length > 1 ? 's' : ''} may be related to your work experience.`,
+          { description: 'Use the ⋯ menu on a repo header to associate it with a role.', duration: 8000 },
+        );
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const startScanPolling = useCallback(() => {
     stopScanPolling();
     scanPollRef.current = setInterval(async () => {
@@ -256,10 +276,11 @@ export function ExperienceManager({
           setConnectedGithub({ username: record.github_username!, repos: record.github_repos ?? [] });
           setChunksRefreshKey((k) => k + 1);
           if (Object.keys(scanningReposRef.current).length === 0) stopScanPolling();
+          checkAndShowSuggestionToast();
         }
       } catch { /* ignore */ }
     }, 3000);
-  }, [stopScanPolling, updateScanningRepos]);
+  }, [stopScanPolling, updateScanningRepos, checkAndShowSuggestionToast]);
 
   useEffect(() => {
     async function loadInitialState() {
@@ -395,6 +416,7 @@ export function ExperienceManager({
                 setGithubUrl(record.github_username);
                 setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
               }
+              checkAndShowSuggestionToast();
             } else if (currentEvent === 'error') {
               const { message } = JSON.parse(data);
               setUploadState({ phase: 'error', message });

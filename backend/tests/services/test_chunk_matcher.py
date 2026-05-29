@@ -283,6 +283,7 @@ def _exp_chunk(
     keywords=None,
 ):
     return SimpleNamespace(
+        id=uuid.uuid4(),
         content=content,
         group_key=group_key,
         date_range=date_range,
@@ -338,6 +339,111 @@ def test_build_grouped_context_mixed():
 
 def test_build_grouped_context_empty():
     assert _build_grouped_context([]) == ""
+
+
+# ---------------------------------------------------------------------------
+# _build_grouped_context — FK-linked groups (parent_group_id set)
+# ---------------------------------------------------------------------------
+
+
+def _make_group(
+    group_id, name, group_type="role", source_type="resume", parent_group_id=None, parent=None
+):
+    return SimpleNamespace(
+        id=group_id,
+        name=name,
+        group_type=group_type,
+        source_type=source_type,
+        parent_group_id=parent_group_id,
+        parent=parent,
+    )
+
+
+def _exp_chunk_fk(
+    content, group_id, group, source_type="resume", source_ref=None, date_range=None, keywords=None
+):
+    return SimpleNamespace(
+        content=content,
+        group_id=group_id,
+        group=group,
+        group_key=None,
+        date_range=date_range,
+        source_type=source_type,
+        source_ref=source_ref,
+        keywords=keywords,
+    )
+
+
+def test_build_grouped_context_fk_single_group():
+    """FK-bucketed claims appear under the group's name."""
+    gid = uuid.uuid4()
+    group = _make_group(gid, "Startup | CTO")
+    chunks = [
+        _exp_chunk_fk("Scaled infra to 10k users", gid, group, date_range="2022–2024"),
+        _exp_chunk_fk("Hired engineering team", gid, group, date_range="2022–2024"),
+    ]
+    result = _build_grouped_context(chunks)
+    assert "Startup | CTO" in result
+    assert "Scaled infra" in result
+    assert "Hired engineering team" in result
+
+
+def test_build_grouped_context_fk_linked_repo_merges_under_parent():
+    """A repo group with parent_group_id merges its claims under the parent's header."""
+    parent_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+
+    parent_group = _make_group(
+        parent_id, "Tailord | Founder", group_type="role", source_type="resume"
+    )
+    child_group = _make_group(
+        child_id,
+        "tailord",
+        group_type="repository",
+        source_type="github",
+        parent_group_id=parent_id,
+        parent=parent_group,
+    )
+
+    resume_claim = _exp_chunk_fk(
+        "Led product development",
+        parent_id,
+        parent_group,
+        source_type="resume",
+        date_range="2024–Present",
+    )
+    github_claim = _exp_chunk_fk(
+        "Python",
+        child_id,
+        child_group,
+        source_type="github",
+        source_ref="tailord",
+    )
+
+    result = _build_grouped_context([resume_claim, github_claim])
+
+    # Both appear under a single header (parent's name)
+    assert "Tailord | Founder" in result
+    assert "Led product development" in result
+    assert "Python" in result
+    # Source labels present since two source_types in same bucket
+    assert "[resume]" in result
+    assert "[github: tailord]" in result
+    # The child group header does NOT appear as a separate section
+    assert result.count("tailord") == result.count("[github: tailord]")
+
+
+def test_build_grouped_context_fk_no_mixed_labels_when_single_source():
+    """When all claims share the same source_type, no inline source labels are added."""
+    gid = uuid.uuid4()
+    group = _make_group(gid, "Corp | Engineer")
+    chunks = [
+        _exp_chunk_fk("Built CI pipeline", gid, group, source_type="resume"),
+        _exp_chunk_fk("Reduced deploy time 50%", gid, group, source_type="resume"),
+    ]
+    result = _build_grouped_context(chunks)
+    assert "[resume]" not in result
+    assert "Built CI pipeline" in result
 
 
 # ---------------------------------------------------------------------------

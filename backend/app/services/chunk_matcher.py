@@ -132,11 +132,16 @@ def _retrieve_top_k_experience_chunks(
     ordered by cosine similarity (closest first).
 
     Scoped to the given user_id. Skips chunks with null embeddings.
+    Groups (and their parents) are eager-loaded so they remain accessible
+    after the session is closed.
     """
-    from app.models.database import ExperienceClaim
+    from sqlalchemy.orm import joinedload
+
+    from app.models.database import ExperienceClaim, ExperienceGroup
 
     return (
         db.query(ExperienceClaim)
+        .options(joinedload(ExperienceClaim.group).joinedload(ExperienceGroup.parent))
         .filter(
             ExperienceClaim.user_id == user_id,
             ExperienceClaim.embedding.isnot(None),
@@ -152,34 +157,100 @@ def _build_grouped_context(chunks: list) -> str:
     """
     Format a list of ExperienceClaim rows into a grouped, human-readable context block.
 
-    Groups chunks by (group_key, date_range, source_type) so the LLM sees them as
-    coherent work-experience entries / projects / GitHub repos, not isolated facts.
-    Chunks without a group_key (typically skills / other) are rendered as flat bullets.
+    Primary path: claims with group_id set are bucketed by their effective group.
+    If a claim's group has parent_group_id, it is bucketed under the parent (role)
+    group so linked resume + GitHub evidence is presented as a unified block.
+
+    Legacy path: claims without group_id fall back to (group_key, date_range,
+    source_type) tuple grouping (unchanged from before).
+
+    When a group contains claims from multiple source_types, inline source labels
+    are appended so the LLM can distinguish resume bullets from GitHub evidence.
     """
-    groups: OrderedDict[tuple, list] = OrderedDict()
+    # Each bucket is either:
+    #   FK-based:     {"fk": True, "group": ExperienceGroup, "claims": [...]}
+    #   Legacy-based: {"fk": False, "group_key": str, "date_range": str, "source_type": str, "claims": [...]}
+    bucket_order: list = []  # ordered list of keys
+    buckets: OrderedDict = OrderedDict()
     ungrouped: list = []
 
     for chunk in chunks:
-        if chunk.group_key:
+        group_id = getattr(chunk, "group_id", None)
+        group_obj = getattr(chunk, "group", None)
+
+        if group_id and group_obj:
+            # Bucket under parent group if this group is a child
+            parent = getattr(group_obj, "parent", None)
+            effective = (
+                parent if (getattr(group_obj, "parent_group_id", None) and parent) else group_obj
+            )
+            key = str(effective.id)
+            if key not in buckets:
+                bucket_order.append(key)
+                buckets[key] = {"fk": True, "group": effective, "claims": []}
+            buckets[key]["claims"].append(chunk)
+        elif getattr(chunk, "group_key", None):
             key = (chunk.group_key, chunk.date_range or "", chunk.source_type)
-            groups.setdefault(key, []).append(chunk)
+            if key not in buckets:
+                bucket_order.append(key)
+                buckets[key] = {
+                    "fk": False,
+                    "group_key": chunk.group_key,
+                    "date_range": chunk.date_range or "",
+                    "source_type": chunk.source_type,
+                    "claims": [],
+                }
+            buckets[key]["claims"].append(chunk)
         else:
             ungrouped.append(chunk)
 
     lines: list[str] = []
 
-    for (group_key, date_range, source_type), group_chunks in groups.items():
-        if source_type == "github":
-            techs = group_chunks[0].keywords or []
-            tech_str = f"  ({', '.join(techs)})" if techs else ""
-            header = f"GitHub: {group_key}{tech_str}"
+    for key in bucket_order:
+        bucket = buckets[key]
+        group_chunks = bucket["claims"]
+
+        if bucket["fk"]:
+            g = bucket["group"]
+            if g.source_type == "github":
+                techs = group_chunks[0].keywords or [] if group_chunks else []
+                tech_str = f"  ({', '.join(techs)})" if techs else ""
+                header = f"GitHub: {g.name}{tech_str}"
+            else:
+                # Use date_range from claims (role groups may not store dates)
+                date_ranges = [c.date_range for c in group_chunks if getattr(c, "date_range", None)]
+                date_str = date_ranges[0] if date_ranges else None
+                header = g.name
+                if date_str:
+                    header += f"  ({date_str})"
         else:
-            header = group_key
-            if date_range:
-                header += f"  ({date_range})"
+            group_key = bucket["group_key"]
+            date_range = bucket["date_range"]
+            source_type = bucket["source_type"]
+            if source_type == "github":
+                techs = group_chunks[0].keywords or [] if group_chunks else []
+                tech_str = f"  ({', '.join(techs)})" if techs else ""
+                header = f"GitHub: {group_key}{tech_str}"
+            else:
+                header = group_key
+                if date_range:
+                    header += f"  ({date_range})"
+
         lines.append(header)
+
+        # Add source label only when multiple source_types are present in a FK bucket
+        has_mixed = bucket["fk"] and len({c.source_type for c in group_chunks}) > 1
         for c in group_chunks:
-            lines.append(f"  • {c.content}")
+            if has_mixed:
+                c_group = getattr(c, "group", None)
+                if c.source_type == "github":
+                    ref = getattr(c, "source_ref", None) or (c_group.name if c_group else "github")
+                    label = f"  [github: {ref}]"
+                else:
+                    label = f"  [{c.source_type}]"
+                lines.append(f"  • {c.content}{label}")
+            else:
+                lines.append(f"  • {c.content}")
         lines.append("")
 
     if ungrouped:
@@ -213,10 +284,13 @@ def _append_pinned_claims(
     they must always appear in that requirement's scoring context regardless of
     whether they win a natural cosine slot.
     """
-    from app.models.database import ExperienceClaim
+    from sqlalchemy.orm import joinedload
+
+    from app.models.database import ExperienceClaim, ExperienceGroup
 
     pinned = (
         db.query(ExperienceClaim)
+        .options(joinedload(ExperienceClaim.group).joinedload(ExperienceGroup.parent))
         .filter(
             ExperienceClaim.user_id == user_id,
             ExperienceClaim.status == "active",

@@ -28,9 +28,108 @@ from datetime import datetime, timedelta, timezone
 import structlog
 from sqlalchemy.orm import Session
 
-from app.models.database import ExperienceClaim, ExperienceSource
+from app.models.database import ExperienceClaim, ExperienceGroup, ExperienceSource
 
 logger = structlog.get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# ExperienceGroup helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_or_create_group(
+    *,
+    user_id: uuid.UUID,
+    group_type: str,
+    name: str,
+    source_type: str,
+    source_ref: str | None,
+    db: Session,
+) -> ExperienceGroup:
+    """Return an existing ExperienceGroup or create one.
+
+    Looks up by (user_id, source_type, name). Returns the first match when
+    multiple rows share the same name (edge case — same role at same company
+    twice). Caller must commit.
+    """
+    existing = (
+        db.query(ExperienceGroup)
+        .filter(
+            ExperienceGroup.user_id == user_id,
+            ExperienceGroup.source_type == source_type,
+            ExperienceGroup.name == name,
+        )
+        .first()
+    )
+    if existing:
+        return existing
+
+    group = ExperienceGroup(
+        user_id=user_id,
+        group_type=group_type,
+        name=name,
+        source_type=source_type,
+        source_ref=source_ref,
+    )
+    db.add(group)
+    db.flush()  # populate group.id without a full commit
+    return group
+
+
+def _store_suggestion(
+    repo_group: ExperienceGroup,
+    role_groups: list[ExperienceGroup],
+) -> None:
+    """Run heuristic parent suggestion and write result into repo_group.type_meta.
+
+    Does NOT commit — caller is responsible. No-ops if no match is found.
+    """
+    from app.services.group_linker import suggest_repo_parent
+
+    result = suggest_repo_parent(repo_group, role_groups)
+    if result is None:
+        return
+
+    parent, confidence = result
+    meta = dict(repo_group.type_meta or {})
+    meta["suggested_parent_id"] = str(parent.id)
+    meta["suggestion_confidence"] = confidence
+    repo_group.type_meta = meta
+
+
+def delete_github_groups(
+    db: Session,
+    user_id: uuid.UUID,
+    repo_name: str | None = None,
+) -> int:
+    """Delete ExperienceGroup rows for GitHub repos.
+
+    repo_name=None → delete ALL github groups for this user.
+    repo_name='foo' → delete only that repo's group.
+    Does NOT commit — caller is responsible.
+    """
+    q = db.query(ExperienceGroup).filter(
+        ExperienceGroup.user_id == user_id,
+        ExperienceGroup.source_type == "github",
+    )
+    if repo_name is not None:
+        q = q.filter(ExperienceGroup.name == repo_name)
+    deleted = q.delete(synchronize_session=False)
+    return deleted
+
+
+def delete_resume_groups(db: Session, user_id: uuid.UUID) -> int:
+    """Delete all resume ExperienceGroup rows for the user. Does NOT commit."""
+    deleted = (
+        db.query(ExperienceGroup)
+        .filter(
+            ExperienceGroup.user_id == user_id,
+            ExperienceGroup.source_type == "resume",
+        )
+        .delete(synchronize_session=False)
+    )
+    return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -235,10 +334,20 @@ def _delete_chunks(
     return deleted
 
 
+_CLAIM_TYPE_TO_GROUP_TYPE = {
+    "work_experience": "role",
+    "project": "project",
+    "education": "education",
+}
+
+
 def chunk_resume(db: Session, resume_source: ExperienceSource) -> int:
     """Delete existing resume chunks and replace with freshly derived ones.
 
     Reads from resume_source.source_data['extracted']. No-ops if that key is absent.
+    Also creates/reuses ExperienceGroup rows and sets group_id on each claim.
+    After creating role groups, updates any existing repository groups with
+    heuristic parent suggestions.
     Does NOT commit — caller is responsible.
     Returns number of chunks created.
     """
@@ -250,19 +359,109 @@ def chunk_resume(db: Session, resume_source: ExperienceSource) -> int:
     _delete_chunks(db, resume_source.user_id, "resume")
 
     raw = _resume_chunks(profile)
+
+    # Build groups for distinct (group_type, group_key) pairs
+    group_cache: dict[tuple[str, str], ExperienceGroup] = {}
+
+    def _get_group(chunk_data: dict) -> ExperienceGroup | None:
+        group_key = chunk_data.get("group_key")
+        claim_type = chunk_data["claim_type"]
+        group_type = _CLAIM_TYPE_TO_GROUP_TYPE.get(claim_type)
+        if not group_key or not group_type:
+            return None
+        cache_key = (group_type, group_key)
+        if cache_key not in group_cache:
+            group_cache[cache_key] = _get_or_create_group(
+                user_id=resume_source.user_id,
+                group_type=group_type,
+                name=group_key,
+                source_type="resume",
+                source_ref=None,
+                db=db,
+            )
+        return group_cache[cache_key]
+
     now = datetime.now(timezone.utc)
     for position, chunk_data in enumerate(raw):
+        group = _get_group(chunk_data)
         db.add(
             ExperienceClaim(
                 user_id=resume_source.user_id,
                 source_type="resume",
                 source_ref=None,
                 position=position,
+                group_id=group.id if group else None,
                 created_at=now,
                 updated_at=now,
                 **chunk_data,
             )
         )
+
+    # Backfill dates, location, and job title onto role groups; degree/year/location onto
+    # education groups.  _get_or_create_group only sets name/source fields — the authoritative
+    # metadata lives in the original profile and must be written onto the group rows so that
+    # resume_selector can read them without re-parsing source_data.
+    for edu in profile.get("education") or []:
+        degree = (edu.get("degree") or "").strip()
+        institution = (edu.get("institution") or "").strip()
+        year = (edu.get("year") or "").strip() or None
+        location = (edu.get("location") or "").strip() or None
+        edu_key_parts = [p for p in [degree, institution] if p]
+        gkey = " | ".join(edu_key_parts) or None
+        if not gkey:
+            continue
+        group = group_cache.get(("education", gkey))
+        if group is None:
+            continue
+        if year:
+            group.end_date = year
+        if location:
+            group.location = location
+        if degree:
+            meta = dict(group.type_meta or {})
+            meta["degree"] = degree
+            group.type_meta = meta
+
+    for job in profile.get("work_experience") or []:
+        gkey = _job_group_key(job)
+        if not gkey:
+            continue
+        group = group_cache.get(("role", gkey))
+        if group is None:
+            continue
+        duration = (job.get("duration") or "").strip() or None
+        location = (job.get("location") or "").strip() or None
+        title = (job.get("title") or "").strip() or None
+        if duration and "\u2013" in duration:
+            parts = duration.split("\u2013", 1)
+            group.start_date = parts[0].strip() or None
+            group.end_date = parts[1].strip() or None
+        elif duration and "-" in duration:
+            parts = duration.split("-", 1)
+            group.start_date = parts[0].strip() or None
+            group.end_date = parts[1].strip() or None
+        elif duration:
+            group.start_date = duration
+        if location:
+            group.location = location
+        if title:
+            meta = dict(group.type_meta or {})
+            meta["title"] = title
+            group.type_meta = meta
+
+    # After creating role groups: refresh suggestions on any existing repo groups
+    role_groups = [g for g in group_cache.values() if g.group_type == "role"]
+    if role_groups:
+        repo_groups = (
+            db.query(ExperienceGroup)
+            .filter(
+                ExperienceGroup.user_id == resume_source.user_id,
+                ExperienceGroup.source_type == "github",
+            )
+            .all()
+        )
+        for repo_group in repo_groups:
+            _store_suggestion(repo_group, role_groups)
 
     logger.debug("chunk_resume_complete", chunk_count=len(raw))
     return len(raw)
@@ -272,6 +471,8 @@ def chunk_github_repo(db: Session, github_source: ExperienceSource, repo_name: s
     """Delete existing chunks for a single GitHub repo and replace with freshly derived ones.
 
     Reads from github_source.source_data with enriched details merged in.
+    Also creates/reuses an ExperienceGroup for the repo and stores a parent
+    suggestion in type_meta if a matching role group is found.
     Does NOT commit — caller is responsible.
     Returns number of chunks created.
     """
@@ -287,6 +488,41 @@ def chunk_github_repo(db: Session, github_source: ExperienceSource, repo_name: s
     detail = repo_details.get(repo_name) or {}
     enriched_repo = {**repo, **detail}
 
+    # Get or create a repository group (before deleting claims so the group survives rechunks)
+    repo_group = _get_or_create_group(
+        user_id=github_source.user_id,
+        group_type="repository",
+        name=repo_name,
+        source_type="github",
+        source_ref=repo_name,
+        db=db,
+    )
+
+    # Backfill dates onto the repo group from the repo metadata
+    date_range = _format_github_date_range(
+        enriched_repo.get("created_at"),
+        enriched_repo.get("last_pushed_at"),
+    )
+    if date_range and "\u2013" in date_range:
+        parts = date_range.split("\u2013", 1)
+        repo_group.start_date = parts[0].strip() or None
+        repo_group.end_date = parts[1].strip() or None
+    elif date_range:
+        repo_group.start_date = date_range
+
+    # Update parent suggestion if not already manually set
+    if not repo_group.parent_group_id:
+        role_groups = (
+            db.query(ExperienceGroup)
+            .filter(
+                ExperienceGroup.user_id == github_source.user_id,
+                ExperienceGroup.source_type == "resume",
+                ExperienceGroup.group_type == "role",
+            )
+            .all()
+        )
+        _store_suggestion(repo_group, role_groups)
+
     _delete_chunks(db, github_source.user_id, "github", source_ref=repo_name)
 
     raw = _github_repo_chunks(enriched_repo)
@@ -298,6 +534,7 @@ def chunk_github_repo(db: Session, github_source: ExperienceSource, repo_name: s
                 source_type="github",
                 source_ref=repo_name,
                 position=position,
+                group_id=repo_group.id,
                 created_at=now,
                 updated_at=now,
                 **chunk_data,

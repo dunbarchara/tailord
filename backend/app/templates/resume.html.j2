@@ -114,16 +114,17 @@
 
   {%- macro render_entries(entries) %}
     {% for entry in entries %}
+    {%- set is_project = entry.group_type == 'repository' %}
     {%- set start = entry.start_date or '' %}
     {%- set end = entry.end_date or 'Present' %}
-    {%- set has_dates = start or entry.end_date %}
+    {%- set has_dates = (start or entry.end_date) and not is_project %}
     {%- set job_title = entry.type_meta.get('title', '') if entry.type_meta else '' %}
     <div class="entry">
       <div class="entry-row">
         <span class="entry-org">{{ entry.name }}</span>
-        {%- if entry.location %}<span class="entry-right">{{ entry.location }}</span>{%- endif %}
+        {%- if entry.location and not is_project %}<span class="entry-right">{{ entry.location }}</span>{%- endif %}
       </div>
-      {%- if job_title or has_dates %}
+      {%- if (job_title or has_dates) and not is_project %}
       <div class="entry-row">
         <span class="entry-sub">{{ job_title }}</span>
         {%- if has_dates %}<span class="entry-dates">{{ start }}{% if start %} – {% endif %}{{ end }}</span>{%- endif %}

@@ -59,6 +59,13 @@ export interface ExperienceGroup {
   end_date: string | null
   location: string | null
   type_meta: Record<string, unknown> | null
+  source_type: string
+  source_ref: string | null
+  parent_group_id: string | null
+  suggested_parent_id: string | null
+  suggestion_confidence: 'high' | 'medium' | null
+  description: string | null
+  position: number | null
 }
 
 export interface Tailoring {
@@ -265,6 +272,7 @@ export interface ExperienceClaim {
   claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
   content: string
   group_key: string | null
+  group_id: string | null
   date_range: string | null
   keywords: string[] | null
   provenance_metadata: Record<string, string> | null

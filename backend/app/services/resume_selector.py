@@ -282,13 +282,21 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
                 # Handled separately — skip here
                 continue
             if gid not in role_groups:
+                # group.name stores "Company | Title" — extract company for display;
+                # title lives in type_meta or is parsed from the name as fallback.
+                display_name = _parse_group_name_from_key(group.name)
+                type_meta = dict(group.type_meta or {})
+                if "title" not in type_meta and " | " in (group.name or ""):
+                    inferred_title = _parse_job_title_from_key(group.name)
+                    if inferred_title:
+                        type_meta["title"] = inferred_title
                 role_groups[gid] = {
                     "id": gid,
-                    "name": group.name,
+                    "name": display_name,
                     "start_date": group.start_date,
                     "end_date": group.end_date,
                     "location": group.location,
-                    "type_meta": group.type_meta,
+                    "type_meta": type_meta or None,
                     "group_type": group.group_type,
                     "claims": [],
                     "relevance": 0.0,
@@ -390,6 +398,7 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
                 group_type_meta=g_data["type_meta"],
                 included=True,
                 claim_ids=final_bullets,
+                bullet_snapshots={cid: all_claims[cid].content for cid in final_bullets},
             )
         )
 
@@ -417,13 +426,20 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
     for edu in ungrouped_edu.values():
         education_data.append(EducationEntry(**edu))
 
-    # 2. Real ExperienceGroup education rows (future path / ExperienceGroup backfill)
+    # 2. Real ExperienceGroup education rows (the normal path after chunk_resume backfill)
     for gid, group in all_groups.items():
         if group.group_type == "education":
+            # group.name stores "Degree | Institution" (group_key format from chunker)
+            edu_name = group.name or ""
+            parts = edu_name.split("|", 1)
+            institution = parts[1].strip() if len(parts) > 1 else parts[0].strip()
+            degree = (group.type_meta or {}).get("degree") or (
+                parts[0].strip() if len(parts) > 1 else None
+            )
             education_data.append(
                 EducationEntry(
-                    name=group.name,
-                    degree=(group.type_meta or {}).get("degree"),
+                    name=institution,
+                    degree=degree,
                     end_date=group.end_date,
                     location=group.location,
                 )
@@ -440,14 +456,25 @@ def generate_resume_selection(tailoring: Tailoring, user_id: uuid.UUID, db: Sess
         warnings=warnings,
     )
 
+    # Staleness anchor: snapshot the max last_synced_at across all experience sources
+    sources = db.query(ExperienceSource).filter(ExperienceSource.user_id == user_id).all()
+    experience_snapshot_at = max(
+        (s.last_synced_at for s in sources if s.last_synced_at),
+        default=None,
+    )
+
     contact = _get_contact_info(user_id, db)
     return ResumeDraft(
         generated_at=datetime.now(timezone.utc).isoformat(),
         sections=sections,
         skills_claim_ids=skill_claim_ids,
+        skills_snapshots={cid: all_claims[cid].content for cid in skill_claim_ids},
         education_data=education_data,
         education_group_ids=[],  # legacy — education_data is now the source of truth
         warnings=warnings,
+        experience_snapshot_at=experience_snapshot_at.isoformat()
+        if experience_snapshot_at
+        else None,
         contact_override=ResumeContactOverride(
             linkedin_url=contact["linkedin"],
             location=contact["location"],

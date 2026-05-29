@@ -1,12 +1,26 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Pencil, Trash2, Check, Loader2, Plus, X, GitBranch } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pencil, Trash2, Check, Loader2, Plus, X, GitBranch, MoreHorizontal, Link, Link2Off } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import type {
   ExperienceClaim,
   ExperienceClaimsResponse,
+  ExperienceGroup,
   WorkExperienceGroup,
 } from '@/types';
 
@@ -52,6 +66,7 @@ interface TableRowProps {
   onExpand: () => void;
   onSave: (newContent: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  onMove?: () => void;     // optional: open "Move to group" dialog in parent
   isLast?: boolean;
   readOnly?: boolean;
 }
@@ -64,6 +79,7 @@ function TableRow({
   onExpand,
   onSave,
   onDelete,
+  onMove,
   isLast = false,
   readOnly = false,
 }: TableRowProps) {
@@ -205,6 +221,12 @@ function TableRow({
                   <Pencil className="h-3 w-3" />
                   Edit
                 </button>
+                {onMove && (
+                  <button type="button" onClick={onMove} className={actionBtnCls}>
+                    <Link className="h-3 w-3" />
+                    Move
+                  </button>
+                )}
                 <button type="button" onClick={handleDelete} disabled={deleting} className={deleteBtnCls}>
                   {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                   Delete
@@ -632,15 +654,23 @@ function InlineSkillsRow({
 
 function RepoTable({
   repoName,
+  repoGroup,
   chunks,
   onSave,
   onDelete,
+  onAssociate,
+  onClearAssociation,
+  onMoveChunk,
   readOnly = false,
 }: {
   repoName: string;
+  repoGroup?: ExperienceGroup | null;
   chunks: ExperienceClaim[];
   onSave: (id: string, content: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onAssociate?: (repoGroupId: string) => void;
+  onClearAssociation?: (repoGroupId: string) => void;
+  onMoveChunk?: (claimId: string) => void;
   readOnly?: boolean;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -655,13 +685,42 @@ function RepoTable({
 
   if (chunks.length === 0) return null;
 
+  const hasParent = !!(repoGroup?.parent_group_id);
+
   return (
     <div>
-      {/* Repo name header — non-editable, static label */}
-      <div className="rounded-bl-md border-b  overflow-hidden">
+      {/* Repo name header — static label with optional association dropdown */}
+      <div className="rounded-bl-md border-b overflow-hidden">
         <div className="flex items-center px-2 py-1 gap-1">
-                  <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
+          <GitBranch className="size-3.5 text-text-tertiary flex-shrink-0" />
           <p className="flex-1 text-sm text-text-tertiary">{repoName}</p>
+          {!readOnly && repoGroup && (onAssociate || onClearAssociation) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="p-0.5 rounded text-text-disabled hover:text-text-secondary hover:bg-surface-sunken transition-colors flex-shrink-0"
+                  aria-label="Repo options"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {onAssociate && (
+                  <DropdownMenuItem onSelect={() => onAssociate(repoGroup.id)}>
+                    <Link className="h-3.5 w-3.5 mr-2" />
+                    Associate with a role
+                  </DropdownMenuItem>
+                )}
+                {hasParent && onClearAssociation && (
+                  <DropdownMenuItem onSelect={() => onClearAssociation(repoGroup.id)}>
+                    <Link2Off className="h-3.5 w-3.5 mr-2" />
+                    Remove association
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -693,6 +752,7 @@ function RepoTable({
                       onExpand={() => toggle(chunk.id)}
                       onSave={(newContent) => onSave(chunk.id, newContent)}
                       onDelete={() => onDelete(chunk.id)}
+                      onMove={onMoveChunk ? () => onMoveChunk(chunk.id) : undefined}
                       isLast={skillChunks.length === 0 && i === contentChunks.length - 1}
                       readOnly={readOnly}
                     />
@@ -713,6 +773,7 @@ function RepoTable({
                   onExpand={() => toggle(chunk.id)}
                   onSave={(newContent) => onSave(chunk.id, newContent)}
                   onDelete={() => onDelete(chunk.id)}
+                  onMove={onMoveChunk ? () => onMoveChunk(chunk.id) : undefined}
                   isLast={skillChunks.length === 0 && i === contentChunks.length - 1}
                   readOnly={readOnly}
                 />
@@ -813,6 +874,7 @@ function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: Ex
         claim_type: 'other',
         content,
         group_key: null,
+        group_id: null,
         date_range: null,
         keywords: null,
         provenance_metadata: null,
@@ -906,6 +968,26 @@ function formatWorkGroupKey(group: WorkExperienceGroup): string {
 export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refreshKey?: number; initialData?: ExperienceClaimsResponse; readOnly?: boolean }) {
   const [data, setData] = useState<ExperienceClaimsResponse | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
+  const [groups, setGroups] = useState<ExperienceGroup[]>([]);
+
+  // Association dialog state: which repo group the user is associating
+  const [associatingRepoGroupId, setAssociatingRepoGroupId] = useState<string | null>(null);
+  const [selectedRoleGroupId, setSelectedRoleGroupId] = useState<string>('');
+  const [associating, setAssociating] = useState(false);
+
+  // Move claim dialog state
+  const [movingClaimId, setMovingClaimId] = useState<string | null>(null);
+  const [selectedMoveGroupId, setSelectedMoveGroupId] = useState<string>('');
+  const [moving, setMoving] = useState(false);
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const res = await fetch('/api/experience/groups');
+      if (!res.ok) return;
+      const json: ExperienceGroup[] = await res.json();
+      setGroups(json);
+    } catch { /* ignore */ }
+  }, []);
 
   const fetchChunks = useCallback(async () => {
     setLoading(true);
@@ -922,7 +1004,8 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
   useEffect(() => {
     if (initialData) return;
     fetchChunks();
-  }, [fetchChunks, refreshKey, initialData]);
+    fetchGroups();
+  }, [fetchChunks, fetchGroups, refreshKey, initialData]);
 
   const handleSave = async (id: string, content: string) => {
     const res = await fetch(`/api/experience/claims/${id}`, {
@@ -984,6 +1067,83 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
       if (!prev) return prev;
       return { ...prev, user_input: [...(prev.user_input ?? []), ...newChunks] };
     });
+  };
+
+  const roleGroups = groups.filter((g) => g.group_type === 'role');
+
+  const findRepoGroup = (repoName: string): ExperienceGroup | null =>
+    groups.find((g) => g.source_type === 'github' && (g.source_ref === repoName || g.name === repoName)) ?? null;
+
+  const handleOpenAssociate = (repoGroupId: string) => {
+    const repoGroup = groups.find((g) => g.id === repoGroupId);
+    const preselect = repoGroup?.suggested_parent_id ?? repoGroup?.parent_group_id ?? '';
+    setSelectedRoleGroupId(preselect);
+    setAssociatingRepoGroupId(repoGroupId);
+  };
+
+  const handleConfirmAssociate = async () => {
+    if (!associatingRepoGroupId || !selectedRoleGroupId) return;
+    setAssociating(true);
+    try {
+      const res = await fetch(`/api/experience/groups/${associatingRepoGroupId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_group_id: selectedRoleGroupId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toastError(err.detail ?? 'Failed to associate');
+        return;
+      }
+      await fetchGroups();
+      toast.success('Repo linked — tailorings will treat them as unified experience.');
+    } finally {
+      setAssociating(false);
+      setAssociatingRepoGroupId(null);
+    }
+  };
+
+  const handleClearAssociation = async (repoGroupId: string) => {
+    const res = await fetch(`/api/experience/groups/${repoGroupId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_group_id: '' }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toastError(err.detail ?? 'Failed to remove association');
+      return;
+    }
+    await fetchGroups();
+    toast.success('Association removed.');
+  };
+
+  const handleOpenMoveChunk = (claimId: string) => {
+    setSelectedMoveGroupId('');
+    setMovingClaimId(claimId);
+  };
+
+  const handleConfirmMove = async () => {
+    if (!movingClaimId) return;
+    setMoving(true);
+    try {
+      const res = await fetch(`/api/experience/claims/${movingClaimId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_id: selectedMoveGroupId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toastError(err.detail ?? 'Failed to move claim');
+        return;
+      }
+      const updated: ExperienceClaim = await res.json();
+      setData((prev) => prev ? patchChunkInResponse(prev, updated) : prev);
+      toast.success('Claim moved.');
+    } finally {
+      setMoving(false);
+      setMovingClaimId(null);
+    }
   };
 
   if (loading) {
@@ -1094,16 +1254,24 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
       {hasGithub && (
         <ActivitySection title="GitHub" description="Enriched from your linked repositories">
           <div className="space-y-2">
-            {data!.github!.repos.map((repo, i) => (
-              <RepoTable
-                key={i}
-                repoName={repo.group_key ?? 'Unknown repo'}
-                chunks={repo.chunks}
-                onSave={handleSave}
-                onDelete={handleDelete}
-                readOnly={readOnly}
-              />
-            ))}
+            {data!.github!.repos.map((repo, i) => {
+              const repoName = repo.group_key ?? 'Unknown repo';
+              const repoGroup = findRepoGroup(repoName);
+              return (
+                <RepoTable
+                  key={i}
+                  repoName={repoName}
+                  repoGroup={repoGroup}
+                  chunks={repo.chunks}
+                  onSave={handleSave}
+                  onDelete={handleDelete}
+                  onAssociate={roleGroups.length > 0 ? handleOpenAssociate : undefined}
+                  onClearAssociation={handleClearAssociation}
+                  onMoveChunk={handleOpenMoveChunk}
+                  readOnly={readOnly}
+                />
+              );
+            })}
           </div>
         </ActivitySection>
       )}
@@ -1156,6 +1324,115 @@ export function ProfileChunkEditor({ refreshKey, initialData, readOnly }: { refr
           />
         ) : null}
       </ActivitySection>
+
+      {/* ── Associate repo with role dialog ── */}
+      <Dialog open={!!associatingRepoGroupId} onOpenChange={(o) => { if (!o) setAssociatingRepoGroupId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Associate with a role</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-text-secondary">
+            Select the role this repository belongs to. Tailorings will present them as unified experience.
+          </p>
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {roleGroups.map((g) => (
+              <label
+                key={g.id}
+                className={cn(
+                  'flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm transition-colors',
+                  selectedRoleGroupId === g.id ? 'bg-surface-sunken text-text-primary' : 'text-text-secondary hover:bg-surface-base',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="role-group"
+                  value={g.id}
+                  checked={selectedRoleGroupId === g.id}
+                  onChange={() => setSelectedRoleGroupId(g.id)}
+                  className="accent-brand-primary"
+                />
+                {g.name}
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setAssociatingRepoGroupId(null)}
+              className="text-sm text-text-tertiary hover:text-text-secondary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmAssociate}
+              disabled={!selectedRoleGroupId || associating}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-sm font-medium bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 disabled:opacity-40 transition-opacity"
+            >
+              {associating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link className="h-3.5 w-3.5" />}
+              Associate
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Move claim to group dialog ── */}
+      <Dialog open={!!movingClaimId} onOpenChange={(o) => { if (!o) setMovingClaimId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move to group</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-text-secondary">
+            Choose a group for this claim, or leave blank to make it ungrouped.
+          </p>
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            <label className={cn('flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm transition-colors', selectedMoveGroupId === '' ? 'bg-surface-sunken text-text-primary' : 'text-text-secondary hover:bg-surface-base')}>
+              <input type="radio" name="move-group" value="" checked={selectedMoveGroupId === ''} onChange={() => setSelectedMoveGroupId('')} className="accent-brand-primary" />
+              Ungrouped
+            </label>
+            {groups.map((g) => (
+              <label
+                key={g.id}
+                className={cn(
+                  'flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm transition-colors',
+                  selectedMoveGroupId === g.id ? 'bg-surface-sunken text-text-primary' : 'text-text-secondary hover:bg-surface-base',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="move-group"
+                  value={g.id}
+                  checked={selectedMoveGroupId === g.id}
+                  onChange={() => setSelectedMoveGroupId(g.id)}
+                  className="accent-brand-primary"
+                />
+                <span className="flex items-center gap-1">
+                  {g.source_type === 'github' && <GitBranch className="h-3 w-3 text-text-disabled flex-shrink-0" />}
+                  {g.name}
+                </span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setMovingClaimId(null)}
+              className="text-sm text-text-tertiary hover:text-text-secondary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmMove}
+              disabled={moving}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-sm font-medium bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 disabled:opacity-40 transition-opacity"
+            >
+              {moving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Move
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

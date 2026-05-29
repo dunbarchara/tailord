@@ -22,6 +22,7 @@ class ResumeSection(BaseModel):
     included: bool = True
     claim_ids: list[str]  # ordered by relevance
     rewrites: dict[str, str] = {}  # {claim_id: accepted_rewrite_text}
+    bullet_snapshots: dict[str, str] = {}  # {claim_id: content} — frozen at generation time
 
 
 class ResumeContactOverride(BaseModel):
@@ -35,9 +36,13 @@ class ResumeDraft(BaseModel):
     contact_override: ResumeContactOverride = ResumeContactOverride()
     sections: list[ResumeSection]
     skills_claim_ids: list[str]
+    skills_snapshots: dict[str, str] = {}  # {claim_id: content} — frozen at generation time
     education_data: list[EducationEntry] = []  # embedded at generation time — no DB lookup needed
     education_group_ids: list[str] = []  # legacy — kept for backward compat
     warnings: list[str] = []  # e.g. "no_resume_source" → triggers soft callout in UI
+    experience_snapshot_at: str | None = (
+        None  # max(ExperienceSource.last_synced_at) at generation time
+    )
 
 
 class ResumePatchRequest(BaseModel):

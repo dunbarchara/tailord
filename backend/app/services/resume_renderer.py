@@ -45,9 +45,12 @@ def render_resume_html(
     for s in draft.sections:
         if not s.included:
             continue
-        bullets = [
-            s.rewrites.get(cid) or claims[cid].content for cid in s.claim_ids if cid in claims
-        ]
+        bullets = []
+        for cid in s.claim_ids:
+            if cid in claims:
+                bullets.append(s.rewrites.get(cid) or claims[cid].content)
+            elif cid in s.bullet_snapshots:
+                bullets.append(s.rewrites.get(cid) or s.bullet_snapshots[cid])
         if not bullets:
             continue
         rendered_sections.append(
@@ -62,8 +65,12 @@ def render_resume_html(
             }
         )
 
-    # Skills: resolve content strings
-    skills = [claims[cid].content for cid in draft.skills_claim_ids if cid in claims]
+    # Skills: resolve content strings, fall back to snapshot if claim was deleted/rechunked
+    skills = [
+        claims[cid].content if cid in claims else draft.skills_snapshots.get(cid)
+        for cid in draft.skills_claim_ids
+        if cid in claims or cid in draft.skills_snapshots
+    ]
 
     # Education: embedded in draft at generation time — no DB lookup needed
     education = [

@@ -439,9 +439,29 @@ class ExperienceGroup(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    # Self-referential link: repository groups can be parented to a role group.
+    # One level of hierarchy only — parent.parent_group_id must always be null.
+    parent_group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experience_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     user: Mapped["User"] = relationship("User", back_populates="groups")
     claims: Mapped[list["ExperienceClaim"]] = relationship(
         "ExperienceClaim", back_populates="group"
+    )
+    parent: Mapped["ExperienceGroup | None"] = relationship(
+        "ExperienceGroup",
+        foreign_keys=[parent_group_id],
+        back_populates="children",
+        remote_side="ExperienceGroup.id",
+    )
+    children: Mapped[list["ExperienceGroup"]] = relationship(
+        "ExperienceGroup",
+        foreign_keys=[parent_group_id],
+        back_populates="parent",
     )
 
 
