@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -394,6 +395,47 @@ class TailoringDebugLog(Base):
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LlmCallLog(Base):
+    """
+    Append-only per-call log for every LLM and embedding call.
+
+    Enables exact cumulative token counts and per-user/per-tailoring cost attribution via SQL.
+    call_type: "llm" | "embedding"
+    prompt_name: prompt_name for LLM calls; embed_context for embedding calls.
+    output_tokens: NULL for embedding calls.
+    user_id: SET NULL on user deletion — cost data retained for audit purposes.
+    tailoring_id: SET NULL on tailoring deletion — nullable; NULL for calls outside generation.
+    """
+
+    __tablename__ = "llm_call_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    tailoring_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tailorings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    call_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_llm_call_logs_created_at", "created_at"),
+        Index("ix_llm_call_logs_prompt_model", "prompt_name", "model"),
+    )
 
 
 class ExperienceGroup(Base):

@@ -82,6 +82,30 @@ LLM_RETRIES_TOTAL = _EnvMetric(
         ["environment", "model", "prompt_type"],
     )
 )
+LLM_CACHED_TOKENS_TOTAL = _EnvMetric(
+    Counter(
+        "llm_cached_tokens_total",
+        "LLM prompt tokens served from cache",
+        ["environment", "model", "prompt_type"],
+    )
+)
+
+# --- Embeddings ---
+EMBEDDING_CALL_DURATION_MS = _EnvMetric(
+    Histogram(
+        "embedding_call_duration_ms",
+        "Embedding API call duration in milliseconds",
+        ["environment", "model", "embed_context"],
+        buckets=[50, 100, 250, 500, 1000, 2000, 5000],
+    )
+)
+EMBEDDING_TOKENS_TOTAL = _EnvMetric(
+    Counter(
+        "embedding_tokens_total",
+        "Embedding tokens consumed",
+        ["environment", "model", "embed_context"],
+    )
+)
 
 # --- Tailoring pipeline ---
 TAILORING_GENERATIONS_TOTAL = _EnvMetric(

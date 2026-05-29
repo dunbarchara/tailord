@@ -447,7 +447,7 @@ def _score_chunk_vector(
     from app.clients.database import SessionLocal
     from app.clients.embedding_client import embed_text
 
-    job_chunk_embedding = embed_text(chunk_content)
+    job_chunk_embedding = embed_text(chunk_content, embed_context="job_chunk_embed")
 
     db = SessionLocal()
     try:

@@ -239,6 +239,126 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 9,
+      "title": "Cached Input Tokens/s",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(llm_cached_tokens_total{environment=\"production\"}[5m])) by (prompt_type)",
+          "legendFormat": "{{prompt_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "description": "Rate of cached input tokens by prompt type. Confirms cache hit patterns for chunk scoring calls."
+    },
+    {
+      "id": 10,
+      "title": "Embedding Tokens/s by Context",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "uid": "__PROMETHEUS_UID__",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(embedding_tokens_total{environment=\"production\"}[5m])) by (embed_context)",
+          "legendFormat": "{{embed_context}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "title": "LLM Calls by Prompt \u00d7 Model",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT\n  prompt_name,\n  model,\n  call_type,\n  COUNT(*)                    AS calls,\n  SUM(input_tokens)           AS input_tokens,\n  SUM(cached_tokens)          AS cached_tokens,\n  SUM(output_tokens)          AS output_tokens,\n  ROUND(AVG(latency_ms))::int AS avg_latency_ms,\n  ROUND(SUM(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 8) AS cost_usd\nFROM llm_call_logs\nWHERE created_at BETWEEN $__timeFrom() AND $__timeTo()\nGROUP BY prompt_name, model, call_type\nORDER BY cost_usd DESC NULLS LAST",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "Sorted by estimated cost. Pricing: backend/app/core/llm_pricing.py",
+      "options": {
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "LLM Calls by User",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT\n  COALESCE(u.email, '(system)') AS user,\n  l.model,\n  COUNT(*)                       AS calls,\n  SUM(l.input_tokens)            AS input_tokens,\n  SUM(l.cached_tokens)           AS cached_tokens,\n  SUM(l.output_tokens)           AS output_tokens,\n  ROUND(SUM(\n    CASE l.model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(l.input_tokens,0) - COALESCE(l.cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(l.cached_tokens,0)                              * 0.08  / 1000000.0\n        + COALESCE(l.output_tokens,0)                              * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(l.input_tokens,0) - COALESCE(l.cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(l.cached_tokens,0)                              * 0.25  / 1000000.0\n        + COALESCE(l.output_tokens,0)                              * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(l.input_tokens,0)                                 * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 8) AS cost_usd\nFROM llm_call_logs l\nLEFT JOIN users u ON u.id = l.user_id\nWHERE l.created_at BETWEEN $__timeFrom() AND $__timeTo()\nGROUP BY u.email, l.model\nORDER BY cost_usd DESC NULLS LAST",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "footer": {
+          "show": false
+        }
+      }
     }
   ]
 }

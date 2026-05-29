@@ -19,6 +19,8 @@ Leave LLM_API_KEY unset — LM Studio does not need a real key. This way your
 Azure Foundry / production key never leaves its intended endpoint.
 """
 
+import time
+
 import structlog
 from openai import OpenAI
 
@@ -68,7 +70,7 @@ def get_embedding_client() -> OpenAI:
     )
 
 
-def embed_text(text: str) -> list[float]:
+def embed_text(text: str, embed_context: str = "embed") -> list[float]:
     """
     Embed a single string. Returns a list of floats.
 
@@ -81,8 +83,47 @@ def embed_text(text: str) -> list[float]:
         raise ValueError("Cannot embed empty text")
 
     client = get_embedding_client()
+    start = time.perf_counter()
     response = client.embeddings.create(
         model=settings.embedding_model,
         input=text,
     )
+    elapsed = time.perf_counter() - start
+    latency_ms = int(elapsed * 1000)
+
+    usage = response.usage
+    input_tokens = usage.prompt_tokens
+    total_tokens = usage.total_tokens
+
+    from app.core.llm_pricing import compute_cost_usd
+
+    logger.info(
+        "embedding_call_complete",
+        embed_context=embed_context,
+        model=settings.embedding_model,
+        input_tokens=input_tokens,
+        total_tokens=total_tokens,
+        cost_usd=compute_cost_usd(model=settings.embedding_model, input_tokens=input_tokens),
+        latency_ms=latency_ms,
+    )
+
+    from app.metrics import EMBEDDING_CALL_DURATION_MS, EMBEDDING_TOKENS_TOTAL
+
+    EMBEDDING_CALL_DURATION_MS.labels(
+        model=settings.embedding_model, embed_context=embed_context
+    ).observe(latency_ms)
+    EMBEDDING_TOKENS_TOTAL.labels(model=settings.embedding_model, embed_context=embed_context).inc(
+        input_tokens
+    )
+
+    from app.core.llm_call_logger import log_llm_call
+
+    log_llm_call(
+        call_type="embedding",
+        model=settings.embedding_model,
+        prompt_name=embed_context,
+        input_tokens=input_tokens,
+        latency_ms=latency_ms,
+    )
+
     return response.data[0].embedding

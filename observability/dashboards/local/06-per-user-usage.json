@@ -465,13 +465,13 @@
     },
     {
       "id": 12,
-      "title": "Recent LLM Events",
-      "type": "table",
+      "title": "Total LLM Cost",
+      "type": "stat",
       "gridPos": {
         "x": 0,
         "y": 23,
-        "w": 24,
-        "h": 7
+        "w": 6,
+        "h": 5
       },
       "datasource": {
         "uid": "__POSTGRES_UID__",
@@ -480,7 +480,196 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT created_at, event_type, model, input_tokens, output_tokens, cost_usd FROM llm_usage_logs WHERE user_id = '$user_id'::uuid ORDER BY created_at DESC LIMIT 50",
+          "rawSql": "SELECT\n  ROUND(SUM(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 6) AS value\nFROM llm_call_logs\nWHERE user_id = '$user_id'::uuid\n  AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "LLM Calls",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 23,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT COUNT(*) AS value FROM llm_call_logs WHERE user_id = '$user_id'::uuid AND call_type = 'llm' AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Embedding Calls",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT COUNT(*) AS value FROM llm_call_logs WHERE user_id = '$user_id'::uuid AND call_type = 'embedding' AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Cache Hit %",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 23,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT ROUND(100.0 * SUM(cached_tokens) / NULLIF(SUM(input_tokens), 0), 1) AS value FROM llm_call_logs WHERE user_id = '$user_id'::uuid AND call_type = 'llm' AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 40
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "LLM Cost by Operation",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT\n  prompt_name,\n  model,\n  call_type,\n  COUNT(*)                    AS calls,\n  SUM(input_tokens)           AS input_tokens,\n  SUM(cached_tokens)          AS cached_tokens,\n  SUM(output_tokens)          AS output_tokens,\n  ROUND(SUM(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 8) AS cost_usd\nFROM llm_call_logs\nWHERE user_id = '$user_id'::uuid\n  AND created_at BETWEEN $__timeFrom() AND $__timeTo()\nGROUP BY prompt_name, model, call_type\nORDER BY cost_usd DESC NULLS LAST",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "Recent LLM Calls",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "uid": "__POSTGRES_UID__",
+        "type": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT\n  created_at,\n  prompt_name,\n  model,\n  call_type,\n  input_tokens,\n  cached_tokens,\n  output_tokens,\n  ROUND(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  , 8) AS cost_usd\nFROM llm_call_logs\nWHERE user_id = '$user_id'::uuid\nORDER BY created_at DESC\nLIMIT 50",
           "format": "table"
         }
       ],

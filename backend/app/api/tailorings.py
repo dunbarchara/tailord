@@ -263,7 +263,11 @@ def _finalize_tailoring(
     # Re-establish the correlation ID and bind tailoring_id to the structlog context
     # so every log record in this background task carries both fields automatically.
     structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(correlation_id=correlation_id, tailoring_id=tailoring_id)
+    structlog.contextvars.bind_contextvars(
+        correlation_id=correlation_id,
+        tailoring_id=tailoring_id,
+        user_id=str(user_id) if user_id else None,
+    )
 
     # OTel: start a root span for the full background task, parented to the HTTP
     # handler span via the injected carrier dict.
@@ -422,19 +426,39 @@ def _finalize_tailoring(
         # Runs the bounds-detection LLM call as a named step so it's visible on the generation
         # page. Result is passed to enrich_job_chunks to avoid running the LLM call twice.
         phase_start = time.perf_counter()
+        _bounds_error: str | None = None
         with _tracer.start_as_current_span("tailoring.phase.detect_bounds"):
             from app.services.job_bounds_detector import JobContentBounds, detect_job_content_bounds
 
             try:
                 precomputed_bounds = detect_job_content_bounds(job_markdown)
-            except Exception:
+            except Exception as _exc:
                 logger.exception("phase_error", phase="detect_bounds")
                 precomputed_bounds = JobContentBounds()
+                _bounds_error = str(_exc)
 
         phase_durations["detect_bounds"] = int((time.perf_counter() - phase_start) * 1000)
         TAILORING_PHASE_DURATION_MS.labels(phase="detect_bounds").observe(
             phase_durations["detect_bounds"]
         )
+        if _bounds_error:
+            _write_debug_log(
+                tailoring_id,
+                "phase_error",
+                {
+                    "phase": "detect_bounds",
+                    "duration_ms": phase_durations["detect_bounds"],
+                    "error_message": _bounds_error,
+                },
+                user_id=user_id,
+            )
+        else:
+            _write_debug_log(
+                tailoring_id,
+                "phase_complete",
+                {"phase": "detect_bounds", "duration_ms": phase_durations["detect_bounds"]},
+                user_id=user_id,
+            )
 
         # Transition to enriching stage now that filtering/bounds detection is done.
         db = SessionLocal()
@@ -819,6 +843,9 @@ def _finalize_tailoring(
             user_id=user_id,
         )
         _cleanup_old_debug_logs()
+        from app.core.llm_call_logger import cleanup_old_llm_call_logs
+
+        cleanup_old_llm_call_logs()
         TAILORING_ACTIVE_GENERATIONS.dec()
         TAILORING_GENERATIONS_TOTAL.labels(
             status="success" if _generation_success else "error",
