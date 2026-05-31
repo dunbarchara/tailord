@@ -183,6 +183,19 @@ GITHUB_ENRICHMENT_DURATION_MS = _EnvMetric(
     )
 )
 
+# --- Job scraping ---
+JOB_SCRAPE_TOTAL = _EnvMetric(
+    Counter(
+        "job_scrape_total",
+        "Job URL scrape attempts by method and outcome",
+        [
+            "environment",
+            "method",  # ats | httpx | playwright | firecrawl
+            "outcome",  # success | spa_fallthrough | error_fallthrough | timeout | error
+        ],
+    )
+)
+
 # --- Gap response ---
 GAP_RESPONSE_DURATION_MS = _EnvMetric(
     Histogram(

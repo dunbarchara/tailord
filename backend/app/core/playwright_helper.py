@@ -1,10 +1,15 @@
+import ipaddress
 import logging
 import random
 import re
+import socket
+from urllib.parse import urlparse
 
 import httpx
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
+
+from app.metrics import JOB_SCRAPE_TOTAL
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,82 @@ _SPA_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# RFC 1918 private ranges, loopback, link-local (includes cloud metadata 169.254.169.254),
+# and other non-routable / reserved ranges that must never be fetched.
+_BLOCKED_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
+    ipaddress.ip_network("0.0.0.0/8"),  # "This" network
+    ipaddress.ip_network("10.0.0.0/8"),  # RFC 1918 private
+    ipaddress.ip_network("100.64.0.0/10"),  # Shared address space (RFC 6598)
+    ipaddress.ip_network("127.0.0.0/8"),  # Loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # Link-local — cloud metadata endpoints live here
+    ipaddress.ip_network("172.16.0.0/12"),  # RFC 1918 private
+    ipaddress.ip_network("192.0.0.0/24"),  # IETF protocol assignments
+    ipaddress.ip_network("192.168.0.0/16"),  # RFC 1918 private
+    ipaddress.ip_network("198.18.0.0/15"),  # Benchmarking (RFC 2544)
+    ipaddress.ip_network("224.0.0.0/4"),  # Multicast
+    ipaddress.ip_network("240.0.0.0/4"),  # Reserved
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 unique local
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
+]
+
+
+def _assert_public_url(url: str) -> None:
+    """Raise ValueError if *url* is not a safe, publicly-routable http(s) URL.
+
+    Checks performed:
+    1. Scheme must be http or https.
+    2. Hostname must be present and not a well-known internal name.
+    3. All addresses the hostname resolves to must be publicly routable —
+       private, loopback, link-local (including the cloud metadata endpoint
+       at 169.254.169.254), and other reserved ranges are rejected.
+
+    Note: pre-flight DNS resolution does not fully eliminate DNS-rebinding
+    attacks (an attacker with control over a DNS server could return a valid
+    public IP during the check then switch to a private IP for the actual
+    connection). For a job-parsing workload the residual risk is negligible;
+    full rebinding prevention would require a pinned-IP custom transport.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"Only http/https URLs are allowed (got {parsed.scheme!r})")
+
+    host = parsed.hostname or ""
+    if not host:
+        raise ValueError("URL must include a hostname")
+
+    lower = host.lower().rstrip(".")
+    if lower in {"localhost"} or lower.endswith((".local", ".internal", ".localhost")):
+        raise ValueError(f"Internal hostname not allowed: {host!r}")
+
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"Could not resolve hostname {host!r}: {exc}") from exc
+
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        for network in _BLOCKED_NETWORKS:
+            if ip in network:
+                raise ValueError(
+                    f"URL resolves to a reserved/private address ({ip}) — "
+                    "only publicly routable job URLs are supported"
+                )
+
+
+def _validate_request_hook(request: httpx.Request) -> None:
+    """httpx request event hook — fires before every request, including redirect hops.
+
+    Validates each destination URL so that an open redirect on a job board
+    (e.g. https://jobs.example.com → http://169.254.169.254/) cannot bypass the
+    pre-flight check in _assert_public_url.
+    """
+    _assert_public_url(str(request.url))
+
 
 async def _fetch_with_httpx(url: str) -> str:
     """Plain HTTPS GET with browser-like headers. Returns decoded HTML."""
@@ -49,6 +130,7 @@ async def _fetch_with_httpx(url: str) -> str:
     async with httpx.AsyncClient(
         follow_redirects=True,
         timeout=_HTTPX_TIMEOUT_S,
+        event_hooks={"request": [_validate_request_hook]},
     ) as client:
         response = await client.get(url, headers=headers)
         response.raise_for_status()
@@ -76,18 +158,23 @@ def _needs_browser(html: str) -> bool:
 
 async def get_html_content(url: str) -> str:
     """Fetch HTML for a job URL. Tries plain httpx first; falls back to Playwright."""
+    _assert_public_url(url)
     try:
         html = await _fetch_with_httpx(url)
         if not _needs_browser(html):
             logger.info("httpx_fetch_success", extra={"url": url})
+            JOB_SCRAPE_TOTAL.labels(method="httpx", outcome="success").inc()
             return html
         logger.debug("httpx_fetch_needs_browser: falling through to Playwright for %s", url)
+        JOB_SCRAPE_TOTAL.labels(method="httpx", outcome="spa_fallthrough").inc()
     except Exception:
         logger.debug("httpx_fetch_failed: falling through to Playwright for %s", url, exc_info=True)
+        JOB_SCRAPE_TOTAL.labels(method="httpx", outcome="error_fallthrough").inc()
     return await get_rendered_content(url)
 
 
 async def get_rendered_content(url: str) -> str:
+    _assert_public_url(url)
     browser = None
     async with async_playwright() as p:
         try:
@@ -100,7 +187,9 @@ async def get_rendered_content(url: str) -> str:
                 logger.warning(
                     "get_rendered_content: networkidle timeout for %s — using available DOM", url
                 )
-            return await page.content()
+            html = await page.content()
+            JOB_SCRAPE_TOTAL.labels(method="playwright", outcome="success").inc()
+            return html
         finally:
             if browser:
                 await browser.close()

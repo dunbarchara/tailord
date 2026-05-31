@@ -161,11 +161,13 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
     (html, job_markdown, False, reason).
     """
     from app.core.ats_client import try_ats_fetch
+    from app.metrics import JOB_SCRAPE_TOTAL
 
     ats_markdown = try_ats_fetch(url)
     if ats_markdown:
         job_markdown = truncate_to_tokens(ats_markdown, max_tokens=12_000, model=settings.llm_model)
         logger.info("ats_fetch_success", url=url)
+        JOB_SCRAPE_TOTAL.labels(method="ats", outcome="success").inc()
         return "", job_markdown, True, ""
 
     try:
@@ -173,12 +175,14 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
         job_markdown = extract_markdown_content(html)
     except PlaywrightTimeoutError:
         logger.exception("playwright_timeout", url=url)
+        JOB_SCRAPE_TOTAL.labels(method="playwright", outcome="timeout").inc()
         raise HTTPException(
             status_code=422,
             detail="That job URL took too long to load. Try again, or check that the URL is publicly accessible.",
         )
     except (PlaywrightError, Exception):
         logger.exception("playwright_scrape_failed", url=url)
+        JOB_SCRAPE_TOTAL.labels(method="playwright", outcome="error").inc()
         raise HTTPException(
             status_code=422,
             detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
