@@ -15,6 +15,69 @@ export interface GapAnalysis {
   unsourced_claim_count: number
 }
 
+export interface ResumeSection {
+  group_id: string
+  group_type: 'role' | 'project' | 'repository' | 'education' | 'custom'
+  group_name: string
+  group_start_date: string | null
+  group_end_date: string | null
+  group_location: string | null
+  group_type_meta: Record<string, unknown> | null
+  included: boolean
+  claim_ids: string[]
+  rewrites: Record<string, string>
+  bullet_snapshots: Record<string, string>
+}
+
+export interface ResumeContactOverride {
+  linkedin_url: string | null
+  linkedin_display: string | null
+  location: string | null
+  tailord_link_type: 'tailoring' | 'profile' | null
+}
+
+export interface EducationEntry {
+  name: string
+  degree: string | null
+  end_date: string | null
+  location: string | null
+  distinction: string | null
+}
+
+export interface ResumeDraft {
+  generated_at: string
+  polished: boolean
+  candidate_name: string
+  candidate_email: string
+  contact_override: ResumeContactOverride
+  sections: ResumeSection[]
+  skills_claim_ids: string[]
+  skills_snapshots: Record<string, string>
+  skills_rewrites: Record<string, string>
+  education_group_ids: string[]
+  education_data?: EducationEntry[]
+  warnings: string[]
+  experience_snapshot_at: string | null
+}
+
+export interface ExperienceGroup {
+  id: string
+  group_type: 'role' | 'project' | 'repository' | 'education' | 'custom'
+  name: string
+  start_date: string | null
+  end_date: string | null
+  location: string | null
+  type_meta: Record<string, unknown> | null
+  source_type: string
+  source_ref: string | null
+  parent_group_id: string | null
+  suggested_parent_id: string | null
+  suggestion_confidence: 'high' | 'medium' | null
+  description: string | null
+  position: number | null
+  created_at: string | null
+}
+
 export interface Tailoring {
   id: string
   title: string | null
@@ -42,8 +105,10 @@ export interface Tailoring {
     matching_mode?: string
     batch_count?: number
     batch_errors?: number
+    detect_bounds_ms?: number
   } | null
   gap_analysis?: GapAnalysis | null
+  resume_draft?: ResumeDraft | null
   updated_at?: string | null
   created_at: string
 }
@@ -204,6 +269,7 @@ export interface JobChunk {
   evaluation_status: string | null  // 'scored' | 'skipped' | 'error' | null
   display_ready: boolean   // computed by backend: not a header, has a section, not noise
   scored_content: string | null  // content at time of last scoring; null = scored before this field existed
+  excluded_reason?: string | null  // 'pre_content' | 'post_content' | null — set by LLM bounds detection
 }
 
 export interface ChunksResponse {
@@ -218,6 +284,7 @@ export interface ExperienceClaim {
   claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
   content: string
   group_key: string | null
+  group_id: string | null
   date_range: string | null
   keywords: string[] | null
   provenance_metadata: Record<string, string> | null

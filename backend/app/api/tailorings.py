@@ -22,7 +22,7 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
-from app.core.playwright_helper import get_rendered_content
+from app.core.playwright_helper import get_html_content
 from app.core.token_utils import truncate_to_tokens
 from app.core.url_validation import validate_job_url
 from app.models.database import (
@@ -148,6 +148,7 @@ def _serialize_chunk(c: JobChunk) -> dict:
         "evaluation_status": c.evaluation_status,
         "display_ready": is_display_ready(c),
         "scored_content": c.scored_content,
+        "excluded_reason": c.excluded_reason,
     }
 
 
@@ -160,24 +161,28 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
     (html, job_markdown, False, reason).
     """
     from app.core.ats_client import try_ats_fetch
+    from app.metrics import JOB_SCRAPE_TOTAL
 
     ats_markdown = try_ats_fetch(url)
     if ats_markdown:
         job_markdown = truncate_to_tokens(ats_markdown, max_tokens=12_000, model=settings.llm_model)
         logger.info("ats_fetch_success", url=url)
+        JOB_SCRAPE_TOTAL.labels(method="ats", outcome="success").inc()
         return "", job_markdown, True, ""
 
     try:
-        html = await get_rendered_content(url)
+        html = await get_html_content(url)
         job_markdown = extract_markdown_content(html)
     except PlaywrightTimeoutError:
         logger.exception("playwright_timeout", url=url)
+        JOB_SCRAPE_TOTAL.labels(method="playwright", outcome="timeout").inc()
         raise HTTPException(
             status_code=422,
             detail="That job URL took too long to load. Try again, or check that the URL is publicly accessible.",
         )
     except (PlaywrightError, Exception):
         logger.exception("playwright_scrape_failed", url=url)
+        JOB_SCRAPE_TOTAL.labels(method="playwright", outcome="error").inc()
         raise HTTPException(
             status_code=422,
             detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
@@ -262,7 +267,11 @@ def _finalize_tailoring(
     # Re-establish the correlation ID and bind tailoring_id to the structlog context
     # so every log record in this background task carries both fields automatically.
     structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(correlation_id=correlation_id, tailoring_id=tailoring_id)
+    structlog.contextvars.bind_contextvars(
+        correlation_id=correlation_id,
+        tailoring_id=tailoring_id,
+        user_id=str(user_id) if user_id else None,
+    )
 
     # OTel: start a root span for the full background task, parented to the HTTP
     # handler span via the injected carrier dict.
@@ -386,7 +395,7 @@ def _finalize_tailoring(
                     duration_ms=phase_durations["extract_job"],
                 )
 
-                tailoring.generation_stage = "enriching"
+                tailoring.generation_stage = "filtering"
                 db.commit()
 
         except Exception:
@@ -417,6 +426,56 @@ def _finalize_tailoring(
         finally:
             db.close()
 
+        # Phase 1.5: detect job content bounds (filtering stage)
+        # Runs the bounds-detection LLM call as a named step so it's visible on the generation
+        # page. Result is passed to enrich_job_chunks to avoid running the LLM call twice.
+        phase_start = time.perf_counter()
+        _bounds_error: str | None = None
+        with _tracer.start_as_current_span("tailoring.phase.detect_bounds"):
+            from app.services.job_bounds_detector import JobContentBounds, detect_job_content_bounds
+
+            try:
+                precomputed_bounds = detect_job_content_bounds(job_markdown)
+            except Exception as _exc:
+                logger.exception("phase_error", phase="detect_bounds")
+                precomputed_bounds = JobContentBounds()
+                _bounds_error = str(_exc)
+
+        phase_durations["detect_bounds"] = int((time.perf_counter() - phase_start) * 1000)
+        TAILORING_PHASE_DURATION_MS.labels(phase="detect_bounds").observe(
+            phase_durations["detect_bounds"]
+        )
+        if _bounds_error:
+            _write_debug_log(
+                tailoring_id,
+                "phase_error",
+                {
+                    "phase": "detect_bounds",
+                    "duration_ms": phase_durations["detect_bounds"],
+                    "error_message": _bounds_error,
+                },
+                user_id=user_id,
+            )
+        else:
+            _write_debug_log(
+                tailoring_id,
+                "phase_complete",
+                {"phase": "detect_bounds", "duration_ms": phase_durations["detect_bounds"]},
+                user_id=user_id,
+            )
+
+        # Transition to enriching stage now that filtering/bounds detection is done.
+        db = SessionLocal()
+        try:
+            tailoring = db.get(Tailoring, tailoring_id)
+            if tailoring:
+                tailoring.generation_stage = "enriching"
+                db.commit()
+        except Exception:
+            logger.warning("filtering_stage_transition_failed")
+        finally:
+            db.close()
+
         # Phase 2: chunk enrichment (uses its own session)
         phase_start = time.perf_counter()
         enrich_error: str | None = None
@@ -429,6 +488,7 @@ def _finalize_tailoring(
                     pronouns=pronouns,
                     user_id=user_id,
                     candidate_name=candidate_name,
+                    precomputed_bounds=precomputed_bounds,
                 )
             except Exception as exc:
                 logger.exception("phase_error", phase="enrich_job_chunks")
@@ -731,6 +791,8 @@ def _finalize_tailoring(
             if tailoring.generation_started_at:
                 delta_ms = (now - tailoring.generation_started_at).total_seconds() * 1000
                 telemetry["duration_ms"] = int(delta_ms)
+            if "detect_bounds" in phase_durations:
+                telemetry["detect_bounds_ms"] = phase_durations["detect_bounds"]
             tailoring.generation_telemetry = {**(tailoring.generation_telemetry or {}), **telemetry}
             db.commit()
             _generation_success = True
@@ -785,6 +847,9 @@ def _finalize_tailoring(
             user_id=user_id,
         )
         _cleanup_old_debug_logs()
+        from app.core.llm_call_logger import cleanup_old_llm_call_logs
+
+        cleanup_old_llm_call_logs()
         TAILORING_ACTIVE_GENERATIONS.dec()
         TAILORING_GENERATIONS_TOTAL.labels(
             status="success" if _generation_success else "error",
@@ -1418,6 +1483,7 @@ def get_tailoring(
         "notion_page_url": notion.get("page_url"),
         "notion_posting_page_url": notion.get("posting_page_url"),
         "gap_analysis": gap_analysis,
+        "resume_draft": tailoring.resume_draft,
         "updated_at": tailoring.updated_at.isoformat() if tailoring.updated_at else None,
         "created_at": tailoring.created_at.isoformat(),
     }
@@ -1505,6 +1571,7 @@ class PatchChunkRequest(BaseModel):
     section: str | None = None
     position: int | None = None
     chunk_type: str | None = None  # "bullet" | "paragraph" (header not user-editable)
+    excluded_reason: str | None = None  # present in payload = set/clear; absent = don't touch
 
 
 class CreateChunkRequest(BaseModel):
@@ -1570,6 +1637,8 @@ def patch_chunk(
         chunk.position = body.position
     if body.chunk_type is not None and body.chunk_type in ("bullet", "paragraph"):
         chunk.chunk_type = body.chunk_type
+    if "excluded_reason" in body.model_fields_set:
+        chunk.excluded_reason = body.excluded_reason
     db.commit()
     db.refresh(chunk)
     return _serialize_chunk(chunk)
@@ -1849,9 +1918,16 @@ def rescore_chunk(
 
     candidate_name = user.candidate_name
 
-    # Promote to scoreable so future Refresh All includes this chunk
+    # Promote to scoreable and clear bounds-detection exclusion if present.
+    changed = False
     if not chunk.include_in_scoring:
         chunk.include_in_scoring = True
+        changed = True
+    if chunk.excluded_reason is not None:
+        chunk.excluded_reason = None
+        chunk.should_render = True
+        changed = True
+    if changed:
         db.commit()
 
     re_enrich_single_chunk(
@@ -1881,6 +1957,7 @@ def rescore_chunk(
         "evaluation_status": chunk.evaluation_status,
         "should_render": chunk.should_render,
         "display_ready": is_display_ready(chunk),
+        "excluded_reason": chunk.excluded_reason,
     }
 
 
@@ -1976,6 +2053,7 @@ def get_tailoring_debug_info(
     return {
         "model": (tailoring.models or {}).get("letter") or settings.llm_model,
         "generation_duration_ms": _debug_telemetry.get("duration_ms"),
+        "detect_bounds_ms": _debug_telemetry.get("detect_bounds_ms"),
         "chunk_batch_count": _debug_telemetry.get("batch_count"),
         "chunk_error_count": _debug_telemetry.get("batch_errors"),
         "formatted_profile": formatted_profile,

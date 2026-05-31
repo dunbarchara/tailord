@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, MousePointerClick, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, Eye, EyeOff, Filter, Loader2, MousePointerClick, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChunksResponse, ExperienceClaim, GapAnalysis, JobChunk } from '@/types';
 import { InlineMarkdown } from '@/components/dashboard/InlineMarkdown';
@@ -695,6 +695,87 @@ function JobPropertiesPanel({
   );
 }
 
+/* ─── ExcludedChunksSection ──────────────────────────────────────────────── */
+
+interface ExcludedChunksSectionProps {
+  chunks: JobChunk[];
+  tailoringId: string;
+  onChunkUpdate?: (chunk: JobChunk) => void;
+}
+
+function ExcludedChunksSection({ chunks, tailoringId, onChunkUpdate }: ExcludedChunksSectionProps) {
+  const [open, setOpen] = useState(false);
+  const [includingId, setIncludingId] = useState<string | null>(null);
+
+  async function handleInclude(chunk: JobChunk) {
+    setIncludingId(chunk.id);
+    try {
+      const res = await fetch(`/api/tailorings/${tailoringId}/chunks/${chunk.id}/rescore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_score: true }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      onChunkUpdate?.({ ...chunk, ...data });
+    } catch {
+      // silently fail — chunk stays in excluded list
+    } finally {
+      setIncludingId(null);
+    }
+  }
+
+  return (
+    <div className="mt-6 mb-8 border border-border-subtle rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-surface-overlay transition-colors"
+      >
+        <div className="flex items-center gap-2 text-text-tertiary">
+          <Filter className="h-3.5 w-3.5 shrink-0" />
+          <span className="text-xs font-medium">
+            Tailord filtered {chunks.length} section{chunks.length !== 1 ? 's' : ''} as noise
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 text-text-tertiary">
+          <span className="text-xs">Review</span>
+          {open
+            ? <ChevronUp className="h-3.5 w-3.5 shrink-0" />
+            : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+        </div>
+      </button>
+
+      {open && (
+        <div className="divide-y divide-border-subtle border-t border-border-subtle">
+          {chunks.map(chunk => (
+            <div key={chunk.id} className="flex items-start gap-3 px-4 py-3">
+              <p className="flex-1 text-xs text-text-tertiary line-clamp-2 leading-relaxed min-w-0">
+                {chunk.content}
+              </p>
+              <button
+                type="button"
+                disabled={includingId === chunk.id}
+                onClick={() => handleInclude(chunk)}
+                className={cn(
+                  'shrink-0 inline-flex items-center gap-1 h-6 px-2 rounded text-xs transition-colors',
+                  'border border-border-default text-text-secondary',
+                  'hover:bg-surface-overlay hover:border-border-strong hover:text-text-primary',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                )}
+              >
+                {includingId === chunk.id
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : 'Include'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── AnalysisView ───────────────────────────────────────────────────────── */
 
 export function AnalysisView({
@@ -740,6 +821,11 @@ export function AnalysisView({
   const localData = useMemo(
     () => (data ? { ...data, chunks: localChunks } : null),
     [data, localChunks],
+  );
+
+  const excludedChunks = useMemo(
+    () => localChunks.filter(c => c.excluded_reason != null && c.excluded_reason !== undefined),
+    [localChunks],
   );
 
   const scored = localChunks.filter(
@@ -859,6 +945,13 @@ export function AnalysisView({
             onChunkCreate={onChunkCreate}
             onSectionRename={onSectionRename}
           />
+          {!readOnly && tailoringId && excludedChunks.length > 0 && (
+            <ExcludedChunksSection
+              chunks={excludedChunks}
+              tailoringId={tailoringId}
+              onChunkUpdate={onChunkUpdate}
+            />
+          )}
         </div>
 
         {/* Right panel — 2/5 */}

@@ -88,7 +88,9 @@ def embed_experience_chunks(user_id: uuid.UUID, db: Session) -> None:
     embedded = 0
     for chunk in chunks:
         try:
-            chunk.embedding = embed_text(_embedding_text(chunk))
+            chunk.embedding = embed_text(
+                _embedding_text(chunk), embed_context="experience_claim_embed"
+            )
             chunk.embedding_model = settings.embedding_model
             embedded += 1
         except Exception:
@@ -153,7 +155,7 @@ def embed_job_chunks(job_id: uuid.UUID, db: Session) -> None:
     embedded = 0
     for chunk in chunks:
         try:
-            chunk.embedding = embed_text(chunk.content)
+            chunk.embedding = embed_text(chunk.content, embed_context="job_chunk_embed")
             chunk.embedding_model = settings.embedding_model
             embedded += 1
         except Exception:
@@ -180,7 +182,7 @@ def re_embed_chunk(chunk_id: uuid.UUID) -> None:
             logger.warning("re_embed_chunk_not_found", chunk_id=str(chunk_id))
             return
 
-        chunk.embedding = embed_text(_embedding_text(chunk))
+        chunk.embedding = embed_text(_embedding_text(chunk), embed_context="experience_claim_embed")
         chunk.embedding_model = settings.embedding_model
         db.commit()
         logger.debug("re_embed_chunk_complete", chunk_id=str(chunk_id))

@@ -15,7 +15,8 @@ export function GenerationView({ tailoring, regenSsePhase, gapAnalysisSettled, e
   const stage = tailoring.generation_stage;
   const advocacyLetterComplete = tailoring.generation_status === 'ready';
 
-  const extractingDone = stage === 'enriching' || stage === 'generating' || advocacyLetterComplete;
+  const extractingDone = stage === 'filtering' || stage === 'enriching' || stage === 'generating' || advocacyLetterComplete;
+  const filteringDone = stage === 'enriching' || stage === 'generating' || advocacyLetterComplete;
   const enrichingDone = stage === 'generating' || advocacyLetterComplete;
 
   const phases = [
@@ -24,6 +25,12 @@ export function GenerationView({ tailoring, regenSsePhase, gapAnalysisSettled, e
       label: 'Extracting requirements',
       done: extractingDone,
       running: stage === 'extracting',
+    },
+    {
+      key: 'filtering',
+      label: 'Detecting job content bounds',
+      done: filteringDone,
+      running: stage === 'filtering',
     },
     {
       key: 'enriching',

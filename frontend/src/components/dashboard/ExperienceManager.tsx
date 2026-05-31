@@ -9,7 +9,7 @@ import { ResumeUploadSection } from '@/components/dashboard/ResumeUploadSection'
 import type { UploadPhase } from '@/components/dashboard/ResumeUploadSection';
 import { GitHubSection } from '@/components/dashboard/GitHubSection';
 import type { GithubState } from '@/components/dashboard/GitHubSection';
-import type { ExperienceRecord, ExperienceClaimsResponse, GitHubRepo, ProfileCorrections } from '@/types';
+import type { ExperienceRecord, ExperienceClaimsResponse, ExperienceGroup, GitHubRepo, ProfileCorrections } from '@/types';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -64,28 +64,43 @@ function computeYoE(workExperience: Array<{ duration?: string | null }>): number
 const CONFIRM_CONFIGS = {
   'resume-remove': {
     title: 'Remove resume',
-    description: 'Your resume and extracted profile data will be permanently deleted. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from this resume?',
     confirm: 'Remove',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
   'resume-replace': {
     title: 'Replace resume',
-    description: 'Your current resume and extracted profile data will be replaced. The previous data will be permanently deleted. This cannot be undone.',
+    description: 'Your current resume will be replaced. What should happen to the existing claims and groups derived from it?',
     confirm: 'Replace',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep existing claims',
+    deleteLabel: 'Replace with new',
   },
   'github-remove': {
     title: 'Remove GitHub',
-    description: 'Your GitHub profile and imported repository data will be permanently deleted. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from your GitHub repos?',
     confirm: 'Remove',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
   'github-change': {
     title: 'Change GitHub profile',
-    description: 'Your existing GitHub profile and imported repository data will be replaced with the new username. The previous data will be permanently deleted. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from the current GitHub profile?',
     confirm: 'Change',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
   'github-repos-remove': {
     title: 'Remove repositories',
-    description: 'Removing repositories will permanently delete the signals extracted from them. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from the removed repos?',
     confirm: 'Remove',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
 } as const;
 
@@ -121,11 +136,17 @@ export function ExperienceManager({
   readOnly,
   initialRecord,
   initialChunks,
+  initialGroups,
 }: {
   readOnly?: boolean;
   initialRecord?: ExperienceRecord;
   initialChunks?: ExperienceClaimsResponse;
+  initialGroups?: ExperienceGroup[];
 } = {}) {
+  // Hard-block all outgoing API calls when mock/demo data is provided.
+  // This prevents live data from leaking into the component if mock data is
+  // missing or malformed — an explicit intent flag, not a data-presence check.
+  const noFetch = !!initialRecord;
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
   const [hasProfileData, setHasProfileData] = useState(false);
   const [githubUrl, setGithubUrl] = useState('');
@@ -150,6 +171,7 @@ export function ExperienceManager({
   const [scanningRepos, setScanningRepos] = useState<Record<string, number>>({});
   const scanningReposRef = useRef<Record<string, number>>({});
   const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const suggestionToastShownRef = useRef(false);
 
   const _emptyProfile = { yoe_override: '', title: '', location: '', headline: '', summary: '', email: '', phone: '', linkedin: '' };
   const [profileFields, setProfileFields] = useState(_emptyProfile);
@@ -159,6 +181,9 @@ export function ExperienceManager({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Carries the destructive choice from the resume-replace confirm dialog into the upload flow.
+  // false = keep existing claims (additive); true = replace existing claims.
+  const pendingReplaceDestructive = useRef(false);
 
 
   useEffect(() => {
@@ -230,6 +255,25 @@ export function ExperienceManager({
     if (scanPollRef.current) { clearInterval(scanPollRef.current); scanPollRef.current = null; }
   }, []);
 
+  const checkAndShowSuggestionToast = useCallback(async () => {
+    if (suggestionToastShownRef.current) return;
+    try {
+      const res = await fetch('/api/experience/groups');
+      if (!res.ok) return;
+      const groups: ExperienceGroup[] = await res.json();
+      const pending = groups.filter(
+        (g) => g.group_type === 'repository' && g.suggested_parent_id && !g.parent_group_id
+      );
+      if (pending.length > 0) {
+        suggestionToastShownRef.current = true;
+        toast(
+          `${pending.length} GitHub repo${pending.length > 1 ? 's' : ''} may be related to your work experience.`,
+          { description: 'Use the ⋯ menu on a repo header to associate it with a role.', duration: 8000 },
+        );
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const startScanPolling = useCallback(() => {
     stopScanPolling();
     scanPollRef.current = setInterval(async () => {
@@ -256,10 +300,11 @@ export function ExperienceManager({
           setConnectedGithub({ username: record.github_username!, repos: record.github_repos ?? [] });
           setChunksRefreshKey((k) => k + 1);
           if (Object.keys(scanningReposRef.current).length === 0) stopScanPolling();
+          checkAndShowSuggestionToast();
         }
       } catch { /* ignore */ }
     }, 3000);
-  }, [stopScanPolling, updateScanningRepos]);
+  }, [stopScanPolling, updateScanningRepos, checkAndShowSuggestionToast]);
 
   useEffect(() => {
     async function loadInitialState() {
@@ -355,10 +400,12 @@ export function ExperienceManager({
       setProcessingStage(null);
       setStageStartedAt({});
 
+      const destructive = pendingReplaceDestructive.current;
+      pendingReplaceDestructive.current = false;
       const processRes = await fetch('/api/experience/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storage_key, experience_id }),
+        body: JSON.stringify({ storage_key, experience_id, destructive }),
       });
       if (!processRes.ok || !processRes.body) {
         const err = await processRes.json().catch(() => ({}));
@@ -395,6 +442,7 @@ export function ExperienceManager({
                 setGithubUrl(record.github_username);
                 setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
               }
+              checkAndShowSuggestionToast();
             } else if (currentEvent === 'error') {
               const { message } = JSON.parse(data);
               setUploadState({ phase: 'error', message });
@@ -411,9 +459,9 @@ export function ExperienceManager({
     }
   };
 
-  const handleRemove = async () => {
+  const handleRemove = async (cascade = true) => {
     stopPolling();
-    const res = await fetch('/api/experience', { method: 'DELETE' });
+    const res = await fetch(`/api/experience?cascade=${cascade}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toastError(err.detail ?? `Failed to remove (${res.status})`);
@@ -426,16 +474,19 @@ export function ExperienceManager({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleConfirmAction = async () => {
+  const handleConfirmAction = async (cascade = true) => {
     const action = confirmDialog;
     setConfirmDialog(null);
-    if (action === 'resume-remove') await handleRemove();
-    else if (action === 'resume-replace') fileInputRef.current?.click();
-    else if (action === 'github-remove') await handleGithubRemove();
-    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
+    if (action === 'resume-remove') await handleRemove(cascade);
+    else if (action === 'resume-replace') {
+      pendingReplaceDestructive.current = cascade;
+      fileInputRef.current?.click();
+    }
+    else if (action === 'github-remove') await handleGithubRemove(cascade);
+    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], undefined, cascade);
     else if (action === 'github-repos-remove') {
       const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
-      await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], added);
+      await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], added, cascade);
     }
   };
 
@@ -450,10 +501,14 @@ export function ExperienceManager({
     setAcknowledged(false);
   };
 
-  const doGithubSave = async (username: string, repoNames: string[], enrichOnly?: string[]) => {
+  const doGithubSave = async (username: string, repoNames: string[], enrichOnly?: string[], cascade = true) => {
     setGithubState('saving');
     setGithubError(null);
-    const payload: Record<string, unknown> = { github_username: username, selected_repo_names: repoNames };
+    const payload: Record<string, unknown> = {
+      github_username: username,
+      selected_repo_names: repoNames,
+      cascade_removed_repos: cascade,
+    };
     if (enrichOnly !== undefined) payload.enrich_only_repo_names = enrichOnly;
     const res = await fetch('/api/experience/github', {
       method: 'POST',
@@ -581,9 +636,9 @@ export function ExperienceManager({
     startScanPolling();
   };
 
-  const handleGithubRemove = async () => {
+  const handleGithubRemove = async (cascade = true) => {
     setGithubState('removing');
-    const res = await fetch('/api/experience/github', { method: 'DELETE' });
+    const res = await fetch(`/api/experience/github?cascade=${cascade}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toastError(err.detail ?? `Failed to remove (${res.status})`);
@@ -865,7 +920,7 @@ export function ExperienceManager({
 
           {/* Parsed experience */}
           <div className="mt-8">
-            <ProfileChunkEditor refreshKey={chunksRefreshKey} initialData={initialChunks} readOnly={readOnly} />
+            <ProfileChunkEditor refreshKey={chunksRefreshKey} initialData={initialChunks} initialGroups={initialGroups} noFetch={noFetch} readOnly={readOnly} />
           </div>
 
         </div>
@@ -912,13 +967,23 @@ export function ExperienceManager({
             >
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={handleConfirmAction}
-              className="inline-flex items-center justify-center h-9 px-3 rounded-[10px] text-sm font-normal bg-red-600 text-white hover:bg-red-700 transition-colors"
-            >
-              {confirmDialog && CONFIRM_CONFIGS[confirmDialog].confirm}
-            </button>
+            {confirmDialog && (() => {
+              const cfg = CONFIRM_CONFIGS[confirmDialog];
+              return (
+                <>
+                  <button type="button" onClick={() => handleConfirmAction(false)} className={outlineBtnCls}>
+                    {cfg.keepLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmAction(true)}
+                    className="inline-flex items-center justify-center h-9 px-3 rounded-[10px] text-sm font-normal bg-red-600 text-white hover:bg-red-700 transition-colors"
+                  >
+                    {cfg.deleteLabel}
+                  </button>
+                </>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>

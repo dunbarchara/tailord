@@ -82,6 +82,30 @@ LLM_RETRIES_TOTAL = _EnvMetric(
         ["environment", "model", "prompt_type"],
     )
 )
+LLM_CACHED_TOKENS_TOTAL = _EnvMetric(
+    Counter(
+        "llm_cached_tokens_total",
+        "LLM prompt tokens served from cache",
+        ["environment", "model", "prompt_type"],
+    )
+)
+
+# --- Embeddings ---
+EMBEDDING_CALL_DURATION_MS = _EnvMetric(
+    Histogram(
+        "embedding_call_duration_ms",
+        "Embedding API call duration in milliseconds",
+        ["environment", "model", "embed_context"],
+        buckets=[50, 100, 250, 500, 1000, 2000, 5000],
+    )
+)
+EMBEDDING_TOKENS_TOTAL = _EnvMetric(
+    Counter(
+        "embedding_tokens_total",
+        "Embedding tokens consumed",
+        ["environment", "model", "embed_context"],
+    )
+)
 
 # --- Tailoring pipeline ---
 TAILORING_GENERATIONS_TOTAL = _EnvMetric(
@@ -156,6 +180,19 @@ GITHUB_ENRICHMENT_DURATION_MS = _EnvMetric(
         "Total GitHub enrichment duration in milliseconds",
         ["environment"],
         buckets=[1000, 5000, 10000, 30000, 60000, 120000],
+    )
+)
+
+# --- Job scraping ---
+JOB_SCRAPE_TOTAL = _EnvMetric(
+    Counter(
+        "job_scrape_total",
+        "Job URL scrape attempts by method and outcome",
+        [
+            "environment",
+            "method",  # ats | httpx | playwright | firecrawl
+            "outcome",  # success | spa_fallthrough | error_fallthrough | timeout | error
+        ],
     )
 )
 

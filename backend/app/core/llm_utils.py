@@ -136,6 +136,12 @@ def llm_parse(
         span.set_attribute("llm.finish_reason", finish_reason)
         span.set_attribute("llm.latency_ms", int(elapsed * 1000))
 
+    cached_tokens = (
+        usage.prompt_tokens_details.cached_tokens if usage.prompt_tokens_details is not None else 0
+    ) or 0
+
+    from app.core.llm_pricing import compute_cost_usd
+
     logger.info(
         "llm_call_complete",
         prompt_name=resolved_prompt_name,
@@ -146,6 +152,13 @@ def llm_parse(
         input_tokens=usage.prompt_tokens,
         output_tokens=usage.completion_tokens,
         total_tokens=usage.total_tokens,
+        cached_tokens=cached_tokens,
+        cost_usd=compute_cost_usd(
+            model=model,
+            input_tokens=usage.prompt_tokens,
+            cached_tokens=cached_tokens,
+            output_tokens=usage.completion_tokens,
+        ),
         finish_reason=finish_reason,
         latency_ms=int(elapsed * 1000),
     )
@@ -157,7 +170,7 @@ def llm_parse(
         raw_content=raw_content,
     )
 
-    from app.metrics import LLM_CALL_DURATION_MS, LLM_TOKENS_TOTAL
+    from app.metrics import LLM_CACHED_TOKENS_TOTAL, LLM_CALL_DURATION_MS, LLM_TOKENS_TOTAL
 
     LLM_CALL_DURATION_MS.labels(model=model, prompt_type=resolved_prompt_name).observe(
         int(elapsed * 1000)
@@ -167,6 +180,22 @@ def llm_parse(
     )
     LLM_TOKENS_TOTAL.labels(model=model, prompt_type=resolved_prompt_name, direction="output").inc(
         usage.completion_tokens
+    )
+    if cached_tokens:
+        LLM_CACHED_TOKENS_TOTAL.labels(model=model, prompt_type=resolved_prompt_name).inc(
+            cached_tokens
+        )
+
+    from app.core.llm_call_logger import log_llm_call
+
+    log_llm_call(
+        call_type="llm",
+        model=model,
+        prompt_name=resolved_prompt_name,
+        input_tokens=usage.prompt_tokens,
+        cached_tokens=cached_tokens,
+        output_tokens=usage.completion_tokens,
+        latency_ms=int(elapsed * 1000),
     )
 
     if finish_reason == "length":
@@ -223,6 +252,12 @@ def llm_generate(
         span.set_attribute("llm.finish_reason", finish_reason)
         span.set_attribute("llm.latency_ms", int(elapsed * 1000))
 
+    cached_tokens = (
+        usage.prompt_tokens_details.cached_tokens if usage.prompt_tokens_details is not None else 0
+    ) or 0
+
+    from app.core.llm_pricing import compute_cost_usd
+
     logger.info(
         "llm_call_complete",
         model=model,
@@ -230,12 +265,19 @@ def llm_generate(
         input_tokens=usage.prompt_tokens,
         output_tokens=usage.completion_tokens,
         total_tokens=usage.total_tokens,
+        cached_tokens=cached_tokens,
+        cost_usd=compute_cost_usd(
+            model=model,
+            input_tokens=usage.prompt_tokens,
+            cached_tokens=cached_tokens,
+            output_tokens=usage.completion_tokens,
+        ),
         finish_reason=finish_reason,
         latency_ms=int(elapsed * 1000),
     )
     logger.debug("llm_generate_response", content=content)
 
-    from app.metrics import LLM_CALL_DURATION_MS, LLM_TOKENS_TOTAL
+    from app.metrics import LLM_CACHED_TOKENS_TOTAL, LLM_CALL_DURATION_MS, LLM_TOKENS_TOTAL
 
     LLM_CALL_DURATION_MS.labels(model=model, prompt_type=label).observe(int(elapsed * 1000))
     LLM_TOKENS_TOTAL.labels(model=model, prompt_type=label, direction="input").inc(
@@ -243,6 +285,20 @@ def llm_generate(
     )
     LLM_TOKENS_TOTAL.labels(model=model, prompt_type=label, direction="output").inc(
         usage.completion_tokens
+    )
+    if cached_tokens:
+        LLM_CACHED_TOKENS_TOTAL.labels(model=model, prompt_type=label).inc(cached_tokens)
+
+    from app.core.llm_call_logger import log_llm_call
+
+    log_llm_call(
+        call_type="llm",
+        model=model,
+        prompt_name=label,
+        input_tokens=usage.prompt_tokens,
+        cached_tokens=cached_tokens,
+        output_tokens=usage.completion_tokens,
+        latency_ms=int(elapsed * 1000),
     )
 
     if finish_reason == "length":

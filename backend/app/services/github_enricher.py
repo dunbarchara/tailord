@@ -72,6 +72,7 @@ def enrich_github_repos(
     source_id: uuid.UUID,
     repo_names: list[str] | None = None,
     merge_with_existing: bool = False,
+    destructive: bool = False,
     user_id: str | None = None,
     correlation_id: str | None = None,
 ) -> None:
@@ -161,6 +162,7 @@ def enrich_github_repos(
                                 "topics": topics,
                                 "stars": repo.get("stargazers_count", 0),
                                 "last_pushed_at": repo.get("pushed_at"),
+                                "created_at": repo.get("created_at"),
                                 "scanned_at": datetime.now(timezone.utc).isoformat(),
                             }
                         )
@@ -218,7 +220,9 @@ def enrich_github_repos(
 
             total_chunks = 0
             for repo_data in enriched:
-                total_chunks += chunk_github_repo(db, github_source, repo_data["name"])
+                total_chunks += chunk_github_repo(
+                    db, github_source, repo_data["name"], destructive=destructive
+                )
             db.commit()
             embed_experience_chunks(github_source.user_id, db)
 

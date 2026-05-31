@@ -418,6 +418,11 @@ export function Sidebar({
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
+  // Expose sidebar width as CSS variable for content-panel-scoped modals
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-w', isCollapsed ? '60px' : '240px');
+  }, [isCollapsed]);
+
   const filteredTailorings = query.trim()
     ? tailorings.filter((t) => {
         const q = query.toLowerCase();

@@ -9,7 +9,7 @@ import structlog
 import structlog.contextvars
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ from app.metrics import (
 )
 from app.models.database import (
     ExperienceClaim,
+    ExperienceGroup,
     ExperienceSource,
     Job,
     JobChunk,
@@ -41,8 +42,11 @@ from app.services.chunk_matcher import re_enrich_single_chunk
 from app.services.experience_chunker import (
     chunk_resume,
     delete_github_chunks,
+    delete_github_groups,
     delete_resume_chunks,
+    delete_resume_groups,
     delete_user_input_chunks,
+    normalize_claim_text,
 )
 from app.services.experience_embedder import (
     embed_experience_chunks,
@@ -205,6 +209,7 @@ class UploadUrlRequest(BaseModel):
 class ProcessRequest(BaseModel):
     storage_key: str
     experience_id: str
+    destructive: bool = False  # True = delete existing resume claims before inserting new ones
 
 
 class GitHubRequest(BaseModel):
@@ -212,6 +217,7 @@ class GitHubRequest(BaseModel):
     selected_repo_names: list[str] | None = None
     rescan_repo_names: list[str] | None = None
     enrich_only_repo_names: list[str] | None = None
+    cascade_removed_repos: bool = True  # if False, keep claims/groups for de-selected repos
 
 
 class UserInputRequest(BaseModel):
@@ -471,7 +477,7 @@ async def trigger_process(
             # --- chunking ---
             _phase_start = _time.perf_counter()
             with _exp_tracer.start_as_current_span("experience.phase.chunking"):
-                chunk_count = chunk_resume(db, resume_src)
+                chunk_count = chunk_resume(db, resume_src, destructive=body.destructive)
                 db.commit()
                 _ctx = structlog.contextvars.get_contextvars()
                 background_tasks.add_task(
@@ -550,10 +556,16 @@ def get_experience(
 
 @router.delete("/experience", status_code=204)
 def delete_experience(
+    cascade: bool = True,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    """Remove the resume ExperienceSource.
+
+    cascade=true (default): also hard-deletes all derived claims and groups.
+    cascade=false: keeps claims and groups; they become independent of any source.
+    """
     resume_src = next((s for s in user.experience_sources if s.source_type == "resume"), None)
     if not resume_src:
         raise HTTPException(status_code=404, detail="No experience found")
@@ -565,10 +577,13 @@ def delete_experience(
         except Exception:
             logger.warning("storage_delete_failed", storage_key=storage_key)
 
-    delete_resume_chunks(db, user.id)
+    if cascade:
+        delete_resume_chunks(db, user.id)
+        delete_resume_groups(db, user.id)
+
     db.delete(resume_src)
     db.commit()
-    logger.info("delete_experience_complete")
+    logger.info("delete_experience_complete", cascade=cascade)
 
 
 # ---------------------------------------------------------------------------
@@ -702,6 +717,7 @@ def set_github(
             source_id=github_src.id,
             repo_names=body.rescan_repo_names,
             merge_with_existing=True,
+            destructive=True,  # rescan = explicit refresh; replace existing claims for those repos
             user_id=_ctx.get("user_id"),
             correlation_id=_ctx.get("correlation_id"),
         )
@@ -737,14 +753,18 @@ def set_github(
     now = datetime.now(timezone.utc)
 
     if github_src:
-        # Delete chunks for repos being removed when selection changes
+        # Delete (or unlink) chunks/groups for repos being removed when selection changes
         if body.selected_repo_names is not None:
             old_repo_names = {
                 r["name"] for r in ((github_src.source_data or {}).get("repos") or [])
             }
             new_repo_names = set(body.selected_repo_names)
             for removed_repo in old_repo_names - new_repo_names:
-                delete_github_chunks(db, user.id, repo_name=removed_repo)
+                if body.cascade_removed_repos:
+                    delete_github_chunks(db, user.id, repo_name=removed_repo)
+                    delete_github_groups(db, user.id, repo_name=removed_repo)
+                # cascade=False: claims and groups are kept; the ExperienceSource row
+                # is updated to exclude the repo from future syncs, but derived data survives
 
         github_src.config = {"username": body.github_username}
         if additions_only:
@@ -809,10 +829,16 @@ def set_github(
 
 @router.delete("/experience/github", status_code=204)
 def remove_github(
+    cascade: bool = True,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
+    """Remove the GitHub ExperienceSource.
+
+    cascade=true (default): also hard-deletes all derived claims and groups.
+    cascade=false: keeps claims and groups; they become independent of any source.
+    """
     github_src = (
         db.query(ExperienceSource)
         .filter(
@@ -824,9 +850,13 @@ def remove_github(
     if not github_src:
         raise HTTPException(status_code=404, detail="No GitHub profile connected")
 
-    delete_github_chunks(db, user.id)
+    if cascade:
+        delete_github_chunks(db, user.id)
+        delete_github_groups(db, user.id)
+
     db.delete(github_src)
     db.commit()
+    logger.info("remove_github_complete", cascade=cascade)
 
 
 @router.delete("/experience/user-input", status_code=204)
@@ -903,7 +933,7 @@ def persist_user_input_claims(
     Additive — does not replace existing user_input claims.
     Each claim is embedded in a background task.
     """
-    chunks_text = [c.strip() for c in body.chunks if c.strip()]
+    chunks_text = [n for c in body.chunks if (n := normalize_claim_text(c))]
     if not chunks_text:
         raise HTTPException(status_code=422, detail="chunks cannot be empty")
 
@@ -965,6 +995,7 @@ def _serialize_exp_claim(c: ExperienceClaim) -> dict:
         "claim_type": c.claim_type,
         "content": c.content,
         "group_key": c.group_key,
+        "group_id": str(c.group_id) if c.group_id else None,
         "date_range": c.date_range,
         "keywords": c.keywords,
         "provenance_metadata": c.provenance_metadata,
@@ -972,6 +1003,26 @@ def _serialize_exp_claim(c: ExperienceClaim) -> dict:
         "status": c.status,
         "position": c.position,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+    }
+
+
+def _serialize_exp_group(g: ExperienceGroup) -> dict:
+    type_meta = g.type_meta or {}
+    return {
+        "id": str(g.id),
+        "name": g.name,
+        "group_type": g.group_type,
+        "source_type": g.source_type,
+        "source_ref": g.source_ref,
+        "parent_group_id": str(g.parent_group_id) if g.parent_group_id else None,
+        "start_date": g.start_date,
+        "end_date": g.end_date,
+        "location": g.location,
+        "type_meta": type_meta,
+        "suggested_parent_id": type_meta.get("suggested_parent_id"),
+        "suggestion_confidence": type_meta.get("suggestion_confidence"),
+        "position": g.position,
+        "description": g.description,
     }
 
 
@@ -1074,6 +1125,8 @@ class ClaimContentUpdate(BaseModel):
     group_key: str | None = None
     date_range: str | None = None
     status: str | None = None
+    # Pass a UUID string to move to a group; pass "" to move to ungrouped.
+    group_id: str | None = None
 
     @model_validator(mode="after")
     def at_least_one(self) -> "ClaimContentUpdate":
@@ -1082,9 +1135,10 @@ class ClaimContentUpdate(BaseModel):
             and self.group_key is None
             and self.date_range is None
             and self.status is None
+            and self.group_id is None
         ):
             raise ValueError(
-                "at least one of content, group_key, date_range, or status is required"
+                "at least one of content, group_key, date_range, status, or group_id is required"
             )
         return self
 
@@ -1150,12 +1204,219 @@ def update_experience_claim(
             sibling.date_range = new_date_range
             sibling.updated_at = now
 
+    if body.group_id is not None:
+        if body.group_id == "":
+            # Rehome to ungrouped — clear group_id and group_key
+            claim.group_id = None
+            claim.group_key = None
+            claim.updated_at = now
+        else:
+            try:
+                target_group_uuid = uuid.UUID(body.group_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid group_id")
+            target_group = (
+                db.query(ExperienceGroup)
+                .filter(
+                    ExperienceGroup.id == target_group_uuid,
+                    ExperienceGroup.user_id == user.id,
+                )
+                .first()
+            )
+            if not target_group:
+                raise HTTPException(status_code=404, detail="Target group not found")
+            claim.group_id = target_group_uuid
+            # Keep group_key in sync for legacy rendering compatibility
+            claim.group_key = target_group.name
+            claim.updated_at = now
+
     db.commit()
     db.refresh(claim)
     if body.content is not None:
         background_tasks.add_task(re_embed_chunk, claim.id)
     logger.info("update_experience_claim", claim_id=str(claim.id))
     return _serialize_exp_claim(claim)
+
+
+@router.get("/experience/groups")
+def get_experience_groups(
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Return all ExperienceGroup rows for the user."""
+    groups = (
+        db.query(ExperienceGroup)
+        .filter(ExperienceGroup.user_id == user.id)
+        .order_by(ExperienceGroup.source_type, ExperienceGroup.group_type, ExperienceGroup.name)
+        .all()
+    )
+    return [_serialize_exp_group(g) for g in groups]
+
+
+_DATE_RE = re.compile(r"^\d{4}(-\d{2})?$")
+
+
+class GroupUpdate(BaseModel):
+    parent_group_id: str | None = None  # UUID string to associate; "" or null to clear
+    name: str | None = None
+    description: str | None = None
+    start_date: str | None = None  # YYYY or YYYY-MM; explicit null clears the field
+    end_date: str | None = None  # YYYY or YYYY-MM; explicit null clears the field
+    location: str | None = None  # explicit null clears the field
+    type_meta: dict | None = None  # merged (not replaced) into existing type_meta
+
+    @model_validator(mode="after")
+    def at_least_one(self) -> "GroupUpdate":
+        if all(
+            v is None
+            for v in [
+                self.parent_group_id,
+                self.name,
+                self.description,
+                self.start_date,
+                self.end_date,
+                self.location,
+                self.type_meta,
+            ]
+        ):
+            raise ValueError("at least one field is required")
+        return self
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def validate_date(cls, v: object) -> object:
+        if v is None or v == "":
+            return None
+        if isinstance(v, str) and not _DATE_RE.match(v):
+            raise ValueError("date must be YYYY or YYYY-MM")
+        return v
+
+
+@router.patch("/experience/groups/{group_id}")
+def update_experience_group(
+    group_id: str,
+    body: GroupUpdate,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Update an ExperienceGroup — primarily used to set/clear parent_group_id."""
+    try:
+        group_uuid = uuid.UUID(group_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid group ID")
+
+    group = (
+        db.query(ExperienceGroup)
+        .filter(ExperienceGroup.id == group_uuid, ExperienceGroup.user_id == user.id)
+        .first()
+    )
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if body.parent_group_id is not None:
+        if body.parent_group_id == "":
+            # Clear association
+            group.parent_group_id = None
+        else:
+            try:
+                parent_uuid = uuid.UUID(body.parent_group_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid parent_group_id")
+
+            if parent_uuid == group.id:
+                raise HTTPException(status_code=422, detail="A group cannot be its own parent")
+
+            parent = (
+                db.query(ExperienceGroup)
+                .filter(ExperienceGroup.id == parent_uuid, ExperienceGroup.user_id == user.id)
+                .first()
+            )
+            if not parent:
+                raise HTTPException(status_code=404, detail="Parent group not found")
+            if parent.group_type != "role":
+                raise HTTPException(status_code=422, detail="Parent group must be a role group")
+            if parent.parent_group_id is not None:
+                raise HTTPException(
+                    status_code=422, detail="Only one level of hierarchy is supported"
+                )
+            group.parent_group_id = parent_uuid
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Name cannot be empty")
+        group.name = name
+
+    if body.description is not None:
+        group.description = body.description.strip() or None
+
+    if "start_date" in body.model_fields_set:
+        group.start_date = body.start_date
+    if "end_date" in body.model_fields_set:
+        group.end_date = body.end_date
+    if "location" in body.model_fields_set:
+        group.location = (body.location or "").strip() or None
+    if body.type_meta is not None:
+        group.type_meta = {**(group.type_meta or {}), **body.type_meta}
+
+    db.commit()
+    db.refresh(group)
+    logger.info("update_experience_group", group_id=str(group.id))
+    return _serialize_exp_group(group)
+
+
+@router.delete("/experience/groups/{group_id}", status_code=204)
+def delete_experience_group(
+    group_id: str,
+    cascade: bool = False,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Delete an ExperienceGroup.
+
+    cascade=false (default): group row is deleted; claims and child groups have their FK nulled
+    out by the DB SET NULL constraint (they become ungrouped/standalone).
+    cascade=true: all claims directly in this group and all child groups (and their claims)
+    are hard-deleted before the group itself is removed.
+    """
+    try:
+        group_uuid = uuid.UUID(group_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid group ID")
+
+    group = (
+        db.query(ExperienceGroup)
+        .filter(ExperienceGroup.id == group_uuid, ExperienceGroup.user_id == user.id)
+        .first()
+    )
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if cascade:
+        child_ids = [
+            row.id
+            for row in db.query(ExperienceGroup.id).filter(
+                ExperienceGroup.parent_group_id == group_uuid,
+                ExperienceGroup.user_id == user.id,
+            )
+        ]
+        all_group_ids = [group_uuid] + child_ids
+        db.query(ExperienceClaim).filter(
+            ExperienceClaim.group_id.in_(all_group_ids),
+            ExperienceClaim.user_id == user.id,
+        ).delete(synchronize_session=False)
+        if child_ids:
+            db.query(ExperienceGroup).filter(
+                ExperienceGroup.id.in_(child_ids),
+                ExperienceGroup.user_id == user.id,
+            ).delete(synchronize_session=False)
+
+    db.delete(group)
+    db.commit()
+    logger.info("delete_experience_group", group_id=str(group_uuid), cascade=cascade)
 
 
 @router.delete("/experience/claims/{claim_id}", status_code=204)

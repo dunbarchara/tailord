@@ -16,13 +16,14 @@ export async function POST(req: Request) {
   }, { body: await req.text() })
 }
 
-export async function DELETE() {
+export async function DELETE(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  return proxyToBackendWithUser('experience/github', {
+  const cascade = new URL(req.url).searchParams.get('cascade') ?? 'true'
+  return proxyToBackendWithUser(`experience/github?cascade=${cascade}`, {
     userId: session.user.id,
     userEmail: session.user.email ?? '',
     userName: session.user.name,

@@ -114,6 +114,16 @@ def _lever_to_markdown(data: dict) -> str:
             if section_md:
                 parts.append(section_md)
 
+    # `additional` contains trailing content not in `lists` — salary, benefits, life-at-company, etc.
+    additional_html = (data.get("additional") or "").strip()
+    additional_plain = (data.get("additionalPlain") or "").strip()
+    if additional_html:
+        additional_md = extract_markdown_content(additional_html)
+        if additional_md:
+            parts.append(additional_md)
+    elif additional_plain:
+        parts.append(additional_plain)
+
     return "\n\n".join(parts)
 
 

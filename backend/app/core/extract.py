@@ -308,9 +308,62 @@ _MAX_MARKDOWN_CHARS = 32_000
 # Content at or after these headings is not part of the job description.
 _APPLY_SECTION_PATTERNS = re.compile(
     r"^#+\s*(apply\s+(for|to|now)|submit\s+(your\s+)?application|application\s+form|"
-    r"apply\s+online|how\s+to\s+apply)",
+    r"apply\s+online|how\s+to\s+apply|ready\s+to\s+apply\??"
+    r"|powered\s+by\s+(gem|ashby|workable|greenhouse|lever)\b)",
     re.IGNORECASE | re.MULTILINE,
 )
+
+# Non-heading lines that also signal the start of application form / page chrome.
+# Catches "Ready to apply?" and "Powered by Gem" rendered as plain paragraphs.
+_NOISE_LINE_PATTERNS = re.compile(
+    r"^(ready\s+to\s+apply\??"
+    r"|powered\s+by\s+(gem|ashby|workable|greenhouse|lever)\b"
+    r"|save\s+your\s+info\s+to\s+apply"
+    r"|first\s+name\s+\*"
+    r")\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+_JUNK_CSS_SELECTORS = [
+    ".header",
+    ".top",
+    ".navbar",
+    "#header",
+    ".footer",
+    ".bottom",
+    "#footer",
+    ".sidebar",
+    ".side",
+    ".aside",
+    "#sidebar",
+    ".modal",
+    ".popup",
+    "#modal",
+    ".overlay",
+    ".ad",
+    ".ads",
+    ".advert",
+    "#ad",
+    ".lang-selector",
+    ".language",
+    "#language-selector",
+    ".social",
+    ".social-media",
+    ".social-links",
+    "#social",
+    ".menu",
+    ".navigation",
+    "#nav",
+    ".breadcrumbs",
+    "#breadcrumbs",
+    ".share",
+    "#share",
+    ".widget",
+    "#widget",
+    ".cookie",
+    "#cookie",
+]
 
 
 def extract_markdown_content(html: str) -> str:
@@ -319,6 +372,11 @@ def extract_markdown_content(html: str) -> str:
     # Remove non-content chrome
     for tag in soup(["noscript", "script", "style", "header", "footer", "nav", "aside"]):
         tag.decompose()
+
+    # Remove navigation/chrome wrapped in <div> elements by CSS class/ID selectors.
+    for selector in _JUNK_CSS_SELECTORS:
+        for tag in soup.select(selector):
+            tag.decompose()
 
     # Remove application form elements — these are never part of the job description
     # and ATS platforms (Greenhouse, Lever, etc.) embed full application forms on the same page.
@@ -338,11 +396,17 @@ def extract_markdown_content(html: str) -> str:
     markdown_content = md(str(soup), heading_style="ATX")
     markdown_content = reduce_newlines_to_two(markdown_content)
 
-    # Truncate at the first "Apply for this job" / "Apply now" heading — everything
-    # after this is application UI, not job description content.
-    match = _APPLY_SECTION_PATTERNS.search(markdown_content)
-    if match:
-        markdown_content = markdown_content[: match.start()].rstrip()
+    # Truncate at the first application form / page chrome signal — everything
+    # after this is not part of the job description.
+    heading_match = _APPLY_SECTION_PATTERNS.search(markdown_content)
+    line_match = _NOISE_LINE_PATTERNS.search(markdown_content)
+    cutoff_match = min(
+        (m for m in [heading_match, line_match] if m is not None),
+        key=lambda m: m.start(),
+        default=None,
+    )
+    if cutoff_match:
+        markdown_content = markdown_content[: cutoff_match.start()].rstrip()
 
     # Hard-cap content length to limit prompt injection surface and token cost.
     if len(markdown_content) > _MAX_MARKDOWN_CHARS:

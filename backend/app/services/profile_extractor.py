@@ -1,4 +1,5 @@
 import re
+from datetime import date
 
 from app.clients.llm_client import get_llm_client
 from app.config import settings
@@ -35,13 +36,23 @@ def _validate_identity(result: ProfileIdentity) -> None:
 def _compute_yoe(structure: ExtractedStructure) -> float:
     intervals = []
     for role in structure.work_experience:
-        if not role.duration:
-            continue
-        parts = _DURATION_SPLIT.split(role.duration.strip(), maxsplit=1)
-        if len(parts) != 2:
-            continue
-        start = parse_duration_date(parts[0])
-        end = parse_duration_date(parts[1])
+        start = None
+        end = None
+
+        # Prefer LLM-normalised ISO dates; fall back to parsing free-text duration
+        if role.start_date:
+            start = parse_duration_date(role.start_date)
+        if role.end_date:
+            end = parse_duration_date(role.end_date)
+        elif role.start_date:
+            end = date.today()  # null end_date = current role
+
+        if (start is None or end is None) and role.duration:
+            parts = _DURATION_SPLIT.split(role.duration.strip(), maxsplit=1)
+            if len(parts) == 2:
+                start = start or parse_duration_date(parts[0])
+                end = end or parse_duration_date(parts[1])
+
         if start and end and end >= start:
             intervals.append((start, end))
     merged = merge_intervals(intervals)

@@ -53,7 +53,7 @@ def test_embeds_chunks_with_null_embedding():
 
             embed_experience_chunks(experience_id, db)
 
-    mock_embed.assert_called_once_with(chunk.content)
+    mock_embed.assert_called_once_with(chunk.content, embed_context="experience_claim_embed")
     assert chunk.embedding == [0.1, 0.2]
     assert chunk.embedding_model == "test-model"
     db.commit.assert_called_once()
@@ -80,7 +80,7 @@ def test_continues_after_per_chunk_failure():
     db = _make_db([chunk_a, chunk_b])
     experience_id = uuid.uuid4()
 
-    def _fail_on_a(text: str) -> list[float]:
+    def _fail_on_a(text: str, embed_context: str = "embed") -> list[float]:
         if text == "chunk A":
             raise RuntimeError("API error")
         return [0.9]

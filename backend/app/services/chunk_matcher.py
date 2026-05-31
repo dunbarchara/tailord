@@ -14,6 +14,11 @@ from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
 from app.services.chunk_display import is_display_ready
 from app.services.chunk_extractor import extract_chunks
+from app.services.job_bounds_detector import (
+    JobContentBounds,
+    apply_bounds,
+    detect_job_content_bounds,
+)
 from app.services.profile_formatter import format_sourced_profile
 
 logger = structlog.get_logger(__name__)
@@ -22,8 +27,8 @@ logger = structlog.get_logger(__name__)
 SEMANTIC_TYPE_RULES: dict[str, tuple[bool | None, bool | None]] = {
     "job_requirement": (True, True),
     "role_description": (True, True),
-    "company_description": (None, False),  # LLM decides include_in_scoring; render always False
-    "compensation": (False, False),
+    "company_description": (False, True),  # not a candidate requirement, but render
+    "compensation": (False, True),  # not a candidate requirement, but render
     "location": (False, False),
     "application_info": (False, False),
     "legal": (False, False),
@@ -107,8 +112,18 @@ def _validate_single_chunk(r: ChunkMatchBatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_candidate_header(candidate_name: str | None, pronouns: str | None) -> str:
-    """Build the [CANDIDATE] block for the vector scoring prompt."""
+def _build_candidate_header(
+    candidate_name: str | None,
+    pronouns: str | None,
+    signals: str | None = None,
+) -> str:
+    """Build the [CANDIDATE] + [COMPUTED SIGNALS] block for the vector scoring prompt.
+
+    signals should be the output of compute_profile_signals() — total YOE and role
+    list. Including it in the vector path ensures YOE threshold requirements are
+    scored correctly without requiring the LLM to re-derive totals from partial
+    context (the top-K claims alone don't cover all roles).
+    """
     lines = []
     if candidate_name:
         lines.append(f"Name: {candidate_name}")
@@ -116,9 +131,18 @@ def _build_candidate_header(candidate_name: str | None, pronouns: str | None) ->
         lines.append(
             f"Pronouns: {pronouns} — use these when referring to the candidate in third person."
         )
-    if not lines:
-        return ""
-    return "[CANDIDATE]\n" + "\n".join(lines)
+    parts = []
+    if lines:
+        parts.append("[CANDIDATE]\n" + "\n".join(lines))
+    if signals:
+        parts.append(f"[COMPUTED SIGNALS — treat as ground truth]\n{signals}")
+    return "\n\n".join(parts)
+
+
+# Maximum matched skill claims to retrieve per chunk evaluation.
+# Skills are aggregated into one line per source in the context, so this does not
+# consume substantive claim slots — it is a separate, capped retrieval pass.
+K_SKILLS = 6
 
 
 def _retrieve_top_k_experience_chunks(
@@ -128,74 +152,230 @@ def _retrieve_top_k_experience_chunks(
     k: int,
 ) -> list:
     """
-    Return the top-K ExperienceClaim rows most similar to job_chunk_embedding,
-    ordered by cosine similarity (closest first).
+    Return the top-K substantive ExperienceClaim rows most similar to
+    job_chunk_embedding, plus up to K_SKILLS matched skill claims.
 
-    Scoped to the given user_id. Skips chunks with null embeddings.
+    Two separate queries are run so skill claims never displace substantive
+    work-experience/project bullets in the top-K slots:
+      1. Non-skill claims (work_experience, project, other): top-k by cosine distance
+      2. Skill claims only: top-K_SKILLS by cosine distance
+
+    Both result sets are returned combined. Skill claims are rendered as a single
+    aggregated line in _build_grouped_context rather than as individual bullets.
+
+    Scoped to the given user_id. Skips claims with null embeddings.
+    Groups (and their parents) are eager-loaded so they remain accessible
+    after the session is closed.
     """
-    from app.models.database import ExperienceClaim
+    from sqlalchemy.orm import joinedload
 
-    return (
+    from app.models.database import ExperienceClaim, ExperienceGroup
+
+    base_filters = [
+        ExperienceClaim.user_id == user_id,
+        ExperienceClaim.embedding.isnot(None),
+        ExperienceClaim.status == "active",
+    ]
+    opts = joinedload(ExperienceClaim.group).joinedload(ExperienceGroup.parent)
+
+    substantive = (
         db.query(ExperienceClaim)
-        .filter(
-            ExperienceClaim.user_id == user_id,
-            ExperienceClaim.embedding.isnot(None),
-            ExperienceClaim.status == "active",
-        )
+        .options(opts)
+        .filter(*base_filters, ExperienceClaim.claim_type != "skill")
         .order_by(ExperienceClaim.embedding.cosine_distance(job_chunk_embedding))
         .limit(k)
         .all()
     )
+
+    skills = (
+        db.query(ExperienceClaim)
+        .options(opts)
+        .filter(*base_filters, ExperienceClaim.claim_type == "skill")
+        .order_by(ExperienceClaim.embedding.cosine_distance(job_chunk_embedding))
+        .limit(K_SKILLS)
+        .all()
+    )
+
+    return substantive + skills
+
+
+def _source_label(chunk) -> str:
+    """Return the inline source label for a claim, e.g. '[resume]' or '[github: tailord]'."""
+    if chunk.source_type == "github":
+        ref = getattr(chunk, "source_ref", None)
+        group_obj = getattr(chunk, "group", None)
+        ref = ref or (group_obj.name if group_obj else "github")
+        return f"[github: {ref}]"
+    return f"[{chunk.source_type}]"
+
+
+def _format_skill_lines(skill_chunks: list, *, bullet: str = "  •") -> list[str]:
+    """
+    Aggregate skill claims into one line per source ref so they don't consume
+    individual context slots.
+
+    Default (ungrouped global section):
+      • TypeScript, React, PostgreSQL  [resume]
+
+    Inline within a role bucket (bullet="  Skills:"):
+      Skills: TypeScript, React, PostgreSQL  [resume]
+    """
+    # Group by (source_type, source_ref) to keep source attribution accurate
+    from collections import defaultdict
+
+    buckets: dict = defaultdict(list)
+    for c in skill_chunks:
+        ref = getattr(c, "source_ref", None) or c.source_type
+        key = (c.source_type, ref)
+        buckets[key].append(c.content)
+
+    lines = []
+    for (source_type, ref), contents in buckets.items():
+        joined = ", ".join(contents)
+        if source_type == "github":
+            label = f"  [github: {ref}]"
+        else:
+            label = f"  [{source_type}]"
+        lines.append(f"{bullet} {joined}{label}")
+    return lines
 
 
 def _build_grouped_context(chunks: list) -> str:
     """
     Format a list of ExperienceClaim rows into a grouped, human-readable context block.
 
-    Groups chunks by (group_key, date_range, source_type) so the LLM sees them as
-    coherent work-experience entries / projects / GitHub repos, not isolated facts.
-    Chunks without a group_key (typically skills / other) are rendered as flat bullets.
+    Primary path: claims with group_id set are bucketed by their effective group.
+    If a claim's group has parent_group_id, it is bucketed under the parent (role)
+    group so linked resume + GitHub evidence is presented as a unified block.
+
+    Legacy path: claims without group_id fall back to (group_key, date_range,
+    source_type) tuple grouping (unchanged from before).
+
+    Skill claims are aggregated into one line per source within each bucket rather
+    than rendered individually — this prevents skills from displacing substantive
+    work-experience bullets in the LLM's reasoning context.
+
+    When a bucket contains non-skill claims from multiple source_types, inline
+    source labels are appended so the LLM can distinguish resume bullets from
+    GitHub evidence.
     """
-    groups: OrderedDict[tuple, list] = OrderedDict()
+    # Each bucket is either:
+    #   FK-based:     {"fk": True, "group": ExperienceGroup, "claims": [...]}
+    #   Legacy-based: {"fk": False, "group_key": str, "date_range": str, "source_type": str, "claims": [...]}
+    bucket_order: list = []  # ordered list of keys
+    buckets: OrderedDict = OrderedDict()
     ungrouped: list = []
 
     for chunk in chunks:
-        if chunk.group_key:
+        group_id = getattr(chunk, "group_id", None)
+        group_obj = getattr(chunk, "group", None)
+
+        if group_id and group_obj:
+            # Bucket under parent group if this group is a child
+            parent = getattr(group_obj, "parent", None)
+            effective = (
+                parent if (getattr(group_obj, "parent_group_id", None) and parent) else group_obj
+            )
+            key = str(effective.id)
+            if key not in buckets:
+                bucket_order.append(key)
+                buckets[key] = {"fk": True, "group": effective, "claims": []}
+            buckets[key]["claims"].append(chunk)
+        elif getattr(chunk, "group_key", None):
             key = (chunk.group_key, chunk.date_range or "", chunk.source_type)
-            groups.setdefault(key, []).append(chunk)
+            if key not in buckets:
+                bucket_order.append(key)
+                buckets[key] = {
+                    "fk": False,
+                    "group_key": chunk.group_key,
+                    "date_range": chunk.date_range or "",
+                    "source_type": chunk.source_type,
+                    "claims": [],
+                }
+            buckets[key]["claims"].append(chunk)
         else:
             ungrouped.append(chunk)
 
     lines: list[str] = []
 
-    for (group_key, date_range, source_type), group_chunks in groups.items():
-        if source_type == "github":
-            techs = group_chunks[0].keywords or []
-            tech_str = f"  ({', '.join(techs)})" if techs else ""
-            header = f"GitHub: {group_key}{tech_str}"
+    for key in bucket_order:
+        bucket = buckets[key]
+        group_chunks = bucket["claims"]
+        skill_chunks = [c for c in group_chunks if getattr(c, "claim_type", None) == "skill"]
+        substantive_chunks = [c for c in group_chunks if getattr(c, "claim_type", None) != "skill"]
+
+        if bucket["fk"]:
+            g = bucket["group"]
+            if g.source_type == "github":
+                techs = group_chunks[0].keywords or [] if group_chunks else []
+                tech_str = f"  ({', '.join(techs)})" if techs else ""
+                header = f"GitHub: {g.name}{tech_str}"
+            else:
+                # Use date_range from claims (role groups may not store dates)
+                date_ranges = [c.date_range for c in group_chunks if getattr(c, "date_range", None)]
+                date_str = date_ranges[0] if date_ranges else None
+                header = g.name
+                if date_str:
+                    header += f"  ({date_str})"
         else:
-            header = group_key
-            if date_range:
-                header += f"  ({date_range})"
+            group_key = bucket["group_key"]
+            date_range = bucket["date_range"]
+            source_type = bucket["source_type"]
+            if source_type == "github":
+                techs = group_chunks[0].keywords or [] if group_chunks else []
+                tech_str = f"  ({', '.join(techs)})" if techs else ""
+                header = f"GitHub: {group_key}{tech_str}"
+            else:
+                header = group_key
+                if date_range:
+                    header += f"  ({date_range})"
+
         lines.append(header)
-        for c in group_chunks:
-            lines.append(f"  • {c.content}")
+
+        # Render substantive claims as individual bullets.
+        # Add source label when multiple source_types are present in a FK bucket.
+        has_mixed = bucket["fk"] and len({c.source_type for c in substantive_chunks}) > 1
+        for c in substantive_chunks:
+            if has_mixed:
+                label = f"  {_source_label(c)}"
+                lines.append(f"  • {c.content}{label}")
+            else:
+                lines.append(f"  • {c.content}")
+
+        # Aggregate skill claims inline: "  Skills: TypeScript, React  [resume]"
+        # Using bullet="  Skills:" merges the label onto the same line as the content.
+        lines.extend(_format_skill_lines(skill_chunks, bullet="  Skills:"))
+
         lines.append("")
 
     if ungrouped:
         candidate_notes = [
             c for c in ungrouped if c.source_type in ("gap_response", "additional_experience")
         ]
-        other = [
+        other_ungrouped = [
             c for c in ungrouped if c.source_type not in ("gap_response", "additional_experience")
         ]
+        skill_ungrouped = [c for c in other_ungrouped if getattr(c, "claim_type", None) == "skill"]
+        substantive_ungrouped = [
+            c for c in other_ungrouped if getattr(c, "claim_type", None) != "skill"
+        ]
+
         if candidate_notes:
             lines.append("Candidate Notes")
             for c in candidate_notes:
                 lines.append(f"  • {c.content}")
             lines.append("")
-        for c in other:
-            lines.append(f"  • {c.content}")
+
+        if skill_ungrouped:
+            lines.append("Skills")
+            lines.extend(_format_skill_lines(skill_ungrouped))
+            lines.append("")
+
+        if substantive_ungrouped:
+            lines.append("Additional Context")
+            for c in substantive_ungrouped:
+                lines.append(f"  • {c.content}")
+            lines.append("")
 
     return "\n".join(lines).strip()
 
@@ -213,10 +393,13 @@ def _append_pinned_claims(
     they must always appear in that requirement's scoring context regardless of
     whether they win a natural cosine slot.
     """
-    from app.models.database import ExperienceClaim
+    from sqlalchemy.orm import joinedload
+
+    from app.models.database import ExperienceClaim, ExperienceGroup
 
     pinned = (
         db.query(ExperienceClaim)
+        .options(joinedload(ExperienceClaim.group).joinedload(ExperienceGroup.parent))
         .filter(
             ExperienceClaim.user_id == user_id,
             ExperienceClaim.status == "active",
@@ -264,7 +447,7 @@ def _score_chunk_vector(
     from app.clients.database import SessionLocal
     from app.clients.embedding_client import embed_text
 
-    job_chunk_embedding = embed_text(chunk_content)
+    job_chunk_embedding = embed_text(chunk_content, embed_context="job_chunk_embed")
 
     db = SessionLocal()
     try:
@@ -335,6 +518,7 @@ def enrich_job_chunks(
     pronouns: str | None = None,
     user_id: uuid.UUID | None = None,
     candidate_name: str | None = None,
+    precomputed_bounds: JobContentBounds | None = None,
 ) -> None:
     """
     Background task: extract chunks from job markdown, match against candidate profile,
@@ -361,14 +545,47 @@ def enrich_job_chunks(
         db.commit()
         logger.debug("enrich_delete_committed", job_id=str(job_id))
 
+        # Use pre-computed bounds if provided (set by _finalize_tailoring as a named stage);
+        # otherwise detect bounds here (e.g. during refresh or standalone calls).
+        bounds = (
+            precomputed_bounds
+            if precomputed_bounds is not None
+            else detect_job_content_bounds(job_markdown)
+        )
+        pre_seg, core_seg, post_seg = apply_bounds(job_markdown, bounds)
+        logger.info(
+            "job_bounds_applied",
+            job_id=str(job_id),
+            has_pre=bool(pre_seg.strip()),
+            has_post=bool(post_seg.strip()),
+        )
+
+        pre_raw = extract_chunks(pre_seg) if pre_seg.strip() else []
+        post_raw = extract_chunks(post_seg) if post_seg.strip() else []
+
         t0 = time.perf_counter()
-        chunks = extract_chunks(job_markdown)
+        chunks = extract_chunks(core_seg)
         logger.info(
             "chunks_extracted",
             job_id=str(job_id),
             chunk_count=len(chunks),
+            excluded_pre=len(pre_raw),
+            excluded_post=len(post_raw),
             duration_ms=int((time.perf_counter() - t0) * 1000),
         )
+
+        # Re-number positions sequentially: pre → core → post
+        pos = 0
+        for c in pre_raw:
+            c.position = pos
+            pos += 1
+        for c in chunks:
+            c.position = pos
+            pos += 1
+        for c in post_raw:
+            c.position = pos
+            pos += 1
+
         if not chunks:
             logger.info("enrich_no_chunks", job_id=str(job_id))
             db.commit()
@@ -406,7 +623,10 @@ def enrich_job_chunks(
                 _pre_classified.add(chunk.position)
 
         if use_vector:
-            candidate_header = _build_candidate_header(candidate_name, pronouns)
+            from app.services.profile_formatter import compute_profile_signals
+
+            signals = compute_profile_signals(extracted_profile) if extracted_profile else None
+            candidate_header = _build_candidate_header(candidate_name, pronouns, signals=signals)
             k = settings.vector_top_k
             scoreable = [
                 c for c in chunks if c.chunk_type != "header" and c.position not in _pre_classified
@@ -614,6 +834,33 @@ def enrich_job_chunks(
             )
             db.add(job_chunk)
 
+        # Persist pre/post-content chunks (excluded from scoring by bounds detection).
+        for excluded_reason, excluded_chunks in [
+            ("pre_content", pre_raw),
+            ("post_content", post_raw),
+        ]:
+            for chunk in excluded_chunks:
+                db.add(
+                    JobChunk(
+                        job_id=job_id,
+                        chunk_type=chunk.chunk_type,
+                        content=chunk.content,
+                        position=chunk.position,
+                        section=chunk.section,
+                        match_score=None,
+                        match_rationale=None,
+                        advocacy_blurb=None,
+                        experience_sources=[],
+                        should_render=False,
+                        include_in_scoring=False,
+                        semantic_type="other",
+                        evaluation_status="skipped",
+                        excluded_reason=excluded_reason,
+                        enriched_at=now,
+                        scored_content=None,
+                    )
+                )
+
         # Merge batch telemetry into generation_telemetry JSONB (duration_ms / matching_mode
         # are written by _finalize_tailoring; we only add batch_count and batch_errors here).
         db.execute(
@@ -691,7 +938,10 @@ def re_enrich_single_chunk(
         use_vector = settings.matching_mode == "vector" and user_id is not None
 
         if use_vector:
-            candidate_header = _build_candidate_header(candidate_name, pronouns)
+            from app.services.profile_formatter import compute_profile_signals
+
+            signals = compute_profile_signals(extracted_profile) if extracted_profile else None
+            candidate_header = _build_candidate_header(candidate_name, pronouns, signals=signals)
             k = settings.vector_top_k
             match, new_embedding = _score_chunk_vector(
                 chunk.content,
@@ -811,7 +1061,10 @@ def refresh_job_chunks(
         error_count = 0
 
         if use_vector:
-            candidate_header = _build_candidate_header(candidate_name, pronouns)
+            from app.services.profile_formatter import compute_profile_signals
+
+            signals = compute_profile_signals(extracted_profile) if extracted_profile else None
+            candidate_header = _build_candidate_header(candidate_name, pronouns, signals=signals)
             k = settings.vector_top_k
 
             _log_ctx = structlog.contextvars.get_contextvars()

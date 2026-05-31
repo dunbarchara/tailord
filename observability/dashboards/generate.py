@@ -80,6 +80,64 @@ def panel(pid, title, ptype, grid, ds, targets, field_config=None, options=None,
     return p
 
 
+# ─── Pricing ─────────────────────────────────────────────────────────────────
+# USD per 1M tokens. Mirror of backend/app/core/llm_pricing.py — update both together.
+# fmt: off
+_PRICING_SQL = """\
+  ROUND(SUM(
+    CASE model
+      WHEN 'gpt-5.4-mini' THEN
+        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0
+        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0
+        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0
+      WHEN 'gpt-5.4' THEN
+        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0
+        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0
+        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0
+      WHEN 'text-embedding-3-small' THEN
+        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0
+      ELSE 0
+    END
+  ), 8) AS cost_usd"""
+
+# Per-row cost (no SUM) — for tables that show one row per call.
+_PRICING_SQL_ROW = """\
+  ROUND(
+    CASE model
+      WHEN 'gpt-5.4-mini' THEN
+        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0
+        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0
+        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0
+      WHEN 'gpt-5.4' THEN
+        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0
+        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0
+        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0
+      WHEN 'text-embedding-3-small' THEN
+        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0
+      ELSE 0
+    END
+  , 8) AS cost_usd"""
+
+# Aggregate cost returning a single scalar "value" column — for stat panels.
+_PRICING_SQL_STAT = """\
+  ROUND(SUM(
+    CASE model
+      WHEN 'gpt-5.4-mini' THEN
+        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0
+        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0
+        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0
+      WHEN 'gpt-5.4' THEN
+        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0
+        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0
+        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0
+      WHEN 'text-embedding-3-small' THEN
+        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0
+      ELSE 0
+    END
+  ), 6) AS value"""
+# fmt: on
+
+
 # ─── Target helpers ───────────────────────────────────────────────────────────
 
 def pt(ref, expr, legend):
@@ -267,6 +325,69 @@ def llm_observability(c):
               c["prom"],
               [pt("A", f'sum(rate(llm_retries_total{{environment="{e}"}}[5m])) by (prompt_type)', "{{prompt_type}}")],
               {"defaults": {"unit": "reqps"}, "overrides": []}),
+        panel(9, "Cached Input Tokens/s", "timeseries", gp(0, 30, 12, 7),
+              c["prom"],
+              [pt("A", f'sum(rate(llm_cached_tokens_total{{environment="{e}"}}[5m])) by (prompt_type)', "{{prompt_type}}")],
+              {"defaults": {"unit": "short"}, "overrides": []},
+              description="Rate of cached input tokens by prompt type. Confirms cache hit patterns for chunk scoring calls."),
+        panel(10, "Embedding Tokens/s by Context", "timeseries", gp(12, 30, 12, 7),
+              c["prom"],
+              [pt("A", f'sum(rate(embedding_tokens_total{{environment="{e}"}}[5m])) by (embed_context)', "{{embed_context}}")],
+              {"defaults": {"unit": "short"}, "overrides": []}),
+        panel(11, "LLM Calls by Prompt × Model", "table", gp(0, 37, 24, 9),
+              c["pg"],
+              [pg("A", "\n".join([
+                  "SELECT",
+                  "  prompt_name,",
+                  "  model,",
+                  "  call_type,",
+                  "  COUNT(*)                    AS calls,",
+                  "  SUM(input_tokens)           AS input_tokens,",
+                  "  SUM(cached_tokens)          AS cached_tokens,",
+                  "  SUM(output_tokens)          AS output_tokens,",
+                  "  ROUND(AVG(latency_ms))::int AS avg_latency_ms,",
+                  _PRICING_SQL,
+                  "FROM llm_call_logs",
+                  "WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()",
+                  "GROUP BY prompt_name, model, call_type",
+                  "ORDER BY cost_usd DESC NULLS LAST",
+              ]))],
+              {"defaults": {}, "overrides": []},
+              options={"footer": {"show": False}},
+              description="Sorted by estimated cost. Pricing: backend/app/core/llm_pricing.py"),
+        panel(12, "LLM Calls by User", "table", gp(0, 46, 24, 9),
+              c["pg"],
+              [pg("A", "\n".join([
+                  "SELECT",
+                  "  COALESCE(u.email, '(system)') AS user,",
+                  "  l.model,",
+                  "  COUNT(*)                       AS calls,",
+                  "  SUM(l.input_tokens)            AS input_tokens,",
+                  "  SUM(l.cached_tokens)           AS cached_tokens,",
+                  "  SUM(l.output_tokens)           AS output_tokens,",
+                  "  ROUND(SUM(",
+                  "    CASE l.model",
+                  "      WHEN 'gpt-5.4-mini' THEN",
+                  "        (COALESCE(l.input_tokens,0) - COALESCE(l.cached_tokens,0)) * 0.75  / 1000000.0",
+                  "        + COALESCE(l.cached_tokens,0)                              * 0.08  / 1000000.0",
+                  "        + COALESCE(l.output_tokens,0)                              * 4.50  / 1000000.0",
+                  "      WHEN 'gpt-5.4' THEN",
+                  "        (COALESCE(l.input_tokens,0) - COALESCE(l.cached_tokens,0)) * 2.50  / 1000000.0",
+                  "        + COALESCE(l.cached_tokens,0)                              * 0.25  / 1000000.0",
+                  "        + COALESCE(l.output_tokens,0)                              * 15.00 / 1000000.0",
+                  "      WHEN 'text-embedding-3-small' THEN",
+                  "        COALESCE(l.input_tokens,0)                                 * 0.025 / 1000000.0",
+                  "      ELSE 0",
+                  "    END",
+                  "  ), 8) AS cost_usd",
+                  "FROM llm_call_logs l",
+                  "LEFT JOIN users u ON u.id = l.user_id",
+                  "WHERE l.created_at BETWEEN $__timeFrom() AND $__timeTo()",
+                  "GROUP BY u.email, l.model",
+                  "ORDER BY cost_usd DESC NULLS LAST",
+              ]))],
+              {"defaults": {}, "overrides": []},
+              options={"footer": {"show": False}}),
     ]
     return d
 
@@ -352,9 +473,59 @@ def per_tailoring_debug(c):
               options={"showTime": True, "showLabels": False, "wrapLogMessage": True, "sortOrder": "Ascending"}),
         panel(3, "TailoringDebugLog Events", "table", gp(0, 16, 24, 8),
               c["pg"],
-              [pg("A", "SELECT created_at, event_type, payload FROM tailoring_debug_logs WHERE tailoring_id = '$tailoring_id'::uuid ORDER BY created_at ASC")],
+              [pg("A", "SELECT created_at, event_type, payload->>'phase' AS phase, payload FROM tailoring_debug_logs WHERE tailoring_id = '$tailoring_id'::uuid ORDER BY created_at ASC")],
               {"defaults": {}, "overrides": []},
               options={"footer": {"show": False}}),
+        # ── Cost summary ────────────────────────────────────────────────────
+        panel(4, "Total Cost", "stat", gp(0, 24, 6, 5),
+              c["pg"],
+              [pg("A", "\n".join([
+                  "SELECT", _PRICING_SQL_STAT,
+                  "FROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid",
+              ]))],
+              {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        panel(5, "Total Calls", "stat", gp(6, 24, 6, 5),
+              c["pg"],
+              [pg("A", "SELECT COUNT(*) AS value FROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid")],
+              {"defaults": {"unit": "short"}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        panel(6, "Cache Hit %", "stat", gp(12, 24, 6, 5),
+              c["pg"],
+              [pg("A", "SELECT ROUND(100.0 * SUM(cached_tokens) / NULLIF(SUM(input_tokens), 0), 1) AS value FROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid AND call_type = 'llm'")],
+              {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [
+                  {"color": "red", "value": None},
+                  {"color": "yellow", "value": 20},
+                  {"color": "green", "value": 40},
+              ]}}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        panel(7, "Avg Call Latency", "stat", gp(18, 24, 6, 5),
+              c["pg"],
+              [pg("A", "SELECT ROUND(AVG(latency_ms))::int AS value FROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid")],
+              {"defaults": {"unit": "ms"}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        # ── Cost breakdown ──────────────────────────────────────────────────
+        panel(8, "LLM Cost by Prompt", "table", gp(0, 29, 24, 9),
+              c["pg"],
+              [pg("A", "\n".join([
+                  "SELECT",
+                  "  prompt_name,",
+                  "  model,",
+                  "  call_type,",
+                  "  COUNT(*)                    AS calls,",
+                  "  SUM(input_tokens)           AS input_tokens,",
+                  "  SUM(cached_tokens)          AS cached_tokens,",
+                  "  SUM(output_tokens)          AS output_tokens,",
+                  "  ROUND(AVG(latency_ms))::int AS avg_latency_ms,",
+                  _PRICING_SQL,
+                  "FROM llm_call_logs",
+                  "WHERE tailoring_id = '$tailoring_id'::uuid",
+                  "GROUP BY prompt_name, model, call_type",
+                  "ORDER BY cost_usd DESC NULLS LAST",
+              ]))],
+              {"defaults": {}, "overrides": []},
+              options={"footer": {"show": False}},
+              description="Pricing: backend/app/core/llm_pricing.py"),
     ]
     return d
 
@@ -537,10 +708,75 @@ def per_user_usage(c):
               [pg("A", "SELECT t.id, j.extracted_job->>'title' AS job_title, j.extracted_job->>'company' AS company, t.generation_status, t.letter_public OR t.posting_public AS shared, t.created_at FROM tailorings t JOIN jobs j ON j.id = t.job_id WHERE t.user_id = '$user_id'::uuid ORDER BY t.created_at DESC LIMIT 20")],
               {"defaults": {}, "overrides": []},
               options={"footer": {"show": False}}),
-        # ── Row 4: raw LLM event log ────────────────────────────────────────
-        panel(12, "Recent LLM Events", "table", gp(0, 23, 24, 7),
+        # ── Row 4: cost summary stats ───────────────────────────────────────
+        panel(12, "Total LLM Cost", "stat", gp(0, 23, 6, 5),
               c["pg"],
-              [pg("A", "SELECT created_at, event_type, model, input_tokens, output_tokens, cost_usd FROM llm_usage_logs WHERE user_id = '$user_id'::uuid ORDER BY created_at DESC LIMIT 50")],
+              [pg("A", "\n".join([
+                  "SELECT", _PRICING_SQL_STAT,
+                  "FROM llm_call_logs",
+                  "WHERE user_id = '$user_id'::uuid",
+                  "  AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+              ]))],
+              {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        panel(13, "LLM Calls", "stat", gp(6, 23, 6, 5),
+              c["pg"],
+              [pg("A", "SELECT COUNT(*) AS value FROM llm_call_logs WHERE user_id = '$user_id'::uuid AND call_type = 'llm' AND created_at BETWEEN $__timeFrom() AND $__timeTo()")],
+              {"defaults": {"unit": "short"}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        panel(14, "Embedding Calls", "stat", gp(12, 23, 6, 5),
+              c["pg"],
+              [pg("A", "SELECT COUNT(*) AS value FROM llm_call_logs WHERE user_id = '$user_id'::uuid AND call_type = 'embedding' AND created_at BETWEEN $__timeFrom() AND $__timeTo()")],
+              {"defaults": {"unit": "short"}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        panel(15, "Cache Hit %", "stat", gp(18, 23, 6, 5),
+              c["pg"],
+              [pg("A", "SELECT ROUND(100.0 * SUM(cached_tokens) / NULLIF(SUM(input_tokens), 0), 1) AS value FROM llm_call_logs WHERE user_id = '$user_id'::uuid AND call_type = 'llm' AND created_at BETWEEN $__timeFrom() AND $__timeTo()")],
+              {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [
+                  {"color": "red", "value": None},
+                  {"color": "yellow", "value": 20},
+                  {"color": "green", "value": 40},
+              ]}}, "overrides": []},
+              options={"reduceOptions": {"calcs": ["lastNotNull"]}}),
+        # ── Row 4b: cost breakdown by operation ─────────────────────────────
+        panel(16, "LLM Cost by Operation", "table", gp(0, 28, 24, 9),
+              c["pg"],
+              [pg("A", "\n".join([
+                  "SELECT",
+                  "  prompt_name,",
+                  "  model,",
+                  "  call_type,",
+                  "  COUNT(*)                    AS calls,",
+                  "  SUM(input_tokens)           AS input_tokens,",
+                  "  SUM(cached_tokens)          AS cached_tokens,",
+                  "  SUM(output_tokens)          AS output_tokens,",
+                  _PRICING_SQL,
+                  "FROM llm_call_logs",
+                  "WHERE user_id = '$user_id'::uuid",
+                  "  AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+                  "GROUP BY prompt_name, model, call_type",
+                  "ORDER BY cost_usd DESC NULLS LAST",
+              ]))],
+              {"defaults": {}, "overrides": []},
+              options={"footer": {"show": False}}),
+        # ── Row 5: raw LLM call log ─────────────────────────────────────────
+        panel(17, "Recent LLM Calls", "table", gp(0, 37, 24, 8),
+              c["pg"],
+              [pg("A", "\n".join([
+                  "SELECT",
+                  "  created_at,",
+                  "  prompt_name,",
+                  "  model,",
+                  "  call_type,",
+                  "  input_tokens,",
+                  "  cached_tokens,",
+                  "  output_tokens,",
+                  _PRICING_SQL_ROW,
+                  "FROM llm_call_logs",
+                  "WHERE user_id = '$user_id'::uuid",
+                  "ORDER BY created_at DESC",
+                  "LIMIT 50",
+              ]))],
               {"defaults": {}, "overrides": []},
               options={"footer": {"show": False}}),
     ]

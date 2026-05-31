@@ -12,9 +12,11 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _mock_embedding_response(vector: list[float]) -> MagicMock:
+def _mock_embedding_response(vector: list[float], prompt_tokens: int = 5) -> MagicMock:
     response = MagicMock()
     response.data = [MagicMock(embedding=vector)]
+    response.usage.prompt_tokens = prompt_tokens
+    response.usage.total_tokens = prompt_tokens
     return response
 
 

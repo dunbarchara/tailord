@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Copy, CheckCircle2, Loader2, AlertCircle, RotateCcw,
   Lock, Globe, Link as LinkIcon, ChevronDown, Info,
-  Pencil, RefreshCw,
+  Pencil, RefreshCw, FileText,
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import { toast } from 'sonner';
@@ -27,6 +27,7 @@ import { DebugPanel } from '@/components/dashboard/DebugPanel';
 import { AdvocacyLetter } from '@/components/dashboard/AdvocacyLetter';
 import { GenerationView } from '@/components/dashboard/GenerationView';
 import { TailoringErrorState } from '@/components/dashboard/TailoringErrorState';
+import { ResumeExportPanel } from '@/components/dashboard/ResumeExportPanel';
 import type { Tailoring, ChunksResponse, ExperienceClaim, JobChunk } from '@/types';
 
 const POLL_INTERVAL = 3000;
@@ -168,6 +169,7 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
   // when enrichment settles, keeping the sidebar spinner alive through the enrichment phase.
   const prevEnrichmentStatusRef = useRef<string | null | undefined>(undefined);
   const [gapAnalysisSettled, setGapAnalysisSettled] = useState(false);
+  const [showResume, setShowResume] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [jobDraft, setJobDraft] = useState<{ title: string; company: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -1017,6 +1019,20 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
             )
           )}
 
+          {/* Resume */}
+          {!readOnly && tailoring.generation_status === 'ready' && (
+            <button
+              type="button"
+              onClick={() => setShowResume(v => !v)}
+              aria-label="Export resume"
+              title="Export resume"
+              className={cn(textBtnCls, showResume && 'bg-surface-overlay border-border-strong text-text-primary')}
+            >
+              <FileText aria-hidden="true" className="h-3.5 w-3.5" />
+              Resume
+            </button>
+          )}
+
           <ToolDivider />
 
           {/* Regenerate */}
@@ -1136,6 +1152,20 @@ export function TailoringDetail({ tailoringId: tailoringIdProp, readOnly, initia
 
         </div>
       </div>
+
+      {/* ── Resume export panel ─────────────────────────────────────────── */}
+      {!readOnly && tailoring.generation_status === 'ready' && (
+        <ResumeExportPanel
+          open={showResume}
+          onClose={() => setShowResume(false)}
+          tailoringId={tailoring.id}
+          jobTitle={tailoring.title}
+          company={tailoring.company}
+          initialDraft={tailoring.resume_draft}
+          tailoringPublicLink={tailoring.is_public && tailoring.public_slug && tailoring.author_username_slug ? `tailord.app/u/${tailoring.author_username_slug}/${tailoring.public_slug}` : null}
+          profilePublicLink={tailoring.author_username_slug ? `tailord.app/u/${tailoring.author_username_slug}` : null}
+        />
+      )}
 
       {/* ── Preview banner (letter / posting tabs only) ───────────────────── */}
       {!showGenerationView && !generationFailed && (activeTab === 'letter' || activeTab === 'posting') && (

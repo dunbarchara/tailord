@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -315,6 +316,9 @@ class Tailoring(Base):
     notion_export: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # LLM models used. Keys: letter (scoring model planned).
     models: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Resume draft JSONB. Populated by POST /tailorings/{id}/resume/generate.
+    # Shape: ResumeDraft — sections, skills_claim_ids, education_group_ids, contact_override, warnings.
+    resume_draft: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     @hybrid_property
     def is_public(self) -> bool:
@@ -393,6 +397,47 @@ class TailoringDebugLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class LlmCallLog(Base):
+    """
+    Append-only per-call log for every LLM and embedding call.
+
+    Enables exact cumulative token counts and per-user/per-tailoring cost attribution via SQL.
+    call_type: "llm" | "embedding"
+    prompt_name: prompt_name for LLM calls; embed_context for embedding calls.
+    output_tokens: NULL for embedding calls.
+    user_id: SET NULL on user deletion — cost data retained for audit purposes.
+    tailoring_id: SET NULL on tailoring deletion — nullable; NULL for calls outside generation.
+    """
+
+    __tablename__ = "llm_call_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    tailoring_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tailorings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    call_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_llm_call_logs_created_at", "created_at"),
+        Index("ix_llm_call_logs_prompt_model", "prompt_name", "model"),
+    )
+
+
 class ExperienceGroup(Base):
     """
     Parent container for grouped ExperienceClaims (roles, projects, repos, education).
@@ -436,9 +481,29 @@ class ExperienceGroup(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    # Self-referential link: repository groups can be parented to a role group.
+    # One level of hierarchy only — parent.parent_group_id must always be null.
+    parent_group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("experience_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     user: Mapped["User"] = relationship("User", back_populates="groups")
     claims: Mapped[list["ExperienceClaim"]] = relationship(
         "ExperienceClaim", back_populates="group"
+    )
+    parent: Mapped["ExperienceGroup | None"] = relationship(
+        "ExperienceGroup",
+        foreign_keys=[parent_group_id],
+        back_populates="children",
+        remote_side="ExperienceGroup.id",
+    )
+    children: Mapped[list["ExperienceGroup"]] = relationship(
+        "ExperienceGroup",
+        foreign_keys=[parent_group_id],
+        back_populates="parent",
     )
 
 
@@ -573,5 +638,8 @@ class JobChunk(Base):
     # Populated by experience_embedder.py after job chunk extraction.
     embedding = mapped_column(Vector(1536), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Set by bounds detection when a chunk falls outside the detected job content region.
+    # Values: "pre_content" | "post_content" | null (not excluded by bounds detection).
+    excluded_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     job: Mapped["Job"] = relationship("Job", back_populates="chunks")

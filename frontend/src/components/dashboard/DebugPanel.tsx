@@ -11,6 +11,7 @@ interface DebugInfo {
   model: string | null;
   matching_mode: 'vector' | 'llm' | null;
   generation_duration_ms: number | null;
+  detect_bounds_ms: number | null;
   chunk_batch_count: number | null;
   chunk_error_count: number | null;
   formatted_profile: string;
@@ -172,6 +173,16 @@ export function DebugPanel({ tailoringId, chunksData, chunksError, title, compan
                 {debugInfo.generation_duration_ms >= 1000
                   ? `${(debugInfo.generation_duration_ms / 1000).toFixed(1)}s`
                   : `${debugInfo.generation_duration_ms}ms`}
+              </span>
+            </div>
+          )}
+          {debugInfo.detect_bounds_ms != null && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-text-tertiary">Bounds detect</span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium bg-surface-overlay border border-border-subtle text-text-secondary">
+                {debugInfo.detect_bounds_ms >= 1000
+                  ? `${(debugInfo.detect_bounds_ms / 1000).toFixed(1)}s`
+                  : `${debugInfo.detect_bounds_ms}ms`}
               </span>
             </div>
           )}

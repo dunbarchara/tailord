@@ -168,3 +168,46 @@ def make_llm_usage_log(db, user, n=1, event_type="tailoring_create"):
 
 
 make_llm_trigger_log = make_llm_usage_log  # backward compat alias
+
+
+def make_group(db, user, group_type="role", name="Acme Corp", **kwargs):
+    from app.models.database import ExperienceGroup
+
+    group = ExperienceGroup(
+        user_id=user.id,
+        group_type=group_type,
+        name=name,
+        source_type="resume",
+        **kwargs,
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+def make_claim(
+    db,
+    user,
+    group=None,
+    claim_type="work_experience",
+    content="Built and shipped a feature end-to-end.",
+    **kwargs,
+):
+    from app.models.database import ExperienceClaim
+
+    claim = ExperienceClaim(
+        user_id=user.id,
+        group_id=group.id if group else None,
+        source_type="resume",
+        claim_type=claim_type,
+        content=content,
+        confidence="high",
+        status="active",
+        position=kwargs.pop("position", 0),
+        **kwargs,
+    )
+    db.add(claim)
+    db.commit()
+    db.refresh(claim)
+    return claim
