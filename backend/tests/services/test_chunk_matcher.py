@@ -696,32 +696,32 @@ def test_resolve_job_requirement_forces_include_in_scoring_true():
     assert resolved.should_render is True
 
 
-def test_resolve_company_description_render_always_false():
-    """company_description: should_render always False; include_in_scoring passes through."""
+def test_resolve_company_description_render_true_scoring_false():
+    """company_description: renders (context for candidate) but not a scorable requirement."""
     result = ChunkMatchResult(
         score=-1,
         rationale="About us",
         semantic_type="company_description",
         include_in_scoring=True,
-        should_render=True,
+        should_render=False,
     )
     resolved = resolve_chunk_flags(result)
-    assert resolved.should_render is False
-    assert resolved.include_in_scoring is True  # LLM value preserved
+    assert resolved.should_render is True
+    assert resolved.include_in_scoring is False
 
 
-def test_resolve_compensation_both_false():
-    """compensation: both flags forced False regardless of LLM values."""
+def test_resolve_compensation_render_true_scoring_false():
+    """compensation: renders (candidates need salary info) but not scored against candidate."""
     result = ChunkMatchResult(
         score=-1,
         rationale="Salary",
         semantic_type="compensation",
         include_in_scoring=True,
-        should_render=True,
+        should_render=False,
     )
     resolved = resolve_chunk_flags(result)
     assert resolved.include_in_scoring is False
-    assert resolved.should_render is False
+    assert resolved.should_render is True
 
 
 def test_resolve_other_passes_through_llm_values():

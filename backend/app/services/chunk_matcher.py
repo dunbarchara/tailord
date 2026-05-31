@@ -27,8 +27,8 @@ logger = structlog.get_logger(__name__)
 SEMANTIC_TYPE_RULES: dict[str, tuple[bool | None, bool | None]] = {
     "job_requirement": (True, True),
     "role_description": (True, True),
-    "company_description": (None, False),  # LLM decides include_in_scoring; render always False
-    "compensation": (False, False),
+    "company_description": (False, True),  # not a candidate requirement, but render
+    "compensation": (False, True),  # not a candidate requirement, but render
     "location": (False, False),
     "application_info": (False, False),
     "legal": (False, False),

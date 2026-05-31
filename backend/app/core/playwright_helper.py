@@ -114,7 +114,7 @@ def _assert_public_url(url: str) -> None:
                 )
 
 
-def _validate_request_hook(request: httpx.Request) -> None:
+async def _validate_request_hook(request: httpx.Request) -> None:
     """httpx request event hook — fires before every request, including redirect hops.
 
     Validates each destination URL so that an open redirect on a job board
@@ -137,23 +137,30 @@ async def _fetch_with_httpx(url: str) -> str:
         return response.text
 
 
-def _needs_browser(html: str) -> bool:
-    """Return True if the HTML looks like it needs JS rendering to be useful."""
-    # Very short body → SPA mount point with no server-rendered content
+# Minimum visible-text length to trust httpx HTML as real job content.
+# SPAs that slip past the _SPA_PATTERN check (e.g. Ashby) still return < 1 500 chars
+# of visible body text — real job postings are substantially longer.
+_MIN_CONTENT_CHARS = 1_500
+
+
+def _needs_browser(html: str) -> tuple[bool, str]:
+    """Return (needs_browser, reason) — True if JS rendering is required."""
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "html.parser")
     body = soup.find("body")
-    if body:
-        visible_text = body.get_text(" ", strip=True)
-        if len(visible_text) < 500:
-            return True
+    visible_text = body.get_text(" ", strip=True) if body else ""
 
-    # Explicit SPA shell pattern
+    if len(visible_text) < 500:
+        return True, "thin_body"
+
     if _SPA_PATTERN.search(html):
-        return True
+        return True, "spa_pattern"
 
-    return False
+    if len(visible_text) < _MIN_CONTENT_CHARS:
+        return True, "thin_content"
+
+    return False, ""
 
 
 async def get_html_content(url: str) -> str:
@@ -161,11 +168,16 @@ async def get_html_content(url: str) -> str:
     _assert_public_url(url)
     try:
         html = await _fetch_with_httpx(url)
-        if not _needs_browser(html):
+        needs_browser, reason = _needs_browser(html)
+        if not needs_browser:
             logger.info("httpx_fetch_success", extra={"url": url})
             JOB_SCRAPE_TOTAL.labels(method="httpx", outcome="success").inc()
             return html
-        logger.debug("httpx_fetch_needs_browser: falling through to Playwright for %s", url)
+        logger.debug(
+            "httpx_fetch_needs_browser: falling through to Playwright for %s (reason=%s)",
+            url,
+            reason,
+        )
         JOB_SCRAPE_TOTAL.labels(method="httpx", outcome="spa_fallthrough").inc()
     except Exception:
         logger.debug("httpx_fetch_failed: falling through to Playwright for %s", url, exc_info=True)

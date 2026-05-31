@@ -137,22 +137,28 @@ def test_url_without_hostname_rejected():
 
 def test_redirect_hook_blocks_private_ip():
     """Hook must reject a redirect destination that resolves to a private IP."""
+    import asyncio
+
     request = httpx.Request("GET", "http://169.254.169.254/latest/meta-data/")
     with _mock_getaddrinfo("169.254.169.254"):
         with pytest.raises(ValueError, match="reserved/private"):
-            _validate_request_hook(request)
+            asyncio.run(_validate_request_hook(request))
 
 
 def test_redirect_hook_allows_public_ip():
     """Hook must pass through a redirect destination with a public IP."""
+    import asyncio
+
     request = httpx.Request("GET", "https://careers.example.com/job/456")
     with _mock_getaddrinfo("93.184.216.34"):
-        _validate_request_hook(request)  # must not raise
+        asyncio.run(_validate_request_hook(request))  # must not raise
 
 
 def test_redirect_hook_blocks_loopback_redirect():
     """Open redirect to localhost must be caught on the redirect hop."""
+    import asyncio
+
     request = httpx.Request("GET", "http://127.0.0.1/admin")
     with _mock_getaddrinfo("127.0.0.1"):
         with pytest.raises(ValueError, match="reserved/private"):
-            _validate_request_hook(request)
+            asyncio.run(_validate_request_hook(request))
