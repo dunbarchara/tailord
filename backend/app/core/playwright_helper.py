@@ -132,7 +132,9 @@ async def _fetch_with_httpx(url: str) -> str:
         timeout=_HTTPX_TIMEOUT_S,
         event_hooks={"request": [_validate_request_hook]},
     ) as client:
-        response = await client.get(url, headers=headers)
+        # URL is validated by _assert_public_url() at the get_html_content entry point
+        # and re-validated on every redirect hop via _validate_request_hook.
+        response = await client.get(url, headers=headers)  # lgtm[py/full-ssrf]
         response.raise_for_status()
         return response.text
 
