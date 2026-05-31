@@ -267,7 +267,7 @@ export interface JobChunk {
   include_in_scoring: boolean  // false = excluded from re-scoring (user-marked or semantic rule)
   semantic_type: string | null  // null for pre-migration records
   evaluation_status: string | null  // 'scored' | 'skipped' | 'error' | null
-  display_ready: boolean   // computed by backend: not a header, has a section, not noise
+  display_ready: boolean   // computed by backend: not a header, not pre/post-bounds, not noise
   scored_content: string | null  // content at time of last scoring; null = scored before this field existed
   excluded_reason?: string | null  // 'pre_content' | 'post_content' | null — set by LLM bounds detection
 }

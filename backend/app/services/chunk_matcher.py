@@ -4,6 +4,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 
+import openai
 import structlog
 from sqlalchemy import text
 
@@ -602,6 +603,7 @@ def enrich_job_chunks(
 
         result_map: dict[int, ChunkMatchResult] = {}
         embedding_map: dict[int, list[float]] = {}  # populated only in vector mode
+        _content_filter_positions: set[int] = set()
         batch_count = 0
         error_count = 0
 
@@ -673,6 +675,31 @@ def enrich_job_chunks(
                     _, (match, embedding) = future.result()
                     result_map[chunk.position] = match
                     embedding_map[chunk.position] = embedding
+                except openai.BadRequestError as e:
+                    if e.code == "content_filter":
+                        logger.warning(
+                            "chunk_scoring_content_filter",
+                            job_id=str(job_id),
+                            position=chunk.position,
+                            mode="vector",
+                        )
+                        _content_filter_positions.add(chunk.position)
+                        result_map[chunk.position] = ChunkMatchResult(
+                            score=-1,
+                            rationale="Not evaluated (content filter)",
+                            include_in_scoring=False,
+                        )
+                    else:
+                        logger.exception(
+                            "chunk_scoring_failed",
+                            job_id=str(job_id),
+                            position=chunk.position,
+                            mode="vector",
+                        )
+                        error_count += 1
+                        result_map[chunk.position] = ChunkMatchResult(
+                            score=-1, rationale="Not evaluated (vector error)"
+                        )
                 except Exception:
                     logger.exception(
                         "chunk_scoring_failed",
@@ -827,6 +854,9 @@ def enrich_job_chunks(
                 include_in_scoring=match.include_in_scoring,
                 semantic_type=match.semantic_type,
                 evaluation_status=_derive_evaluation_status(match, chunk.chunk_type),
+                excluded_reason="content_filter"
+                if chunk.position in _content_filter_positions
+                else None,
                 enriched_at=now,
                 scored_content=chunk.content,
                 embedding=embedding,
