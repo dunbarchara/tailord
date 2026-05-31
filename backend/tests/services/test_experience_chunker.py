@@ -438,3 +438,70 @@ def test_chunk_github_repo_creates_repository_group():
     assert added_groups[0].source_type == "github"
     assert added_groups[0].name == "myrepo"
     assert added_groups[0].source_ref == "myrepo"
+
+
+# ---------------------------------------------------------------------------
+# destructive flag
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_resume_additive_by_default_skips_delete():
+    """chunk_resume(destructive=False) must NOT call db.query (no delete path)."""
+    profile = {"skills": {"technical": ["Python"]}}
+    exp = _make_resume_source(extracted=profile)
+    db = _make_db()
+
+    chunk_resume(db, exp)  # destructive defaults to False
+
+    # _delete_chunks issues a db.query call — should not have happened
+    db.query.assert_not_called()
+
+
+def test_chunk_resume_destructive_triggers_delete():
+    """chunk_resume(destructive=True) must call db.query to delete existing chunks."""
+    profile = {"skills": {"technical": ["Python"]}}
+    exp = _make_resume_source(extracted=profile)
+    db = _make_db()
+    db.query.return_value.filter.return_value.delete.return_value = 0
+
+    chunk_resume(db, exp, destructive=True)
+
+    db.query.assert_called()
+
+
+def test_chunk_github_repo_additive_by_default_skips_delete():
+    """chunk_github_repo(destructive=False) must NOT call db.query for deletion."""
+    repos = [{"name": "myrepo", "detected_stack": ["Go"]}]
+    exp = _make_github_source(repos=repos)
+    db = _make_db()
+    # first() returns None so a new group is created; all() returns [] for parent suggestions
+    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.all.return_value = []
+
+    chunk_github_repo(db, exp, "myrepo")  # destructive defaults to False
+
+    # Verify db.query was only called for group lookup / parent suggestion, not for DELETE
+    # None of the query chains should have called .delete()
+    for call in db.query.return_value.filter.return_value.mock_calls:
+        assert "delete" not in str(call), "delete should not be called when destructive=False"
+
+
+def test_chunk_github_repo_destructive_triggers_delete():
+    """chunk_github_repo(destructive=True) must issue a delete query."""
+    repos = [{"name": "myrepo", "detected_stack": ["Go"]}]
+    exp = _make_github_source(repos=repos)
+    db = _make_db()
+    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.all.return_value = []
+    db.query.return_value.filter.return_value.filter.return_value.delete.return_value = 0
+
+    chunk_github_repo(db, exp, "myrepo", destructive=True)
+
+    # At least one delete() call should have been issued
+    delete_called = any(
+        "delete" in str(call) for call in db.query.return_value.filter.return_value.mock_calls
+    ) or any(
+        "delete" in str(call)
+        for call in db.query.return_value.filter.return_value.filter.return_value.mock_calls
+    )
+    assert delete_called, "delete should be called when destructive=True"

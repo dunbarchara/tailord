@@ -8,6 +8,8 @@ class WorkExperience(BaseModel):
     company: str = ""
     location: str | None = None
     duration: str = ""
+    start_date: str | None = None  # YYYY-MM, e.g. "2020-01"
+    end_date: str | None = None  # YYYY-MM, or null if current/ongoing
     bullets: list[str] = []
 
 
@@ -17,10 +19,15 @@ class ProfileSkills(BaseModel):
 
 
 class Education(BaseModel):
-    degree: str = ""
+    degree: str = ""  # credential received (e.g. "B.S. Computer Science"); empty if none
     institution: str = ""
     location: str | None = None
-    year: str = ""
+    year: str = ""  # human-readable display string (e.g. "Graduated Dec 2017")
+    enrollment_date: str | None = None  # YYYY-MM or YYYY — when studies began
+    completion_date: str | None = (
+        None  # YYYY-MM or YYYY — when attendance ended (neutral: graduation, transfer, or departure)
+    )
+    status: str | None = None  # graduated | pursuing | transferred | attended
     distinction: str | None = None
 
 
@@ -28,6 +35,8 @@ class Project(BaseModel):
     name: str = ""
     description: str = ""
     technologies: list[str] = []
+    start_date: str | None = None  # YYYY-MM or YYYY
+    end_date: str | None = None  # YYYY-MM or YYYY; null if ongoing
 
 
 class ExtractedStructure(BaseModel):

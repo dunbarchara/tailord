@@ -24,3 +24,15 @@ export async function PATCH(
   const body = await req.text()
   return proxyToBackendWithUser(`experience/groups/${id}`, user, { method: 'PATCH', body })
 }
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getUserContext()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  const cascade = new URL(req.url).searchParams.get('cascade') ?? 'false'
+  return proxyToBackendWithUser(`experience/groups/${id}?cascade=${cascade}`, user, { method: 'DELETE' })
+}

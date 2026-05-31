@@ -75,6 +75,7 @@ export interface ExperienceGroup {
   suggestion_confidence: 'high' | 'medium' | null
   description: string | null
   position: number | null
+  created_at: string | null
 }
 
 export interface Tailoring {

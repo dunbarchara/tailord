@@ -64,28 +64,43 @@ function computeYoE(workExperience: Array<{ duration?: string | null }>): number
 const CONFIRM_CONFIGS = {
   'resume-remove': {
     title: 'Remove resume',
-    description: 'Your resume and extracted profile data will be permanently deleted. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from this resume?',
     confirm: 'Remove',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
   'resume-replace': {
     title: 'Replace resume',
-    description: 'Your current resume and extracted profile data will be replaced. The previous data will be permanently deleted. This cannot be undone.',
+    description: 'Your current resume will be replaced. What should happen to the existing claims and groups derived from it?',
     confirm: 'Replace',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep existing claims',
+    deleteLabel: 'Replace with new',
   },
   'github-remove': {
     title: 'Remove GitHub',
-    description: 'Your GitHub profile and imported repository data will be permanently deleted. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from your GitHub repos?',
     confirm: 'Remove',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
   'github-change': {
     title: 'Change GitHub profile',
-    description: 'Your existing GitHub profile and imported repository data will be replaced with the new username. The previous data will be permanently deleted. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from the current GitHub profile?',
     confirm: 'Change',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
   'github-repos-remove': {
     title: 'Remove repositories',
-    description: 'Removing repositories will permanently delete the signals extracted from them. This cannot be undone.',
+    description: 'What should happen to the claims and groups derived from the removed repos?',
     confirm: 'Remove',
+    hasCascadeChoice: true,
+    keepLabel: 'Keep claims',
+    deleteLabel: 'Delete everything',
   },
 } as const;
 
@@ -160,6 +175,9 @@ export function ExperienceManager({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Carries the destructive choice from the resume-replace confirm dialog into the upload flow.
+  // false = keep existing claims (additive); true = replace existing claims.
+  const pendingReplaceDestructive = useRef(false);
 
 
   useEffect(() => {
@@ -376,10 +394,12 @@ export function ExperienceManager({
       setProcessingStage(null);
       setStageStartedAt({});
 
+      const destructive = pendingReplaceDestructive.current;
+      pendingReplaceDestructive.current = false;
       const processRes = await fetch('/api/experience/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storage_key, experience_id }),
+        body: JSON.stringify({ storage_key, experience_id, destructive }),
       });
       if (!processRes.ok || !processRes.body) {
         const err = await processRes.json().catch(() => ({}));
@@ -433,9 +453,9 @@ export function ExperienceManager({
     }
   };
 
-  const handleRemove = async () => {
+  const handleRemove = async (cascade = true) => {
     stopPolling();
-    const res = await fetch('/api/experience', { method: 'DELETE' });
+    const res = await fetch(`/api/experience?cascade=${cascade}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toastError(err.detail ?? `Failed to remove (${res.status})`);
@@ -448,16 +468,19 @@ export function ExperienceManager({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleConfirmAction = async () => {
+  const handleConfirmAction = async (cascade = true) => {
     const action = confirmDialog;
     setConfirmDialog(null);
-    if (action === 'resume-remove') await handleRemove();
-    else if (action === 'resume-replace') fileInputRef.current?.click();
-    else if (action === 'github-remove') await handleGithubRemove();
-    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames]);
+    if (action === 'resume-remove') await handleRemove(cascade);
+    else if (action === 'resume-replace') {
+      pendingReplaceDestructive.current = cascade;
+      fileInputRef.current?.click();
+    }
+    else if (action === 'github-remove') await handleGithubRemove(cascade);
+    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], undefined, cascade);
     else if (action === 'github-repos-remove') {
       const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
-      await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], added);
+      await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], added, cascade);
     }
   };
 
@@ -472,10 +495,14 @@ export function ExperienceManager({
     setAcknowledged(false);
   };
 
-  const doGithubSave = async (username: string, repoNames: string[], enrichOnly?: string[]) => {
+  const doGithubSave = async (username: string, repoNames: string[], enrichOnly?: string[], cascade = true) => {
     setGithubState('saving');
     setGithubError(null);
-    const payload: Record<string, unknown> = { github_username: username, selected_repo_names: repoNames };
+    const payload: Record<string, unknown> = {
+      github_username: username,
+      selected_repo_names: repoNames,
+      cascade_removed_repos: cascade,
+    };
     if (enrichOnly !== undefined) payload.enrich_only_repo_names = enrichOnly;
     const res = await fetch('/api/experience/github', {
       method: 'POST',
@@ -603,9 +630,9 @@ export function ExperienceManager({
     startScanPolling();
   };
 
-  const handleGithubRemove = async () => {
+  const handleGithubRemove = async (cascade = true) => {
     setGithubState('removing');
-    const res = await fetch('/api/experience/github', { method: 'DELETE' });
+    const res = await fetch(`/api/experience/github?cascade=${cascade}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toastError(err.detail ?? `Failed to remove (${res.status})`);
@@ -934,13 +961,23 @@ export function ExperienceManager({
             >
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={handleConfirmAction}
-              className="inline-flex items-center justify-center h-9 px-3 rounded-[10px] text-sm font-normal bg-red-600 text-white hover:bg-red-700 transition-colors"
-            >
-              {confirmDialog && CONFIRM_CONFIGS[confirmDialog].confirm}
-            </button>
+            {confirmDialog && (() => {
+              const cfg = CONFIRM_CONFIGS[confirmDialog];
+              return (
+                <>
+                  <button type="button" onClick={() => handleConfirmAction(false)} className={outlineBtnCls}>
+                    {cfg.keepLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmAction(true)}
+                    className="inline-flex items-center justify-center h-9 px-3 rounded-[10px] text-sm font-normal bg-red-600 text-white hover:bg-red-700 transition-colors"
+                  >
+                    {cfg.deleteLabel}
+                  </button>
+                </>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>
