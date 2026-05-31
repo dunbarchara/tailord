@@ -136,11 +136,17 @@ export function ExperienceManager({
   readOnly,
   initialRecord,
   initialChunks,
+  initialGroups,
 }: {
   readOnly?: boolean;
   initialRecord?: ExperienceRecord;
   initialChunks?: ExperienceClaimsResponse;
+  initialGroups?: ExperienceGroup[];
 } = {}) {
+  // Hard-block all outgoing API calls when mock/demo data is provided.
+  // This prevents live data from leaking into the component if mock data is
+  // missing or malformed — an explicit intent flag, not a data-presence check.
+  const noFetch = !!initialRecord;
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
   const [hasProfileData, setHasProfileData] = useState(false);
   const [githubUrl, setGithubUrl] = useState('');
@@ -914,7 +920,7 @@ export function ExperienceManager({
 
           {/* Parsed experience */}
           <div className="mt-8">
-            <ProfileChunkEditor refreshKey={chunksRefreshKey} initialData={initialChunks} readOnly={readOnly} />
+            <ProfileChunkEditor refreshKey={chunksRefreshKey} initialData={initialChunks} initialGroups={initialGroups} noFetch={noFetch} readOnly={readOnly} />
           </div>
 
         </div>

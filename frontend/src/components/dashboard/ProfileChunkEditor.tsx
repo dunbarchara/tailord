@@ -684,15 +684,21 @@ function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: Ex
 export function ProfileChunkEditor({
   refreshKey,
   initialData,
+  initialGroups,
+  noFetch,
   readOnly,
 }: {
   refreshKey?: number;
   initialData?: ExperienceClaimsResponse;
+  initialGroups?: ExperienceGroup[];
+  /** Hard-blocks all outgoing API calls. Use in demo/mock contexts to prevent
+   *  live data leaking into the component if mock data is missing or malformed. */
+  noFetch?: boolean;
   readOnly?: boolean;
 }) {
   const [data, setData] = useState<ExperienceClaimsResponse | null>(initialData ?? null);
-  const [loading, setLoading] = useState(!initialData);
-  const [groups, setGroups] = useState<ExperienceGroup[]>([]);
+  const [loading, setLoading] = useState(!noFetch && !initialData);
+  const [groups, setGroups] = useState<ExperienceGroup[]>(initialGroups ?? []);
 
   // Active claim modal
   const [activeClaim, setActiveClaim] = useState<ExperienceClaim | null>(null);
@@ -739,10 +745,10 @@ export function ProfileChunkEditor({
   }, []);
 
   useEffect(() => {
-    if (initialData) return;
+    if (noFetch || initialData) return;
     fetchClaims();
     fetchGroups();
-  }, [fetchClaims, fetchGroups, refreshKey, initialData]);
+  }, [fetchClaims, fetchGroups, refreshKey, noFetch, initialData]);
 
   /* ── Claim mutations ── */
 
