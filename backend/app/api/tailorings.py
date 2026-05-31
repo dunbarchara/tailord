@@ -22,7 +22,7 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
-from app.core.playwright_helper import get_html_content
+from app.core.playwright_helper import get_html_content, get_rendered_content
 from app.core.token_utils import truncate_to_tokens
 from app.core.url_validation import validate_job_url
 from app.models.database import (
@@ -171,8 +171,16 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
         return "", job_markdown, True, ""
 
     try:
-        html = await get_html_content(url)
+        html, scrape_method = await get_html_content(url)
         job_markdown = extract_markdown_content(html)
+        logger.debug(
+            "job_content_extracted",
+            url=url,
+            scrape_method=scrape_method,
+            html_len=len(html),
+            markdown_len=len(job_markdown),
+            markdown_preview=job_markdown[:300],
+        )
     except PlaywrightTimeoutError:
         logger.exception("playwright_timeout", url=url)
         JOB_SCRAPE_TOTAL.labels(method="playwright", outcome="timeout").inc()
@@ -191,7 +199,37 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
     job_markdown = truncate_to_tokens(job_markdown, max_tokens=12_000, model=settings.llm_model)
     valid, reason = validate_job_content(job_markdown, html=html)
     if not valid:
-        logger.warning("job_content_invalid", url=url, reason=reason)
+        logger.warning("job_content_invalid", url=url, reason=reason, scrape_method=scrape_method)
+
+    # If httpx returned content that looked valid in raw form but stripped down to nothing
+    # after extraction (e.g. application-form-heavy ATS pages like apply.careers.microsoft.com),
+    # retry with Playwright to get the JS-rendered job description.
+    if not valid and scrape_method == "httpx":
+        logger.info("scrape_playwright_retry", url=url, reason=reason)
+        try:
+            html = await get_rendered_content(url)
+            job_markdown = extract_markdown_content(html)
+            logger.debug(
+                "job_content_extracted",
+                url=url,
+                scrape_method="playwright_retry",
+                html_len=len(html),
+                markdown_len=len(job_markdown),
+                markdown_preview=job_markdown[:300],
+            )
+            job_markdown = truncate_to_tokens(
+                job_markdown, max_tokens=12_000, model=settings.llm_model
+            )
+            valid, reason = validate_job_content(job_markdown, html=html)
+            if not valid:
+                logger.warning("job_content_invalid_after_playwright_retry", url=url, reason=reason)
+            else:
+                scrape_method = "playwright_retry"
+        except PlaywrightTimeoutError:
+            logger.warning("playwright_retry_timeout", url=url)
+        except (PlaywrightError, Exception):
+            logger.warning("playwright_retry_failed", url=url, exc_info=True)
+
     return html, job_markdown, valid, reason or ""
 
 

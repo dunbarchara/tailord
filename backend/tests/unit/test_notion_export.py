@@ -106,10 +106,17 @@ def test_header_chunks_skipped():
     assert result == ""
 
 
-def test_no_section_skipped():
-    chunks = [_chunk(section=None)]
+def test_excluded_reason_pre_content_skipped():
+    chunks = [_chunk(section=None, excluded_reason="pre_content")]
     result = chunks_to_notion_markdown(chunks)
     assert result == ""
+
+
+def test_sectionless_in_bounds_rendered():
+    # section=None is no longer a disqualifier; excluded_reason is authoritative
+    chunks = [_chunk(section=None)]
+    result = chunks_to_notion_markdown(chunks)
+    assert result != ""
 
 
 def test_strong_match_green_toggle():

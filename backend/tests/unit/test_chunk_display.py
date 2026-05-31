@@ -25,8 +25,17 @@ def test_header_not_ready():
     assert is_display_ready(_chunk(chunk_type="header", section=None)) is False
 
 
-def test_no_section_not_ready():
-    assert is_display_ready(_chunk(section=None)) is False
+def test_excluded_reason_pre_content_not_ready():
+    assert is_display_ready(_chunk(excluded_reason="pre_content")) is False
+
+
+def test_excluded_reason_post_content_not_ready():
+    assert is_display_ready(_chunk(excluded_reason="post_content")) is False
+
+
+def test_sectionless_in_bounds_is_ready():
+    # section=None is no longer a disqualifier; excluded_reason is the authoritative signal
+    assert is_display_ready(_chunk(section=None)) is True
 
 
 @pytest.mark.parametrize(

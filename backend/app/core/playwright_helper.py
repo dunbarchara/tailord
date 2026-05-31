@@ -153,6 +153,11 @@ def _needs_browser(html: str) -> tuple[bool, str]:
     body = soup.find("body")
     visible_text = body.get_text(" ", strip=True) if body else ""
 
+    logger.debug(
+        "needs_browser_check",
+        extra={"html_len": len(html), "visible_text_len": len(visible_text)},
+    )
+
     if len(visible_text) < 500:
         return True, "thin_body"
 
@@ -165,8 +170,11 @@ def _needs_browser(html: str) -> tuple[bool, str]:
     return False, ""
 
 
-async def get_html_content(url: str) -> str:
-    """Fetch HTML for a job URL. Tries plain httpx first; falls back to Playwright."""
+async def get_html_content(url: str) -> tuple[str, str]:
+    """Fetch HTML for a job URL. Tries plain httpx first; falls back to Playwright.
+
+    Returns (html, method) where method is ``"httpx"`` or ``"playwright"``.
+    """
     _assert_public_url(url)
     try:
         html = await _fetch_with_httpx(url)
@@ -174,7 +182,7 @@ async def get_html_content(url: str) -> str:
         if not needs_browser:
             logger.info("httpx_fetch_success", extra={"url": url})
             JOB_SCRAPE_TOTAL.labels(method="httpx", outcome="success").inc()
-            return html
+            return html, "httpx"
         logger.debug(
             "httpx_fetch_needs_browser: falling through to Playwright for %s (reason=%s)",
             url,
@@ -184,7 +192,7 @@ async def get_html_content(url: str) -> str:
     except Exception:
         logger.debug("httpx_fetch_failed: falling through to Playwright for %s", url, exc_info=True)
         JOB_SCRAPE_TOTAL.labels(method="httpx", outcome="error_fallthrough").inc()
-    return await get_rendered_content(url)
+    return await get_rendered_content(url), "playwright"
 
 
 async def get_rendered_content(url: str) -> str:
