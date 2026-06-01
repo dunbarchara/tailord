@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import { Loader2, Globe, Plus, User, Sun, Moon, LogOut, Settings, ChevronsUpDown, Trash2, AlertCircle } from 'lucide-react';
+import { Loader2, Globe, Plus, User, Sun, Moon, LogOut, Settings, ChevronsUpDown, Trash2, AlertCircle, Database } from 'lucide-react';
 import { IconWorkflows } from '@/components/ui/icons';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from '@/components/ThemeProvider';
@@ -366,6 +366,7 @@ function Divider() {
 
 function getActiveItem(pathname: string | null, basePath = '/dashboard'): string {
   if (!pathname || pathname === basePath) return 'Home';
+  if (pathname.startsWith(`${basePath}/sources`)) return 'Sources';
   if (pathname.startsWith(`${basePath}/experience`)) return 'My Experience';
   if (pathname.startsWith(`${basePath}/profile`)) return 'My Profile';
   if (pathname.startsWith(`${basePath}/settings`)) return 'Settings';
@@ -494,6 +495,7 @@ export function Sidebar({
             {/* Primary nav */}
             <nav aria-label="Primary" className="flex flex-col gap-0.5">
               <NavItem icon={IconHome}   label="Home"          href={basePath}                    active={activeItem === 'Home'}          collapsed={isCollapsed} />
+              <NavItem icon={(p) => <Database {...p} size={18} strokeWidth={1.8} />} label="Sources" href={`${basePath}/sources`} active={activeItem === 'Sources'} collapsed={isCollapsed} />
               <NavItem icon={IconEditor} label="My Experience" href={`${basePath}/experience`}     active={activeItem === 'My Experience'} collapsed={isCollapsed} />
               <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href={`${basePath}/profile`} active={activeItem === 'My Profile'} collapsed={isCollapsed} />
             </nav>
