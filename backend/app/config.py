@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     vector_top_k: int = 8
     chunk_scorer_concurrency: int = 8
 
+    # ── Claim deduplication ───────────────────────────────────────────────────
+    # Cosine similarity threshold above which an incoming claim is considered a
+    # duplicate of an existing active claim. Range [0, 1]; higher = stricter.
+    claim_dedup_threshold: float = 0.92
+
     # ── GitHub App ────────────────────────────────────────────────────────────
     # Authentication uses Installation Access Tokens — not personal PATs.
     # Provide PEM content directly (staging/prod via Key Vault) or a file path (local dev).
@@ -73,6 +78,7 @@ class Settings(BaseSettings):
     github_app_installation_id: str | None = None
     github_app_private_key: str | None = None  # PEM content
     github_app_private_key_path: str | None = None  # Path to .pem file
+    github_app_webhook_secret: str | None = None
 
     # ── Observability / Tracing ───────────────────────────────────────────────
     # otel_endpoint: OTLP gRPC target for local Tempo (docker-compose).
