@@ -172,7 +172,7 @@ export function ExperienceManager({
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="mx-auto px-6 lg:px-16 pt-8 pb-24 max-w-6xl">
+        <div className="mx-auto px-6 lg:px-8 pt-8 pb-24 max-w-6xl">
 
           {/* Heading */}
           <div className="flex flex-col gap-1 pb-4">
