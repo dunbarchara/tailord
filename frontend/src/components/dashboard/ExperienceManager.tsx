@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, ChevronDown, UserCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import { ProfileChunkEditor } from '@/components/dashboard/ProfileChunkEditor';
@@ -180,161 +180,192 @@ export function ExperienceManager({
             <p className="text-sm text-text-secondary">Review your inferred profile and edit your experience claims</p>
           </div>
 
-          {/* Inferred Profile Signals */}
-          {hasProfileData && (
-            <div className="mt-6 pb-8 border-b border-zinc-950/5 dark:border-white/5">
-              <button
-                type="button"
-                onClick={() => setProfileExpanded((v) => !v)}
-                className="flex w-full items-start justify-between gap-3 text-left"
-              >
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-sm font-medium text-text-primary">Inferred Profile</h2>
-                  <p className="text-sm text-text-tertiary">
-                    {profileExpanded
-                      ? 'These signals are used in generation — edit to correct any inaccuracies.'
-                      : 'Expand to review inferred signals — years of experience, title, location, and more.'}
-                  </p>
-                </div>
-                <span className="mt-0.5 shrink-0 text-text-tertiary">
-                  {profileExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </span>
-              </button>
-              {profileExpanded && (
-                <>
-                  <div className="mt-5 space-y-4">
+          {/* Inferred Profile Signals — card */}
+          {hasProfileData && (() => {
+            const computedYoe = computeYoE(record?.extracted_profile?.resume?.work_experience ?? []);
+            const yoeDisplay = profileFields.yoe_override
+              ? `${profileFields.yoe_override} yrs`
+              : computedYoe > 0 ? `${computedYoe} yrs` : null;
+            const chips = [yoeDisplay, profileFields.title, profileFields.location].filter(Boolean);
+            const isDirty = JSON.stringify(profileFields) !== JSON.stringify(profileFieldsInitial);
 
-                    {/* Row 1: Contact — Email · Phone · LinkedIn */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="profile-email" className="text-xs font-medium text-text-secondary">Email</label>
-                        <input
-                          id="profile-email"
-                          type="email"
-                          value={profileFields.email}
-                          onChange={(e) => setProfileFields((p) => ({ ...p, email: e.target.value }))}
-                          placeholder="you@example.com"
-                          disabled={readOnly}
-                          className={inputCls}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="profile-phone" className="text-xs font-medium text-text-secondary">Phone</label>
-                        <input
-                          id="profile-phone"
-                          type="tel"
-                          value={profileFields.phone}
-                          onChange={(e) => setProfileFields((p) => ({ ...p, phone: e.target.value }))}
-                          placeholder="+1 555 000 0000"
-                          disabled={readOnly}
-                          className={inputCls}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="profile-linkedin" className="text-xs font-medium text-text-secondary">LinkedIn</label>
-                        <input
-                          id="profile-linkedin"
-                          type="text"
-                          value={profileFields.linkedin}
-                          onChange={(e) => setProfileFields((p) => ({ ...p, linkedin: e.target.value }))}
-                          placeholder="linkedin.com/in/username"
-                          disabled={readOnly}
-                          className={inputCls}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Row 2: YoE · Title · Location */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="profile-yoe" className="text-xs font-medium text-text-secondary">Years of experience</label>
-                        <input
-                          id="profile-yoe"
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={profileFields.yoe_override}
-                          onChange={(e) => setProfileFields((p) => ({ ...p, yoe_override: e.target.value }))}
-                          placeholder={(() => {
-                            const we = record?.extracted_profile?.resume?.work_experience ?? [];
-                            const yoe = computeYoE(we);
-                            return yoe >= 0 ? `${yoe} (auto-computed)` : 'Auto-computed';
-                          })()}
-                          disabled={readOnly}
-                          className={inputCls}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="profile-title" className="text-xs font-medium text-text-secondary">Title</label>
-                        <input
-                          id="profile-title"
-                          type="text"
-                          value={profileFields.title}
-                          onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
-                          placeholder="e.g. Software Engineer"
-                          disabled={readOnly}
-                          className={inputCls}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="profile-location" className="text-xs font-medium text-text-secondary">Location</label>
-                        <input
-                          id="profile-location"
-                          type="text"
-                          value={profileFields.location}
-                          onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
-                          placeholder="e.g. San Francisco, CA"
-                          disabled={readOnly}
-                          className={inputCls}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Row 3: Headline (full width) */}
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="profile-headline" className="text-xs font-medium text-text-secondary">Headline</label>
-                      <input
-                        id="profile-headline"
-                        type="text"
-                        value={profileFields.headline}
-                        onChange={(e) => setProfileFields((p) => ({ ...p, headline: e.target.value }))}
-                        placeholder="e.g. Senior Software Engineer building developer tools"
-                        disabled={readOnly}
-                        className={inputCls}
-                      />
-                    </div>
-
-                    {/* Row 4: Summary (full width) */}
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="profile-summary" className="text-xs font-medium text-text-secondary">Summary</label>
-                      <textarea
-                        id="profile-summary"
-                        value={profileFields.summary}
-                        onChange={(e) => setProfileFields((p) => ({ ...p, summary: e.target.value }))}
-                        placeholder="Professional summary"
-                        disabled={readOnly}
-                        rows={3}
-                        className={cn(inputCls, 'h-auto py-2 resize-none')}
-                      />
-                    </div>
-
+            return (
+              <div className={cn(
+                'mt-6 mb-8 bg-surface-elevated rounded-2xl border transition-[border-color,box-shadow] duration-150',
+                profileExpanded
+                  ? 'border-border-default shadow-[0_4px_14px_rgba(0,0,0,0.06)]'
+                  : 'border-border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-border-default hover:shadow-[0_4px_14px_rgba(0,0,0,0.06)]',
+              )}>
+                {/* Card header */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={profileExpanded}
+                  onClick={() => setProfileExpanded((v) => !v)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setProfileExpanded((v) => !v); } }}
+                  className="flex items-center gap-3.5 px-5 py-4 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-1 rounded-2xl"
+                >
+                  {/* Icon tile */}
+                  <div className="w-10 h-10 flex-none rounded-xl border border-border-subtle bg-surface-base flex items-center justify-center">
+                    <UserCircle className="h-4.5 w-4.5 text-text-tertiary" style={{ width: 18, height: 18 }} strokeWidth={1.6} />
                   </div>
-                  {!readOnly && (
-                    <div className="mt-4">
-                      <button
-                        type="button"
-                        onClick={handleProfileSave}
-                        disabled={profileSaving || JSON.stringify(profileFields) === JSON.stringify(profileFieldsInitial)}
-                        className={saveBtnCls}
-                      >
-                        {profileSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : 'Save signals'}
-                      </button>
+
+                  {/* Name + preview */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-sm font-semibold tracking-[-0.01em] text-text-primary">Inferred Profile</span>
+                      {isDirty && <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400"><span className="w-[7px] h-[7px] rounded-full bg-amber-500 flex-none" />Unsaved</span>}
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    <div className="text-xs text-text-tertiary truncate">
+                      {chips.length > 0
+                        ? chips.join('  ·  ')
+                        : 'Used in every generation — expand to review and correct'}
+                    </div>
+                  </div>
+
+                  <ChevronDown
+                    className={cn('text-text-tertiary transition-transform duration-200', profileExpanded && 'rotate-180')}
+                    style={{ width: 18, height: 18 }}
+                  />
+                </div>
+
+                {/* Drawer */}
+                <div style={{ display: 'grid', gridTemplateRows: profileExpanded ? '1fr' : '0fr', transition: 'grid-template-rows 0.18s ease' }}>
+                  <div style={{ overflow: 'hidden', minHeight: 0 }}>
+                    <div className="px-5 pt-1 pb-5 border-t border-zinc-950/5 dark:border-white/5 space-y-4">
+
+                      {/* Row 1: YoE · Title · Location */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="profile-yoe" className="text-xs font-medium text-text-secondary">Years of experience</label>
+                          <input
+                            id="profile-yoe"
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={profileFields.yoe_override}
+                            onChange={(e) => setProfileFields((p) => ({ ...p, yoe_override: e.target.value }))}
+                            placeholder={computedYoe > 0 ? `${computedYoe} (auto-computed)` : 'Auto-computed'}
+                            disabled={readOnly}
+                            className={inputCls}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="profile-title" className="text-xs font-medium text-text-secondary">Title</label>
+                          <input
+                            id="profile-title"
+                            type="text"
+                            value={profileFields.title}
+                            onChange={(e) => setProfileFields((p) => ({ ...p, title: e.target.value }))}
+                            placeholder="e.g. Software Engineer"
+                            disabled={readOnly}
+                            className={inputCls}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="profile-location" className="text-xs font-medium text-text-secondary">Location</label>
+                          <input
+                            id="profile-location"
+                            type="text"
+                            value={profileFields.location}
+                            onChange={(e) => setProfileFields((p) => ({ ...p, location: e.target.value }))}
+                            placeholder="e.g. San Francisco, CA"
+                            disabled={readOnly}
+                            className={inputCls}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Row 2: Contact — Email · Phone · LinkedIn */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="profile-email" className="text-xs font-medium text-text-secondary">Email</label>
+                          <input
+                            id="profile-email"
+                            type="email"
+                            value={profileFields.email}
+                            onChange={(e) => setProfileFields((p) => ({ ...p, email: e.target.value }))}
+                            placeholder="you@example.com"
+                            disabled={readOnly}
+                            className={inputCls}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="profile-phone" className="text-xs font-medium text-text-secondary">Phone</label>
+                          <input
+                            id="profile-phone"
+                            type="tel"
+                            value={profileFields.phone}
+                            onChange={(e) => setProfileFields((p) => ({ ...p, phone: e.target.value }))}
+                            placeholder="+1 555 000 0000"
+                            disabled={readOnly}
+                            className={inputCls}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="profile-linkedin" className="text-xs font-medium text-text-secondary">LinkedIn</label>
+                          <input
+                            id="profile-linkedin"
+                            type="text"
+                            value={profileFields.linkedin}
+                            onChange={(e) => setProfileFields((p) => ({ ...p, linkedin: e.target.value }))}
+                            placeholder="linkedin.com/in/username"
+                            disabled={readOnly}
+                            className={inputCls}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Row 3: Headline */}
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="profile-headline" className="text-xs font-medium text-text-secondary">Headline</label>
+                        <input
+                          id="profile-headline"
+                          type="text"
+                          value={profileFields.headline}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, headline: e.target.value }))}
+                          placeholder="e.g. Senior Software Engineer building developer tools"
+                          disabled={readOnly}
+                          className={inputCls}
+                        />
+                      </div>
+
+                      {/* Row 4: Summary */}
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="profile-summary" className="text-xs font-medium text-text-secondary">Summary</label>
+                        <textarea
+                          id="profile-summary"
+                          value={profileFields.summary}
+                          onChange={(e) => setProfileFields((p) => ({ ...p, summary: e.target.value }))}
+                          placeholder="Professional summary"
+                          disabled={readOnly}
+                          rows={3}
+                          className={cn(inputCls, 'h-auto py-2 resize-none')}
+                        />
+                      </div>
+
+                      {/* Save */}
+                      {!readOnly && (
+                        <div className="flex items-center gap-3 pt-1 border-t border-zinc-950/5 dark:border-white/5">
+                          <button
+                            type="button"
+                            onClick={handleProfileSave}
+                            disabled={profileSaving || !isDirty}
+                            className={saveBtnCls}
+                          >
+                            {profileSaving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : 'Save signals'}
+                          </button>
+                          <p className="text-xs text-text-tertiary">These signals are passed to the LLM on every generation.</p>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })()}
 
           {/* Parsed experience */}
           <div className="mt-8">

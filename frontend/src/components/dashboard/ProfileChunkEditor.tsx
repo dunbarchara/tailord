@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronRight, Trash2, Loader2, Plus, X,
-  MoreHorizontal, Link, Link2Off, Layers, Command,
+  Layers, Command, Search, SlidersHorizontal, List, LayoutList,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
@@ -158,12 +158,17 @@ function SkillsInlineRow({
 
 /* ─── Meta ───────────────────────────────────────────────────────────────── */
 
-function Meta({ sourceLabel, dotCls, rowDate }: { sourceLabel?: string; dotCls: string; rowDate: string | null }) {
-  if (!sourceLabel && !rowDate) return null;
+function Meta({ sourceLabel, dotCls, rowDate, groupName }: { sourceLabel?: string; dotCls: string; rowDate: string | null; groupName?: string }) {
+  if (!sourceLabel && !rowDate && !groupName) return null;
   return (
-    <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+      {groupName && (
+        <span className="inline-flex items-center h-6 px-2.5 rounded-[5px] text-xs bg-surface-base text-text-tertiary max-w-[130px]">
+          <span className="truncate">{groupName}</span>
+        </span>
+      )}
       {sourceLabel && (
-        <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-[5px] text-xs bg-surface-sunken text-text-secondary">
+        <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-[5px] text-xs bg-surface-base text-text-secondary">
           <span className={cn('w-2 h-2 rounded-full flex-shrink-0', dotCls)} />
           {sourceLabel}
         </span>
@@ -187,6 +192,7 @@ function ClaimRow({
   readOnly = false,
   nested = false,
   isSelected = false,
+  groupName,
   onToggleSelect,
   onOpenClaim,
 }: {
@@ -194,6 +200,7 @@ function ClaimRow({
   readOnly?: boolean;
   nested?: boolean;
   isSelected?: boolean;
+  groupName?: string;
   onToggleSelect?: (id: string) => void;
   onOpenClaim?: (claim: ExperienceClaim) => void;
 }) {
@@ -216,7 +223,7 @@ function ClaimRow({
         <span className="flex-1 text-sm text-text-secondary leading-relaxed truncate">
           {normalizeContent(claim.content)}
         </span>
-        <Meta sourceLabel={sourceLabel} dotCls={dotCls} rowDate={rowDate} />
+        <Meta sourceLabel={sourceLabel} dotCls={dotCls} rowDate={rowDate} groupName={groupName} />
       </div>
     );
   }
@@ -329,9 +336,8 @@ function GroupRow({
   roleGroups,
   onDelete,
   onDeleteGroup,
-  onOpenAssociate,
-  onClearAssociation,
   onOpenGroup,
+  onAddClaim,
   readOnly = false,
   selectedIds,
   onToggleSelect,
@@ -343,9 +349,8 @@ function GroupRow({
   roleGroups: ExperienceGroup[];
   onDelete: (id: string) => Promise<void>;
   onDeleteGroup: (claimIds: string[]) => Promise<void>;
-  onOpenAssociate?: (repoGroupId: string) => void;
-  onClearAssociation?: (repoGroupId: string) => void;
   onOpenGroup?: (group: ExperienceGroup) => void;
+  onAddClaim?: (groupId: string | null) => void;
   readOnly?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
@@ -362,31 +367,33 @@ function GroupRow({
   }
   const totalCount = countAll(node);
 
-  const allDirectClaimIds = claims.map((c) => c.id);
-  const isRepo = group.group_type === 'repository';
-  const hasParent = !!group.parent_group_id;
   const hasContent = claims.length > 0 || children.length > 0;
 
   const skillClaims = claims.filter((c) => c.claim_type === 'skill');
   const otherClaims = claims.filter((c) => c.claim_type !== 'skill');
 
   const claimRowProps = { readOnly, selectedIds, onToggleSelect, onOpenClaim };
-  const childGroupProps = { roleGroups, onDelete, onDeleteGroup, onOpenAssociate, onClearAssociation, onOpenGroup, onOpenSkills, ...claimRowProps };
+  const childGroupProps = { roleGroups, onDelete, onDeleteGroup, onOpenGroup, onAddClaim, onOpenSkills, ...claimRowProps };
 
   return (
-    <div>
+    <div className={cn(!isNested && 'mb-1')}>
       {/* ── Group header row ── */}
       <div
+        role={!readOnly ? 'button' : undefined}
+        tabIndex={!readOnly ? 0 : undefined}
+        onClick={() => !readOnly && onOpenGroup?.(group)}
+        onKeyDown={(e) => { if (!readOnly && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpenGroup?.(group); } }}
         className={cn(
           'flex items-center gap-2 px-2 min-h-[44px]',
           isNested
             ? 'hover:bg-surface-base transition-colors'
-            : 'bg-surface-sunken hover:bg-surface-overlay transition-colors',
+            : 'bg-surface-base hover:bg-surface-overlay rounded-xl transition-colors',
+          !readOnly && 'cursor-pointer',
         )}
       >
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
           aria-label={expanded ? 'Collapse group' : 'Expand group'}
           className={cn(
             'w-[22px] h-[22px] flex items-center justify-center flex-shrink-0 rounded',
@@ -396,15 +403,8 @@ function GroupRow({
           <ChevronRight className={cn('h-3 w-3 transition-transform duration-150', expanded && 'rotate-90')} />
         </button>
 
-        {/* Clickable: icon + name + count → opens group modal */}
-        <button
-          type="button"
-          onClick={() => !readOnly && onOpenGroup?.(group)}
-          className={cn(
-            'flex items-center gap-2 min-w-0 overflow-hidden',
-            !readOnly && onOpenGroup && 'cursor-pointer hover:opacity-80 transition-opacity',
-          )}
-        >
+        {/* Icon + name + count (non-interactive — parent row handles click) */}
+        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
           <div className="w-[22px] h-[22px] flex items-center justify-center flex-shrink-0">
             <GroupTypeIcon
               type={group.group_type}
@@ -425,52 +425,28 @@ function GroupRow({
               {totalCount}
             </span>
           )}
-        </button>
+        </div>
 
-        {/* Spacer */}
+        {/* Spacer: line extending to Plus for nested, plain flex-1 for top-level */}
         {isNested
           ? <div className="flex-1 h-px bg-border-subtle mx-1 min-w-4" aria-hidden="true" />
           : <div className="flex-1" />
         }
 
+        {/* Plus button — add a claim to this group */}
         {!readOnly && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Group options"
-                className={cn(
-                  'w-6 h-6 flex items-center justify-center rounded flex-shrink-0',
-                  'text-text-disabled hover:text-text-secondary hover:bg-surface-sunken transition-colors',
-                )}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {isRepo && !hasParent && onOpenAssociate && roleGroups.length > 0 && (
-                <DropdownMenuItem onSelect={() => onOpenAssociate(group.id)}>
-                  <Link className="h-3.5 w-3.5 mr-2" />
-                  Associate with role
-                </DropdownMenuItem>
-              )}
-              {isRepo && hasParent && onClearAssociation && (
-                <DropdownMenuItem onSelect={() => onClearAssociation(group.id)}>
-                  <Link2Off className="h-3.5 w-3.5 mr-2" />
-                  Remove association
-                </DropdownMenuItem>
-              )}
-              {allDirectClaimIds.length > 0 && (
-                <DropdownMenuItem
-                  onSelect={() => onDeleteGroup(allDirectClaimIds)}
-                  className="text-error focus:text-error"
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-2" />
-                  Delete all claims
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onAddClaim?.(group.id); }}
+            aria-label="Add claim to group"
+            title="Add claim"
+            className={cn(
+              'w-6 h-6 flex items-center justify-center rounded flex-shrink-0',
+              'text-text-disabled hover:text-text-secondary hover:bg-surface-overlay transition-colors',
+            )}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
 
@@ -513,6 +489,7 @@ function UngroupedSection({
   onToggleSelect,
   onOpenClaim,
   onOpenSkills,
+  onAddClaim,
 }: {
   claims: ExperienceClaim[];
   readOnly?: boolean;
@@ -520,6 +497,7 @@ function UngroupedSection({
   onToggleSelect?: (id: string) => void;
   onOpenClaim?: (claim: ExperienceClaim) => void;
   onOpenSkills?: (claims: ExperienceClaim[]) => void;
+  onAddClaim?: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   if (claims.length === 0) return null;
@@ -529,8 +507,8 @@ function UngroupedSection({
   const claimRowProps = { readOnly, selectedIds, onToggleSelect, onOpenClaim };
 
   return (
-    <div>
-      <div className="flex items-center gap-2 px-2 min-h-[44px] bg-surface-sunken hover:bg-surface-overlay transition-colors">
+    <div className="mb-1">
+      <div className="flex items-center gap-2 px-2 min-h-[44px] bg-surface-base hover:bg-surface-overlay rounded-xl transition-colors">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -546,6 +524,17 @@ function UngroupedSection({
           {otherClaims.length + (skillClaims.length > 0 ? 1 : 0)}
         </span>
         <div className="flex-1" />
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onAddClaim}
+            aria-label="Add ungrouped claim"
+            title="Add claim"
+            className="w-6 h-6 flex items-center justify-center rounded flex-shrink-0 text-text-disabled hover:text-text-secondary hover:bg-surface-overlay transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       <div className={cn('grid transition-all duration-200', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
@@ -679,6 +668,111 @@ function AddExperienceForm({ onAdded, readOnly = false }: { onAdded: (chunks: Ex
   );
 }
 
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
+
+function pruneEmptyNodes(nodes: GroupNode[]): GroupNode[] {
+  return nodes
+    .map((n) => ({ ...n, children: pruneEmptyNodes(n.children) }))
+    .filter((n) => n.claims.length > 0 || n.children.length > 0);
+}
+
+/* ─── ClaimsToolbar ──────────────────────────────────────────────────────── */
+
+function ClaimsToolbar({
+  searchText,
+  onSearch,
+  sortOrder,
+  onSort,
+  viewMode,
+  onToggleView,
+}: {
+  searchText: string;
+  onSearch: (v: string) => void;
+  sortOrder: 'asc' | 'desc' | null;
+  onSort: (v: 'asc' | 'desc' | null) => void;
+  viewMode: 'grouped' | 'list';
+  onToggleView: () => void;
+}) {
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [filterOpen]);
+
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      {/* Search */}
+      <div className="relative flex-1">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-disabled pointer-events-none" />
+        <input
+          value={searchText}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search claims…"
+          className="w-full h-8 pl-8 pr-3 rounded-xl border border-border-default bg-surface-elevated text-sm text-text-primary placeholder:text-text-disabled outline-none focus:border-text-primary transition-colors"
+        />
+      </div>
+
+      {/* Filter */}
+      <div ref={filterRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setFilterOpen((v) => !v)}
+          className={cn(
+            'h-8 px-2.5 rounded-xl border text-sm flex items-center gap-1.5 transition-colors',
+            sortOrder || filterOpen
+              ? 'border-text-primary bg-surface-elevated text-text-primary'
+              : 'border-border-default bg-surface-elevated text-text-secondary hover:border-border-strong hover:text-text-primary',
+          )}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          {sortOrder ? (sortOrder === 'asc' ? 'Oldest' : 'Newest') : 'Filter'}
+        </button>
+        {filterOpen && (
+          <div className="absolute right-0 top-full mt-1.5 z-50 w-44 rounded-xl border border-border-default bg-surface-elevated shadow-[0_4px_16px_rgba(0,0,0,0.08)] p-1">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-text-disabled px-2 py-1.5">Date order</p>
+            {(['asc', 'desc', null] as const).map((order) => (
+              <button
+                key={String(order)}
+                type="button"
+                onClick={() => { onSort(order); setFilterOpen(false); }}
+                className={cn(
+                  'w-full text-left px-2 py-1.5 rounded-lg text-sm transition-colors',
+                  sortOrder === order
+                    ? 'bg-surface-base text-text-primary font-medium'
+                    : 'text-text-secondary hover:bg-surface-base hover:text-text-primary',
+                )}
+              >
+                {order === 'asc' ? 'Oldest first' : order === 'desc' ? 'Newest first' : 'Default order'}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* View toggle */}
+      <button
+        type="button"
+        onClick={onToggleView}
+        title={viewMode === 'grouped' ? 'Switch to list view' : 'Switch to grouped view'}
+        className={cn(
+          'h-8 w-8 flex items-center justify-center rounded-xl border transition-colors',
+          viewMode === 'list'
+            ? 'border-text-primary bg-surface-elevated text-text-primary'
+            : 'border-border-default bg-surface-elevated text-text-secondary hover:border-border-strong hover:text-text-primary',
+        )}
+      >
+        {viewMode === 'grouped' ? <List className="h-3.5 w-3.5" /> : <LayoutList className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
+
 /* ─── ProfileChunkEditor ─────────────────────────────────────────────────── */
 
 export function ProfileChunkEditor({
@@ -707,6 +801,11 @@ export function ProfileChunkEditor({
   // Active skills modal
   const [activeSkillClaims, setActiveSkillClaims] = useState<ExperienceClaim[] | null>(null);
 
+  // Toolbar
+  const [searchText, setSearchText] = useState('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+  const [viewMode, setViewMode] = useState<'grouped' | 'list'>('grouped');
+
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const handleToggleSelect = useCallback((id: string) => {
@@ -717,10 +816,6 @@ export function ProfileChunkEditor({
     });
   }, []);
 
-  // Associate repo dialog
-  const [associatingRepoGroupId, setAssociatingRepoGroupId] = useState<string | null>(null);
-  const [selectedRoleGroupId, setSelectedRoleGroupId] = useState<string>('');
-  const [associating, setAssociating] = useState(false);
 
   // Bulk move dialog
   const [movingClaimIds, setMovingClaimIds] = useState<string[]>([]);
@@ -819,38 +914,45 @@ export function ProfileChunkEditor({
     setData((prev) => prev ? { ...prev, user_input: [...(prev.user_input ?? []), ...newChunks] } : prev);
   };
 
-  /* ── Association ── */
+  /* ── Add claim to group ── */
 
-  const handleOpenAssociate = (repoGroupId: string) => {
-    const repoGroup = groups.find((g) => g.id === repoGroupId);
-    setSelectedRoleGroupId(repoGroup?.suggested_parent_id ?? repoGroup?.parent_group_id ?? '');
-    setAssociatingRepoGroupId(repoGroupId);
-  };
+  // undefined = dialog closed; null = open for ungrouped; string = open for specific group
+  const [newClaimGroupId, setNewClaimGroupId] = useState<string | null | undefined>(undefined);
+  const [newClaimText, setNewClaimText] = useState('');
+  const [newClaimSaving, setNewClaimSaving] = useState(false);
 
-  const handleConfirmAssociate = async () => {
-    if (!associatingRepoGroupId || !selectedRoleGroupId) return;
-    setAssociating(true);
+  const handleAddToGroup = (groupId: string | null) => { setNewClaimGroupId(groupId); setNewClaimText(''); };
+
+  const handleConfirmNewClaim = async () => {
+    if (newClaimGroupId === undefined || !newClaimText.trim()) return;
+    setNewClaimSaving(true);
     try {
-      const res = await fetch(`/api/experience/groups/${associatingRepoGroupId}`, {
-        method: 'PATCH',
+      const res = await fetch('/api/experience/user-input/claims', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent_group_id: selectedRoleGroupId }),
+        body: JSON.stringify({ chunks: [newClaimText.trim()] }),
       });
-      if (!res.ok) { const err = await res.json().catch(() => ({})); toastError(err.detail ?? 'Failed to associate'); return; }
-      await fetchGroups();
-      toast.success('Repo linked — tailorings will treat them as unified experience.');
-    } finally { setAssociating(false); setAssociatingRepoGroupId(null); }
-  };
-
-  const handleClearAssociation = async (repoGroupId: string) => {
-    const res = await fetch(`/api/experience/groups/${repoGroupId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parent_group_id: '' }),
-    });
-    if (!res.ok) { const err = await res.json().catch(() => ({})); toastError(err.detail ?? 'Failed to remove association'); return; }
-    await fetchGroups();
-    toast.success('Association removed.');
+      if (!res.ok) { const err = await res.json().catch(() => ({})); toastError(err.detail ?? 'Failed to create claim'); return; }
+      const { claim_ids }: { claim_ids: string[] } = await res.json();
+      const claimId = claim_ids[0];
+      if (!claimId) return;
+      let created: ExperienceClaim;
+      if (newClaimGroupId !== null) {
+        const patch = await fetch(`/api/experience/claims/${claimId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group_id: newClaimGroupId }),
+        });
+        if (!patch.ok) { const err = await patch.json().catch(() => ({})); toastError(err.detail ?? 'Failed to assign to group'); return; }
+        created = await patch.json();
+      } else {
+        const get = await fetch(`/api/experience/claims/${claimId}`);
+        created = get.ok ? await get.json() : { id: claimId, source_type: 'user_input', source_ref: null, claim_type: 'other', content: newClaimText.trim(), group_id: null, group_key: null, date_range: null, keywords: null, provenance_metadata: null, original_content: null, status: 'active', position: 9999, updated_at: new Date().toISOString() } as ExperienceClaim;
+      }
+      setData((prev) => prev ? { ...prev, user_input: [...(prev.user_input ?? []), created] } : prev);
+      toast.success('Claim added');
+      setNewClaimGroupId(undefined);
+    } finally { setNewClaimSaving(false); }
   };
 
   /* ── Bulk move ── */
@@ -894,9 +996,40 @@ export function ProfileChunkEditor({
   }
 
   const allClaims = data ? flattenClaims(data) : [];
-  const { nodes, ungrouped } = buildGroupTree(groups, allClaims);
+
+  // Search filter
+  const searchLower = searchText.toLowerCase();
+  const matchedClaims = searchText
+    ? allClaims.filter((c) => normalizeContent(c.content).toLowerCase().includes(searchLower))
+    : allClaims;
+
+  // Sort helper
+  const getSortMs = (c: ExperienceClaim) =>
+    parseDateMs(c.date_range) ?? (c.updated_at ? new Date(c.updated_at).getTime() : 0);
+
+  // Grouped view
+  const { nodes: rawNodes, ungrouped: rawUngrouped } = buildGroupTree(groups, matchedClaims);
+  const nodes = searchText ? pruneEmptyNodes(rawNodes) : rawNodes;
+  const ungrouped = searchText
+    ? rawUngrouped.filter((c) => normalizeContent(c.content).toLowerCase().includes(searchLower))
+    : rawUngrouped;
+
+  // Sort grouped view by group start_date
+  const sortedNodes = sortOrder
+    ? [...nodes].sort((a, b) => {
+        const aMs = a.group.start_date ? new Date(a.group.start_date).getTime() : 0;
+        const bMs = b.group.start_date ? new Date(b.group.start_date).getTime() : 0;
+        return sortOrder === 'asc' ? aMs - bMs : bMs - aMs;
+      })
+    : nodes;
+
+  // List view: sorted flat claim list
+  const flatClaims = sortOrder
+    ? [...matchedClaims].sort((a, b) => sortOrder === 'asc' ? getSortMs(a) - getSortMs(b) : getSortMs(b) - getSortMs(a))
+    : matchedClaims;
+
   const roleGroups = groups.filter((g) => g.group_type === 'role');
-  const hasTable = nodes.length > 0 || ungrouped.length > 0;
+  const hasTable = allClaims.length > 0;
   const activeGroupDirectClaimsCount = activeGroup
     ? allClaims.filter((c) => c.group_id === activeGroup.id).length
     : 0;
@@ -905,9 +1038,8 @@ export function ProfileChunkEditor({
     roleGroups,
     onDelete: handleDelete,
     onDeleteGroup: handleDeleteGroup,
-    onOpenAssociate: handleOpenAssociate,
-    onClearAssociation: handleClearAssociation,
     onOpenGroup: setActiveGroup,
+    onAddClaim: !readOnly ? handleAddToGroup : undefined,
     onOpenSkills: !readOnly ? setActiveSkillClaims : undefined,
     readOnly,
     selectedIds,
@@ -921,17 +1053,53 @@ export function ProfileChunkEditor({
       {/* ── Experience table ── */}
       {hasTable && (
         <div className="mx-2">
-          {nodes.map((node) => (
-            <GroupRow key={node.group.id} node={node} {...commonGroupRowProps} />
-          ))}
-          <UngroupedSection
-            claims={ungrouped}
-            readOnly={readOnly}
-            selectedIds={selectedIds}
-            onToggleSelect={handleToggleSelect}
-            onOpenClaim={setActiveClaim}
-            onOpenSkills={!readOnly ? setActiveSkillClaims : undefined}
+          <ClaimsToolbar
+            searchText={searchText}
+            onSearch={setSearchText}
+            sortOrder={sortOrder}
+            onSort={setSortOrder}
+            viewMode={viewMode}
+            onToggleView={() => setViewMode((v) => v === 'grouped' ? 'list' : 'grouped')}
           />
+
+          {viewMode === 'grouped' ? (
+            <>
+              {sortedNodes.map((node) => (
+                <GroupRow key={node.group.id} node={node} {...commonGroupRowProps} />
+              ))}
+              <UngroupedSection
+                claims={ungrouped}
+                readOnly={readOnly}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onOpenClaim={setActiveClaim}
+                onOpenSkills={!readOnly ? setActiveSkillClaims : undefined}
+                onAddClaim={!readOnly ? () => handleAddToGroup(null) : undefined}
+              />
+              {searchText && sortedNodes.length === 0 && ungrouped.length === 0 && (
+                <p className="text-sm text-text-tertiary py-4 text-center">No claims match &ldquo;{searchText}&rdquo;</p>
+              )}
+            </>
+          ) : (
+            <div>
+              {flatClaims.map((claim) => (
+                <ClaimRow
+                  key={claim.id}
+                  claim={claim}
+                  groupName={claim.group_id ? groups.find((g) => g.id === claim.group_id)?.name : undefined}
+                  readOnly={readOnly}
+                  isSelected={selectedIds.has(claim.id)}
+                  onToggleSelect={handleToggleSelect}
+                  onOpenClaim={setActiveClaim}
+                />
+              ))}
+              {flatClaims.length === 0 && (
+                <p className="text-sm text-text-tertiary py-4 text-center">
+                  {searchText ? `No claims match "${searchText}"` : 'No claims yet'}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -971,7 +1139,7 @@ export function ProfileChunkEditor({
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="center" className="w-44">
               <DropdownMenuItem onSelect={handleOpenBulkMove}>
-                <Link className="h-3.5 w-3.5 mr-2" />
+                <Layers className="h-3.5 w-3.5 mr-2" />
                 Move to group
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -986,29 +1154,35 @@ export function ProfileChunkEditor({
         </div>
       )}
 
-      {/* ── Associate repo with role dialog ── */}
-      <Dialog open={!!associatingRepoGroupId} onOpenChange={(o) => { if (!o) setAssociatingRepoGroupId(null); }}>
+      {/* ── Add claim to group dialog ── */}
+      <Dialog open={newClaimGroupId !== undefined} onOpenChange={(o) => { if (!o) setNewClaimGroupId(undefined); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Associate with a role</DialogTitle>
+            <DialogTitle className="text-sm font-medium">Add experience claim</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-text-secondary">
-            Select the role this repository belongs to. Tailorings will present them as unified experience.
+            {newClaimGroupId
+              ? <>Describe an accomplishment or skill for <strong className="text-text-primary">{groups.find((g) => g.id === newClaimGroupId)?.name ?? 'this group'}</strong>.</>
+              : 'Describe an accomplishment, contribution, or skill to add without a group.'}
           </p>
-          <div className="space-y-1 max-h-60 overflow-y-auto">
-            {roleGroups.map((g) => (
-              <label key={g.id} className={cn('flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm transition-colors', selectedRoleGroupId === g.id ? 'bg-surface-sunken text-text-primary' : 'text-text-secondary hover:bg-surface-base')}>
-                <input type="radio" name="role-group" value={g.id} checked={selectedRoleGroupId === g.id} onChange={() => setSelectedRoleGroupId(g.id)} className="accent-brand-primary" />
-                {g.name}
-              </label>
-            ))}
-          </div>
-          <DialogFooter>
-            <button type="button" onClick={() => setAssociatingRepoGroupId(null)} className="text-sm text-text-tertiary hover:text-text-secondary transition-colors">Cancel</button>
-            <button type="button" onClick={handleConfirmAssociate} disabled={!selectedRoleGroupId || associating}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-sm font-medium bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 disabled:opacity-40 transition-opacity">
-              {associating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link className="h-3.5 w-3.5" />}
-              Associate
+          <textarea
+            value={newClaimText}
+            onChange={(e) => setNewClaimText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleConfirmNewClaim(); }}
+            placeholder="e.g. Reduced API latency by 40% by migrating to a connection pool"
+            rows={3}
+            className="w-full rounded-xl border border-border-default bg-surface-elevated px-3 py-2.5 text-sm text-text-primary placeholder:text-text-disabled outline-none resize-none focus:border-text-primary focus:shadow-[0_0_0_2px_rgba(0,0,0,0.06)] dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.06)] transition-colors"
+          />
+          <DialogFooter className="flex-row justify-end gap-2 sm:gap-2">
+            <button type="button" onClick={() => setNewClaimGroupId(undefined)} className="text-sm text-text-tertiary hover:text-text-secondary transition-colors">Cancel</button>
+            <button
+              type="button"
+              onClick={handleConfirmNewClaim}
+              disabled={!newClaimText.trim() || newClaimSaving}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-sm font-medium bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:opacity-90 disabled:opacity-40 transition-opacity"
+            >
+              {newClaimSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              Add claim
             </button>
           </DialogFooter>
         </DialogContent>
