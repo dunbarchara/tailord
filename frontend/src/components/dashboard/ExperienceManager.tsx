@@ -191,10 +191,7 @@ export function ExperienceManager({
 
             return (
               <div className={cn(
-                'mt-6 mb-8 bg-surface-elevated rounded-2xl border transition-[border-color,box-shadow] duration-150',
-                profileExpanded
-                  ? 'border-border-default shadow-[0_4px_14px_rgba(0,0,0,0.06)]'
-                  : 'border-border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-border-default hover:shadow-[0_4px_14px_rgba(0,0,0,0.06)]',
+                'mt-6 mb-8 bg-surface-elevated rounded-2xl border transition-[border-color,box-shadow] duration-150'
               )}>
                 {/* Card header */}
                 <div
@@ -203,7 +200,7 @@ export function ExperienceManager({
                   aria-expanded={profileExpanded}
                   onClick={() => setProfileExpanded((v) => !v)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setProfileExpanded((v) => !v); } }}
-                  className="flex items-center gap-3.5 px-5 py-4 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-1 rounded-2xl"
+                  className="flex items-center gap-3.5 px-5 py-4 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-1 rounded-2xl hover:bg-surface-base"
                 >
                   {/* Icon tile */}
                   <div className="w-10 h-10 flex-none rounded-xl border border-border-subtle bg-surface-base flex items-center justify-center">

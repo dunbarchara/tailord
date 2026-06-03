@@ -1052,7 +1052,7 @@ export function ProfileChunkEditor({
 
       {/* ── Experience table ── */}
       {hasTable && (
-        <div className="mx-2">
+        <div>
           <ClaimsToolbar
             searchText={searchText}
             onSearch={setSearchText}
