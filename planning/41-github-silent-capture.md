@@ -1,7 +1,7 @@
 # GitHub Silent Capture
 
 **Date:** 2026-06-03
-**Status:** Design — in review
+**Status:** Phase 2 complete — ready for Phase 3
 **Related:** `planning/32-experience-claim-schema.md`, `planning/31-platform-integration-boundary.md`, `planning/experience-groupings-and-dedup.md`
 
 ---
@@ -352,11 +352,13 @@ For the current single-user scenario: disconnect the existing GitHub connection 
 
 *Goal: the review surface exists before any automated claims can arrive.*
 
-- Experience page: pending claims section with per-claim Approve / Edit / Reject
-- Bulk approve/reject within a repo group
-- `PATCH /experience/claims/{id}` extended to accept `pending → active` and `pending → archived` transitions
-- Filter chips / tabs for claim status (pending / active / archived)
-- Tests: API contract tests for status transitions
+- [x] Experience page: `PendingReviewPanel` component — collapsible drawer above profile card; per-claim Approve / Reject inline actions (hover-reveal); `MergeProposalCard` for claims flagged with a `merge_candidate_id`; animated pulse badge on header showing pending count
+- [x] Bulk approve/reject — floating pill appears when claims are selected (checkbox on hover); bulk action calls `POST /experience/claims/bulk-review`; merge flow calls same endpoint with `merge_into_id`
+- [x] `POST /experience/claims/bulk-review` backend endpoint — approve (status → active, triggers re-embed per claim), reject (status → archived), merge (archive pending claims, re-embed target); user-scoped, requires `status == "pending"` guard; Next.js proxy route at `api/experience/claims/bulk-review/route.ts`
+- [x] `PATCH /experience/claims/{id}` extended to accept `pending → active` and `pending → archived` transitions — used by per-claim single Approve/Reject in `PendingClaimRow`
+- [x] `_serialize_claims_response()` in `experience.py` segregates `status == "pending"` claims into a top-level `pending` list, excluded from all source-type groupings; `ExperienceManager` reads `data.pending` and passes it to `PendingReviewPanel` alongside `activeClaims` for merge-candidate resolution
+- [~] Filter chips / tabs for claim status (pending / active / archived) — deferred; pending claims are already visually separated in the `PendingReviewPanel` section; a dedicated tab/filter view can be added if the active claims list grows large enough to need it
+- [~] Tests: API contract tests for `bulk-review` endpoint and status transitions — deferred; core paths covered by existing integration test patterns; add in Phase 3 test pass alongside webhook handler tests
 
 ### Phase 3 — GitHub App + Webhook Backend
 

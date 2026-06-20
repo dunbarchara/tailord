@@ -277,9 +277,17 @@ export interface ChunksResponse {
   chunks: JobChunk[]
 }
 
+export interface ProvenanceMetadata {
+  url?: string
+  label?: string
+  merge_candidate_id?: string
+  similarity_score?: number
+  [key: string]: string | number | undefined
+}
+
 export interface ExperienceClaim {
   id: string
-  source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'partial_response' | 'additional_experience'
+  source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'partial_response' | 'additional_experience' | 'github_pr'
   source_ref: string | null
   claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
   content: string
@@ -287,7 +295,7 @@ export interface ExperienceClaim {
   group_id: string | null
   date_range: string | null
   keywords: string[] | null
-  provenance_metadata: Record<string, string> | null
+  provenance_metadata: ProvenanceMetadata | null
   original_content: string | null
   status: 'pending' | 'active' | 'archived'
   position: number
@@ -328,6 +336,7 @@ export interface ExperienceClaimsResponse {
   user_input: ExperienceClaim[] | null
   gap_response: ExperienceClaim[] | null
   partial_response: ExperienceClaim[] | null
+  pending: ExperienceClaim[] | null
 }
 
 export interface ExperienceSourceStatus {

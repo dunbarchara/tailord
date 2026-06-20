@@ -55,7 +55,8 @@ function flattenClaims(data: ExperienceClaimsResponse): ExperienceClaim[] {
     ...(data.gap_response ?? []),
     ...(data.partial_response ?? []),
   );
-  return all;
+  // Exclude pending claims — they live in PendingReviewPanel, not the active tree
+  return all.filter((c) => c.status !== 'pending');
 }
 
 function buildGroupTree(groups: ExperienceGroup[], claims: ExperienceClaim[]) {

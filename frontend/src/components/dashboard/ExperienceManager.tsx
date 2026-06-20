@@ -5,7 +5,8 @@ import { Loader2, ChevronDown, UserCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, toastError } from '@/lib/utils';
 import { ProfileChunkEditor } from '@/components/dashboard/ProfileChunkEditor';
-import type { ExperienceRecord, ExperienceClaimsResponse, ExperienceGroup, ProfileCorrections } from '@/types';
+import { PendingReviewPanel } from '@/components/dashboard/PendingReviewPanel';
+import type { ExperienceRecord, ExperienceClaim, ExperienceClaimsResponse, ExperienceGroup, ProfileCorrections } from '@/types';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -92,6 +93,11 @@ export function ExperienceManager({
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileExpanded, setProfileExpanded] = useState(false);
 
+  // Claims state — for pending review panel and merge resolution
+  const [pendingClaims, setPendingClaims] = useState<ExperienceClaim[]>([]);
+  const [activeClaims, setActiveClaims] = useState<ExperienceClaim[]>([]);
+  const [claimsRefreshKey, setClaimsRefreshKey] = useState(0);
+
   const syncProfileFromRecord = useCallback((r: ExperienceRecord) => {
     const corrections: ProfileCorrections = r.extracted_profile?.corrections ?? {};
     const resume = r.extracted_profile?.resume;
@@ -121,6 +127,40 @@ export function ExperienceManager({
       })
       .catch(() => {});
   }, [noFetch, initialRecord, syncProfileFromRecord]);
+
+  // Fetch claims for the pending review panel; re-runs when claimsRefreshKey changes
+  const fetchClaimsForPanel = useCallback(async () => {
+    if (noFetch) return;
+    try {
+      const res = await fetch('/api/experience/claims');
+      if (!res.ok) return;
+      const data: ExperienceClaimsResponse = await res.json();
+      setPendingClaims(data.pending ?? []);
+      // Flatten active claims for merge-candidate resolution in PendingReviewPanel
+      const active: ExperienceClaim[] = [];
+      if (data.resume) {
+        data.resume.work_experience.forEach((g) => active.push(...g.chunks));
+        active.push(...data.resume.skills);
+        data.resume.projects.forEach((g) => active.push(...g.chunks));
+        active.push(...data.resume.education, ...data.resume.other);
+      }
+      if (data.github) data.github.repos.forEach((r) => active.push(...r.chunks));
+      active.push(
+        ...(data.user_input ?? []),
+        ...(data.gap_response ?? []),
+        ...(data.partial_response ?? []),
+      );
+      setActiveClaims(active.filter((c) => c.status === 'active'));
+    } catch { /* ignore */ }
+  }, [noFetch]);
+
+  useEffect(() => {
+    fetchClaimsForPanel();
+  }, [fetchClaimsForPanel, claimsRefreshKey]);
+
+  const handleClaimsRefresh = useCallback(() => {
+    setClaimsRefreshKey((k) => k + 1);
+  }, []);
 
   const hasProfileData = !!(record?.extracted_profile && Object.keys(record.extracted_profile).length > 0);
 
@@ -179,6 +219,15 @@ export function ExperienceManager({
             <h2 className="text-lg font-medium text-text-primary tracking-[-0.2px]">My Experience</h2>
             <p className="text-sm text-text-secondary">Review your inferred profile and edit your experience claims</p>
           </div>
+
+          {/* Pending Review Panel — appears above profile card when signals exist */}
+          {!noFetch && (
+            <PendingReviewPanel
+              pendingClaims={pendingClaims}
+              activeClaims={activeClaims}
+              onRefresh={handleClaimsRefresh}
+            />
+          )}
 
           {/* Inferred Profile Signals — card */}
           {hasProfileData && (() => {
@@ -366,7 +415,7 @@ export function ExperienceManager({
 
           {/* Parsed experience */}
           <div className="mt-8">
-            <ProfileChunkEditor refreshKey={0} initialData={initialChunks} initialGroups={initialGroups} noFetch={noFetch} readOnly={readOnly} />
+            <ProfileChunkEditor refreshKey={claimsRefreshKey} initialData={initialChunks} initialGroups={initialGroups} noFetch={noFetch} readOnly={readOnly} />
           </div>
 
         </div>

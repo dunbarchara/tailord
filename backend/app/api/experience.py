@@ -1031,6 +1031,8 @@ def _group_experience_claims(chunks: list) -> dict:
 
     Maintains insertion order so work-experience roles and projects appear in the
     same sequence they were chunked (i.e. as they appeared in the resume).
+    Pending claims are extracted into a top-level 'pending' list and excluded
+    from all source-type groupings.
     """
     work_exp_keys: list[tuple] = []
     work_exp_groups: dict[tuple, dict] = {}
@@ -1044,9 +1046,14 @@ def _group_experience_claims(chunks: list) -> dict:
     user_input_chunks: list = []
     gap_response_chunks: list = []
     partial_response_chunks: list = []
+    pending_chunks: list = []
 
     for c in chunks:
         s = _serialize_exp_claim(c)
+        # Pending claims go to the review panel — excluded from all source buckets
+        if c.status == "pending":
+            pending_chunks.append(s)
+            continue
         if c.source_type == "resume":
             if c.claim_type == "work_experience":
                 key = (c.group_key, c.date_range)
@@ -1102,6 +1109,7 @@ def _group_experience_claims(chunks: list) -> dict:
         "user_input": user_input_chunks if user_input_chunks else None,
         "gap_response": gap_response_chunks if gap_response_chunks else None,
         "partial_response": partial_response_chunks if partial_response_chunks else None,
+        "pending": pending_chunks if pending_chunks else None,
     }
 
 
@@ -1446,6 +1454,130 @@ def delete_experience_claim(
     db.delete(claim)
     db.commit()
     logger.info("delete_experience_claim", claim_id=str(claim_uuid))
+
+
+# ---------------------------------------------------------------------------
+# Pending claim bulk review
+# ---------------------------------------------------------------------------
+
+
+class BulkReviewBody(BaseModel):
+    claim_ids: list[str]
+    action: str  # "approve" | "reject"
+    merge_into_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_action(self) -> "BulkReviewBody":
+        if self.action not in ("approve", "reject"):
+            raise ValueError("action must be 'approve' or 'reject'")
+        if not self.claim_ids:
+            raise ValueError("claim_ids must not be empty")
+        return self
+
+
+@router.post("/experience/claims/bulk-review")
+def bulk_review_claims(
+    body: BulkReviewBody,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Approve or reject a batch of pending claims.
+
+    approve (no merge_into_id): status → active; triggers embed per claim.
+    reject: status → archived.
+    approve + merge_into_id: archive pending claims; append them to
+        existing_claim.merged_from; trigger re-embed of existing claim.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Parse and validate all claim IDs up front
+    try:
+        claim_uuids = [uuid.UUID(cid) for cid in body.claim_ids]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid claim ID in claim_ids")
+
+    claims = (
+        db.query(ExperienceClaim)
+        .filter(
+            ExperienceClaim.id.in_(claim_uuids),
+            ExperienceClaim.user_id == user.id,
+            ExperienceClaim.status == "pending",
+        )
+        .all()
+    )
+
+    if not claims:
+        raise HTTPException(status_code=404, detail="No pending claims found for the given IDs")
+
+    _ctx = structlog.contextvars.get_contextvars()
+
+    if body.action == "reject":
+        for c in claims:
+            c.status = "archived"
+            c.updated_at = now
+        db.commit()
+        logger.info("bulk_review_rejected", count=len(claims), user_id=str(user.id))
+        return {"updated": len(claims)}
+
+    # approve path
+    if body.merge_into_id:
+        try:
+            merge_uuid = uuid.UUID(body.merge_into_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid merge_into_id")
+
+        target = (
+            db.query(ExperienceClaim)
+            .filter(
+                ExperienceClaim.id == merge_uuid,
+                ExperienceClaim.user_id == user.id,
+                ExperienceClaim.status == "active",
+            )
+            .first()
+        )
+        if not target:
+            raise HTTPException(status_code=404, detail="Target claim not found or not active")
+
+        existing_merged: list = target.merged_from or []
+        for c in claims:
+            existing_merged.append(
+                {
+                    "id": str(c.id),
+                    "source_type": c.source_type,
+                    "content_snapshot": c.content,
+                }
+            )
+            c.status = "archived"
+            c.updated_at = now
+
+        target.merged_from = existing_merged
+        target.updated_at = now
+        db.commit()
+
+        background_tasks.add_task(re_embed_chunk, target.id)
+        logger.info(
+            "bulk_review_merged",
+            count=len(claims),
+            target_id=str(target.id),
+            user_id=str(user.id),
+        )
+        return {"updated": len(claims)}
+
+    # approve standalone — activate + embed each
+    for c in claims:
+        c.status = "active"
+        c.updated_at = now
+    db.commit()
+
+    background_tasks.add_task(
+        embed_experience_chunks_task,
+        user.id,
+        correlation_id=_ctx.get("correlation_id"),
+    )
+    logger.info("bulk_review_approved", count=len(claims), user_id=str(user.id))
+    return {"updated": len(claims)}
 
 
 # ---------------------------------------------------------------------------

@@ -75,10 +75,11 @@ class Settings(BaseSettings):
     # Authentication uses Installation Access Tokens — not personal PATs.
     # Provide PEM content directly (staging/prod via Key Vault) or a file path (local dev).
     github_app_id: str | None = None
-    github_app_installation_id: str | None = None
     github_app_private_key: str | None = None  # PEM content
     github_app_private_key_path: str | None = None  # Path to .pem file
     github_app_webhook_secret: str | None = None
+    github_app_client_id: str | None = None
+    github_app_client_secret: str | None = None
 
     # ── Observability / Tracing ───────────────────────────────────────────────
     # otel_endpoint: OTLP gRPC target for local Tempo (docker-compose).

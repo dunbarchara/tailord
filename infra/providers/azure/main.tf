@@ -274,12 +274,20 @@ resource "azurerm_container_app" "backend_prod" {
         value = var.github_app_id_prod
       }
       env {
-        name  = "GITHUB_APP_INSTALLATION_ID"
-        value = var.github_app_installation_id_prod
-      }
-      env {
         name        = "GITHUB_APP_PRIVATE_KEY"
         secret_name = "prod-github-app-private-key"
+      }
+      env {
+        name  = "GITHUB_APP_CLIENT_ID"
+        value = var.github_app_client_id_prod
+      }
+      env {
+        name        = "GITHUB_APP_WEBHOOK_SECRET"
+        secret_name = "prod-github-app-webhook-secret"
+      }
+      env {
+        name        = "GITHUB_APP_CLIENT_SECRET"
+        secret_name = "prod-github-app-client-secret"
       }
       env {
         name        = "FIELD_ENCRYPTION_KEY"
@@ -330,6 +338,16 @@ resource "azurerm_container_app" "backend_prod" {
   secret {
     name                = "prod-github-app-private-key"
     key_vault_secret_id = data.azurerm_key_vault_secret.prod_github_app_private_key.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "prod-github-app-webhook-secret"
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_github_app_webhook_secret.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "prod-github-app-client-secret"
+    key_vault_secret_id = data.azurerm_key_vault_secret.prod_github_app_client_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {
@@ -447,12 +465,20 @@ resource "azurerm_container_app" "backend_staging" {
         value = var.github_app_id_staging
       }
       env {
-        name  = "GITHUB_APP_INSTALLATION_ID"
-        value = var.github_app_installation_id_staging
-      }
-      env {
         name        = "GITHUB_APP_PRIVATE_KEY"
         secret_name = "staging-github-app-private-key"
+      }
+      env {
+        name  = "GITHUB_APP_CLIENT_ID"
+        value = var.github_app_client_id_staging
+      }
+      env {
+        name        = "GITHUB_APP_WEBHOOK_SECRET"
+        secret_name = "staging-github-app-webhook-secret"
+      }
+      env {
+        name        = "GITHUB_APP_CLIENT_SECRET"
+        secret_name = "staging-github-app-client-secret"
       }
       env {
         name        = "FIELD_ENCRYPTION_KEY"
@@ -503,6 +529,16 @@ resource "azurerm_container_app" "backend_staging" {
   secret {
     name                = "staging-github-app-private-key"
     key_vault_secret_id = data.azurerm_key_vault_secret.staging_github_app_private_key.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "staging-github-app-webhook-secret"
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_github_app_webhook_secret.versionless_id
+    identity            = azurerm_user_assigned_identity.apps.id
+  }
+  secret {
+    name                = "staging-github-app-client-secret"
+    key_vault_secret_id = data.azurerm_key_vault_secret.staging_github_app_client_secret.versionless_id
     identity            = azurerm_user_assigned_identity.apps.id
   }
   secret {

@@ -77,6 +77,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   gap_response: 'Response',
   partial_response: 'Response',
   additional_experience: 'Direct',
+  github_pr: 'Webhook',
 };
 
 export const SOURCE_DOT_CLS: Record<string, string> = {
@@ -86,6 +87,7 @@ export const SOURCE_DOT_CLS: Record<string, string> = {
   gap_response: 'bg-violet-400',
   partial_response: 'bg-violet-400',
   additional_experience: 'bg-zinc-400',
+  github_pr: 'bg-amber-400',
 };
 
 /* ─── Content normalizer ─────────────────────────────────────────────────── */
