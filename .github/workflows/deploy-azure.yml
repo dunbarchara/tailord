@@ -394,82 +394,36 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # DEPLOY GRAFANA DASHBOARDS — push dashboard JSONs to Azure Managed Grafana
-  # Runs after smoke-test-prod; datasource UIDs fetched at deploy time.
+  # Only runs when GRAFANA_ENABLED repository variable is 'true'.
+  # Authenticates via Azure AD OIDC token (no static service account token needed).
   # ---------------------------------------------------------------------------
   deploy-grafana-dashboards:
 
     name: Deploy Grafana Dashboards
     runs-on: ubuntu-latest
     needs: [smoke-test-prod]
+    if: vars.GRAFANA_ENABLED == 'true'
     environment: production-azure
+
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
     - uses: actions/checkout@v6
 
-    - name: Fetch datasource UIDs
-      id: datasources
-      run: |
-        DATASOURCES=$(curl -sf \
-          -H "Authorization: Bearer ${{ secrets.GRAFANA_SA_TOKEN }}" \
-          "${{ secrets.GRAFANA_URL }}/api/datasources")
-
-        if [ -z "$DATASOURCES" ]; then
-          echo "::error::Failed to fetch datasources from Grafana API"
-          exit 1
-        fi
-
-        PROMETHEUS_UID=$(echo "$DATASOURCES" | jq -r '.[] | select(.type=="prometheus") | .uid // empty' | head -1)
-        AZURE_MONITOR_UID=$(echo "$DATASOURCES" | jq -r '.[] | select(.type=="grafana-azure-monitor-datasource") | .uid // empty' | head -1)
-        POSTGRES_UID=$(echo "$DATASOURCES" | jq -r '.[] | select(.name=="tailord-postgres-prod") | .uid // empty' | head -1)
-
-        if [ -z "$PROMETHEUS_UID" ]; then echo "::error::Prometheus datasource not found"; exit 1; fi
-        if [ -z "$POSTGRES_UID" ]; then echo "::error::tailord-postgres-prod datasource not found"; exit 1; fi
-
-        echo "prometheus=$PROMETHEUS_UID" >> $GITHUB_OUTPUT
-        echo "azure_monitor=$AZURE_MONITOR_UID" >> $GITHUB_OUTPUT
-        echo "postgres=$POSTGRES_UID" >> $GITHUB_OUTPUT
-
-    - name: Ensure Production folder exists
-      run: |
-        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-          -H "Authorization: Bearer ${{ secrets.GRAFANA_SA_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          -d '{"title": "Production", "uid": "tailord-prod"}' \
-          "${{ secrets.GRAFANA_URL }}/api/folders")
-        if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 409 ] && [ "$HTTP_STATUS" -ne 412 ]; then
-          echo "::error::Failed to create Production folder (HTTP $HTTP_STATUS)"
-          exit 1
-        fi
+    - name: Azure login (OIDC)
+      uses: azure/login@v3
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     - name: Deploy dashboards
+      env:
+        GRAFANA_URL: ${{ vars.GRAFANA_URL }}
       run: |
-        shopt -s nullglob
-        for f in observability/dashboards/prod/*.json; do
-          PAYLOAD=$(jq \
-            --arg prom "${{ steps.datasources.outputs.prometheus }}" \
-            --arg azmon "${{ steps.datasources.outputs.azure_monitor }}" \
-            --arg pg "${{ steps.datasources.outputs.postgres }}" \
-            'walk(if type == "string" then
-               sub("__PROMETHEUS_UID__"; $prom) |
-               sub("__AZURE_MONITOR_UID__"; $azmon) |
-               sub("__POSTGRES_UID__"; $pg)
-             else . end) |
-             {dashboard: ., overwrite: true, folderUid: "tailord-prod"}' "$f")
-
-          RESPONSE=$(curl -s -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.GRAFANA_SA_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" \
-            "${{ secrets.GRAFANA_URL }}/api/dashboards/db")
-
-          HTTP_STATUS="${RESPONSE:${#RESPONSE}-3}"
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "::error::Failed to deploy $f (HTTP $HTTP_STATUS)"
-            exit 1
-          fi
-
-          echo "Deployed $f"
-        done
+        bash infra/providers/azure/scripts/deploy-dashboards.sh
 
   # ---------------------------------------------------------------------------
   # PURGE ACR — clean up old images after successful prod deploy

@@ -93,3 +93,9 @@ variable "grafana_admin_object_id" {
   sensitive   = true
   type        = string
 }
+
+variable "grafana_enabled" {
+  description = "When false, the Grafana instance and its role assignments are destroyed. Toggle via the observability.yml workflow; keep TF_VAR_grafana_enabled in .env.azure in sync."
+  type        = bool
+  default     = false
+}

@@ -137,6 +137,7 @@ Only non-secret identifiers and bootstrap credentials are passed as Terraform va
 | `github_app_client_id_prod` | Identifier | GitHub App Client ID for prod (from GitHub App settings) |
 | `github_app_client_id_staging` | Identifier | GitHub App Client ID for staging |
 | `db_password` | Bootstrap only | PostgreSQL **admin** password — used once at server creation. Ignored by Terraform on subsequent applies (`lifecycle.ignore_changes`). Source from 1Password; omit for routine applies. |
+| `grafana_enabled` | Toggle | `false` by default. Set to `true` when Grafana is running (managed via `observability.yml` workflow or local apply). Keep in sync with the `GRAFANA_ENABLED` repository variable. |
 
 These live in a local `.env` file (gitignored):
 
@@ -150,6 +151,7 @@ export TF_VAR_github_app_id_staging="..."
 export TF_VAR_github_app_client_id_prod="..."       # Client ID from GitHub App settings
 export TF_VAR_github_app_client_id_staging="..."    # staging App's Client ID
 export TF_VAR_db_password="..."          # only needed when creating/recreating the PG server
+export TF_VAR_grafana_enabled=false      # set to true when Grafana is running (keep in sync with GRAFANA_ENABLED repo variable)
 export CLOUDFLARE_API_TOKEN="..."        # Cloudflare provider credential — not a TF_VAR
 
 source .env && terraform apply
@@ -437,50 +439,65 @@ local development where the admin page is not needed.
 
 ---
 
-## 8. Grafana setup (run once after first deploy)
+## 8. Grafana setup
 
-Dashboards are deployed automatically by CI on every merge to main. Two one-time manual steps
-are required before the first deploy runs successfully.
+Grafana is **not permanently running** — it is spun up on demand to inspect prod observability,
+then torn down. Log Analytics, Managed Prometheus, and Azure Monitor alerts run continuously
+regardless of Grafana's state, so no data is lost during gaps.
 
-### 8a. Create a service account token
+The Grafana lifecycle (create, destroy, and all IAM) is managed entirely by **Terraform locally**.
+The GitHub Actions workflow (`observability.yml`) only handles dashboard content deployment.
 
-1. Open the Grafana instance in Azure portal → **Launch workspace**
-2. Navigate to **Administration → Service Accounts → Add service account**
-3. Name: `github-actions`, Role: **Admin**
-4. Click **Add service account token** → copy the token value
-5. Add two secrets to the **`production-azure`** GitHub environment:
+### Spin up
 
-| Secret | Value |
-|--------|-------|
-| `GRAFANA_SA_TOKEN` | Token value from above |
-| `GRAFANA_URL` | Grafana endpoint (e.g. `https://tailord-grafana-xxxx.canadacentral.grafana.azure.com`) |
+```bash
+# 1. Create Grafana + all IAM (Grafana Admin for you and the CI SP,
+#    Monitoring Reader + Log Analytics Reader for the Grafana system identity)
+export TF_VAR_grafana_enabled=true
+source .env.azure && terraform apply
 
-The Grafana URL is visible in the Azure portal on the Azure Managed Grafana resource overview page.
+# 2. Configure PostgreSQL datasources, publish GRAFANA_URL as a repo variable,
+#    and set GRAFANA_ENABLED=true so CI deploys dashboards on future pushes
+cd infra/providers/azure && bash scripts/bootstrap-grafana.sh
+```
 
-### 8b. Configure PostgreSQL datasources (manual — DB credentials must not flow through CI)
+Dashboards are deployed as part of step 2 above. To redeploy at any time (no code change needed):
 
-This Grafana instance monitors both prod and staging. Add two separate datasources.
+```bash
+cd infra/providers/azure && bash scripts/deploy-dashboards.sh
+```
 
-The CI deploy script selects the prod datasource by name (`tailord-postgres-prod`), so the
-name must match exactly. The staging datasource name is for your reference only.
+Or via GitHub Actions: **Actions → Observability — Grafana lifecycle → Run workflow**
 
-**Production** — In Grafana → **Connections → Add new connection → PostgreSQL**:
-- **Name**: `tailord-postgres-prod`
-- **Host**: `tailord-pg.postgres.database.azure.com:5432`
-- **Database**: `tailord_prod`
-- **User / Password**: retrieve `prod-database-url` from Key Vault and parse out the credentials
-- **TLS/SSL mode**: require
+### Spin down
 
-**Staging** — repeat the above with:
-- **Name**: `tailord-postgres-staging`
-- **Database**: `tailord_staging`
-- **User / Password**: retrieve `staging-database-url` from Key Vault
+```bash
+export TF_VAR_grafana_enabled=false
+source .env.azure && terraform apply
+```
 
-Click **Save & test** on each — confirm both connections succeed.
+Terraform destroys the Grafana instance and all associated role assignments in one step.
+Update the repo variable so CI skips the dashboard deploy step on future pushes:
 
-Dashboards 04 (Per-Tailoring Debug) and 05 (User Activity) use the prod datasource.
-The Azure Monitor and Managed Prometheus datasources are provisioned automatically by Azure
-and will already appear in Grafana; you do not need to configure them manually.
+```bash
+gh variable set GRAFANA_ENABLED --body "false"
+```
+
+CI (`deploy-azure.yml`) automatically deploys dashboards on every merge to `main` when
+`GRAFANA_ENABLED == 'true'`. When `false`, the dashboard deploy step is skipped silently.
+
+### PostgreSQL datasource names (must not be changed)
+
+| Datasource name | Database | Used by dashboards |
+|---|---|---|
+| `tailord-postgres-prod` | `tailord_prod` | 04 (Per-Tailoring Debug), 05 (User Activity) |
+| `tailord-postgres-staging` | `tailord_staging` | reference / ad-hoc queries |
+
+The CI deploy script selects the prod datasource by UID resolved from the name
+`tailord-postgres-prod` — changing this name breaks the dashboard deploy.
+
+Azure Monitor and Managed Prometheus datasources are provisioned automatically by Azure
+and appear in Grafana without any manual configuration.
 
 ---
 
