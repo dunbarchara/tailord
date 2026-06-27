@@ -317,6 +317,12 @@ export function PendingReviewPanel({
   const [expanded, setExpanded] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+
+  const uniqueSources = useMemo(
+    () => [...new Set(pendingClaims.map((c) => c.source_type))],
+    [pendingClaims],
+  );
 
   // Split into standalone vs merge candidates
   const { standalone, mergeGroups } = useMemo(() => {
@@ -416,15 +422,51 @@ export function PendingReviewPanel({
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
           <div className="px-4 pb-4 border-t border-zinc-950/5 dark:border-white/5 space-y-4 pt-4">
 
+            {/* Source filter chips — only when there are claims from multiple sources */}
+            {uniqueSources.length > 1 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter(null)}
+                  className={cn(
+                    'inline-flex items-center text-xs px-2.5 py-1 rounded-full border transition-colors',
+                    sourceFilter === null
+                      ? 'bg-surface-overlay border-border-strong text-text-primary'
+                      : 'border-border-subtle text-text-tertiary hover:border-border-default hover:text-text-secondary',
+                  )}
+                >
+                  All
+                </button>
+                {uniqueSources.map((src) => (
+                  <button
+                    key={src}
+                    type="button"
+                    onClick={() => setSourceFilter((f) => f === src ? null : src)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors',
+                      sourceFilter === src
+                        ? 'bg-surface-overlay border-border-strong text-text-primary'
+                        : 'border-border-subtle text-text-tertiary hover:border-border-default hover:text-text-secondary',
+                    )}
+                  >
+                    <span className={cn('w-1.5 h-1.5 rounded-full flex-none', SOURCE_DOT_CLS[src] ?? 'bg-zinc-400')} />
+                    {SOURCE_LABELS[src] ?? src}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* New captures section */}
-            {standalone.length > 0 && (
+            {(() => {
+              const filtered = sourceFilter ? standalone.filter((c) => c.source_type === sourceFilter) : standalone;
+              return filtered.length > 0 ? (
               <div>
                 <div className="flex items-center gap-2 px-1 mb-1">
                   <span className="text-xs font-medium text-text-tertiary uppercase tracking-wide">New captures</span>
-                  <span className="text-xs text-text-disabled">{standalone.length}</span>
+                  <span className="text-xs text-text-disabled">{filtered.length}</span>
                 </div>
                 <div className="rounded-xl border border-border-subtle overflow-hidden divide-y divide-border-subtle">
-                  {standalone.map((c) => (
+                  {filtered.map((c) => (
                     <PendingClaimRow
                       key={c.id}
                       claim={c}
@@ -436,7 +478,8 @@ export function PendingReviewPanel({
                   ))}
                 </div>
               </div>
-            )}
+              ) : null;
+            })()}
 
             {/* Suggested merges section */}
             {mergeGroups.length > 0 && (

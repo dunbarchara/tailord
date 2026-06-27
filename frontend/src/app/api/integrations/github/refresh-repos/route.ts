@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { authOptions } from '@/lib/auth'
 import { proxyToBackendWithUser } from '@/lib/proxy'
 
-export async function DELETE(request: Request) {
+export async function POST() {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -15,8 +15,5 @@ export async function DELETE(request: Request) {
     userName: session.user.name,
   }
 
-  const { searchParams } = new URL(request.url)
-  const cascade = searchParams.get('cascade') ?? 'true'
-
-  return proxyToBackendWithUser(`integrations/github?cascade=${cascade}`, user, { method: 'DELETE' })
+  return proxyToBackendWithUser('integrations/github/refresh-repos', user, { method: 'POST' })
 }

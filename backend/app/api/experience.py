@@ -41,8 +41,6 @@ from app.schemas.llm_outputs import ParsedClaims
 from app.services.chunk_matcher import re_enrich_single_chunk
 from app.services.experience_chunker import (
     chunk_resume,
-    delete_github_chunks,
-    delete_github_groups,
     delete_resume_chunks,
     delete_resume_groups,
     delete_user_input_chunks,
@@ -178,9 +176,6 @@ def _experience_response(sources: list) -> dict:
         "extracted_profile": extracted_profile or None,
         "raw_resume_text": resume_data.get("raw_text"),
         "error_message": resume_src.error_message if resume_src else None,
-        "github_username": github_cfg.get("username"),
-        "github_repos": github_data.get("repos"),
-        "github_repo_details": github_data.get("repo_details"),
         "user_input_text": None,  # dropped — claims are the source of truth
         "uploaded_at": resume_src.created_at.isoformat() if resume_src else None,
         "processed_at": resume_src.last_synced_at.isoformat()
@@ -210,14 +205,6 @@ class ProcessRequest(BaseModel):
     storage_key: str
     experience_id: str
     destructive: bool = False  # True = delete existing resume claims before inserting new ones
-
-
-class GitHubRequest(BaseModel):
-    github_username: str
-    selected_repo_names: list[str] | None = None
-    rescan_repo_names: list[str] | None = None
-    enrich_only_repo_names: list[str] | None = None
-    cascade_removed_repos: bool = True  # if False, keep claims/groups for de-selected repos
 
 
 class UserInputRequest(BaseModel):
@@ -666,223 +653,6 @@ def update_profile(
     logger.info("update_profile_complete")
     all_sources = _all_sources(user, db)
     return _experience_response(all_sources)
-
-
-# ---------------------------------------------------------------------------
-# GitHub
-# ---------------------------------------------------------------------------
-
-
-@router.get("/experience/github/{username}/repos")
-def get_github_repos(
-    username: str,
-    _: str = Depends(require_api_key),
-    user: User = Depends(require_approved_user),
-):
-    from app.clients.github_client import get_github_client
-
-    client = get_github_client()
-    try:
-        raw_repos = client.get_user_repos(username)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    repos = [
-        {
-            "name": r["name"],
-            "description": r.get("description"),
-            "language": r.get("language"),
-            "star_count": r.get("stargazers_count", 0),
-            "pushed_at": r.get("pushed_at"),
-        }
-        for r in raw_repos
-    ]
-    return {"username": username, "repos": repos}
-
-
-@router.post("/experience/github")
-def set_github(
-    body: GitHubRequest,
-    background_tasks: BackgroundTasks,
-    _: str = Depends(require_api_key),
-    user: User = Depends(require_approved_user),
-    db: Session = Depends(get_db),
-):
-    from app.clients.github_client import get_github_client
-    from app.services.github_enricher import enrich_github_repos
-
-    github_src = (
-        db.query(ExperienceSource)
-        .filter(
-            ExperienceSource.user_id == user.id,
-            ExperienceSource.source_type == "github",
-        )
-        .first()
-    )
-
-    _ctx = structlog.contextvars.get_contextvars()
-
-    # Rescan path: re-enrich specific repos without touching the connected repos list.
-    if body.rescan_repo_names is not None:
-        if not github_src:
-            raise HTTPException(status_code=404, detail="No GitHub connection found")
-        now_iso = datetime.now(timezone.utc).isoformat()
-        rescan_set = set(body.rescan_repo_names)
-        existing_repos = (github_src.source_data or {}).get("repos") or []
-        updated_repos = [
-            {**r, "scanning_started_at": now_iso} if r["name"] in rescan_set else r
-            for r in existing_repos
-        ]
-        github_src.source_data = {**(github_src.source_data or {}), "repos": updated_repos}
-        github_src.sync_status = "syncing"
-        github_src.updated_at = datetime.now(timezone.utc)
-        db.commit()
-        background_tasks.add_task(
-            enrich_github_repos,
-            github_username=body.github_username,
-            source_id=github_src.id,
-            repo_names=body.rescan_repo_names,
-            merge_with_existing=True,
-            destructive=True,  # rescan = explicit refresh; replace existing claims for those repos
-            user_id=_ctx.get("user_id"),
-            correlation_id=_ctx.get("correlation_id"),
-        )
-        logger.info("github_rescan_queued", repo_count=len(body.rescan_repo_names or []))
-        return {
-            "experience_id": str(github_src.id),
-            "status": "ready",
-            "github_username": body.github_username,
-        }
-
-    client = get_github_client()
-    try:
-        raw_repos = client.get_user_repos(body.github_username)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    repos = [
-        {
-            "name": r["name"],
-            "description": r.get("description"),
-            "language": r.get("language"),
-            "star_count": r.get("stargazers_count", 0),
-            "pushed_at": r.get("pushed_at"),
-        }
-        for r in raw_repos
-    ]
-
-    if body.selected_repo_names is not None:
-        selected = set(body.selected_repo_names)
-        repos = [r for r in repos if r["name"] in selected]
-
-    additions_only = body.enrich_only_repo_names is not None
-    now = datetime.now(timezone.utc)
-
-    if github_src:
-        # Delete (or unlink) chunks/groups for repos being removed when selection changes
-        if body.selected_repo_names is not None:
-            old_repo_names = {
-                r["name"] for r in ((github_src.source_data or {}).get("repos") or [])
-            }
-            new_repo_names = set(body.selected_repo_names)
-            for removed_repo in old_repo_names - new_repo_names:
-                if body.cascade_removed_repos:
-                    delete_github_chunks(db, user.id, repo_name=removed_repo)
-                    delete_github_groups(db, user.id, repo_name=removed_repo)
-                # cascade=False: claims and groups are kept; the ExperienceSource row
-                # is updated to exclude the repo from future syncs, but derived data survives
-
-        github_src.config = {"username": body.github_username}
-        if additions_only:
-            github_src.source_data = {**(github_src.source_data or {}), "repos": repos}
-        else:
-            github_src.source_data = {"repos": repos}
-        github_src.connection_status = "connected"
-        github_src.updated_at = now
-    else:
-        github_src = ExperienceSource(
-            user_id=user.id,
-            source_type="github",
-            connection_status="connected",
-            sync_status="idle",
-            config={"username": body.github_username},
-            source_data={"repos": repos},
-            created_at=now,
-            updated_at=now,
-        )
-        db.add(github_src)
-
-    db.commit()
-    db.refresh(github_src)
-
-    # Mark repos about to be enriched with scanning_started_at
-    repo_names_to_enrich = (
-        body.enrich_only_repo_names if additions_only else body.selected_repo_names
-    )
-    enrich_set = (
-        set(repo_names_to_enrich)
-        if repo_names_to_enrich is not None
-        else {r["name"] for r in repos}
-    )
-    now_iso = now.isoformat()
-    existing_repos = (github_src.source_data or {}).get("repos") or []
-    updated_repos = [
-        {**r, "scanning_started_at": now_iso} if r["name"] in enrich_set else r
-        for r in existing_repos
-    ]
-    github_src.source_data = {**(github_src.source_data or {}), "repos": updated_repos}
-    github_src.sync_status = "syncing"
-    github_src.updated_at = datetime.now(timezone.utc)
-    db.commit()
-
-    background_tasks.add_task(
-        enrich_github_repos,
-        github_username=body.github_username,
-        source_id=github_src.id,
-        repo_names=repo_names_to_enrich,
-        merge_with_existing=additions_only,
-        user_id=_ctx.get("user_id"),
-        correlation_id=_ctx.get("correlation_id"),
-    )
-    logger.info("github_enrichment_queued", github_username=body.github_username)
-
-    return {
-        "experience_id": str(github_src.id),
-        "status": "ready",
-        "github_username": body.github_username,
-    }
-
-
-@router.delete("/experience/github", status_code=204)
-def remove_github(
-    cascade: bool = True,
-    _: str = Depends(require_api_key),
-    user: User = Depends(require_approved_user),
-    db: Session = Depends(get_db),
-):
-    """Remove the GitHub ExperienceSource.
-
-    cascade=true (default): also hard-deletes all derived claims and groups.
-    cascade=false: keeps claims and groups; they become independent of any source.
-    """
-    github_src = (
-        db.query(ExperienceSource)
-        .filter(
-            ExperienceSource.user_id == user.id,
-            ExperienceSource.source_type == "github",
-        )
-        .first()
-    )
-    if not github_src:
-        raise HTTPException(status_code=404, detail="No GitHub profile connected")
-
-    if cascade:
-        delete_github_chunks(db, user.id)
-        delete_github_groups(db, user.id)
-
-    db.delete(github_src)
-    db.commit()
-    logger.info("remove_github_complete", cascade=cascade)
 
 
 @router.delete("/experience/user-input", status_code=204)

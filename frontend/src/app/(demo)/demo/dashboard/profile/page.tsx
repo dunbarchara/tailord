@@ -19,7 +19,7 @@ export default function DemoProfilePage() {
   const user = getMockUser();
   const experience = getMockExperience();
   const resume = experience.extracted_profile?.resume;
-  const githubUsername = experience.github_username;
+  const githubUsername = experience.github_app_login ?? null;
 
   const displayName = [user.preferred_first_name, user.preferred_last_name].filter(Boolean).join(' ') || user.name || null;
 

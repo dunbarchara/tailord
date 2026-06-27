@@ -665,13 +665,18 @@ def chunk_github_repo(
 
 
 def delete_github_chunks(db: Session, user_id: uuid.UUID, repo_name: str | None = None) -> int:
-    """Delete GitHub chunks for the given user.
+    """Delete GitHub repo-scan chunks for the given user.
 
     repo_name=None → delete ALL github chunks (used when disconnecting all GitHub).
     repo_name='foo' → delete only that repo's chunks.
     Does NOT commit — caller is responsible.
     """
     return _delete_chunks(db, user_id, "github", source_ref=repo_name)
+
+
+def delete_github_pr_chunks(db: Session, user_id: uuid.UUID) -> int:
+    """Delete all github_pr (webhook-captured PR) chunks for the given user. Does NOT commit."""
+    return _delete_chunks(db, user_id, "github_pr")
 
 
 def delete_resume_chunks(db: Session, user_id: uuid.UUID) -> int:

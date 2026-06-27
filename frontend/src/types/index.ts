@@ -357,9 +357,6 @@ export interface ExperienceRecord {
   extracted_profile: SourcedProfile | null
   raw_resume_text: string | null
   error_message: string | null
-  github_username: string | null
-  github_repos: GitHubRepo[] | null
-  github_repo_details: GitHubRepoDetails | null
   user_input_text: string | null
   uploaded_at: string | null
   processed_at: string | null

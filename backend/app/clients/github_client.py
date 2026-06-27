@@ -247,6 +247,28 @@ class GitHubClient:
         resp.raise_for_status()
         return resp.json().get("repositories", [])
 
+    def get_repo_pull_requests(
+        self, owner: str, repo: str, installation_id: str, limit: int = 25
+    ) -> list[dict]:
+        """Fetch recent closed PRs for a repo using a per-installation token.
+
+        Returns raw GitHub PR objects (closed, sorted by updated desc).
+        Caller is responsible for filtering to merged-only.
+        """
+        token = self.get_installation_token(installation_id)
+        resp = requests.get(
+            f"{_API_BASE}/repos/{owner}/{repo}/pulls",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            params={"state": "closed", "sort": "updated", "direction": "desc", "per_page": limit},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def get_pr_commits(
         self, owner: str, repo: str, pr_number: int, installation_id: str
     ) -> list[dict]:

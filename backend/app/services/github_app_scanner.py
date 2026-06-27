@@ -28,10 +28,8 @@ def scan_repos_for_installation(
     from app.clients.database import SessionLocal
     from app.clients.github_client import get_github_client
     from app.models.database import ExperienceSource
-    from app.services.github_enricher import enrich_github_repos
 
     db = SessionLocal()
-    repo_names: list[str] = []
     try:
         client = get_github_client()
 
@@ -84,19 +82,11 @@ def scan_repos_for_installation(
 
         db.commit()
 
-        repo_names = [r["name"] for r in repos]
         logger.info(
-            "github_app_scanner: repos stored, queuing enrichment",
-            repo_count=len(repo_names),
+            "github_app_scanner: repos stored, awaiting user opt-in to trigger enrichment",
+            repo_count=len(repos),
             installation_id=installation_id,
             user_id=str(user_id),
         )
     finally:
         db.close()
-
-    if repo_names:
-        enrich_github_repos(
-            github_username=github_login,
-            source_id=source_id,
-            repo_names=repo_names,
-        )

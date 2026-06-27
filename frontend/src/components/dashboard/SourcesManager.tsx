@@ -3,19 +3,40 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ChevronDown, FileText, AlignLeft, Globe, Upload,
-  Loader2, AlertCircle, X, RefreshCw, Check, Plus, Trash2, MessageSquare,
+  Loader2, AlertCircle, X, RefreshCw, Check, Trash2, MessageSquare, ExternalLink,
 } from 'lucide-react';
 import { SiGithub, SiLinear, SiSlack, SiDiscord } from 'react-icons/si';
 import { toast } from 'sonner';
 import { cn, toastError, formatRelativeDate, formatElapsed } from '@/lib/utils';
-import type { ExperienceRecord, ExperienceGroup, GitHubRepo } from '@/types';
+import type { ExperienceRecord } from '@/types';
 import type { UploadPhase } from '@/components/dashboard/ResumeUploadSection';
-import type { GithubState } from '@/components/dashboard/GitHubSection';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
+
+interface GitHubRepoInfo {
+  name: string;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+}
+interface GitHubRepoConfig {
+  enabled: boolean;
+  pr_capture: boolean;
+  last_webhook_at: string | null;
+  last_scanned_at: string | null;
+}
+interface GitHubAppInfo {
+  connected: boolean;
+  login: string | null;
+  install_url: string | null;
+  installation_id: string | null;
+  repos: GitHubRepoInfo[];
+  watch_branch: string | null;
+  repo_config: Record<string, GitHubRepoConfig>;
+}
 
 const CONFIRM_CONFIGS = {
   'resume-remove': {
@@ -31,20 +52,8 @@ const CONFIRM_CONFIGS = {
     deleteLabel: 'Replace with new',
   },
   'github-remove': {
-    title: 'Remove GitHub',
-    description: 'What should happen to the claims and groups derived from your GitHub repos?',
-    keepLabel: 'Keep claims',
-    deleteLabel: 'Delete everything',
-  },
-  'github-change': {
-    title: 'Change GitHub profile',
-    description: 'What should happen to the claims and groups derived from the current GitHub profile?',
-    keepLabel: 'Keep claims',
-    deleteLabel: 'Delete everything',
-  },
-  'github-repos-remove': {
-    title: 'Remove repositories',
-    description: 'What should happen to the claims and groups derived from the removed repos?',
+    title: 'Disconnect GitHub',
+    description: 'What should happen to the experience claims and groups captured from your GitHub repos and pull requests?',
     keepLabel: 'Keep claims',
     deleteLabel: 'Delete everything',
   },
@@ -57,13 +66,6 @@ const PROCESS_STAGES = ['extracting', 'analyzing'] as const;
 const PROCESS_STAGE_LABELS: Record<string, string> = { extracting: 'Extracting text', analyzing: 'Analyzing profile' };
 
 /* ─── Shared styles ─────────────────────────────────────────────────────── */
-
-const inputCls =
-  'w-full h-9 rounded-xl border border-border-default bg-surface-elevated px-3 text-sm text-text-primary ' +
-  'placeholder:text-text-disabled outline-none transition-colors duration-100 ' +
-  'hover:border-border-strong hover:bg-surface-base ' +
-  'focus:border-text-primary focus:bg-surface-elevated focus:shadow-[0_0_0_2px_rgba(0,0,0,0.08)] ' +
-  'dark:focus:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] disabled:opacity-50 disabled:cursor-not-allowed';
 
 const btnPrimary =
   'inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] text-sm font-medium tracking-[-0.1px] ' +
@@ -405,306 +407,17 @@ function ResumeConnected({
 
 /* ─── GitHub expanded content ────────────────────────────────────────────── */
 
-function GitHubRepoIcon() {
-  return (
-    <svg className="h-full w-full" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 2.5h7.5A1.5 1.5 0 0 1 12 4v9.5H4.5A1.5 1.5 0 0 1 3 12V2.5z" />
-      <path d="M3 11.5A1.5 1.5 0 0 1 4.5 10H12" />
-    </svg>
-  );
-}
-
-function GitHubIdle({
-  githubUrl,
-  githubState,
-  githubError,
-  previewRepos,
-  selectedRepoNames,
-  acknowledged,
-  onUrlChange,
-  onFetch,
-  onToggleRepo,
-  onAcknowledge,
-  onConnect,
-  onCancel,
-}: {
-  githubUrl: string;
-  githubState: GithubState;
-  githubError: string | null;
-  previewRepos: GitHubRepo[] | null;
-  selectedRepoNames: Set<string>;
-  acknowledged: boolean;
-  onUrlChange: (v: string) => void;
-  onFetch: (e: React.SyntheticEvent<HTMLFormElement>) => void;
-  onToggleRepo: (name: string) => void;
-  onAcknowledge: (v: boolean) => void;
-  onConnect: () => void;
-  onCancel: () => void;
-}) {
-  const fetching = githubState === 'fetching';
-  const saving = githubState === 'saving';
-
+function GitHubIdle({ installUrl }: { installUrl: string | null }) {
   return (
     <DrawerDivider>
-      {!previewRepos && (
-        <ExpandInfo
-          points={[
-            'Repository descriptions and README content',
-            'Commit activity and contribution signals',
-            'Languages and technologies you\'ve used',
-            'Open-source projects and collaborations',
-          ]}
-          permission="Read-only access — you choose which repositories to include."
-        />
-      )}
-
-      {githubError && <ErrorBanner message={githubError} />}
-
-      {!previewRepos ? (
-        <form onSubmit={onFetch} className="flex gap-2">
-          <input
-            type="text"
-            value={githubUrl}
-            onChange={(e) => onUrlChange(e.target.value)}
-            placeholder="github.com/username or username"
-            className={cn(inputCls, 'flex-1')}
-            disabled={fetching}
-          />
-          <button type="submit" disabled={!githubUrl.trim() || fetching} className={btnPrimary}>
-            {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {fetching ? 'Fetching…' : 'Fetch repos'}
-          </button>
-        </form>
-      ) : (
-        <>
-          <SectionLabel>Select repositories to include</SectionLabel>
-          <div className="flex flex-col gap-1 mb-4 max-h-[260px] overflow-y-auto">
-            {previewRepos.map((repo) => (
-              <label
-                key={repo.name}
-                className="flex items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-surface-base cursor-pointer group transition-colors"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedRepoNames.has(repo.name)}
-                  onChange={() => onToggleRepo(repo.name)}
-                  className="h-3.5 w-3.5 rounded accent-zinc-900 dark:accent-white"
-                />
-                <span className="w-4 h-4 flex-none text-text-tertiary"><GitHubRepoIcon /></span>
-                <span className="flex-1 min-w-0 text-sm text-text-primary truncate">{repo.name}</span>
-                {repo.description && (
-                  <span className="text-xs text-text-tertiary truncate max-w-[180px] hidden sm:block">{repo.description}</span>
-                )}
-              </label>
-            ))}
-          </div>
-
-          <label className="flex items-start gap-2.5 mb-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={acknowledged}
-              onChange={(e) => onAcknowledge(e.target.checked)}
-              className="mt-0.5 h-3.5 w-3.5 rounded accent-zinc-900 dark:accent-white"
-            />
-            <span className="text-xs text-text-secondary">
-              I understand Tailord will read the selected repositories to extract experience signals.
-            </span>
-          </label>
-
-          <DrawerFooter>
-            <button
-              type="button"
-              onClick={onConnect}
-              disabled={selectedRepoNames.size === 0 || !acknowledged || saving}
-              className={btnPrimary}
-            >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              {saving ? 'Connecting…' : `Connect ${selectedRepoNames.size > 0 ? selectedRepoNames.size : ''} repo${selectedRepoNames.size !== 1 ? 's' : ''}`}
-            </button>
-            <button type="button" onClick={onCancel} className={btnGhost}>
-              Cancel
-            </button>
-          </DrawerFooter>
-        </>
-      )}
-    </DrawerDivider>
-  );
-}
-
-function GitHubConnected({
-  connectedGithub,
-  scanningRepos,
-  githubEditing,
-  githubState,
-  githubError,
-  previewRepos,
-  selectedRepoNames,
-  previouslyConnectedRepos,
-  onModify,
-  onDisconnect,
-  onRescan,
-  onToggleRepo,
-  onSaveEdit,
-  onCancelEdit,
-}: {
-  connectedGithub: { username: string; repos: GitHubRepo[] };
-  scanningRepos: Record<string, number>;
-  githubEditing: boolean;
-  githubState: GithubState;
-  githubError: string | null;
-  previewRepos: GitHubRepo[] | null;
-  selectedRepoNames: Set<string>;
-  previouslyConnectedRepos: Set<string>;
-  onModify: () => void;
-  onDisconnect: () => void;
-  onRescan: (name: string) => void;
-  onToggleRepo: (name: string) => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
-}) {
-  const saving = githubState === 'saving';
-  const fetching = githubState === 'fetching';
-  const removing = githubState === 'removing';
-
-  if (githubEditing) {
-    const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
-    const removed = [...previouslyConnectedRepos].filter((n) => !selectedRepoNames.has(n));
-
-    return (
-      <DrawerDivider>
-        <SectionLabel>Modify connected repositories</SectionLabel>
-        {githubError && <ErrorBanner message={githubError} />}
-
-        {!previewRepos ? (
-          <div className="flex items-center gap-2 text-sm text-text-tertiary py-4">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading repositories…
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-col gap-1 mb-4 max-h-[260px] overflow-y-auto">
-              {previewRepos.map((repo) => (
-                <label
-                  key={repo.name}
-                  className="flex items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-surface-base cursor-pointer transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedRepoNames.has(repo.name)}
-                    onChange={() => onToggleRepo(repo.name)}
-                    className="h-3.5 w-3.5 rounded accent-zinc-900 dark:accent-white"
-                  />
-                  <span className="w-4 h-4 flex-none text-text-tertiary"><GitHubRepoIcon /></span>
-                  <span className="flex-1 min-w-0 text-sm text-text-primary truncate">{repo.name}</span>
-                  {previouslyConnectedRepos.has(repo.name) && !selectedRepoNames.has(repo.name) && (
-                    <span className="text-xs text-red-500 flex-none">Will remove</span>
-                  )}
-                  {!previouslyConnectedRepos.has(repo.name) && selectedRepoNames.has(repo.name) && (
-                    <span className="text-xs text-emerald-500 flex-none">New</span>
-                  )}
-                </label>
-              ))}
-            </div>
-
-            {(added.length > 0 || removed.length > 0) && (
-              <p className="text-xs text-text-tertiary mb-3">
-                {added.length > 0 && `+${added.length} to add`}
-                {added.length > 0 && removed.length > 0 && ' · '}
-                {removed.length > 0 && `${removed.length} to remove`}
-              </p>
-            )}
-
-            <DrawerFooter>
-              <button
-                type="button"
-                onClick={onSaveEdit}
-                disabled={selectedRepoNames.size === 0 || saving || fetching}
-                className={btnPrimary}
-              >
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {saving ? 'Saving…' : 'Save changes'}
-              </button>
-              <button type="button" onClick={onCancelEdit} className={btnGhost} disabled={saving}>
-                Cancel
-              </button>
-            </DrawerFooter>
-          </>
-        )}
-      </DrawerDivider>
-    );
-  }
-
-  const syncedAt = connectedGithub.repos[0]?.scanned_at ?? null;
-
-  return (
-    <DrawerDivider>
-      <SectionLabel>Connected repositories</SectionLabel>
-      <div className="mb-3">
-        {connectedGithub.repos.map((repo) => (
-          <ConnectedItem
-            key={repo.name}
-            icon={<GitHubRepoIcon />}
-            name={repo.name}
-            scanning={!!scanningRepos[repo.name]}
-            onRemove={() => onRescan(repo.name)}
-          />
-        ))}
-        <button type="button" onClick={onModify} className={cn(btnSubtle, 'mt-1')}>
-          <Plus className="h-3 w-3" />
-          Add or modify repositories
-        </button>
-      </div>
-
-      <DrawerFooter left={syncedAt ? `Synced ${formatRelativeDate(syncedAt) ?? ''}` : undefined}>
-        <button type="button" onClick={onDisconnect} disabled={removing} className={btnDanger}>
-          {removing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          {removing ? 'Removing…' : 'Disconnect'}
-        </button>
-      </DrawerFooter>
-    </DrawerDivider>
-  );
-}
-
-function GitHubError({
-  error,
-  connectedGithub,
-  onReconnect,
-  onDisconnect,
-}: {
-  error: string;
-  connectedGithub: { username: string; repos: GitHubRepo[] } | null;
-  onReconnect: () => void;
-  onDisconnect: () => void;
-}) {
-  return (
-    <DrawerDivider>
-      <ErrorBanner message={error} />
-      {connectedGithub && connectedGithub.repos.length > 0 && (
-        <div className="mb-4">
-          <SectionLabel>Previously connected</SectionLabel>
-          {connectedGithub.repos.map((repo) => (
-            <ConnectedItem key={repo.name} icon={<GitHubRepoIcon />} name={repo.name} />
-          ))}
-        </div>
-      )}
-      <DrawerFooter>
-        <button type="button" onClick={onReconnect} className={btnPrimary}>Reconnect</button>
-        <button type="button" onClick={onDisconnect} className={btnDanger}>Disconnect</button>
-      </DrawerFooter>
-    </DrawerDivider>
-  );
-}
-
-/* ─── GitHub App expanded content ───────────────────────────────────────── */
-
-function GitHubAppIdle({ installUrl }: { installUrl: string | null }) {
-  return (
-    <DrawerDivider>
-      <SectionLabel>Silent capture</SectionLabel>
-      <p className="text-sm text-text-secondary mb-4">
-        Install the Tailord GitHub App to automatically capture experience from merged pull requests.
-        Your repos are scanned on connection; ongoing capture adds depth over time.
-      </p>
+      <ExpandInfo
+        points={[
+          'Repository descriptions, languages, and README content',
+          'Experience claims automatically captured from merged pull requests',
+          'Private repos included — scoped to what you grant during installation',
+        ]}
+        permission="Read-only access to repos you explicitly grant during GitHub App installation."
+      />
       {installUrl ? (
         <a href={installUrl} className={btnPrimary}>
           <SiGithub className="h-3.5 w-3.5" />
@@ -720,27 +433,216 @@ function GitHubAppIdle({ installUrl }: { installUrl: string | null }) {
   );
 }
 
-function GitHubAppConnected({
+function PrCaptureToggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      onClick={() => onChange(!enabled)}
+      title={enabled ? 'PR capture on — click to disable' : 'PR capture off — click to enable'}
+      className={cn(
+        'relative flex-none w-7 h-4 rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent',
+        enabled ? 'bg-emerald-500' : 'bg-border-strong',
+      )}
+    >
+      <span className={cn(
+        'absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150',
+        enabled ? 'translate-x-[14px]' : 'translate-x-0.5',
+      )} />
+    </button>
+  );
+}
+
+function GitHubConnected({
   login,
+  appInfo,
+  appInfoLoading,
+  refreshingRepos,
   disconnecting,
   onDisconnect,
+  onRepoEnable,
+  onRepoDisable,
+  onRepoPrCapture,
+  onRepoRescan,
+  onRefreshRepos,
 }: {
   login: string;
+  appInfo: GitHubAppInfo | null;
+  appInfoLoading: boolean;
+  refreshingRepos: boolean;
   disconnecting: boolean;
   onDisconnect: () => void;
+  onRepoEnable: (fullName: string) => Promise<void>;
+  onRepoDisable: (repo: { fullName: string; name: string }) => void;
+  onRepoPrCapture: (fullName: string, enabled: boolean) => Promise<void>;
+  onRepoRescan: (fullName: string) => Promise<void>;
+  onRefreshRepos: () => void;
 }) {
+  const [enablingRepo, setEnablingRepo] = useState<string | null>(null);
+  const [scanningRepo, setScanningRepo] = useState<string | null>(null);
+
+  const handleEnable = async (fullName: string) => {
+    setEnablingRepo(fullName);
+    try { await onRepoEnable(fullName); }
+    finally { setEnablingRepo(null); }
+  };
+
+  const handleRescan = async (fullName: string) => {
+    setScanningRepo(fullName);
+    try { await onRepoRescan(fullName); }
+    finally { setScanningRepo(null); }
+  };
+
+  const enabled = appInfo?.repos.filter((r) => appInfo.repo_config[r.full_name]?.enabled) ?? [];
+  const available = appInfo?.repos.filter((r) => !appInfo.repo_config[r.full_name]?.enabled) ?? [];
+  const manageUrl = appInfo?.installation_id
+    ? `https://github.com/settings/installations/${appInfo.installation_id}`
+    : null;
+
   return (
     <DrawerDivider>
-      <SectionLabel>Silent capture</SectionLabel>
       <ConnectedItem
         icon={<SiGithub className="h-full w-full" />}
         name={`@${login}`}
-        sub="Capture active"
+        sub="GitHub App connected"
       />
-      <DrawerFooter>
+
+      {/* Repos */}
+      <div className="mt-4">
+        <div className="flex items-center mb-2.5">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-text-tertiary flex-1">Repositories</span>
+          <button
+            type="button"
+            disabled={refreshingRepos}
+            onClick={onRefreshRepos}
+            title="Refresh repo list from GitHub"
+            className={btnSubtle}
+          >
+            {refreshingRepos ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+
+        {appInfoLoading ? (
+          <div className="flex items-center gap-1.5 text-xs text-text-tertiary py-1">
+            <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+          </div>
+        ) : appInfo && appInfo.repos.length === 0 ? (
+          <p className="text-xs text-text-tertiary">
+            No repos found.{' '}
+            <button type="button" onClick={onRefreshRepos} className="underline hover:text-text-secondary transition-colors">Refresh</button>
+            {manageUrl && <> or <a href={manageUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-text-secondary transition-colors">grant access on GitHub</a></>}.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {/* Enabled repos */}
+            {enabled.length > 0 && (
+              <div>
+                <p className="text-[11px] font-medium text-text-tertiary uppercase tracking-wide mb-1 px-0.5">Enabled</p>
+                <div className="divide-y divide-border-subtle border border-border-subtle rounded-xl overflow-hidden">
+                  {enabled.map((repo) => {
+                    const cfg = appInfo!.repo_config[repo.full_name];
+                    const prCapture = cfg?.pr_capture !== false; // default true
+                    const isScanning = scanningRepo === repo.full_name;
+                    return (
+                      <div key={repo.full_name} className="px-3 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-sm text-text-primary truncate">{repo.name}</span>
+                              <span className="text-[11px] font-mono text-text-disabled flex-none">{repo.default_branch}</span>
+                            </div>
+                            <p className="text-xs text-text-tertiary">
+                              {repo.private ? 'Private' : 'Public'}
+                              {cfg?.last_webhook_at ? ` · Last PR ${formatRelativeDate(cfg.last_webhook_at) ?? ''}` : ''}
+                            </p>
+                          </div>
+                          {/* Rescan */}
+                          <button
+                            type="button"
+                            disabled={isScanning}
+                            onClick={() => handleRescan(repo.full_name)}
+                            title="Rescan repo content"
+                            className={cn(btnSubtle, 'flex-none')}
+                          >
+                            {isScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                          </button>
+                          {/* Disable */}
+                          <button
+                            type="button"
+                            onClick={() => onRepoDisable({ fullName: repo.full_name, name: repo.name })}
+                            className={cn(btnSubtle, 'text-text-tertiary hover:text-error hover:bg-error-bg flex-none')}
+                            title={`Disable ${repo.name}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        {/* PR capture toggle */}
+                        <div className="flex items-center gap-2 mt-2 pl-0.5">
+                          <PrCaptureToggle enabled={prCapture} onChange={(v) => onRepoPrCapture(repo.full_name, v)} />
+                          <span className="text-xs text-text-tertiary">PR capture</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Available repos */}
+            {available.length > 0 && (
+              <div>
+                <p className="text-[11px] font-medium text-text-tertiary uppercase tracking-wide mb-1 px-0.5">Available</p>
+                <div className="divide-y divide-border-subtle border border-border-subtle rounded-xl overflow-hidden">
+                  {available.map((repo) => {
+                    const isEnabling = enablingRepo === repo.full_name;
+                    return (
+                      <div key={repo.full_name} className="flex items-center gap-2.5 px-3 py-2.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-sm text-text-secondary truncate">{repo.name}</span>
+                            <span className="text-[11px] font-mono text-text-disabled flex-none">{repo.default_branch}</span>
+                          </div>
+                          <p className="text-xs text-text-tertiary">{repo.private ? 'Private' : 'Public'}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isEnabling}
+                          onClick={() => handleEnable(repo.full_name)}
+                          className={cn(
+                            'inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors flex-none',
+                            'bg-surface-base border border-border-default text-text-secondary',
+                            'hover:border-border-strong hover:text-text-primary disabled:opacity-50',
+                          )}
+                        >
+                          {isEnabling ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Enable'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <DrawerFooter left={
+        manageUrl ? (
+          <a
+            href={manageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-text-link hover:underline"
+          >
+            Add repos on GitHub
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : undefined
+      }>
         <button type="button" onClick={onDisconnect} disabled={disconnecting} className={btnDanger}>
           {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-          {disconnecting ? 'Disconnecting…' : 'Disconnect App'}
+          {disconnecting ? 'Disconnecting…' : 'Disconnect'}
         </button>
       </DrawerFooter>
     </DrawerDivider>
@@ -774,30 +676,18 @@ function PlannedSourceContent({
 
 export function SourcesManager() {
   const [uploadState, setUploadState] = useState<UploadPhase>({ phase: 'loading' });
-  const [githubUrl, setGithubUrl] = useState('');
-  const [githubState, setGithubState] = useState<GithubState>('idle');
-  const [githubError, setGithubError] = useState<string | null>(null);
-  const [githubEditing, setGithubEditing] = useState(false);
-  const [previewRepos, setPreviewRepos] = useState<GitHubRepo[] | null>(null);
-  const [selectedRepoNames, setSelectedRepoNames] = useState<Set<string>>(new Set());
-  const [acknowledged, setAcknowledged] = useState(false);
-
   const [processingStage, setProcessingStage] = useState<string | null>(null);
   const [stageStartedAt, setStageStartedAt] = useState<Record<string, number>>({});
   const [, setTick] = useState(0);
 
-  const [connectedGithub, setConnectedGithub] = useState<{ username: string; repos: GitHubRepo[] } | null>(null);
-  const [githubAppLogin, setGithubAppLogin] = useState<string | null>(null);
-  const [githubAppDisconnecting, setGithubAppDisconnecting] = useState(false);
+  const [githubLogin, setGithubLogin] = useState<string | null>(null);
+  const [githubDisconnecting, setGithubDisconnecting] = useState(false);
+  const [githubAppInfo, setGithubAppInfo] = useState<GitHubAppInfo | null>(null);
+  const [githubAppInfoLoading, setGithubAppInfoLoading] = useState(false);
+  const [refreshingRepos, setRefreshingRepos] = useState(false);
+  const [repoDisableTarget, setRepoDisableTarget] = useState<{ fullName: string; name: string } | null>(null);
 
   const [confirmDialog, setConfirmDialog] = useState<ConfirmAction | null>(null);
-  const [previouslyConnectedRepos, setPreviouslyConnectedRepos] = useState<Set<string>>(new Set());
-  const [rescanConfirm, setRescanConfirm] = useState<string | null>(null);
-
-  const [scanningRepos, setScanningRepos] = useState<Record<string, number>>({});
-  const scanningReposRef = useRef<Record<string, number>>({});
-  const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const suggestionToastShownRef = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -807,21 +697,21 @@ export function SourcesManager() {
   const [openCard, setOpenCard] = useState<string | null>(null);
   const toggleCard = (key: string) => setOpenCard((k) => (k === key ? null : key));
 
-  // Handle post-install redirect from GitHub App OAuth callback
+  // Handle post-install redirect from GitHub App callback
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const url = new URL(window.location.href);
 
     if (params.get('github_connected') === 'true') {
-      toast.success('GitHub App connected — your repos are being scanned.');
+      toast.success('GitHub connected — your repos are being scanned.');
       url.searchParams.delete('github_connected');
       window.history.replaceState({}, '', url.toString());
       setOpenCard('github');
     } else if (params.get('github_error')) {
       const reason = params.get('github_error');
       const msg = reason === 'missing_params'
-        ? 'GitHub App installation failed — missing parameters from GitHub redirect.'
-        : 'GitHub App connection failed. Please try again.';
+        ? 'GitHub connection failed — missing parameters from redirect.'
+        : 'GitHub connection failed. Please try again.';
       toastError(msg);
       url.searchParams.delete('github_error');
       window.history.replaceState({}, '', url.toString());
@@ -835,12 +725,19 @@ export function SourcesManager() {
     return () => clearInterval(interval);
   }, [uploadState.phase]);
 
-  const scanIsActive = Object.keys(scanningRepos).length > 0;
-  useEffect(() => {
-    if (!scanIsActive) return;
-    const interval = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, [scanIsActive]);
+  const fetchGithubAppInfo = useCallback(async () => {
+    setGithubAppInfoLoading(true);
+    try {
+      const res = await fetch('/api/integrations/github/app-info');
+      if (res.ok) {
+        const data: GitHubAppInfo = await res.json();
+        setGithubAppInfo(data);
+      }
+    } catch { /* ignore */ }
+    finally {
+      setGithubAppInfoLoading(false);
+    }
+  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current !== null) {
@@ -868,64 +765,6 @@ export function SourcesManager() {
     }, 3000);
   }, [stopPolling]);
 
-  const updateScanningRepos = useCallback((fn: (prev: Record<string, number>) => Record<string, number>) => {
-    scanningReposRef.current = fn(scanningReposRef.current);
-    setScanningRepos({ ...scanningReposRef.current });
-  }, []);
-
-  const stopScanPolling = useCallback(() => {
-    if (scanPollRef.current) { clearInterval(scanPollRef.current); scanPollRef.current = null; }
-  }, []);
-
-  const checkAndShowSuggestionToast = useCallback(async () => {
-    if (suggestionToastShownRef.current) return;
-    try {
-      const res = await fetch('/api/experience/groups');
-      if (!res.ok) return;
-      const groups: ExperienceGroup[] = await res.json();
-      const pending = groups.filter(
-        (g) => g.group_type === 'repository' && g.suggested_parent_id && !g.parent_group_id
-      );
-      if (pending.length > 0) {
-        suggestionToastShownRef.current = true;
-        toast(
-          `${pending.length} GitHub repo${pending.length > 1 ? 's' : ''} may be related to your work experience.`,
-          { description: 'Use the ⋯ menu on a repo header to associate it with a role.', duration: 8000 },
-        );
-      }
-    } catch { /* ignore */ }
-  }, []);
-
-  const startScanPolling = useCallback(() => {
-    stopScanPolling();
-    scanPollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch('/api/experience');
-        if (!res.ok) return;
-        const record: ExperienceRecord | null = await res.json();
-        if (!record?.github_repos) return;
-
-        let anyCompleted = false;
-        updateScanningRepos((prev) => {
-          const next = { ...prev };
-          for (const [name, startTs] of Object.entries(prev)) {
-            const repo = record.github_repos!.find((r) => r.name === name);
-            if (repo?.scanned_at && new Date(repo.scanned_at).getTime() >= startTs) {
-              delete next[name];
-              anyCompleted = true;
-            }
-          }
-          return next;
-        });
-
-        if (anyCompleted) {
-          setConnectedGithub({ username: record.github_username!, repos: record.github_repos ?? [] });
-          if (Object.keys(scanningReposRef.current).length === 0) stopScanPolling();
-          checkAndShowSuggestionToast();
-        }
-      } catch { /* ignore */ }
-    }, 3000);
-  }, [stopScanPolling, updateScanningRepos, checkAndShowSuggestionToast]);
 
   useEffect(() => {
     async function loadInitialState() {
@@ -936,24 +775,7 @@ export function SourcesManager() {
         if (!record) { setUploadState({ phase: 'idle' }); return; }
 
         if (record.github_app_login) {
-          setGithubAppLogin(record.github_app_login);
-        }
-
-        if (record.github_username) {
-          setGithubUrl(record.github_username);
-          setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
-          const scanning: Record<string, number> = {};
-          for (const repo of record.github_repos ?? []) {
-            if (repo.scanning_started_at) {
-              const startTs = new Date(repo.scanning_started_at).getTime();
-              const doneTs = repo.scanned_at ? new Date(repo.scanned_at).getTime() : 0;
-              if (doneTs < startTs) scanning[repo.name] = startTs;
-            }
-          }
-          if (Object.keys(scanning).length > 0) {
-            updateScanningRepos(() => scanning);
-            startScanPolling();
-          }
+          setGithubLogin(record.github_app_login);
         }
 
         if (record.status === 'ready') {
@@ -977,8 +799,15 @@ export function SourcesManager() {
     }
 
     loadInitialState();
-    return () => { stopPolling(); stopScanPolling(); };
-  }, [startPolling, stopPolling, stopScanPolling, startScanPolling, updateScanningRepos]);
+    return () => { stopPolling(); };
+  }, [startPolling, stopPolling]);
+
+  // Fetch per-repo config when the connected GitHub card is opened
+  useEffect(() => {
+    if (openCard === 'github' && githubLogin !== null) {
+      fetchGithubAppInfo();
+    }
+  }, [openCard, githubLogin, fetchGithubAppInfo]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1038,11 +867,6 @@ export function SourcesManager() {
               const record = JSON.parse(data) as ExperienceRecord;
               setUploadState({ phase: 'ready', record });
               setProcessingStage(null);
-              if (record.github_username) {
-                setGithubUrl(record.github_username);
-                setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
-              }
-              checkAndShowSuggestionToast();
             } else if (currentEvent === 'error') {
               const { message } = JSON.parse(data);
               setUploadState({ phase: 'error', message });
@@ -1081,179 +905,100 @@ export function SourcesManager() {
       pendingReplaceDestructive.current = cascade;
       fileInputRef.current?.click();
     }
-    else if (action === 'github-remove') await handleGithubRemove(cascade);
-    else if (action === 'github-change') await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], undefined, cascade);
-    else if (action === 'github-repos-remove') {
-      const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
-      await doGithubSave(parseGithubUsername(githubUrl), [...selectedRepoNames], added, cascade);
-    }
+    else if (action === 'github-remove') await doGithubDisconnect(cascade);
   };
 
-  function parseGithubUsername(input: string): string {
-    const match = input.match(/github\.com\/([^/]+)/);
-    return match ? match[1] : input.trim();
-  }
-
-  const resetGithubPreview = () => {
-    setPreviewRepos(null);
-    setSelectedRepoNames(new Set());
-    setAcknowledged(false);
-  };
-
-  const doGithubSave = async (username: string, repoNames: string[], enrichOnly?: string[], cascade = true) => {
-    setGithubState('saving');
-    setGithubError(null);
-    const payload: Record<string, unknown> = {
-      github_username: username,
-      selected_repo_names: repoNames,
-      cascade_removed_repos: cascade,
-    };
-    if (enrichOnly !== undefined) payload.enrich_only_repo_names = enrichOnly;
-    const res = await fetch('/api/experience/github', {
-      method: 'POST',
+  const patchRepoConfig = useCallback(async (payload: Record<string, unknown>) => {
+    const res = await fetch('/api/integrations/github/config', {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      setGithubError(err.detail ?? 'Could not connect GitHub. Please try again.');
-      setGithubState('error');
-      return;
+      throw new Error(err.detail ?? 'Failed to update repo');
     }
-    setGithubState('saved');
-    setGithubEditing(false);
-    resetGithubPreview();
-    toast.success('GitHub profile connected');
-    const updated: ExperienceRecord | null = await fetch('/api/experience').then((r) => r.json());
-    if (updated) {
-      setUploadState({ phase: 'ready', record: updated });
-      if (updated.github_username) {
-        setConnectedGithub({ username: updated.github_username, repos: updated.github_repos ?? [] });
-      }
-      const toScan = enrichOnly ?? repoNames;
-      const now = Date.now();
-      const scanning: Record<string, number> = {};
-      for (const name of toScan) {
-        const repo = updated.github_repos?.find((r) => r.name === name);
-        if (!repo?.scanned_at || new Date(repo.scanned_at).getTime() < now) scanning[name] = now;
-      }
-      if (Object.keys(scanning).length > 0) {
-        updateScanningRepos((prev) => ({ ...prev, ...scanning }));
-        startScanPolling();
-      }
-    }
-  };
+  }, []);
 
-  const fetchReposForUsername = async (username: string, preselect?: Set<string>) => {
-    setGithubState('fetching');
-    setGithubError(null);
-    const res = await fetch(`/api/experience/github/${encodeURIComponent(username)}/repos`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setGithubError(err.detail ?? 'Could not fetch repos. Check the username and try again.');
-      setGithubState('error');
-      return;
-    }
-    const data = await res.json();
-    const repos: GitHubRepo[] = data.repos ?? [];
-    setPreviewRepos(repos);
-    setSelectedRepoNames(preselect ? new Set(preselect) : new Set());
-    setGithubState('idle');
-  };
-
-  const handleGithubFetch = async (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const username = parseGithubUsername(githubUrl);
-    if (!username) return;
-    setPreviewRepos(null);
-    setAcknowledged(false);
-    await fetchReposForUsername(username);
-  };
-
-  const handleGithubModify = async () => {
-    if (!connectedGithub) return;
-    const username = connectedGithub.username;
-    const currentRepos = new Set(connectedGithub.repos.map((r) => r.name));
-    setPreviouslyConnectedRepos(currentRepos);
-    setGithubUrl(username);
-    setGithubEditing(true);
-    setGithubError(null);
-    setPreviewRepos(null);
-    setAcknowledged(true);
-    await fetchReposForUsername(username, currentRepos);
-  };
-
-  const handleGithubConnect = async () => {
-    const username = parseGithubUsername(githubUrl);
-    if (!username || selectedRepoNames.size === 0 || !acknowledged) return;
-    if (githubEditing) {
-      const added = [...selectedRepoNames].filter((n) => !previouslyConnectedRepos.has(n));
-      const removed = [...previouslyConnectedRepos].filter((n) => !selectedRepoNames.has(n));
-      if (removed.length > 0) { setConfirmDialog('github-repos-remove'); return; }
-      await doGithubSave(username, [...selectedRepoNames], added.length > 0 ? added : undefined);
-      return;
-    }
-    await doGithubSave(username, [...selectedRepoNames]);
-  };
-
-  const toggleRepo = (name: string) => {
-    setSelectedRepoNames((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
-      return next;
+  const handleRepoEnable = useCallback(async (fullName: string) => {
+    await patchRepoConfig({ repo_full_name: fullName, enabled: true });
+    setGithubAppInfo((prev) => {
+      if (!prev) return prev;
+      const existing = prev.repo_config[fullName] ?? { enabled: false, pr_capture: true, last_webhook_at: null, last_scanned_at: null };
+      return { ...prev, repo_config: { ...prev.repo_config, [fullName]: { ...existing, enabled: true } } };
     });
-  };
+  }, [patchRepoConfig]);
 
-  const handleRepoRescan = async (repoName: string) => {
-    if (uploadState.phase !== 'ready') return;
-    const username = uploadState.record.github_username;
-    if (!username) return;
-    const res = await fetch('/api/experience/github', {
+  const handleRepoPrCapture = useCallback(async (fullName: string, prCapture: boolean) => {
+    await patchRepoConfig({ repo_full_name: fullName, pr_capture: prCapture });
+    setGithubAppInfo((prev) => {
+      if (!prev) return prev;
+      const existing = prev.repo_config[fullName] ?? { enabled: true, pr_capture: true, last_webhook_at: null, last_scanned_at: null };
+      return { ...prev, repo_config: { ...prev.repo_config, [fullName]: { ...existing, pr_capture: prCapture } } };
+    });
+  }, [patchRepoConfig]);
+
+  const handleRepoRescan = useCallback(async (fullName: string) => {
+    const res = await fetch('/api/integrations/github/scan-repo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ github_username: username, rescan_repo_names: [repoName] }),
+      body: JSON.stringify({ repo_full_name: fullName }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? 'Rescan failed');
-      return;
+      throw new Error(err.detail ?? 'Failed to trigger rescan');
     }
-    toast.success(`Re-scan queued for ${repoName}`);
-    updateScanningRepos((prev) => ({ ...prev, [repoName]: Date.now() }));
-    startScanPolling();
+    toast.success('Scan started — claims will appear shortly');
+  }, []);
+
+  const handleRepoDisableConfirm = async (deleteClaims: boolean) => {
+    const target = repoDisableTarget;
+    setRepoDisableTarget(null);
+    if (!target) return;
+    try {
+      await patchRepoConfig({ repo_full_name: target.fullName, enabled: false, delete_claims: deleteClaims });
+      setGithubAppInfo((prev) => {
+        if (!prev) return prev;
+        const existing = prev.repo_config[target.fullName] ?? { enabled: true, pr_capture: true, last_webhook_at: null, last_scanned_at: null };
+        return { ...prev, repo_config: { ...prev.repo_config, [target.fullName]: { ...existing, enabled: false } } };
+      });
+      toast.success(`${target.name} disabled`);
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : 'Failed to disable repo');
+    }
   };
 
-  const handleGithubAppDisconnect = async () => {
-    setGithubAppDisconnecting(true);
-    const res = await fetch('/api/integrations/github', { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? 'Failed to disconnect GitHub App');
-      setGithubAppDisconnecting(false);
-      return;
+  const handleRefreshRepos = useCallback(async () => {
+    setRefreshingRepos(true);
+    try {
+      const res = await fetch('/api/integrations/github/refresh-repos', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? 'Failed to refresh repos');
+      }
+      const repos: GitHubRepoInfo[] = await res.json();
+      setGithubAppInfo((prev) => prev ? { ...prev, repos } : prev);
+      toast.success('Repos refreshed');
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : 'Failed to refresh repos');
+    } finally {
+      setRefreshingRepos(false);
     }
-    setGithubAppLogin(null);
-    toast.success('GitHub App disconnected');
-    setGithubAppDisconnecting(false);
-  };
+  }, []);
 
-  const handleGithubRemove = async (cascade = true) => {
-    setGithubState('removing');
-    const res = await fetch(`/api/experience/github?cascade=${cascade}`, { method: 'DELETE' });
+  const doGithubDisconnect = async (cascade = true) => {
+    setGithubDisconnecting(true);
+    const res = await fetch(`/api/integrations/github?cascade=${cascade}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      toastError(err.detail ?? `Failed to remove (${res.status})`);
-      setGithubState('idle');
+      toastError(err.detail ?? 'Failed to disconnect GitHub');
+      setGithubDisconnecting(false);
       return;
     }
-    setGithubUrl('');
-    setGithubState('idle');
-    setGithubEditing(false);
-    setConnectedGithub(null);
-    resetGithubPreview();
-    toast.success('GitHub profile removed');
-    const updated = await fetch('/api/experience').then((r) => r.json());
-    if (updated) setUploadState({ phase: 'ready', record: updated });
+    setGithubLogin(null);
+    setGithubAppInfo(null);
+    toast.success('GitHub disconnected');
+    setGithubDisconnecting(false);
   };
 
   /* ─── Derive card state ──────────────────────────────────────────────── */
@@ -1278,14 +1023,8 @@ export function SourcesManager() {
     }
   })();
 
-  const githubIsConnected = connectedGithub !== null || githubState === 'saving' || githubAppLogin !== null;
-  const githubStatus: CardStatus = (() => {
-    if (!connectedGithub && githubAppLogin === null && githubState !== 'saving') return 'idle';
-    if (githubState === 'error' && !connectedGithub) return 'error';
-    if (githubState === 'saving' || githubState === 'removing' || githubState === 'fetching' || scanIsActive) return 'processing';
-    if (githubState === 'error') return 'error';
-    return 'connected';
-  })();
+  const githubIsConnected = githubLogin !== null;
+  const githubStatus: CardStatus = githubIsConnected ? 'connected' : 'idle';
 
   const resumeMeta: React.ReactNode = (() => {
     switch (uploadState.phase) {
@@ -1300,23 +1039,9 @@ export function SourcesManager() {
     }
   })();
 
-  const githubMeta: React.ReactNode = (() => {
-    if (!connectedGithub) {
-      if (githubAppLogin) return `@${githubAppLogin} · Capture active`;
-      if (githubState === 'fetching') return 'Fetching repositories…';
-      if (githubState === 'saving') return 'Connecting…';
-      return 'Connect your GitHub profile to extract project signals';
-    }
-    const repoCount = connectedGithub.repos.length;
-    const scanCount = Object.keys(scanningRepos).length;
-    if (scanCount > 0) return `${repoCount} ${repoCount === 1 ? 'repository' : 'repositories'} · Scanning ${scanCount}…`;
-    const lastSync = connectedGithub.repos
-      .map((r) => r.scanned_at)
-      .filter(Boolean)
-      .sort()
-      .reverse()[0];
-    return `${repoCount} ${repoCount === 1 ? 'repository' : 'repositories'}${lastSync ? ` · Synced ${formatRelativeDate(lastSync) ?? ''}` : ''}`;
-  })();
+  const githubMeta: React.ReactNode = githubLogin
+    ? `@${githubLogin} · Capture active`
+    : 'Install the GitHub App to capture experience from pull requests';
 
   /* ─── Groups ─────────────────────────────────────────────────────────── */
 
@@ -1407,38 +1132,19 @@ export function SourcesManager() {
                     open={openCard === 'github'}
                     onToggle={() => toggleCard('github')}
                   >
-                    {githubAppLogin && (
-                      <GitHubAppConnected
-                        login={githubAppLogin}
-                        disconnecting={githubAppDisconnecting}
-                        onDisconnect={handleGithubAppDisconnect}
-                      />
-                    )}
-                    {githubStatus === 'error' && githubError ? (
-                      <GitHubError
-                        error={githubError}
-                        connectedGithub={connectedGithub}
-                        onReconnect={handleGithubModify}
-                        onDisconnect={() => setConfirmDialog('github-remove')}
-                      />
-                    ) : connectedGithub && (
-                      <GitHubConnected
-                        connectedGithub={connectedGithub}
-                        scanningRepos={scanningRepos}
-                        githubEditing={githubEditing}
-                        githubState={githubState}
-                        githubError={githubError}
-                        previewRepos={previewRepos}
-                        selectedRepoNames={selectedRepoNames}
-                        previouslyConnectedRepos={previouslyConnectedRepos}
-                        onModify={handleGithubModify}
-                        onDisconnect={() => setConfirmDialog('github-remove')}
-                        onRescan={setRescanConfirm}
-                        onToggleRepo={toggleRepo}
-                        onSaveEdit={handleGithubConnect}
-                        onCancelEdit={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); setGithubEditing(false); }}
-                      />
-                    )}
+                    <GitHubConnected
+                      login={githubLogin!}
+                      appInfo={githubAppInfo}
+                      appInfoLoading={githubAppInfoLoading}
+                      refreshingRepos={refreshingRepos}
+                      disconnecting={githubDisconnecting}
+                      onDisconnect={() => setConfirmDialog('github-remove')}
+                      onRepoEnable={handleRepoEnable}
+                      onRepoDisable={setRepoDisableTarget}
+                      onRepoPrCapture={handleRepoPrCapture}
+                      onRepoRescan={handleRepoRescan}
+                      onRefreshRepos={handleRefreshRepos}
+                    />
                   </SourceCard>
                 )}
 
@@ -1470,27 +1176,13 @@ export function SourcesManager() {
               <SourceCard
                 logo={<SiGithub className="h-5 w-5 text-text-tertiary" />}
                 name="GitHub"
-                status={githubState === 'error' ? 'error' : 'idle'}
-                meta="Connect your profile to surface open-source contributions"
+                status="idle"
+                meta="Install the GitHub App to capture experience from pull requests"
                 open={openCard === 'github'}
                 onToggle={() => toggleCard('github')}
                 idle
               >
-                <GitHubAppIdle installUrl={installUrl} />
-                <GitHubIdle
-                  githubUrl={githubUrl}
-                  githubState={githubState}
-                  githubError={githubError}
-                  previewRepos={previewRepos}
-                  selectedRepoNames={selectedRepoNames}
-                  acknowledged={acknowledged}
-                  onUrlChange={(url) => { setGithubUrl(url); setGithubState('idle'); setGithubError(null); }}
-                  onFetch={handleGithubFetch}
-                  onToggleRepo={toggleRepo}
-                  onAcknowledge={setAcknowledged}
-                  onConnect={handleGithubConnect}
-                  onCancel={() => { resetGithubPreview(); setGithubState('idle'); setGithubError(null); }}
-                />
+                <GitHubIdle installUrl={installUrl} />
               </SourceCard>
             )}
 
@@ -1625,19 +1317,26 @@ export function SourcesManager() {
         </div>
       </div>
 
-      {/* Rescan confirm dialog */}
-      <Dialog open={rescanConfirm !== null} onOpenChange={(o) => !o && setRescanConfirm(null)}>
+      {/* Per-repo disable dialog */}
+      <Dialog open={repoDisableTarget !== null} onOpenChange={(o) => !o && setRepoDisableTarget(null)}>
         <DialogContent className="max-w-sm bg-surface-elevated border-border-subtle rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-sm font-medium text-text-primary">Re-scan repository</DialogTitle>
+            <DialogTitle className="text-sm font-medium text-text-primary">
+              Disable {repoDisableTarget?.name}?
+            </DialogTitle>
             <DialogDescription className="text-sm text-text-secondary">
-              Re-fetch and re-analyze <strong className="text-text-primary">{rescanConfirm}</strong>? The signals will be updated in the background.
+              This repo will no longer contribute to your experience. What should happen to the claims already captured from it?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-row justify-end gap-2 sm:gap-2">
-            <button type="button" onClick={() => setRescanConfirm(null)} className={btnGhost}>Cancel</button>
-            <button type="button" onClick={() => { handleRepoRescan(rescanConfirm!); setRescanConfirm(null); }} className={btnPrimary}>
-              Re-scan
+            <button type="button" onClick={() => setRepoDisableTarget(null)} className={btnGhost}>Cancel</button>
+            <button type="button" onClick={() => handleRepoDisableConfirm(false)} className={btnGhost}>Keep claims</button>
+            <button
+              type="button"
+              onClick={() => handleRepoDisableConfirm(true)}
+              className="inline-flex items-center justify-center h-9 px-3 rounded-[10px] text-sm font-normal bg-red-600 text-white hover:bg-red-700 transition-colors"
+            >
+              Delete claims
             </button>
           </DialogFooter>
         </DialogContent>

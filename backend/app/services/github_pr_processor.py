@@ -4,6 +4,9 @@ github_pr_processor.py — background task for processing github_pr CaptureSigna
 Triggered by the webhook handler after a PR is merged. Fetches PR commits, calls
 the LLM to extract experience claims, deduplicates semantically, and inserts pending
 ExperienceClaim rows for user review in the PendingReviewPanel.
+
+Also provides scan_repo_recent_prs: a lightweight backfill task triggered when a user
+first opts a repo into capture. Fetches recent merged PRs and queues them as signals.
 """
 
 import uuid
@@ -73,6 +76,149 @@ def process_github_pr_signal(signal_id: uuid.UUID) -> None:
                 db.commit()
         except Exception:
             logger.exception("github_pr_processor: failed to mark signal failed")
+    finally:
+        db.close()
+
+
+def scan_repo_recent_prs(
+    user_id: uuid.UUID,
+    installation_id: str,
+    repo_full_name: str,
+) -> None:
+    """Background task: backfill recent merged PRs for a newly-tracked repo.
+
+    Fetches the last 25 closed PRs, filters to merged ones, skips bots and any
+    PRs already in CaptureSignal, then creates signals and triggers LLM extraction.
+    Creates its own database session.
+    """
+    from app.clients.database import SessionLocal
+    from app.clients.github_client import get_github_client
+    from app.models.database import CaptureSignal, ExperienceSource
+
+    db = SessionLocal()
+    try:
+        owner, repo = repo_full_name.split("/", 1)
+
+        # Re-check that the repo is still opted in (user may have changed their mind)
+        source = (
+            db.query(ExperienceSource)
+            .filter(
+                ExperienceSource.user_id == user_id,
+                ExperienceSource.source_type == "github",
+            )
+            .first()
+        )
+        if not source:
+            logger.warning(
+                "scan_repo_recent_prs: no ExperienceSource found",
+                user_id=str(user_id),
+                repo=repo_full_name,
+            )
+            return
+
+        repo_cfg = (source.config or {}).get("repo_config", {}).get(repo_full_name, {})
+        if not repo_cfg.get("tracked"):
+            logger.info(
+                "scan_repo_recent_prs: repo no longer tracked, aborting",
+                repo=repo_full_name,
+            )
+            return
+
+        # Fetch recent closed PRs
+        try:
+            prs = get_github_client().get_repo_pull_requests(owner, repo, installation_id)
+        except Exception:
+            logger.exception(
+                "scan_repo_recent_prs: failed to fetch PRs",
+                repo=repo_full_name,
+                installation_id=installation_id,
+            )
+            return
+
+        signals_created = 0
+        for pr in prs:
+            # Only merged PRs
+            if not pr.get("merged_at"):
+                continue
+
+            # Skip bots
+            if (pr.get("user") or {}).get("type") == "Bot":
+                continue
+
+            pr_url = pr.get("html_url", "")
+            if not pr_url:
+                continue
+
+            # Idempotency — skip if signal already exists
+            existing = (
+                db.query(CaptureSignal)
+                .filter(
+                    CaptureSignal.user_id == user_id,
+                    CaptureSignal.source_type == "github_pr",
+                    CaptureSignal.source_ref == pr_url,
+                )
+                .first()
+            )
+            if existing:
+                continue
+
+            # Build a synthetic webhook-shaped payload so process_github_pr_signal
+            # can process it without knowing it came from a backfill.
+            synthetic_payload = {
+                "action": "closed",
+                "pull_request": {
+                    "number": pr.get("number"),
+                    "title": pr.get("title", ""),
+                    "body": pr.get("body") or "",
+                    "merged": True,
+                    "html_url": pr_url,
+                    "user": pr.get("user") or {},
+                    "base": pr.get("base") or {},
+                    "labels": pr.get("labels") or [],
+                },
+                "repository": {
+                    "name": repo,
+                    "full_name": repo_full_name,
+                    "owner": {"login": owner},
+                },
+                "installation": {"id": int(installation_id)},
+            }
+
+            signal = CaptureSignal(
+                user_id=user_id,
+                source_type="github_pr",
+                source_ref=pr_url,
+                raw_data=synthetic_payload,
+                status="pending",
+            )
+            db.add(signal)
+            db.flush()  # get signal.id before background task is queued
+
+            signals_created += 1
+
+            # Trigger LLM extraction synchronously within this background task
+            # (process_github_pr_signal creates its own session)
+            db.commit()
+            try:
+                process_github_pr_signal(signal.id)
+            except Exception:
+                logger.exception(
+                    "scan_repo_recent_prs: process_github_pr_signal failed",
+                    signal_id=str(signal.id),
+                    pr_url=pr_url,
+                )
+
+        logger.info(
+            "scan_repo_recent_prs: complete",
+            repo=repo_full_name,
+            signals_created=signals_created,
+        )
+    except Exception:
+        logger.exception(
+            "scan_repo_recent_prs: unhandled error",
+            user_id=str(user_id),
+            repo=repo_full_name,
+        )
     finally:
         db.close()
 

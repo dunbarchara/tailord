@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.clients.database import Base
@@ -234,9 +235,11 @@ class ExperienceSource(Base):
     )
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
     # Surface connection config (non-secret)
-    config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    config: Mapped[dict | None] = mapped_column(MutableDict.as_mutable(JSONB), nullable=True)
     # Pipeline artifacts + extracted content
-    source_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True, name="source_data")
+    source_data: Mapped[dict | None] = mapped_column(
+        MutableDict.as_mutable(JSONB), nullable=True, name="source_data"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

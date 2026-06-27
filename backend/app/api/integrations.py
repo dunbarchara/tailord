@@ -9,17 +9,25 @@ import hashlib
 import hmac
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.auth import require_api_key
 from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
-from app.models.database import CaptureSignal, ExperienceSource, User, UserIntegration
+from app.models.database import (
+    CaptureSignal,
+    ExperienceClaim,
+    ExperienceSource,
+    User,
+    UserIntegration,
+)
 from app.services.github_app_scanner import scan_repos_for_installation
 from app.services.github_pr_processor import process_github_pr_signal
 
@@ -145,11 +153,242 @@ def github_app_info(
     login = (
         (github_integration.provider_metadata or {}).get("login") if github_integration else None
     )
+
+    # Per-repo config from ExperienceSource (loaded via selectin)
+    source = next((s for s in user.experience_sources if s.source_type == "github"), None)
+    repos_raw = (source.source_data or {}).get("repos", []) if source else []
+    repos = [
+        {
+            "name": r.get("name", ""),
+            "full_name": r.get("full_name", ""),
+            "private": r.get("private", False),
+            "default_branch": r.get("default_branch", "main"),
+        }
+        for r in repos_raw
+    ]
+    watch_branch = (source.config or {}).get("watch_branch") if source else None
+    repo_config = (source.config or {}).get("repo_config", {}) if source else {}
+
+    installation_id = (
+        (github_integration.provider_metadata or {}).get("installation_id")
+        if github_integration
+        else None
+    )
+
     return {
         "install_url": install_url,
         "connected": github_integration is not None,
         "login": login,
+        "installation_id": installation_id,
+        "repos": repos,
+        "watch_branch": watch_branch,
+        "repo_config": repo_config,
     }
+
+
+# ── Config update ──────────────────────────────────────────────────────────────
+
+
+class GithubConfigPatch(BaseModel):
+    repo_full_name: str | None = None
+    enabled: bool | None = None  # whether the repo is an active experience source
+    pr_capture: bool | None = None  # whether to capture signals from merged PRs
+    delete_claims: bool = False  # when enabled=False: also delete captured claims
+
+
+@router.patch("/integrations/github/config", status_code=200)
+def github_update_config(
+    body: GithubConfigPatch,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Update GitHub capture config: per-repo enabled/pr_capture toggles."""
+    source = (
+        db.query(ExperienceSource)
+        .filter(
+            ExperienceSource.user_id == user.id,
+            ExperienceSource.source_type == "github",
+        )
+        .first()
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="GitHub source not found")
+
+    config = dict(source.config or {})
+
+    if body.repo_full_name is not None:
+        repo_config = dict(config.get("repo_config", {}))
+        rc = dict(repo_config.get(body.repo_full_name, {}))
+
+        if body.enabled is not None:
+            rc["enabled"] = body.enabled
+            if not body.enabled and body.delete_claims:
+                pr_prefix = f"https://github.com/{body.repo_full_name}/pull/"
+                db.query(ExperienceClaim).filter(
+                    ExperienceClaim.user_id == user.id,
+                    ExperienceClaim.source_type == "github_pr",
+                    ExperienceClaim.source_ref.like(f"{pr_prefix}%"),
+                ).delete(synchronize_session=False)
+
+        if body.pr_capture is not None:
+            rc["pr_capture"] = body.pr_capture
+
+        repo_config[body.repo_full_name] = rc
+        config["repo_config"] = repo_config
+
+    source.config = config
+    flag_modified(source, "config")
+    db.commit()
+
+    logger.info(
+        "github_config_updated",
+        user_id=str(user.id),
+        repo_full_name=body.repo_full_name,
+        enabled=body.enabled,
+        pr_capture=body.pr_capture,
+        delete_claims=body.delete_claims,
+    )
+
+    # When enabling a repo, run the lightweight content scan:
+    # languages + README + manifests → LLM → experience claims/chunks.
+    if body.enabled and body.repo_full_name:
+        from app.services.github_enricher import enrich_github_repos
+
+        github_username = (source.config or {}).get("username", "")
+        repo_short_name = body.repo_full_name.split("/", 1)[-1]
+        if github_username and source.id:
+            background_tasks.add_task(
+                enrich_github_repos,
+                github_username=github_username,
+                source_id=source.id,
+                repo_names=[repo_short_name],
+                merge_with_existing=True,
+                user_id=str(user.id),
+            )
+
+    return {"ok": True}
+
+
+class GithubScanRepoRequest(BaseModel):
+    repo_full_name: str
+
+
+@router.post("/integrations/github/scan-repo", status_code=202)
+def github_scan_repo(
+    body: GithubScanRepoRequest,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Manually trigger a content scan for an enabled repo.
+
+    Re-runs languages + README + manifests → LLM → experience claims/chunks.
+    Merges into existing data so other repos are unaffected.
+    """
+    from app.services.github_enricher import enrich_github_repos
+
+    source = (
+        db.query(ExperienceSource)
+        .filter(
+            ExperienceSource.user_id == user.id,
+            ExperienceSource.source_type == "github",
+        )
+        .first()
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="GitHub source not found")
+
+    github_username = (source.config or {}).get("username", "")
+    if not github_username:
+        raise HTTPException(status_code=400, detail="GitHub username not configured")
+
+    repo_cfg = (source.config or {}).get("repo_config", {}).get(body.repo_full_name, {})
+    if not repo_cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="Repo is not enabled")
+
+    repo_short_name = body.repo_full_name.split("/", 1)[-1]
+    background_tasks.add_task(
+        enrich_github_repos,
+        github_username=github_username,
+        source_id=source.id,
+        repo_names=[repo_short_name],
+        merge_with_existing=True,
+        user_id=str(user.id),
+    )
+
+    logger.info(
+        "github_scan_repo_triggered",
+        user_id=str(user.id),
+        repo_full_name=body.repo_full_name,
+    )
+    return {"ok": True}
+
+
+@router.post("/integrations/github/refresh-repos", status_code=200)
+def github_refresh_repos(
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Re-fetch the list of installed repos from GitHub and update source_data.repos.
+
+    Synchronous — fast (one GitHub API call). Does not re-run enrichment.
+    """
+    from app.clients.github_client import get_github_client
+
+    source = (
+        db.query(ExperienceSource)
+        .filter(
+            ExperienceSource.user_id == user.id,
+            ExperienceSource.source_type == "github",
+        )
+        .first()
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="GitHub source not found")
+
+    installation_id = (source.config or {}).get("installation_id")
+    if not installation_id:
+        raise HTTPException(status_code=400, detail="No installation_id found")
+
+    try:
+        all_repos = get_github_client().get_installation_repositories(installation_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch repos from GitHub: {exc}")
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=730)
+    repos = []
+    for r in all_repos:
+        if r.get("fork") or r.get("archived"):
+            continue
+        pushed = r.get("pushed_at")
+        if pushed and datetime.fromisoformat(pushed.replace("Z", "+00:00")) < cutoff:
+            continue
+        repos.append(r)
+    repos = repos[:20]
+
+    existing_data = source.source_data or {}
+    source.source_data = {**existing_data, "repos": repos}
+    flag_modified(source, "source_data")
+    db.commit()
+
+    logger.info(
+        "github_repos_refreshed",
+        user_id=str(user.id),
+        repo_count=len(repos),
+    )
+    return [
+        {
+            "name": r.get("name", ""),
+            "full_name": r.get("full_name", ""),
+            "private": r.get("private", False),
+            "default_branch": r.get("default_branch", "main"),
+        }
+        for r in repos
+    ]
 
 
 # ── Disconnect ─────────────────────────────────────────────────────────────────
@@ -157,6 +396,7 @@ def github_app_info(
 
 @router.delete("/integrations/github", status_code=204)
 def github_disconnect(
+    cascade: bool = True,
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
@@ -168,9 +408,15 @@ def github_disconnect(
     and any credentials can restore access — the installation no longer exists
     on GitHub's side.
 
-    Manual scan data (repos, enrichment, claims) is preserved.
+    cascade=true (default): hard-deletes all derived GitHub claims and groups.
+    cascade=false: keeps claims and groups; they become independent of the source.
     """
     from app.clients.github_client import get_github_client
+    from app.services.experience_chunker import (
+        delete_github_chunks,
+        delete_github_groups,
+        delete_github_pr_chunks,
+    )
 
     integration = (
         db.query(UserIntegration)
@@ -201,17 +447,26 @@ def github_disconnect(
                 error=str(exc),
             )
 
+    if cascade:
+        delete_github_chunks(db, user.id)
+        delete_github_pr_chunks(db, user.id)
+        delete_github_groups(db, user.id)
+
     if integration:
         db.delete(integration)
 
     github_src = next((s for s in user.experience_sources if s.source_type == "github"), None)
-    if github_src and github_src.config:
-        config = dict(github_src.config)
-        config.pop("installation_id", None)
-        github_src.config = config
+    if github_src:
+        github_src.config = {}
+        github_src.source_data = {}
+        github_src.connection_status = "disconnected"
+        github_src.sync_status = "idle"
+        github_src.last_synced_at = None
+        flag_modified(github_src, "config")
+        flag_modified(github_src, "source_data")
 
     db.commit()
-    logger.info("github_app_disconnected", user_id=str(user.id))
+    logger.info("github_app_disconnected", user_id=str(user.id), cascade=cascade)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -253,6 +508,7 @@ def _cleanup_disconnected_installation(installation_id: str, db: Session) -> Non
     config = dict(source.config or {})
     config.pop("installation_id", None)
     source.config = config
+    flag_modified(source, "config")
 
     db.commit()
     logger.info(
@@ -347,6 +603,24 @@ async def github_webhook(
     if watch_branch and pr.get("base", {}).get("ref") != watch_branch:
         return Response(status_code=204)
 
+    # 8b. Per-repo gate — repo must be enabled AND have PR capture on
+    repo_full_name = payload.get("repository", {}).get("full_name", "")
+    repo_cfg = (source.config or {}).get("repo_config", {}).get(repo_full_name, {})
+    if not repo_cfg.get("enabled"):
+        logger.info(
+            "github_webhook: repo not enabled",
+            repo=repo_full_name,
+            installation_id=installation_id,
+        )
+        return Response(status_code=204)
+    if not repo_cfg.get("pr_capture", True):
+        logger.info(
+            "github_webhook: PR capture disabled for repo",
+            repo=repo_full_name,
+            installation_id=installation_id,
+        )
+        return Response(status_code=204)
+
     # 9. Idempotency check
     pr_url = pr.get("html_url", "")
     existing = (
@@ -366,7 +640,7 @@ async def github_webhook(
         )
         return Response(status_code=204)
 
-    # 10. Insert CaptureSignal
+    # 10. Insert CaptureSignal + track last_webhook_at for this repo
     signal = CaptureSignal(
         user_id=source.user_id,
         source_type="github_pr",
@@ -375,6 +649,17 @@ async def github_webhook(
         status="pending",
     )
     db.add(signal)
+
+    if repo_full_name:
+        config = dict(source.config or {})
+        rc_map = dict(config.get("repo_config", {}))
+        rc = dict(rc_map.get(repo_full_name, {}))
+        rc["last_webhook_at"] = datetime.now(timezone.utc).isoformat()
+        rc_map[repo_full_name] = rc
+        config["repo_config"] = rc_map
+        source.config = config
+        flag_modified(source, "config")
+
     db.commit()
     db.refresh(signal)
 

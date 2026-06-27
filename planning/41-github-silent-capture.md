@@ -381,15 +381,21 @@ For the current single-user scenario: disconnect the existing GitHub connection 
 - Sources page connected state: show GitHub login (`@username`), "Capture active" badge, Disconnect button
 - Disconnect removes `UserIntegration(provider="github")` and clears `installation_id` from `ExperienceSource.config`; existing manual-scan claims and groups are preserved
 
-### Phase 4b — Branch Config & Capture Status Polish
+### Phase 4b — Repo Enable/Disable Model + Capture Controls
 
 *Goal: fine-grained per-repo control and visibility after App installation.*
 
-- Branch selector: shown in the GitHub card after App connection, pre-populated with the repo's detected default branch (from the light scan), stored in `ExperienceSource.config.watch_branch`; editable without re-installing the App
-- Per-repo capture status rows: each installed repo shows last webhook received timestamp and an active/paused toggle
-- Pause/resume capture per repo — write `capture_paused: bool` into `ExperienceSource.config` per repo; webhook handler respects this flag
-- Error handling: surface `?github_error=callback_failed` and `?github_error=missing_params` query params from the callback route with user-friendly inline messages in the Sources page
-- Source filter in `PendingReviewPanel`: allow filtering by `source_type="github_pr"` to distinguish webhook-captured claims from manual scan claims
+- [~] Branch selector: dropped per product decision — watch branch is always the repo default branch; no UI or config field needed; webhook uses default_branch implicitly via absence of a watch_branch filter
+- [x] Per-repo enable/disable model — redesigned from `tracked: bool` (opt-in capture) to two independent fields: `enabled: bool` (repo is an active source) + `pr_capture: bool` (continuous webhook capture); stored in `ExperienceSource.config.repo_config[full_name]`; `MutableDict.as_mutable(JSONB)` added to `ExperienceSource.config` and `source_data` columns in `database.py` to fix SQLAlchemy JSONB change detection (was causing `tracked`/`enabled` not persisting after reload)
+- [x] Repos default to "Available" (not enabled); user clicks "Enable" to opt in; on enable, lightweight content scan triggers (`enrich_github_repos` for that repo only, `merge_with_existing=True`); no historical PR backfill on enable
+- [x] `PATCH /integrations/github/config` — updated: `tracked → enabled`, added `pr_capture` field; handles both independently; on `enabled=False + delete_claims=True` deletes `github_pr` claims for that repo; `flag_modified` applied throughout; `scan_repos_for_installation` no longer auto-triggers enrichment on connect (deferred to per-repo enable)
+- [x] `POST /integrations/github/scan-repo` — new endpoint; manually triggers content scan for an enabled repo; `merge_with_existing=True`; Next.js proxy at `api/integrations/github/scan-repo/route.ts`; rescan button (↺) shown per enabled repo in Sources card
+- [x] PR capture toggle — per-enabled-repo toggle switch in `GitHubConnected`; calls `PATCH /integrations/github/config` with `{ pr_capture }` independently of `enabled`; webhook handler checks both `enabled AND pr_capture` (pr_capture defaults true)
+- [x] Disconnect clean slate — `github_disconnect` now resets `source.config = {}` and `source.source_data = {}`, resets `connection_status`/`sync_status`; previously only popped `installation_id`, leaving `repo_config` intact (caused re-connected repos to appear as enabled)
+- [x] Per-repo disable dialog — "Disable {repo}?" with Keep claims / Delete claims options; replaces old "Stop capturing from…" phrasing; `setRepoDisableTarget` state
+- [x] `get_repo_pull_requests()` added to `GitHubClient`; `scan_repo_recent_prs()` added to `github_pr_processor.py` (available for future manual backfill; not auto-triggered)
+- [x] Source filter in `PendingReviewPanel` — filter chips shown when `uniqueSources.length > 1`; filters pending claims by `source_type`
+- [~] Error handling for `?github_error=...` callback params — already present from Phase 4 (inline messages + toast); no new work needed
 
 ### Phase 4c — Repo-to-Role Suggestion UX
 
