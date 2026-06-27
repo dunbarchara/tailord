@@ -695,6 +695,58 @@ function GitHubError({
   );
 }
 
+/* ─── GitHub App expanded content ───────────────────────────────────────── */
+
+function GitHubAppIdle({ installUrl }: { installUrl: string | null }) {
+  return (
+    <DrawerDivider>
+      <SectionLabel>Silent capture</SectionLabel>
+      <p className="text-sm text-text-secondary mb-4">
+        Install the Tailord GitHub App to automatically capture experience from merged pull requests.
+        Your repos are scanned on connection; ongoing capture adds depth over time.
+      </p>
+      {installUrl ? (
+        <a href={installUrl} className={btnPrimary}>
+          <SiGithub className="h-3.5 w-3.5" />
+          Install GitHub App
+        </a>
+      ) : (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-base border border-border-subtle text-xs text-text-tertiary font-medium">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-none" />
+          Not configured
+        </div>
+      )}
+    </DrawerDivider>
+  );
+}
+
+function GitHubAppConnected({
+  login,
+  disconnecting,
+  onDisconnect,
+}: {
+  login: string;
+  disconnecting: boolean;
+  onDisconnect: () => void;
+}) {
+  return (
+    <DrawerDivider>
+      <SectionLabel>Silent capture</SectionLabel>
+      <ConnectedItem
+        icon={<SiGithub className="h-full w-full" />}
+        name={`@${login}`}
+        sub="Capture active"
+      />
+      <DrawerFooter>
+        <button type="button" onClick={onDisconnect} disabled={disconnecting} className={btnDanger}>
+          {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+          {disconnecting ? 'Disconnecting…' : 'Disconnect App'}
+        </button>
+      </DrawerFooter>
+    </DrawerDivider>
+  );
+}
+
 /* ─── Planned source expanded content ───────────────────────────────────── */
 
 function PlannedSourceContent({
@@ -735,6 +787,8 @@ export function SourcesManager() {
   const [, setTick] = useState(0);
 
   const [connectedGithub, setConnectedGithub] = useState<{ username: string; repos: GitHubRepo[] } | null>(null);
+  const [githubAppLogin, setGithubAppLogin] = useState<string | null>(null);
+  const [githubAppDisconnecting, setGithubAppDisconnecting] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<ConfirmAction | null>(null);
   const [previouslyConnectedRepos, setPreviouslyConnectedRepos] = useState<Set<string>>(new Set());
@@ -752,6 +806,28 @@ export function SourcesManager() {
   // Which card is open (null = none)
   const [openCard, setOpenCard] = useState<string | null>(null);
   const toggleCard = (key: string) => setOpenCard((k) => (k === key ? null : key));
+
+  // Handle post-install redirect from GitHub App OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const url = new URL(window.location.href);
+
+    if (params.get('github_connected') === 'true') {
+      toast.success('GitHub App connected — your repos are being scanned.');
+      url.searchParams.delete('github_connected');
+      window.history.replaceState({}, '', url.toString());
+      setOpenCard('github');
+    } else if (params.get('github_error')) {
+      const reason = params.get('github_error');
+      const msg = reason === 'missing_params'
+        ? 'GitHub App installation failed — missing parameters from GitHub redirect.'
+        : 'GitHub App connection failed. Please try again.';
+      toastError(msg);
+      url.searchParams.delete('github_error');
+      window.history.replaceState({}, '', url.toString());
+      setOpenCard('github');
+    }
+  }, []);
 
   useEffect(() => {
     if (uploadState.phase !== 'processing') return;
@@ -859,6 +935,10 @@ export function SourcesManager() {
         const record: ExperienceRecord | null = await res.json();
         if (!record) { setUploadState({ phase: 'idle' }); return; }
 
+        if (record.github_app_login) {
+          setGithubAppLogin(record.github_app_login);
+        }
+
         if (record.github_username) {
           setGithubUrl(record.github_username);
           setConnectedGithub({ username: record.github_username, repos: record.github_repos ?? [] });
@@ -898,7 +978,6 @@ export function SourcesManager() {
 
     loadInitialState();
     return () => { stopPolling(); stopScanPolling(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startPolling, stopPolling, stopScanPolling, startScanPolling, updateScanningRepos]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1144,6 +1223,20 @@ export function SourcesManager() {
     startScanPolling();
   };
 
+  const handleGithubAppDisconnect = async () => {
+    setGithubAppDisconnecting(true);
+    const res = await fetch('/api/integrations/github', { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toastError(err.detail ?? 'Failed to disconnect GitHub App');
+      setGithubAppDisconnecting(false);
+      return;
+    }
+    setGithubAppLogin(null);
+    toast.success('GitHub App disconnected');
+    setGithubAppDisconnecting(false);
+  };
+
   const handleGithubRemove = async (cascade = true) => {
     setGithubState('removing');
     const res = await fetch(`/api/experience/github?cascade=${cascade}`, { method: 'DELETE' });
@@ -1165,6 +1258,10 @@ export function SourcesManager() {
 
   /* ─── Derive card state ──────────────────────────────────────────────── */
 
+  const installUrl = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG
+    ? `https://github.com/apps/${process.env.NEXT_PUBLIC_GITHUB_APP_SLUG}/installations/new`
+    : null;
+
   const resumeIsConnected =
     uploadState.phase === 'ready' && !!(uploadState.record.filename) ||
     uploadState.phase === 'uploading' ||
@@ -1181,9 +1278,9 @@ export function SourcesManager() {
     }
   })();
 
-  const githubIsConnected = connectedGithub !== null || githubState === 'saving';
+  const githubIsConnected = connectedGithub !== null || githubState === 'saving' || githubAppLogin !== null;
   const githubStatus: CardStatus = (() => {
-    if (!connectedGithub && githubState !== 'saving') return 'idle';
+    if (!connectedGithub && githubAppLogin === null && githubState !== 'saving') return 'idle';
     if (githubState === 'error' && !connectedGithub) return 'error';
     if (githubState === 'saving' || githubState === 'removing' || githubState === 'fetching' || scanIsActive) return 'processing';
     if (githubState === 'error') return 'error';
@@ -1205,6 +1302,7 @@ export function SourcesManager() {
 
   const githubMeta: React.ReactNode = (() => {
     if (!connectedGithub) {
+      if (githubAppLogin) return `@${githubAppLogin} · Capture active`;
       if (githubState === 'fetching') return 'Fetching repositories…';
       if (githubState === 'saving') return 'Connecting…';
       return 'Connect your GitHub profile to extract project signals';
@@ -1309,6 +1407,13 @@ export function SourcesManager() {
                     open={openCard === 'github'}
                     onToggle={() => toggleCard('github')}
                   >
+                    {githubAppLogin && (
+                      <GitHubAppConnected
+                        login={githubAppLogin}
+                        disconnecting={githubAppDisconnecting}
+                        onDisconnect={handleGithubAppDisconnect}
+                      />
+                    )}
                     {githubStatus === 'error' && githubError ? (
                       <GitHubError
                         error={githubError}
@@ -1371,6 +1476,7 @@ export function SourcesManager() {
                 onToggle={() => toggleCard('github')}
                 idle
               >
+                <GitHubAppIdle installUrl={installUrl} />
                 <GitHubIdle
                   githubUrl={githubUrl}
                   githubState={githubState}

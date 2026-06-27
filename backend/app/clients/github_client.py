@@ -180,6 +180,73 @@ class GitHubClient:
         resp.raise_for_status()
         return resp.json()["token"]
 
+    def get_installation_account(self, installation_id: str) -> dict:
+        """Return the account (user or org) associated with an App installation.
+
+        Uses the App JWT — no user token required. Useful when the installation
+        callback does not include an OAuth code.
+        """
+        app_jwt = self._generate_app_jwt()
+        resp = requests.get(
+            f"{_API_BASE}/app/installations/{installation_id}",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get("account", {})
+
+    def delete_installation(self, installation_id: str) -> None:
+        """Uninstall the GitHub App from a user's account.
+
+        Calls DELETE /app/installations/{id} using the App JWT. After this call:
+        - All existing access tokens for the installation are immediately revoked
+        - GitHub stops sending webhook events for that installation
+        - No new access tokens can be generated for that installation_id, ever
+        - Our private key cannot restore access — the installation no longer exists
+
+        Raises on HTTP error. If the installation is already deleted (404), that
+        is treated as success — the goal (no access) is already achieved.
+        """
+        app_jwt = self._generate_app_jwt()
+        resp = requests.delete(
+            f"{_API_BASE}/app/installations/{installation_id}",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            timeout=15,
+        )
+        if resp.status_code == 404:
+            # Already uninstalled — goal achieved
+            return
+        resp.raise_for_status()
+
+    def get_installation_repositories(self, installation_id: str) -> list[dict]:
+        """Fetch all repositories accessible to a GitHub App installation.
+
+        Uses a per-installation access token. Returns the full GitHub repo objects
+        for repos the user granted the App access to during installation.
+        Raises on HTTP error.
+        """
+        token = self.get_installation_token(installation_id)
+        resp = requests.get(
+            f"{_API_BASE}/installation/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get("repositories", [])
+
     def get_pr_commits(
         self, owner: str, repo: str, pr_number: int, installation_id: str
     ) -> list[dict]:
@@ -197,59 +264,6 @@ class GitHubClient:
                 "X-GitHub-Api-Version": _API_VERSION,
             },
             params={"per_page": 100},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    def exchange_oauth_code(self, code: str) -> dict:
-        """Exchange a GitHub OAuth authorization code for user tokens.
-
-        Requires GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET to be configured.
-        Returns a dict containing access_token, expires_in, refresh_token,
-        refresh_token_expires_in, token_type, and scope.
-        Raises RuntimeError if client credentials are not configured.
-        Raises requests.HTTPError on API failure.
-        """
-        if not settings.github_app_client_id or not settings.github_app_client_secret:
-            raise RuntimeError(
-                "GitHub App OAuth not configured. "
-                "Set GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET."
-            )
-        resp = requests.post(
-            "https://github.com/login/oauth/access_token",
-            headers={"Accept": "application/json"},
-            json={
-                "client_id": settings.github_app_client_id,
-                "client_secret": settings.github_app_client_secret,
-                "code": code,
-            },
-            timeout=15,
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    def refresh_user_token(self, refresh_token: str) -> dict:
-        """Refresh an expired GitHub user access token.
-
-        Returns a dict with the same shape as exchange_oauth_code.
-        Raises RuntimeError if client credentials are not configured.
-        Raises requests.HTTPError on API failure.
-        """
-        if not settings.github_app_client_id or not settings.github_app_client_secret:
-            raise RuntimeError(
-                "GitHub App OAuth not configured. "
-                "Set GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET."
-            )
-        resp = requests.post(
-            "https://github.com/login/oauth/access_token",
-            headers={"Accept": "application/json"},
-            json={
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "client_id": settings.github_app_client_id,
-                "client_secret": settings.github_app_client_secret,
-            },
             timeout=15,
         )
         resp.raise_for_status()

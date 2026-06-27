@@ -93,11 +93,6 @@ data "azurerm_key_vault_secret" "prod_github_app_webhook_secret" {
   key_vault_id = azurerm_key_vault.tailord.id
 }
 
-data "azurerm_key_vault_secret" "prod_github_app_client_secret" {
-  name         = "prod-github-app-client-secret"
-  key_vault_id = azurerm_key_vault.tailord.id
-}
-
 data "azurerm_key_vault_secret" "prod_field_encryption_key" {
   name         = "prod-field-encryption-key"
   key_vault_id = azurerm_key_vault.tailord.id
@@ -150,11 +145,6 @@ data "azurerm_key_vault_secret" "staging_github_app_private_key" {
 
 data "azurerm_key_vault_secret" "staging_github_app_webhook_secret" {
   name         = "staging-github-app-webhook-secret"
-  key_vault_id = azurerm_key_vault.tailord.id
-}
-
-data "azurerm_key_vault_secret" "staging_github_app_client_secret" {
-  name         = "staging-github-app-client-secret"
   key_vault_id = azurerm_key_vault.tailord.id
 }
 

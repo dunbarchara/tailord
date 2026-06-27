@@ -10,12 +10,11 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
-  const code = searchParams.get('code')
   const installationId = searchParams.get('installation_id')
 
-  if (!code || !installationId) {
+  if (!installationId) {
     return NextResponse.redirect(
-      new URL('/dashboard/experience?github_error=missing_params', request.url)
+      new URL('/dashboard/sources?github_error=missing_params', request.url)
     )
   }
 
@@ -26,18 +25,18 @@ export async function GET(request: NextRequest) {
   }
 
   const res = await proxyToBackendWithUser(
-    `integrations/github/callback?code=${encodeURIComponent(code)}&installation_id=${encodeURIComponent(installationId)}`,
+    `integrations/github/callback?installation_id=${installationId}`,
     user,
     { method: 'GET' }
   )
 
   if (!res.ok) {
     return NextResponse.redirect(
-      new URL('/dashboard/experience?github_error=callback_failed', request.url)
+      new URL('/dashboard/sources?github_error=callback_failed', request.url)
     )
   }
 
   return NextResponse.redirect(
-    new URL('/dashboard/experience?github_connected=true', request.url)
+    new URL('/dashboard/sources?github_connected=true', request.url)
   )
 }

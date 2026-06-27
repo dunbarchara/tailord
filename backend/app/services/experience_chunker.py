@@ -610,21 +610,22 @@ def chunk_github_repo(
 
     from app.services.claim_dedup import is_duplicate_by_source_ref, is_duplicate_claim
 
+    # Layer 1: pre-loop guard — if any claim already exists for this repo, skip entirely.
+    # Must run before the loop: autoflush would make the first inserted claim visible to
+    # subsequent iterations, causing all but the first chunk to be dropped.
+    if is_duplicate_by_source_ref(github_source.user_id, "github", repo_name, db):
+        logger.debug(
+            "chunk_github_repo_dedup_source_ref",
+            user_id=str(github_source.user_id),
+            repo_name=repo_name,
+        )
+        return 0
+
     raw = _github_repo_chunks(enriched_repo)
     now = datetime.now(timezone.utc)
     inserted = 0
     for position, chunk_data in enumerate(raw):
         content = chunk_data.get("content", "")
-
-        # Layer 1: exact source_ref match — skip if this exact (source_type, source_ref) pair
-        # already has a claim for this user. Protects against re-running the same repo scan.
-        if is_duplicate_by_source_ref(github_source.user_id, "github", repo_name, db):
-            logger.debug(
-                "chunk_github_repo_dedup_source_ref",
-                user_id=str(github_source.user_id),
-                repo_name=repo_name,
-            )
-            break  # all chunks for this repo would hit the same guard; exit early
 
         # Layer 2: semantic dedup — skip if content is near-identical to an existing active claim.
         if content:

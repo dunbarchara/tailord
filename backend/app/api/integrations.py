@@ -1,7 +1,7 @@
 """
-integrations.py — GitHub App OAuth callback and webhook handler.
+integrations.py — GitHub App installation callback and webhook handler.
 
-GET  /integrations/github/callback  — exchanges OAuth code, stores UserIntegration+ExperienceSource
+GET  /integrations/github/callback  — stores installation_id in UserIntegration+ExperienceSource
 POST /integrations/github/webhook   — HMAC-verified PR event handler; enqueues background processing
 """
 
@@ -11,9 +11,8 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import requests
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
@@ -21,6 +20,7 @@ from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.models.database import CaptureSignal, ExperienceSource, User, UserIntegration
+from app.services.github_app_scanner import scan_repos_for_installation
 from app.services.github_pr_processor import process_github_pr_signal
 
 logger = structlog.get_logger(__name__)
@@ -31,73 +31,35 @@ router = APIRouter()
 
 
 @router.get("/integrations/github/callback")
-def github_oauth_callback(
-    code: str = Query(...),
+def github_installation_callback(
+    background_tasks: BackgroundTasks,
     installation_id: str = Query(...),
     setup_action: str = Query(default="install"),
     _: str = Depends(require_api_key),
     user: User = Depends(require_approved_user),
     db: Session = Depends(get_db),
 ):
-    """Handle the GitHub App OAuth callback after installation.
+    """Handle the GitHub App callback after installation.
 
-    Exchanges the authorization code for user tokens, stores them in UserIntegration,
-    and upserts the github ExperienceSource with the installation_id.
+    Stores the installation_id scoped to this user and enqueues the initial
+    light scan. Access is limited to repos the user explicitly granted during
+    installation — no broader OAuth scope is requested or stored.
     """
     from app.clients.github_client import get_github_client
 
-    # Exchange code for tokens
-    try:
-        token_data = get_github_client().exchange_oauth_code(code)
-    except Exception:
-        logger.exception("github_oauth_callback: token exchange failed", user_id=str(user.id))
-        raise HTTPException(status_code=502, detail="GitHub token exchange failed")
-
-    access_token = token_data.get("access_token")
-    if not access_token:
-        logger.error(
-            "github_oauth_callback: no access_token in response",
-            user_id=str(user.id),
-            response_keys=list(token_data.keys()),
-        )
-        raise HTTPException(
-            status_code=502, detail="GitHub token exchange returned no access_token"
-        )
-
-    # Fetch GitHub username via user token
+    now = datetime.now(timezone.utc)
     github_login = None
+
+    # Resolve the GitHub account login via App JWT (no user OAuth required)
     try:
-        user_resp = requests.get(
-            "https://api.github.com/user",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            timeout=10,
-        )
-        user_resp.raise_for_status()
-        github_login = user_resp.json().get("login")
+        account = get_github_client().get_installation_account(str(installation_id))
+        github_login = account.get("login")
     except Exception:
         logger.warning(
-            "github_oauth_callback: could not fetch GitHub login",
+            "github_installation_callback: could not resolve login via App JWT",
             user_id=str(user.id),
+            installation_id=str(installation_id),
         )
-
-    # Compute token expiry timestamps
-    now = datetime.now(timezone.utc)
-    expires_in = token_data.get("expires_in")
-    refresh_expires_in = token_data.get("refresh_token_expires_in")
-    token_expires_at = (
-        datetime.fromtimestamp(now.timestamp() + expires_in, tz=timezone.utc).isoformat()
-        if expires_in
-        else None
-    )
-    refresh_token_expires_at = (
-        datetime.fromtimestamp(now.timestamp() + refresh_expires_in, tz=timezone.utc).isoformat()
-        if refresh_expires_in
-        else None
-    )
 
     # Upsert UserIntegration(provider="github")
     integration = (
@@ -114,14 +76,6 @@ def github_oauth_callback(
         )
         db.add(integration)
 
-    integration.credentials = {
-        "access_token": access_token,
-        "refresh_token": token_data.get("refresh_token"),
-        "token_expires_at": token_expires_at,
-        "refresh_token_expires_at": refresh_token_expires_at,
-        "token_type": token_data.get("token_type"),
-        "scope": token_data.get("scope"),
-    }
     integration.provider_metadata = {
         "installation_id": str(installation_id),
         "login": github_login,
@@ -159,7 +113,153 @@ def github_oauth_callback(
         installation_id=str(installation_id),
         github_login=github_login,
     )
+
+    # Enqueue initial light scan — runs even if login is unknown; scanner will
+    # skip enrichment gracefully if github_login is empty
+    background_tasks.add_task(
+        scan_repos_for_installation,
+        user_id=user.id,
+        installation_id=str(installation_id),
+        github_login=github_login or "",
+        source_id=source.id,
+    )
+
     return {"ok": True, "installation_id": str(installation_id)}
+
+
+# ── App info ───────────────────────────────────────────────────────────────────
+
+
+@router.get("/integrations/github/app-info")
+def github_app_info(
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+):
+    """Return the GitHub App install URL and the current user's connection state."""
+    install_url = (
+        f"https://github.com/apps/{settings.github_app_slug}/installations/new"
+        if settings.github_app_slug
+        else None
+    )
+    github_integration = next((i for i in user.integrations if i.provider == "github"), None)
+    login = (
+        (github_integration.provider_metadata or {}).get("login") if github_integration else None
+    )
+    return {
+        "install_url": install_url,
+        "connected": github_integration is not None,
+        "login": login,
+    }
+
+
+# ── Disconnect ─────────────────────────────────────────────────────────────────
+
+
+@router.delete("/integrations/github", status_code=204)
+def github_disconnect(
+    _: str = Depends(require_api_key),
+    user: User = Depends(require_approved_user),
+    db: Session = Depends(get_db),
+):
+    """Disconnect the GitHub App integration.
+
+    Uninstalls the App from the user's GitHub account via the GitHub API, then
+    removes our DB records. After this call, no combination of our private key
+    and any credentials can restore access — the installation no longer exists
+    on GitHub's side.
+
+    Manual scan data (repos, enrichment, claims) is preserved.
+    """
+    from app.clients.github_client import get_github_client
+
+    integration = (
+        db.query(UserIntegration)
+        .filter(UserIntegration.user_id == user.id, UserIntegration.provider == "github")
+        .first()
+    )
+
+    # Uninstall at GitHub level before touching our DB records.
+    # This revokes all access tokens and stops all webhook delivery immediately.
+    # If this fails (e.g. already uninstalled), log and continue — DB cleanup
+    # still removes our ability to generate tokens through normal code paths.
+    installation_id = (
+        (integration.provider_metadata or {}).get("installation_id") if integration else None
+    )
+    if installation_id:
+        try:
+            get_github_client().delete_installation(installation_id)
+            logger.info(
+                "github_app_uninstalled",
+                user_id=str(user.id),
+                installation_id=installation_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "github_app_uninstall_failed",
+                user_id=str(user.id),
+                installation_id=installation_id,
+                error=str(exc),
+            )
+
+    if integration:
+        db.delete(integration)
+
+    github_src = next((s for s in user.experience_sources if s.source_type == "github"), None)
+    if github_src and github_src.config:
+        config = dict(github_src.config)
+        config.pop("installation_id", None)
+        github_src.config = config
+
+    db.commit()
+    logger.info("github_app_disconnected", user_id=str(user.id))
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+def _cleanup_disconnected_installation(installation_id: str, db: Session) -> None:
+    """Remove DB records for an installation that no longer exists on GitHub.
+
+    Called when GitHub sends an installation.deleted event (user uninstalled
+    the App directly from their GitHub settings page). Mirrors what the
+    /integrations/github DELETE endpoint does, minus the GitHub API call
+    (GitHub already did the uninstall — this is just our cleanup).
+    """
+    if not installation_id:
+        return
+
+    source = (
+        db.query(ExperienceSource)
+        .filter(
+            ExperienceSource.source_type == "github",
+            ExperienceSource.config["installation_id"].astext == installation_id,
+        )
+        .first()
+    )
+    if not source:
+        return
+
+    integration = (
+        db.query(UserIntegration)
+        .filter(
+            UserIntegration.user_id == source.user_id,
+            UserIntegration.provider == "github",
+        )
+        .first()
+    )
+    if integration:
+        db.delete(integration)
+
+    config = dict(source.config or {})
+    config.pop("installation_id", None)
+    source.config = config
+
+    db.commit()
+    logger.info(
+        "github_installation_deleted_webhook_cleanup",
+        installation_id=installation_id,
+        user_id=str(source.user_id),
+    )
 
 
 # ── Webhook handler ────────────────────────────────────────────────────────────
@@ -199,7 +299,7 @@ async def github_webhook(
 
     # 3. Filter by event type
     event = request.headers.get("X-GitHub-Event", "")
-    if event != "pull_request":
+    if event not in ("pull_request", "installation"):
         return Response(status_code=204)
 
     # 4. Parse payload
@@ -209,7 +309,13 @@ async def github_webhook(
         logger.warning("github_webhook: failed to parse JSON body")
         return Response(status_code=400)
 
-    # 5. Only process merged closes
+    # 5a. Handle installation deleted — user uninstalled the App from GitHub settings
+    if event == "installation" and payload.get("action") == "deleted":
+        installation_id = str(payload.get("installation", {}).get("id", ""))
+        _cleanup_disconnected_installation(installation_id, db)
+        return Response(status_code=204)
+
+    # 5b. Only process merged pull_request closes
     action = payload.get("action")
     pr = payload.get("pull_request", {})
     if action != "closed" or not pr.get("merged"):

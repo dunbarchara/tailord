@@ -333,6 +333,7 @@ export interface GitHubClaimsSection {
 export interface ExperienceClaimsResponse {
   resume: ResumeClaimsSection | null
   github: GitHubClaimsSection | null
+  github_pr: ExperienceClaim[] | null
   user_input: ExperienceClaim[] | null
   gap_response: ExperienceClaim[] | null
   partial_response: ExperienceClaim[] | null
@@ -365,4 +366,6 @@ export interface ExperienceRecord {
   last_process_requested_at: string | null
   // New: per-source status (alongside legacy flat fields for backward compat)
   sources?: ExperienceSourceStatus[]
+  // GitHub App connection state (null = App not installed)
+  github_app_login?: string | null
 }

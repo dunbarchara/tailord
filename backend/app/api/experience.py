@@ -550,8 +550,34 @@ def get_experience(
 ):
     logger.debug("get_experience")
     if not user.experience_sources:
-        return None
-    return _experience_response(user.experience_sources)
+        # Still return github_app_login even if no experience sources exist
+        github_integration = next((i for i in user.integrations if i.provider == "github"), None)
+        if not github_integration:
+            return None
+        return {
+            "sources": [],
+            "id": None,
+            "filename": None,
+            "status": "pending",
+            "extracted_profile": None,
+            "raw_resume_text": None,
+            "error_message": None,
+            "github_username": None,
+            "github_repos": None,
+            "github_repo_details": None,
+            "user_input_text": None,
+            "uploaded_at": None,
+            "processed_at": None,
+            "last_process_requested_at": None,
+            "github_app_login": (github_integration.provider_metadata or {}).get("login"),
+        }
+
+    response = _experience_response(user.experience_sources)
+    github_integration = next((i for i in user.integrations if i.provider == "github"), None)
+    response["github_app_login"] = (
+        (github_integration.provider_metadata or {}).get("login") if github_integration else None
+    )
+    return response
 
 
 @router.delete("/experience", status_code=204)
@@ -1043,6 +1069,7 @@ def _group_experience_claims(chunks: list) -> dict:
     resume_other: list = []
     github_keys: list = []
     github_groups: dict = {}
+    github_pr_chunks: list = []
     user_input_chunks: list = []
     gap_response_chunks: list = []
     partial_response_chunks: list = []
@@ -1083,6 +1110,8 @@ def _group_experience_claims(chunks: list) -> dict:
                 github_keys.append(key)
                 github_groups[key] = {"group_key": c.source_ref, "chunks": []}
             github_groups[key]["chunks"].append(s)
+        elif c.source_type == "github_pr":
+            github_pr_chunks.append(s)
         elif c.source_type == "user_input":
             user_input_chunks.append(s)
         elif c.source_type in ("gap_response", "additional_experience"):
@@ -1106,6 +1135,7 @@ def _group_experience_claims(chunks: list) -> dict:
         if has_resume
         else None,
         "github": {"repos": [github_groups[k] for k in github_keys]} if has_github else None,
+        "github_pr": github_pr_chunks if github_pr_chunks else None,
         "user_input": user_input_chunks if user_input_chunks else None,
         "gap_response": gap_response_chunks if gap_response_chunks else None,
         "partial_response": partial_response_chunks if partial_response_chunks else None,

@@ -78,8 +78,9 @@ class Settings(BaseSettings):
     github_app_private_key: str | None = None  # PEM content
     github_app_private_key_path: str | None = None  # Path to .pem file
     github_app_webhook_secret: str | None = None
-    github_app_client_id: str | None = None
-    github_app_client_secret: str | None = None
+    # Public slug used to construct the installation URL shown in the UI:
+    # https://github.com/apps/{slug}/installations/new
+    github_app_slug: str | None = None
 
     # ── Observability / Tracing ───────────────────────────────────────────────
     # otel_endpoint: OTLP gRPC target for local Tempo (docker-compose).

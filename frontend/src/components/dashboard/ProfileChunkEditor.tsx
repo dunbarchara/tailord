@@ -51,6 +51,7 @@ function flattenClaims(data: ExperienceClaimsResponse): ExperienceClaim[] {
   }
   if (data.github) data.github.repos.forEach((r) => all.push(...r.chunks));
   all.push(
+    ...(data.github_pr ?? []),
     ...(data.user_input ?? []),
     ...(data.gap_response ?? []),
     ...(data.partial_response ?? []),
@@ -1296,6 +1297,7 @@ function removeClaimFromResponse(prev: ExperienceClaimsResponse, id: string): Ex
     ...prev,
     resume: resumeEmpty ? null : newResume,
     github: prev.github ? { repos: prev.github.repos.map((r) => ({ ...r, chunks: filter(r.chunks) })) } : null,
+    github_pr: prev.github_pr ? filter(prev.github_pr) : null,
     user_input: prev.user_input ? filter(prev.user_input) : null,
     gap_response: prev.gap_response ? filter(prev.gap_response) : null,
     partial_response: prev.partial_response ? filter(prev.partial_response) : null,

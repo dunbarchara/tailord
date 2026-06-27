@@ -1,7 +1,7 @@
 # GitHub Silent Capture
 
 **Date:** 2026-06-03
-**Status:** Phase 2 complete — ready for Phase 3
+**Status:** Phase 3 complete — ready for Phase 4
 **Related:** `planning/32-experience-claim-schema.md`, `planning/31-platform-integration-boundary.md`, `planning/experience-groupings-and-dedup.md`
 
 ---
@@ -373,12 +373,78 @@ For the current single-user scenario: disconnect the existing GitHub connection 
 
 ### Phase 4 — GitHub App Installation UX
 
-*Goal: users can connect the App from the dashboard and configure their watch branch.*
+*Goal: users can connect the App from the dashboard. On first connection, trigger a light scan of installed repos using the App installation token. Forward-only webhook capture begins immediately after.*
 
-- "Connect GitHub App" button in Experience page → links to GitHub App installation page
-- Post-install callback route — GitHub redirects back with `installation_id`; backend stores it on `ExperienceSource`
-- Branch selector in GitHub settings: pre-populated with detected default branch, editable
-- Show connected repos and capture status (active / paused) per repo
+- "Connect GitHub App" button in Sources page → links to GitHub App installation page (`https://github.com/apps/{slug}/installations/new`)
+- Post-install callback route — GitHub redirects back with `installation_id`; backend resolves the GitHub login via App JWT (`GET /app/installations/{id}`), stores `UserIntegration(provider="github")` + upserts `ExperienceSource(source_type="github")` with `installation_id` in config. No user OAuth token is requested or stored — access is scoped strictly to repos the user granted during installation.
+- **Initial light scan** — after callback, enqueue background task: fetch installed repos via `GET /installation/repositories` (installation token), run existing light scan (README, languages, topics, manifests) for each repo using the authenticated installation token. This replaces the old unauthenticated public API scan and works for private repos too.
+- Sources page connected state: show GitHub login (`@username`), "Capture active" badge, Disconnect button
+- Disconnect removes `UserIntegration(provider="github")` and clears `installation_id` from `ExperienceSource.config`; existing manual-scan claims and groups are preserved
+
+### Phase 4b — Branch Config & Capture Status Polish
+
+*Goal: fine-grained per-repo control and visibility after App installation.*
+
+- Branch selector: shown in the GitHub card after App connection, pre-populated with the repo's detected default branch (from the light scan), stored in `ExperienceSource.config.watch_branch`; editable without re-installing the App
+- Per-repo capture status rows: each installed repo shows last webhook received timestamp and an active/paused toggle
+- Pause/resume capture per repo — write `capture_paused: bool` into `ExperienceSource.config` per repo; webhook handler respects this flag
+- Error handling: surface `?github_error=callback_failed` and `?github_error=missing_params` query params from the callback route with user-friendly inline messages in the Sources page
+- Source filter in `PendingReviewPanel`: allow filtering by `source_type="github_pr"` to distinguish webhook-captured claims from manual scan claims
+
+### Phase 4c — Repo-to-Role Suggestion UX
+
+*Goal: surface the repo→role association suggestion computed at scan time so users can link repo groups to parent role groups without manual searching.*
+
+**Background:** The light scan already computes `suggested_parent_id` (UUID of a candidate `ExperienceGroup` with `group_type="role"`) and `suggestion_confidence` ("high" | "medium") and stores them in `repo_group.type_meta`. This is done by `_store_suggestion` in `github_app_scanner.py`. The data exists — it is just never shown to the user.
+
+**UX: inline suggestion chips on repo group cards (My Experience)**
+- Each repo group card in the My Experience timeline shows a dismissable suggestion chip if `type_meta.suggested_parent_id` is set and the group has no parent yet
+- Chip text: `"Associate with [Role Name]?"` (role name resolved from group ID)
+- Two actions: **"Link"** (one-click — writes `group.parent_id = suggested_parent_id`, clears suggestion fields from `type_meta`, re-renders card nested under the role) and **"Dismiss"** (sets `type_meta.suggestion_dismissed = true`, hides chip without linking)
+- Confidence threshold: only show chip when `suggestion_confidence` is `"high"`. Medium-confidence suggestions are silently dropped until the UX is validated.
+
+**Backend changes needed:**
+- `PATCH /experience/groups/{id}` — set `parent_id` field (already planned for group editing; may already exist)
+- `PATCH /experience/groups/{id}/dismiss-suggestion` — or fold into the general PATCH; sets `type_meta.suggestion_dismissed = true`
+
+**Frontend changes needed:**
+- `ExperienceManager` or `ExperienceGroupCard`: read `type_meta.suggested_parent_id` and `type_meta.suggestion_confidence`; conditionally render chip
+- Chip needs the role name — either resolve it client-side from already-loaded groups list, or include `suggested_parent_name` in `type_meta` at scan time (simpler: add to scan output)
+- Easiest path: add `suggested_parent_name: str | None` to `type_meta` in `_store_suggestion` so the frontend never needs a second lookup
+
+**Out of scope for this phase:** multi-suggestion ranking, confidence UI indicators, manual role search/select (that belongs in a general group-parenting UI).
+
+### Phase 4d — Claims Data Layer Cleanup
+
+*Goal: eliminate duplicated source-type enumeration so adding a new source type requires changes in exactly one place per tier, not a hunt across components.*
+
+**Problem:** every new source type currently requires parallel updates in at least five places:
+
+| Layer | Location | What breaks |
+|-------|----------|-------------|
+| Backend response | `_organize_experience_chunks()` in `experience.py` | new source silently dropped from API response |
+| Frontend type | `ExperienceClaimsResponse` in `types/index.ts` | TypeScript doesn't know the key exists |
+| Frontend flatten | `flattenClaims()` in `ProfileChunkEditor.tsx` | claims invisible in the table |
+| Frontend flatten | inline in `fetchClaimsForPanel()` in `ExperienceManager.tsx` | claims missing from merge-candidate list |
+| Frontend remove | `removeClaimFromResponse()` in `ProfileChunkEditor.tsx` | optimistic delete leaves stale claim in UI |
+
+Any one of these missed means a silent bug (not a type error, not a crash — the claim just disappears or doesn't update correctly, as seen with `github_pr`).
+
+**Fix — two changes:**
+
+**1. Centralize flatten and remove into `experience-claim-utils.tsx`**
+
+Move `flattenClaims` and `removeClaimFromResponse` out of `ProfileChunkEditor` into the shared utils file. Both `ProfileChunkEditor` and `ExperienceManager` import them. Adding a new source type requires updating those two functions in one file — the type error in `ExperienceClaimsResponse` acts as the compiler's reminder checklist.
+
+**2. Lift the `/claims` fetch into `ExperienceManager`, pass `data` as prop to `ProfileChunkEditor`**
+
+Currently both components independently fetch `/api/experience/claims` on load — two identical network requests. `ExperienceManager` should own the fetch and pass `data: ExperienceClaimsResponse` + `onRefresh: () => void` as props to `ProfileChunkEditor`. This eliminates the duplicate request and gives both components a single consistent view of the data.
+
+**Definition of done:**
+- `flattenClaims` and `removeClaimFromResponse` live only in `experience-claim-utils.tsx`
+- `ProfileChunkEditor` receives `data` as a prop, makes no fetch of its own
+- `ExperienceManager` fetches once; pending panel and claims table share the same response object
+- Adding a new source type requires: (1) backend `_organize_experience_chunks`, (2) `ExperienceClaimsResponse` type, (3) the two utility functions — four lines total, all compiler-guided
 
 ---
 

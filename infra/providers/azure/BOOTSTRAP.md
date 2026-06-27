@@ -134,8 +134,6 @@ Only non-secret identifiers and bootstrap credentials are passed as Terraform va
 | `cloudflare_zone_id` | Identifier | Cloudflare zone ID for tailord.app |
 | `github_app_id_prod` | Identifier | GitHub App ID for the prod Tailord app |
 | `github_app_id_staging` | Identifier | GitHub App ID for the staging Tailord app |
-| `github_app_client_id_prod` | Identifier | GitHub App Client ID for prod (from GitHub App settings) |
-| `github_app_client_id_staging` | Identifier | GitHub App Client ID for staging |
 | `db_password` | Bootstrap only | PostgreSQL **admin** password — used once at server creation. Ignored by Terraform on subsequent applies (`lifecycle.ignore_changes`). Source from 1Password; omit for routine applies. |
 | `grafana_enabled` | Toggle | `false` by default. Set to `true` when Grafana is running (managed via `observability.yml` workflow or local apply). Keep in sync with the `GRAFANA_ENABLED` repository variable. |
 
@@ -148,8 +146,6 @@ export TF_VAR_log_level="INFO"
 export TF_VAR_cloudflare_zone_id="..."
 export TF_VAR_github_app_id_prod="..."
 export TF_VAR_github_app_id_staging="..."
-export TF_VAR_github_app_client_id_prod="..."       # Client ID from GitHub App settings
-export TF_VAR_github_app_client_id_staging="..."    # staging App's Client ID
 export TF_VAR_db_password="..."          # only needed when creating/recreating the PG server
 export TF_VAR_grafana_enabled=false      # set to true when Grafana is running (keep in sync with GRAFANA_ENABLED repo variable)
 export CLOUDFLARE_API_TOKEN="..."        # Cloudflare provider credential — not a TF_VAR
@@ -215,10 +211,6 @@ az keyvault secret set --vault-name tailord-kv --name staging-github-app-private
 # GitHub App — webhook secrets (generate with: openssl rand -hex 32)
 az keyvault secret set --vault-name tailord-kv --name prod-github-app-webhook-secret    --value "<openssl rand -hex 32 output>"
 az keyvault secret set --vault-name tailord-kv --name staging-github-app-webhook-secret --value "<separate value for staging>"
-
-# GitHub App — OAuth client secrets (from GitHub App → Client secrets)
-az keyvault secret set --vault-name tailord-kv --name prod-github-app-client-secret    --value "<client secret from GitHub App settings>"
-az keyvault secret set --vault-name tailord-kv --name staging-github-app-client-secret --value "<client secret for staging App>"
 
 # Field encryption keys (Fernet — one per environment, never shared between envs)
 # Generate each with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -535,7 +527,8 @@ What is shared between prod and staging, and what is fully isolated:
 2. **App name**: e.g. "Tailord" (or "Tailord Staging" for the staging App)
 3. **Homepage URL**: `https://tailord.app`
 4. **Callback URL**: `https://tailord.app/api/auth/github/callback`
-   - Add `https://dev.tailord.app/api/auth/github/callback` for local dev
+   - Add `https://dev.tailord.app/api/auth/github/callback` for local dev (cloudflared tunnel)
+   - Add `http://localhost:3000/api/auth/github/callback` for local dev (direct)
 5. **Webhook URL**: `https://tailord.app/api/integrations/github/webhook`
    - For staging: `https://staging.tailord.app/api/integrations/github/webhook`
    - For local dev: `https://dev.tailord.app/api/integrations/github/webhook`
@@ -543,10 +536,11 @@ What is shared between prod and staging, and what is fully isolated:
 7. **Repository Permissions**: Pull requests: Read-only, Contents: Read-only, Metadata: Read-only
 8. **Subscribe to events**: Pull request
 9. **Where can this be installed**: "Only on this account"
-10. Enable **"Expire user authorization tokens"** and **"Request user authorization (OAuth) during installation"**
-11. Click **Create GitHub App** — note the **App ID** (integer) and **Client ID** (from the App settings page)
-12. Under **Client secrets** → **Generate a new client secret** — upload to Key Vault
-13. Under **Private keys** → **Generate a private key** → download `.pem` file and upload to Key Vault
+10. Do **not** enable "Request user authorization (OAuth) during installation" — Tailord uses
+    Installation Access Tokens scoped to repos the user grants at install time. No broader
+    OAuth scope is needed or stored.
+11. Click **Create GitHub App** — note the **App ID** (integer) from the App settings page
+12. Under **Private keys** → **Generate a private key** → download `.pem` file and upload to Key Vault
 
 ### Key Vault secrets
 
@@ -558,27 +552,17 @@ These are uploaded in step 3a:
 | `staging-github-app-private-key` | PEM content for staging App |
 | `prod-github-app-webhook-secret` | `openssl rand -hex 32` output |
 | `staging-github-app-webhook-secret` | Separate value for staging |
-| `prod-github-app-client-secret` | From GitHub App → Client secrets |
-| `staging-github-app-client-secret` | From staging GitHub App |
 
-### Terraform variables
+The `github_app_id_*` Terraform variables already exist (set in step 3 variables table).
 
-Add to `.env.azure`:
-
-```bash
-export TF_VAR_github_app_client_id_prod="<Client ID from GitHub App settings>"
-export TF_VAR_github_app_client_id_staging="<staging App Client ID>"
-```
-
-The `github_app_id_*` variables already exist.
-
-### Installation ID
+### Per-user installation IDs
 
 The `installation_id` for each user is stored automatically when they install the GitHub App
-via the Tailord UI. The OAuth callback (`GET /api/auth/github/callback`) exchanges the
-authorization code and writes the `installation_id` to `UserIntegration` and `ExperienceSource`.
+via the Tailord UI. The callback (`GET /api/auth/github/callback`) writes the `installation_id`
+to `UserIntegration` and `ExperienceSource` and enqueues the initial repo scan.
 No manual SQL step is needed. There is no global installation ID env var — all GitHub operations
-are scoped to individual user installations.
+are scoped to individual user installations using per-installation access tokens derived from
+the App's private key.
 
 ### Local dev (cloudflared tunnel)
 

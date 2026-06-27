@@ -59,9 +59,10 @@ variable "github_actions_sp_object_id" {
 
 # ── GitHub App ────────────────────────────────────────────────────────────────
 # App IDs are non-sensitive identifiers.
-# Private keys and secrets are stored in Key Vault directly (see keyvault.tf) —
+# Private keys and webhook secrets are stored in Key Vault directly (see keyvault.tf) —
 # never passed as Terraform variables.
-# Installation IDs are stored per-user in ExperienceSource.config via OAuth callback.
+# Installation IDs are stored per-user in UserIntegration/ExperienceSource via the
+# installation callback — no global installation ID and no OAuth client credentials.
 
 variable "github_app_id_prod" {
   description = "GitHub App ID for the Tailord prod app"
@@ -70,16 +71,6 @@ variable "github_app_id_prod" {
 
 variable "github_app_id_staging" {
   description = "GitHub App ID for the Tailord staging app"
-  type        = string
-}
-
-variable "github_app_client_id_prod" {
-  description = "GitHub App Client ID for the prod Tailord app (from GitHub App settings)"
-  type        = string
-}
-
-variable "github_app_client_id_staging" {
-  description = "GitHub App Client ID for the staging Tailord app (from GitHub App settings)"
   type        = string
 }
 

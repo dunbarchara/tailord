@@ -146,6 +146,7 @@ export function ExperienceManager({
       }
       if (data.github) data.github.repos.forEach((r) => active.push(...r.chunks));
       active.push(
+        ...(data.github_pr ?? []),
         ...(data.user_input ?? []),
         ...(data.gap_response ?? []),
         ...(data.partial_response ?? []),
