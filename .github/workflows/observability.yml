@@ -9,6 +9,8 @@ name: Observability — Grafana lifecycle
 on:
   workflow_dispatch: {}
 
+permissions: {}
+
 # CI Grafana auth is disabled to keep billing at 1 active user (the developer's own
 # Azure AD account). Deploy dashboards locally instead:
 #   cd infra/providers/azure && bash scripts/deploy-dashboards.sh
