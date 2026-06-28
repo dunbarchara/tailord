@@ -46,6 +46,7 @@ def _pr_payload(
         },
         "repository": {
             "name": "my-repo",
+            "full_name": "owner/my-repo",
             "owner": {"login": "owner"},
         },
     }
@@ -177,7 +178,11 @@ def test_happy_path_creates_capture_signal(client, db, approved_user):
         db,
         approved_user,
         source_type="github",
-        config={"username": "testuser", "installation_id": "123"},
+        config={
+            "username": "testuser",
+            "installation_id": "123",
+            "repo_config": {"owner/my-repo": {"enabled": True, "pr_capture": True}},
+        },
     )
 
     pr_url = "https://github.com/owner/repo/pull/7"

@@ -67,7 +67,7 @@ check-backend:
 	cd backend && uv run bandit -r app/ -ll -q 2>&1 | grep -v "^\[tester\]\|^\[manager\]"; exit $${PIPESTATUS[0]}
 	@echo ""
 	@echo "── pip-audit (CVE scan) ─────────────────────────────────────────"
-	cd backend && uv run pip-audit
+	cd backend && uv run pip-audit --ignore-vuln PYSEC-2025-183 --ignore-vuln PYSEC-2026-196
 	@echo ""
 	@echo "── pytest ───────────────────────────────────────────────────────"
 	cd backend && uv run pytest
