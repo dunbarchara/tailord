@@ -64,8 +64,9 @@ def _setup_metrics(settings) -> None:
 
         credential = ManagedIdentityCredential(client_id=settings.azure_client_id)
 
+        AzureAMPExporter = _make_azure_amp_exporter_class()
         reader = PeriodicExportingMetricReader(
-            _AzureAMPExporter(endpoint=settings.amp_endpoint, credential=credential),
+            AzureAMPExporter(endpoint=settings.amp_endpoint, credential=credential),
             export_interval_millis=60_000,  # push every 60 seconds
         )
         provider = MeterProvider(resource=resource, metric_readers=[reader])
@@ -76,45 +77,59 @@ def _setup_metrics(settings) -> None:
     metrics.set_meter_provider(provider)
 
 
-class _AzureAMPExporter:
-    """OTLP metric exporter with Azure AD managed identity auth for AMP.
+def _make_azure_amp_exporter_class():
+    """Build _AzureAMPExporter inheriting from MetricExporter at call time.
 
-    Calls credential.get_token() before each export. azure-identity caches the
-    token internally and silently refreshes it ~5 minutes before expiry, so this
-    adds negligible overhead per export cycle.
-
-    A new inner OTLPMetricExporter is created only when the token changes
-    (approximately once per hour).
+    Deferred so telemetry.py is importable even if OTel SDK isn't installed
+    (e.g. stripped test images). Called once in _setup_metrics when AMP is needed.
     """
+    from opentelemetry.sdk.metrics.export import MetricExporter
 
-    def __init__(self, endpoint: str, credential) -> None:
-        self._endpoint = endpoint
-        self._credential = credential
-        self._inner = None
-        self._token_expiry: int = 0
+    class _AzureAMPExporter(MetricExporter):
+        """OTLP metric exporter with Azure AD managed identity auth for AMP.
 
-    def _get_inner(self):
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+        Calls credential.get_token() before each export. azure-identity caches the
+        token internally and silently refreshes it ~5 minutes before expiry, so this
+        adds negligible overhead per export cycle.
 
-        token = self._credential.get_token("https://monitor.azure.com/.default")
-        if token.expires_on != self._token_expiry or self._inner is None:
-            self._token_expiry = token.expires_on
-            self._inner = OTLPMetricExporter(
-                endpoint=self._endpoint,
-                headers={"Authorization": f"Bearer {token.token}"},
-            )
-        return self._inner
+        A new inner OTLPMetricExporter is created only when the token changes
+        (approximately once per hour).
 
-    def export(self, metrics_data, timeout_millis=10_000, **kwargs):
-        return self._get_inner().export(metrics_data, timeout_millis=timeout_millis, **kwargs)
+        Inherits MetricExporter so PeriodicExportingMetricReader can read
+        _preferred_temporality/_preferred_aggregation from the base class __init__.
+        """
 
-    def force_flush(self, timeout_millis=10_000):
-        return True
+        def __init__(self, endpoint: str, credential) -> None:
+            super().__init__()
+            self._endpoint = endpoint
+            self._credential = credential
+            self._inner = None
+            self._token_expiry: int = 0
 
-    def shutdown(self, timeout_millis=30_000, **kwargs):
-        if self._inner:
-            return self._inner.shutdown(timeout_millis=timeout_millis, **kwargs)
-        return True
+        def _get_inner(self):
+            from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+
+            token = self._credential.get_token("https://monitor.azure.com/.default")
+            if token.expires_on != self._token_expiry or self._inner is None:
+                self._token_expiry = token.expires_on
+                self._inner = OTLPMetricExporter(
+                    endpoint=self._endpoint,
+                    headers={"Authorization": f"Bearer {token.token}"},
+                )
+            return self._inner
+
+        def export(self, metrics_data, timeout_millis=10_000, **kwargs):
+            return self._get_inner().export(metrics_data, timeout_millis=timeout_millis, **kwargs)
+
+        def force_flush(self, timeout_millis=10_000):
+            return True
+
+        def shutdown(self, timeout_millis=30_000, **kwargs):
+            if self._inner:
+                return self._inner.shutdown(timeout_millis=timeout_millis, **kwargs)
+            return True
+
+    return _AzureAMPExporter
 
 
 def get_tracer(name: str) -> trace.Tracer:
