@@ -6,14 +6,17 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
-from app.api import admin, experience, integrations, notion, resume, tailorings, users
-from app.clients.llm_client import validate_llm_config
-from app.logging import setup_logging
-from app.metrics import HTTP_REQUEST_DURATION_MS, HTTP_REQUESTS_TOTAL
-from app.middleware.correlation import CorrelationIdMiddleware
+# Telemetry must be configured before any module that creates OTel metric
+# instruments at import time (metrics.py, and api modules that import it).
 from app.telemetry import setup_telemetry
 
 setup_telemetry()
+
+from app.api import admin, experience, integrations, notion, resume, tailorings, users  # noqa: E402
+from app.clients.llm_client import validate_llm_config  # noqa: E402
+from app.logging import setup_logging  # noqa: E402
+from app.metrics import HTTP_REQUEST_DURATION_MS, HTTP_REQUESTS_TOTAL  # noqa: E402
+from app.middleware.correlation import CorrelationIdMiddleware  # noqa: E402
 
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE

@@ -393,37 +393,32 @@ jobs:
         fi
 
   # ---------------------------------------------------------------------------
-  # DEPLOY GRAFANA DASHBOARDS — push dashboard JSONs to Azure Managed Grafana
-  # Only runs when GRAFANA_ENABLED repository variable is 'true'.
-  # Authenticates via Azure AD OIDC token (no static service account token needed).
+  # DEPLOY GRAFANA DASHBOARDS — disabled: CI Grafana auth costs an extra active-user
+  # seat. Dashboards are deployed locally via scripts/deploy-dashboards.sh instead.
+  # Re-enable (and restore gha_grafana_admin role in monitoring.tf) when scale justifies it.
   # ---------------------------------------------------------------------------
-  deploy-grafana-dashboards:
-
-    name: Deploy Grafana Dashboards
-    runs-on: ubuntu-latest
-    needs: [smoke-test-prod]
-    if: vars.GRAFANA_ENABLED == 'true'
-    environment: production-azure
-
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-    - uses: actions/checkout@v6
-
-    - name: Azure login (OIDC)
-      uses: azure/login@v3
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-    - name: Deploy dashboards
-      env:
-        GRAFANA_URL: ${{ vars.GRAFANA_URL }}
-      run: |
-        bash infra/providers/azure/scripts/deploy-dashboards.sh
+  # deploy-grafana-dashboards:
+  #   name: Deploy Grafana Dashboards
+  #   runs-on: ubuntu-latest
+  #   needs: [smoke-test-prod]
+  #   if: vars.GRAFANA_ENABLED == 'true'
+  #   environment: production-azure
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #   - uses: actions/checkout@v6
+  #   - name: Azure login (OIDC)
+  #     uses: azure/login@v3
+  #     with:
+  #       client-id: ${{ secrets.AZURE_CLIENT_ID }}
+  #       tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+  #       subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  #   - name: Deploy dashboards
+  #     env:
+  #       GRAFANA_URL: ${{ vars.GRAFANA_URL }}
+  #     run: |
+  #       bash infra/providers/azure/scripts/deploy-dashboards.sh
 
   # ---------------------------------------------------------------------------
   # PURGE ACR — clean up old images after successful prod deploy

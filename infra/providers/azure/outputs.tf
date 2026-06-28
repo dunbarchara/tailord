@@ -8,6 +8,6 @@ output "staging_frontend_url" {
 }
 
 output "grafana_endpoint" {
-  value       = length(azurerm_dashboard_grafana.main) > 0 ? "https://${azurerm_dashboard_grafana.main[0].endpoint}" : ""
+  value       = length(azurerm_dashboard_grafana.main) > 0 ? azurerm_dashboard_grafana.main[0].endpoint : ""
   description = "Azure Managed Grafana workspace URL. Empty when grafana_enabled=false."
 }

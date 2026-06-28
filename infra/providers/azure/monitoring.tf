@@ -93,14 +93,16 @@ resource "azurerm_role_assignment" "grafana_log_analytics_reader" {
   principal_id         = azurerm_dashboard_grafana.main[0].identity[0].principal_id
 }
 
-# Grant the GitHub Actions OIDC SP Grafana Admin so CI can call the Grafana API
-# (deploy dashboards) without needing a static service account token.
-resource "azurerm_role_assignment" "gha_grafana_admin" {
-  count                = var.grafana_enabled ? 1 : 0
-  scope                = azurerm_dashboard_grafana.main[0].id
-  role_definition_name = "Grafana Admin"
-  principal_id         = var.github_actions_sp_object_id
-}
+# CI dashboard deployment via OIDC is disabled to keep billing at 1 active user.
+# Dashboard updates are done locally via scripts/bootstrap-grafana.sh or deploy-dashboards.sh.
+# Re-enable when Grafana usage grows and the per-user cost is justified.
+#
+# resource "azurerm_role_assignment" "gha_grafana_admin" {
+#   count                = var.grafana_enabled ? 1 : 0
+#   scope                = azurerm_dashboard_grafana.main[0].id
+#   role_definition_name = "Grafana Admin"
+#   principal_id         = var.github_actions_sp_object_id
+# }
 
 # -----------------------------
 # ACTION GROUP

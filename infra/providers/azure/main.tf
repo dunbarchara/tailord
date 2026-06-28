@@ -289,6 +289,10 @@ resource "azurerm_container_app" "backend_prod" {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
       }
+      env {
+        name  = "AMP_ENDPOINT"
+        value = local.amp_otlp_endpoint
+      }
     }
   }
 
@@ -466,6 +470,10 @@ resource "azurerm_container_app" "backend_staging" {
       env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
+      }
+      env {
+        name  = "AMP_ENDPOINT"
+        value = local.amp_otlp_endpoint
       }
     }
   }

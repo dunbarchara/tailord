@@ -66,3 +66,11 @@ resource "azurerm_role_assignment" "app_llm_user" {
   role_definition_name = "Cognitive Services OpenAI User"
   principal_id         = azurerm_user_assigned_identity.apps.principal_id
 }
+
+# Azure Managed Prometheus — allows the Alloy sidecar in Container Apps to
+# remote_write custom Prometheus metrics (http_*, llm_*, tailoring_*) to AMP.
+resource "azurerm_role_assignment" "app_amp_metrics_publisher" {
+  scope                = azurerm_monitor_workspace.main.id
+  role_definition_name = "Monitoring Metrics Publisher"
+  principal_id         = azurerm_user_assigned_identity.apps.principal_id
+}

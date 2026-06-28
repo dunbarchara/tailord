@@ -2,12 +2,12 @@
 # bootstrap-grafana.sh — one-time Grafana setup after "terraform apply" or "observability enable"
 #
 # Automates BOOTSTRAP.md step 8:
-#   - Creates a Grafana service account (useful for local Grafana API access)
 #   - Publishes GRAFANA_URL as a repository variable for CI
 #   - Configures tailord-postgres-prod and tailord-postgres-staging datasources
 #
-# CI (observability.yml) runs equivalent logic inline using Azure AD OIDC tokens.
-# Run this script locally after spinning up Grafana via "terraform apply" or the workflow.
+# Uses the 'amg' Azure CLI extension (az grafana ...) for all Grafana API calls.
+# This avoids Azure AD token audience issues (region-specific) and does not create
+# any service accounts — no extra billed users beyond your own Azure AD identity.
 #
 # Usage:
 #   cd infra/providers/azure && bash scripts/bootstrap-grafana.sh
@@ -15,13 +15,14 @@
 # Override the Grafana URL (skip terraform output):
 #   GRAFANA_URL=https://... bash scripts/bootstrap-grafana.sh
 #
-# Prerequisites: az (logged in), gh (logged in), jq, python3, terraform (init'd + applied)
-# Safe to re-run — service account and datasources are upserted, not duplicated.
+# Prerequisites: az (logged in, amg extension auto-installed), gh (logged in), jq, python3, terraform (init'd + applied)
+# Safe to re-run — datasources are upserted, not duplicated.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+RESOURCE_GROUP="tailord"
 
 # ── colour helpers ─────────────────────────────────────────────────────────────
 green()  { printf '\033[0;32m%s\033[0m\n' "$*"; }
@@ -32,7 +33,7 @@ step()   { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 # ── prerequisites ──────────────────────────────────────────────────────────────
 step "Checking prerequisites"
 
-for cmd in az gh jq curl python3 terraform; do
+for cmd in az gh jq python3 terraform; do
   if ! command -v "$cmd" &>/dev/null; then
     red "Missing required tool: $cmd"
     exit 1
@@ -41,6 +42,17 @@ done
 
 az account show &>/dev/null || { red "Not logged in to Azure CLI. Run: az login"; exit 1; }
 gh auth status &>/dev/null  || { red "Not logged in to GitHub CLI. Run: gh auth login"; exit 1; }
+
+# The 'amg' extension provides 'az grafana ...' commands that handle Grafana data-plane
+# auth internally — bypassing the region-specific token audience issue.
+# Does not create service accounts — billing stays at 1 active user (your Azure AD identity).
+if ! az extension show --name amg &>/dev/null; then
+  yellow "Installing 'amg' Azure CLI extension (one-time)…"
+  az extension add --name amg --yes
+  green "Extension installed."
+else
+  green "Azure CLI 'amg' extension present."
+fi
 
 green "All prerequisites satisfied."
 
@@ -61,9 +73,33 @@ else
   fi
 fi
 
-# Strip trailing slash if present
 GRAFANA_URL="${GRAFANA_URL%/}"
 green "Grafana URL: $GRAFANA_URL"
+
+# Derive Azure resource name — match by endpoint URL, fall back to first instance in RG
+GRAFANA_NAME=$(az grafana list \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "[?properties.endpoint=='${GRAFANA_URL}/'].name | [0]" -o tsv 2>/dev/null || echo "")
+
+if [[ -z "$GRAFANA_NAME" ]]; then
+  GRAFANA_NAME=$(az grafana list \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "[0].name" -o tsv 2>/dev/null || echo "")
+fi
+
+if [[ -z "$GRAFANA_NAME" ]]; then
+  red "Could not resolve Grafana resource name in resource group '${RESOURCE_GROUP}'."
+  red "Ensure Terraform has been applied with grafana_enabled=true."
+  exit 1
+fi
+
+green "Grafana resource name: $GRAFANA_NAME"
+
+# ── verify Grafana is reachable ────────────────────────────────────────────────
+step "Verifying Grafana is reachable"
+
+az grafana show --name "$GRAFANA_NAME" --resource-group "$RESOURCE_GROUP" -o none
+green "Grafana instance '${GRAFANA_NAME}' found and accessible."
 
 # ── publish GRAFANA_URL as a repository variable ───────────────────────────────
 step "Publishing GRAFANA_URL as a GitHub repository variable"
@@ -73,7 +109,7 @@ GH_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 set_gh_variable() {
   local name="$1" value="$2"
   # Try PATCH (update existing), fall back to POST (create new)
-  HTTP=$(curl -sf -o /dev/null -w "%{http_code}" -X PATCH \
+  HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH \
     -H "Authorization: Bearer $(gh auth token)" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${GH_REPO}/actions/variables/${name}" \
@@ -92,79 +128,15 @@ set_gh_variable() {
 
 set_gh_variable "GRAFANA_URL" "$GRAFANA_URL"
 
-# ── Azure AD token for Grafana data-plane API ──────────────────────────────────
-step "Acquiring Azure AD token for Grafana API"
-
-GRAFANA_TOKEN=$(az account get-access-token \
-  --resource "https://grafana.azure.com" \
-  --query accessToken -o tsv)
-
-grafana_api() {
-  local method="$1" path="$2"
-  shift 2
-  curl -s -X "$method" "${GRAFANA_URL}${path}" \
-    -H "Authorization: Bearer ${GRAFANA_TOKEN}" \
-    -H "Content-Type: application/json" \
-    "$@"
-}
-
-# Verify auth works
-if ! grafana_api GET "/api/health" | jq -e '.database == "ok"' &>/dev/null; then
-  red "Grafana API health check failed — token may be invalid or instance not ready."
-  exit 1
-fi
-
-green "Grafana API reachable and healthy."
-
-# ── service account (for local API access) ────────────────────────────────────
-step "Configuring Grafana service account"
-
-SA_NAME="github-actions"
-
-EXISTING_SA=$(grafana_api GET "/api/serviceaccounts/search?query=${SA_NAME}" \
-  | jq -r '.serviceAccounts[] | select(.name == "'"$SA_NAME"'") | .id // empty' 2>/dev/null | head -1)
-
-if [[ -n "$EXISTING_SA" ]]; then
-  yellow "Service account '${SA_NAME}' already exists (id=${EXISTING_SA}) — skipping creation."
-  SA_ID="$EXISTING_SA"
-else
-  SA_RESPONSE=$(grafana_api POST "/api/serviceaccounts" \
-    -d "{\"name\":\"${SA_NAME}\",\"role\":\"Admin\"}")
-  SA_ID=$(echo "$SA_RESPONSE" | jq -r '.id')
-  if [[ -z "$SA_ID" || "$SA_ID" == "null" ]]; then
-    red "Failed to create service account. Response:"
-    echo "$SA_RESPONSE"
-    exit 1
-  fi
-  green "Created service account '${SA_NAME}' (id=${SA_ID})."
-fi
-
-# Note: CI workflows use Azure AD OIDC tokens to authenticate to Grafana, not this
-# service account token. The token below is for local API access only — keep it in
-# your password manager if you need it, or generate a new one next time.
-TOKEN_NAME="local-$(date +%Y%m%d-%H%M%S)"
-TOKEN_RESPONSE=$(grafana_api POST "/api/serviceaccounts/${SA_ID}/tokens" \
-  -d "{\"name\":\"${TOKEN_NAME}\"}")
-SA_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.key // empty')
-
-if [[ -n "$SA_TOKEN" ]]; then
-  green "Created local service account token '${TOKEN_NAME}'."
-  yellow "Save this token in your password manager if needed for local Grafana API access:"
-  echo "$SA_TOKEN"
-else
-  yellow "Could not create token (may already exist for today). Generate one manually from the Grafana UI if needed."
-fi
-
 # ── PostgreSQL datasources ─────────────────────────────────────────────────────
 step "Configuring PostgreSQL datasources"
 
 PG_FQDN=$(az postgres flexible-server show \
-  --resource-group tailord \
+  --resource-group "$RESOURCE_GROUP" \
   --name tailord-pg \
   --query fullyQualifiedDomainName -o tsv)
 
 green "PostgreSQL host: ${PG_FQDN}"
-
 yellow "Fetching credentials from Key Vault..."
 
 PROD_DB_URL=$(az keyvault secret show \
@@ -187,8 +159,16 @@ print(u.password)
 EOF
 }
 
-read -r PROD_DB_USER PROD_DB_PASS <<< "$(parse_db_url "$PROD_DB_URL")"
-read -r STAGING_DB_USER STAGING_DB_PASS <<< "$(parse_db_url "$STAGING_DB_URL")"
+# bash 3.2 (macOS default) has no mapfile — read lines into array manually
+_creds=()
+while IFS= read -r line; do _creds+=("$line"); done < <(parse_db_url "$PROD_DB_URL")
+PROD_DB_USER="${_creds[0]:-}"
+PROD_DB_PASS="${_creds[1]:-}"
+
+_creds=()
+while IFS= read -r line; do _creds+=("$line"); done < <(parse_db_url "$STAGING_DB_URL")
+STAGING_DB_USER="${_creds[0]:-}"
+STAGING_DB_PASS="${_creds[1]:-}"
 
 upsert_datasource() {
   local ds_name="$1" db_name="$2" db_user="$3" db_pass="$4"
@@ -209,6 +189,7 @@ upsert_datasource() {
       user:   $user,
       secureJsonData: { password: $pass },
       jsonData: {
+        database:        $db,
         sslmode:         "require",
         postgresVersion: 1600,
         timescaledb:     false
@@ -216,27 +197,25 @@ upsert_datasource() {
       isDefault: false
     }')
 
-  EXISTING_DS=$(grafana_api GET "/api/datasources/name/${ds_name}" 2>/dev/null \
-    | jq -r '.id // empty')
-
-  if [[ -n "$EXISTING_DS" ]]; then
-    yellow "Datasource '${ds_name}' exists (id=${EXISTING_DS}) — updating."
-    grafana_api PUT "/api/datasources/${EXISTING_DS}" -d "$payload" > /dev/null
+  if az grafana data-source show \
+      --name "$GRAFANA_NAME" \
+      --resource-group "$RESOURCE_GROUP" \
+      --data-source "$ds_name" &>/dev/null 2>&1; then
+    yellow "Datasource '${ds_name}' exists — updating."
+    az grafana data-source update \
+      --name "$GRAFANA_NAME" \
+      --resource-group "$RESOURCE_GROUP" \
+      --data-source "$ds_name" \
+      --definition "$payload" > /dev/null
   else
     yellow "Creating datasource '${ds_name}'."
-    grafana_api POST "/api/datasources" -d "$payload" > /dev/null
+    az grafana data-source create \
+      --name "$GRAFANA_NAME" \
+      --resource-group "$RESOURCE_GROUP" \
+      --definition "$payload" > /dev/null
   fi
 
-  local ds_uid
-  ds_uid=$(grafana_api GET "/api/datasources/name/${ds_name}" | jq -r '.uid')
-  local test_result
-  test_result=$(grafana_api GET "/api/datasources/uid/${ds_uid}/health" | jq -r '.status // empty')
-
-  if [[ "$test_result" == "OK" ]]; then
-    green "Datasource '${ds_name}': connection OK."
-  else
-    yellow "Datasource '${ds_name}' saved but health check returned: '${test_result}'. Verify manually in Grafana."
-  fi
+  green "Datasource '${ds_name}' configured."
 }
 
 upsert_datasource "tailord-postgres-prod"    "tailord_prod"    "$PROD_DB_USER"    "$PROD_DB_PASS"
@@ -250,7 +229,7 @@ set_gh_variable "GRAFANA_ENABLED" "true"
 # ── deploy dashboards ─────────────────────────────────────────────────────────
 step "Deploying dashboards"
 
-GRAFANA_URL="$GRAFANA_URL" bash "$SCRIPT_DIR/deploy-dashboards.sh"
+GRAFANA_URL="$GRAFANA_URL" GRAFANA_NAME="$GRAFANA_NAME" bash "$SCRIPT_DIR/deploy-dashboards.sh"
 
 # ── done ───────────────────────────────────────────────────────────────────────
 step "Bootstrap complete"
