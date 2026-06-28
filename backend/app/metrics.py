@@ -1,207 +1,202 @@
-from prometheus_client import Counter, Gauge, Histogram
+from opentelemetry import metrics as otel_metrics
 
 from app.config import settings
 
+# Meter is retrieved from the global MeterProvider.
+# setup_telemetry() in telemetry.py must be called before this module is imported
+# so that the real provider (PrometheusMetricReader for local, OTLP for prod) is set.
+_meter = otel_metrics.get_meter("tailord.backend", version="1.0")
+
+
+class _BoundMetric:
+    """Metric with pre-bound attributes (environment + any extra labels)."""
+
+    def __init__(self, instrument, attrs: dict) -> None:
+        self._instrument = instrument
+        self._attrs = attrs
+
+    def inc(self, amount=1) -> None:
+        self._instrument.add(amount, self._attrs)
+
+    def dec(self, amount=1) -> None:
+        # Only valid for UpDownCounter instruments (Gauges); Counter instruments
+        # must never be decremented per the OTel monotonic-counter invariant.
+        self._instrument.add(-amount, self._attrs)
+
+    def observe(self, amount) -> None:
+        self._instrument.record(amount, self._attrs)
+
 
 class _EnvMetric:
-    """Wraps a prometheus_client metric to inject a constant environment label.
+    """Wraps an OTel metric instrument to inject environment label automatically.
 
-    Callsites do not need to change — .labels(**kwargs) injects environment
-    automatically, and bare .inc()/.dec()/.observe() calls are routed through
-    the pre-bound label child.
+    Callsites are identical to the previous prometheus_client wrapper:
+        METRIC.inc() / .dec() / .observe()
+        METRIC.labels(method="GET", status_code=200).inc()
     """
 
-    def __init__(self, metric):
-        self._m = metric
+    def __init__(self, instrument) -> None:
+        self._instrument = instrument
 
-    def _bound(self):
-        return self._m.labels(environment=settings.environment)
+    def _bound(self) -> _BoundMetric:
+        return _BoundMetric(self._instrument, {"environment": settings.environment})
 
-    def labels(self, **kwargs):
-        return self._m.labels(environment=settings.environment, **kwargs)
+    def labels(self, **kwargs) -> _BoundMetric:
+        return _BoundMetric(self._instrument, {"environment": settings.environment, **kwargs})
 
-    def inc(self, amount=1):
+    def inc(self, amount=1) -> None:
         self._bound().inc(amount)
 
-    def dec(self, amount=1):
+    def dec(self, amount=1) -> None:
         self._bound().dec(amount)
 
-    def observe(self, amount):
+    def observe(self, amount) -> None:
         self._bound().observe(amount)
 
 
 # --- HTTP ---
 HTTP_REQUESTS_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "http_requests_total",
-        "Total HTTP requests",
-        ["environment", "method", "endpoint", "status_code"],
+        description="Total HTTP requests",
     )
 )
 HTTP_REQUEST_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "http_request_duration_ms",
-        "HTTP request duration in milliseconds",
-        ["environment", "method", "endpoint"],
-        buckets=[10, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000],
+        description="HTTP request duration in milliseconds",
+        unit="ms",
     )
 )
 
 # --- LLM ---
 LLM_CALL_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "llm_call_duration_ms",
-        "LLM call duration in milliseconds",
-        ["environment", "model", "prompt_type"],
-        buckets=[100, 250, 500, 1000, 2000, 5000, 10000, 30000, 60000],
+        description="LLM call duration in milliseconds",
+        unit="ms",
     )
 )
 LLM_TOKENS_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "llm_tokens_total",
-        "LLM tokens consumed",
-        ["environment", "model", "prompt_type", "direction"],  # direction: input | output
+        description="LLM tokens consumed",
     )
 )
 LLM_ERRORS_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "llm_errors_total",
-        "LLM call failures",
-        [
-            "environment",
-            "model",
-            "prompt_type",
-            "error_type",
-        ],  # error_type: validation | timeout | unknown
+        description="LLM call failures",
     )
 )
 LLM_RETRIES_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "llm_retries_total",
-        "LLM retry attempts",
-        ["environment", "model", "prompt_type"],
+        description="LLM retry attempts",
     )
 )
 LLM_CACHED_TOKENS_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "llm_cached_tokens_total",
-        "LLM prompt tokens served from cache",
-        ["environment", "model", "prompt_type"],
+        description="LLM prompt tokens served from cache",
     )
 )
 
 # --- Embeddings ---
 EMBEDDING_CALL_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "embedding_call_duration_ms",
-        "Embedding API call duration in milliseconds",
-        ["environment", "model", "embed_context"],
-        buckets=[50, 100, 250, 500, 1000, 2000, 5000],
+        description="Embedding API call duration in milliseconds",
+        unit="ms",
     )
 )
 EMBEDDING_TOKENS_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "embedding_tokens_total",
-        "Embedding tokens consumed",
-        ["environment", "model", "embed_context"],
+        description="Embedding tokens consumed",
     )
 )
 
 # --- Tailoring pipeline ---
 TAILORING_GENERATIONS_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "tailoring_generations_total",
-        "Tailoring generation completions",
-        ["environment", "status", "matching_mode"],  # status: success | error
+        description="Tailoring generation completions",
     )
 )
 TAILORING_ACTIVE_GENERATIONS = _EnvMetric(
-    Gauge(
+    _meter.create_up_down_counter(
         "tailoring_active_generations",
-        "Currently running tailoring generation tasks",
-        ["environment"],
+        description="Currently running tailoring generation tasks",
     )
 )
 TAILORING_GENERATION_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "tailoring_generation_duration_ms",
-        "Total tailoring generation duration in milliseconds",
-        ["environment"],
-        buckets=[1000, 5000, 10000, 30000, 60000, 120000, 300000],
+        description="Total tailoring generation duration in milliseconds",
+        unit="ms",
     )
 )
 TAILORING_PHASE_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "tailoring_phase_duration_ms",
-        "Duration of each tailoring pipeline phase in milliseconds",
-        ["environment", "phase"],  # extract_job | enrich_chunks | generate_tailoring | gap_analysis
-        buckets=[100, 500, 1000, 5000, 10000, 30000, 60000],
+        description="Duration of each tailoring pipeline phase in milliseconds",
+        unit="ms",
     )
 )
 
 # --- Experience processing ---
 EXPERIENCE_PROCESSING_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "experience_processing_total",
-        "Experience processing completions",
-        ["environment", "status"],  # success | error
+        description="Experience processing completions",
     )
 )
 EXPERIENCE_PROCESSING_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "experience_processing_duration_ms",
-        "Experience processing duration in milliseconds",
-        ["environment"],
-        buckets=[500, 1000, 5000, 10000, 30000, 60000],
+        description="Experience processing duration in milliseconds",
+        unit="ms",
     )
 )
 
 # --- Experience processing — phase-level ---
 EXPERIENCE_PHASE_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "experience_phase_duration_ms",
-        "Duration of each experience processing phase in milliseconds",
-        ["environment", "phase"],  # extracting | analyzing | chunking
-        buckets=[100, 500, 1000, 5000, 10000, 30000, 60000],
+        description="Duration of each experience processing phase in milliseconds",
+        unit="ms",
     )
 )
 
 # --- GitHub enrichment ---
 GITHUB_ENRICHMENT_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "github_enrichment_total",
-        "GitHub enrichment completions",
-        ["environment", "status"],  # success | error | partial
+        description="GitHub enrichment completions",
     )
 )
 GITHUB_ENRICHMENT_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "github_enrichment_duration_ms",
-        "Total GitHub enrichment duration in milliseconds",
-        ["environment"],
-        buckets=[1000, 5000, 10000, 30000, 60000, 120000],
+        description="Total GitHub enrichment duration in milliseconds",
+        unit="ms",
     )
 )
 
 # --- Job scraping ---
 JOB_SCRAPE_TOTAL = _EnvMetric(
-    Counter(
+    _meter.create_counter(
         "job_scrape_total",
-        "Job URL scrape attempts by method and outcome",
-        [
-            "environment",
-            "method",  # ats | httpx | playwright | firecrawl
-            "outcome",  # success | spa_fallthrough | error_fallthrough | timeout | error
-        ],
+        description="Job URL scrape attempts by method and outcome",
     )
 )
 
 # --- Gap response ---
 GAP_RESPONSE_DURATION_MS = _EnvMetric(
-    Histogram(
+    _meter.create_histogram(
         "gap_response_duration_ms",
-        "Gap response + re-scoring duration in milliseconds",
-        ["environment"],
-        buckets=[500, 1000, 2000, 5000, 10000],
+        description="Gap response + re-scoring duration in milliseconds",
+        unit="ms",
     )
 )

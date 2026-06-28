@@ -178,6 +178,7 @@ export function SkillsModal({ claims, onClose, onSave, onDelete }: SkillsModalPr
                         if (e.key === 'Enter') { e.preventDefault(); commitEdit(claim.id); }
                         if (e.key === 'Escape') setEditingId(null);
                       }}
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
                       autoFocus
                       className="flex-1 min-w-0 text-sm text-text-primary bg-transparent border-b border-border-focus outline-none py-0.5"
                     />

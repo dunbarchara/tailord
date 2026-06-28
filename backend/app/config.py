@@ -66,19 +66,34 @@ class Settings(BaseSettings):
     vector_top_k: int = 8
     chunk_scorer_concurrency: int = 8
 
+    # ── Claim deduplication ───────────────────────────────────────────────────
+    # Cosine similarity threshold above which an incoming claim is considered a
+    # duplicate of an existing active claim. Range [0, 1]; higher = stricter.
+    claim_dedup_threshold: float = 0.92
+
     # ── GitHub App ────────────────────────────────────────────────────────────
     # Authentication uses Installation Access Tokens — not personal PATs.
     # Provide PEM content directly (staging/prod via Key Vault) or a file path (local dev).
     github_app_id: str | None = None
-    github_app_installation_id: str | None = None
     github_app_private_key: str | None = None  # PEM content
     github_app_private_key_path: str | None = None  # Path to .pem file
+    github_app_webhook_secret: str | None = None
+    # Public slug used to construct the installation URL shown in the UI:
+    # https://github.com/apps/{slug}/installations/new
+    github_app_slug: str | None = None
+
+    # ── Azure identity ─────────────────────────────────────────────────────────
+    # User-assigned managed identity client ID. Set by Terraform via AZURE_CLIENT_ID.
+    # Used by storage, LLM, and metrics clients in staging/production.
+    azure_client_id: str | None = None
 
     # ── Observability / Tracing ───────────────────────────────────────────────
     # otel_endpoint: OTLP gRPC target for local Tempo (docker-compose).
     # applicationinsights_connection_string: injected by Terraform in staging/production.
+    # amp_endpoint: OTLP HTTP base URL for Azure Managed Prometheus; OTel SDK appends /v1/metrics.
     otel_endpoint: str = "http://localhost:4317"
     applicationinsights_connection_string: str = ""
+    amp_endpoint: str | None = None
 
     # ── Generation ────────────────────────────────────────────────────────────
     generation_stale_threshold_minutes: int = 30

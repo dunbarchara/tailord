@@ -175,14 +175,20 @@ export function ExperienceClaimModal({
     if (!claim) return;
     setValue(normalizeContent(claim.content));
     setGroupValue(claim.group_id ?? '');
-    const raf = requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.style.height = '0px';
-      el.style.height = `${el.scrollHeight}px`;
-      el.focus();
+    // Double-RAF: first RAF runs before paint (DOM updated, styles unresolved);
+    // second RAF runs after the browser has committed the layout, so scrollHeight
+    // is accurate for a freshly-mounted textarea.
+    let raf2: number;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = '0px';
+        el.style.height = `${el.scrollHeight}px`;
+        el.focus();
+      });
     });
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [claim?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Esc to close

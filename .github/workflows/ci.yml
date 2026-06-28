@@ -76,7 +76,7 @@ jobs:
 
       - name: pip-audit (dependency CVE scan)
         working-directory: ./backend
-        run: uv run pip-audit --ignore-vuln PYSEC-2025-183  # pyjwt: no fix released yet
+        run: uv run pip-audit --ignore-vuln PYSEC-2025-183 --ignore-vuln PYSEC-2026-196  # pyjwt: no fix yet; pip: tool-level, not a library dep
 
       - name: pytest
         working-directory: ./backend

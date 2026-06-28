@@ -23,8 +23,6 @@ _MANIFEST_PATHS = [
     "Cargo.toml",
     "Dockerfile",
 ]
-# Refresh the installation token this many seconds before it expires (1hr validity).
-_TOKEN_REFRESH_BUFFER = 300
 
 
 class GitHubClient:
@@ -32,17 +30,15 @@ class GitHubClient:
     GitHub API client authenticated as the Tailord GitHub App.
 
     Auth flow: signs a short-lived JWT with the App's RSA private key →
-    exchanges it for an Installation Access Token → uses that for API calls.
-    Token is cached in-process and refreshed automatically before expiry.
+    exchanges it for a per-installation Access Token → uses that for API calls.
+
+    All calls are per-installation (per-user). There is no global cached token;
+    each webhook-driven call obtains a fresh token for the specific installation.
     """
 
     def __init__(self) -> None:
         self._private_key: str = self._load_private_key()
         self._app_id: str = settings.github_app_id  # type: ignore[assignment]
-        self._installation_id: str = settings.github_app_installation_id  # type: ignore[assignment]
-        self._token: str | None = None
-        self._token_expires_at: float = 0.0
-        self._lock = Lock()
         self._request_count: int = 0
 
     # ── Auth ──────────────────────────────────────────────────────────────────
@@ -67,50 +63,22 @@ class GitHubClient:
         }
         return jwt.encode(payload, self._private_key, algorithm="RS256")
 
-    def _get_token(self) -> str:
-        with self._lock:
-            if self._token and time.time() < self._token_expires_at - _TOKEN_REFRESH_BUFFER:
-                return self._token
-
-            app_jwt = self._generate_app_jwt()
-            resp = requests.post(
-                f"{_API_BASE}/app/installations/{self._installation_id}/access_tokens",
-                headers={
-                    "Authorization": f"Bearer {app_jwt}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": _API_VERSION,
-                },
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self._token = data["token"]
-            expires_at = datetime.fromisoformat(data["expires_at"].replace("Z", "+00:00"))
-            self._token_expires_at = expires_at.timestamp()
-            logger.debug(
-                "github_client: installation token refreshed, expires=%s", data["expires_at"]
-            )
-            return self._token
-
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._get_token()}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": _API_VERSION,
-        }
-
-    def _get(self, path: str, params: dict | None = None) -> requests.Response:
-        self._request_count += 1
-        return requests.get(
-            f"{_API_BASE}{path}",
-            headers=self._headers(),
-            params=params or {},
-            timeout=15,
-        )
-
     @property
     def request_count(self) -> int:
         return self._request_count
+
+    def _get(self, path: str, params: dict | None = None) -> requests.Response:
+        """Unauthenticated GET for public GitHub API endpoints (repo discovery, enrichment)."""
+        self._request_count += 1
+        return requests.get(
+            f"{_API_BASE}{path}",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            params=params or {},
+            timeout=15,
+        )
 
     # ── Repo discovery ────────────────────────────────────────────────────────
 
@@ -189,10 +157,144 @@ class GitHubClient:
         content = self.get_file_content(owner, repo, f".github/workflows/{yml['name']}")
         return content[:1000] if content else None
 
+    # ── Per-installation auth ──────────────────────────────────────────────────
+    # These methods use a per-installation access token scoped to a specific user's
+    # GitHub App installation. Used for webhook-driven calls and PR data fetches.
+
+    def get_installation_token(self, installation_id: str) -> str:
+        """Exchange an App JWT for a per-installation access token.
+
+        Not cached — called once per PR webhook where frequency is low.
+        Raises on HTTP error.
+        """
+        app_jwt = self._generate_app_jwt()
+        resp = requests.post(
+            f"{_API_BASE}/app/installations/{installation_id}/access_tokens",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()["token"]
+
+    def get_installation_account(self, installation_id: str) -> dict:
+        """Return the account (user or org) associated with an App installation.
+
+        Uses the App JWT — no user token required. Useful when the installation
+        callback does not include an OAuth code.
+        """
+        app_jwt = self._generate_app_jwt()
+        resp = requests.get(
+            f"{_API_BASE}/app/installations/{installation_id}",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get("account", {})
+
+    def delete_installation(self, installation_id: str) -> None:
+        """Uninstall the GitHub App from a user's account.
+
+        Calls DELETE /app/installations/{id} using the App JWT. After this call:
+        - All existing access tokens for the installation are immediately revoked
+        - GitHub stops sending webhook events for that installation
+        - No new access tokens can be generated for that installation_id, ever
+        - Our private key cannot restore access — the installation no longer exists
+
+        Raises on HTTP error. If the installation is already deleted (404), that
+        is treated as success — the goal (no access) is already achieved.
+        """
+        app_jwt = self._generate_app_jwt()
+        resp = requests.delete(
+            f"{_API_BASE}/app/installations/{installation_id}",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            timeout=15,
+        )
+        if resp.status_code == 404:
+            # Already uninstalled — goal achieved
+            return
+        resp.raise_for_status()
+
+    def get_installation_repositories(self, installation_id: str) -> list[dict]:
+        """Fetch all repositories accessible to a GitHub App installation.
+
+        Uses a per-installation access token. Returns the full GitHub repo objects
+        for repos the user granted the App access to during installation.
+        Raises on HTTP error.
+        """
+        token = self.get_installation_token(installation_id)
+        resp = requests.get(
+            f"{_API_BASE}/installation/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json().get("repositories", [])
+
+    def get_repo_pull_requests(
+        self, owner: str, repo: str, installation_id: str, limit: int = 25
+    ) -> list[dict]:
+        """Fetch recent closed PRs for a repo using a per-installation token.
+
+        Returns raw GitHub PR objects (closed, sorted by updated desc).
+        Caller is responsible for filtering to merged-only.
+        """
+        token = self.get_installation_token(installation_id)
+        resp = requests.get(
+            f"{_API_BASE}/repos/{owner}/{repo}/pulls",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            params={"state": "closed", "sort": "updated", "direction": "desc", "per_page": limit},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_pr_commits(
+        self, owner: str, repo: str, pr_number: int, installation_id: str
+    ) -> list[dict]:
+        """Fetch commits for a pull request using a per-installation token.
+
+        Uses get_installation_token() rather than the cached global token so that
+        calls on behalf of user installations are properly scoped. Raises on HTTP error.
+        """
+        token = self.get_installation_token(installation_id)
+        resp = requests.get(
+            f"{_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/commits",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _API_VERSION,
+            },
+            params={"per_page": 100},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
 
 # ── Module-level singleton ─────────────────────────────────────────────────────
-# Shared across all requests so the installation token is cached and reused
-# rather than exchanged on every call.
+# Shared across all requests. Per-installation tokens are obtained on demand
+# (one call per webhook) — not cached here.
 
 _client: "GitHubClient | None" = None
 _client_lock = Lock()

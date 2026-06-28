@@ -26,7 +26,7 @@ interface UserData {
 
 interface ExperienceData {
   extracted_profile: { resume?: ExtractedProfile } | null;
-  github_username: string | null;
+  github_app_login?: string | null;
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ export default function ProfilePage() {
         setUser(userData);
         setProfilePublic(userData.profile_public ?? false);
         setResume(experienceData?.extracted_profile?.resume ?? null);
-        setGithubUsername(experienceData?.github_username ?? null);
+        setGithubUsername(experienceData?.github_app_login ?? null);
       })
       .catch(() => {})
       .finally(() => setLoading(false));

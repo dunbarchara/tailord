@@ -199,7 +199,7 @@ def make_claim(
     claim = ExperienceClaim(
         user_id=user.id,
         group_id=group.id if group else None,
-        source_type="resume",
+        source_type=kwargs.pop("source_type", "resume"),
         claim_type=claim_type,
         content=content,
         confidence="high",

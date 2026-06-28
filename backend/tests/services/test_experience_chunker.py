@@ -53,6 +53,7 @@ def _make_db() -> MagicMock:
     added: list = []
     db.add.side_effect = lambda obj: added.append(obj)
     db._added = added
+    db.query.return_value.scalar.return_value = False
     return db
 
 

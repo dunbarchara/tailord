@@ -41,7 +41,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT id, generation_status, generation_stage, generation_telemetry->>'duration_ms' AS generation_duration_ms, models->>'letter' AS model, created_at, generated_at FROM tailorings WHERE id = '$tailoring_id'::uuid",
+          "rawSql": "SELECT id, generation_status, generation_stage, generation_telemetry->>'duration_ms' AS generation_duration_ms, models->>'letter' AS model, created_at, generated_at FROM tailorings WHERE id = NULLIF('$tailoring_id', '')::uuid",
           "format": "table"
         }
       ],
@@ -110,7 +110,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT created_at, event_type, payload->>'phase' AS phase, payload FROM tailoring_debug_logs WHERE tailoring_id = '$tailoring_id'::uuid ORDER BY created_at ASC",
+          "rawSql": "SELECT created_at, event_type, payload->>'phase' AS phase, payload FROM tailoring_debug_logs WHERE tailoring_id = NULLIF('$tailoring_id', '')::uuid ORDER BY created_at ASC",
           "format": "table"
         }
       ],
@@ -141,7 +141,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT\n  ROUND(SUM(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 6) AS value\nFROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid",
+          "rawSql": "SELECT\n  ROUND(SUM(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 6) AS value\nFROM llm_call_logs WHERE tailoring_id = NULLIF('$tailoring_id', '')::uuid",
           "format": "table"
         }
       ],
@@ -177,7 +177,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT COUNT(*) AS value FROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid",
+          "rawSql": "SELECT COUNT(*) AS value FROM llm_call_logs WHERE tailoring_id = NULLIF('$tailoring_id', '')::uuid",
           "format": "table"
         }
       ],
@@ -212,7 +212,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT ROUND(100.0 * SUM(cached_tokens) / NULLIF(SUM(input_tokens), 0), 1) AS value FROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid AND call_type = 'llm'",
+          "rawSql": "SELECT ROUND(100.0 * SUM(cached_tokens) / NULLIF(SUM(input_tokens), 0), 1) AS value FROM llm_call_logs WHERE tailoring_id = NULLIF('$tailoring_id', '')::uuid AND call_type = 'llm'",
           "format": "table"
         }
       ],
@@ -264,7 +264,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT ROUND(AVG(latency_ms))::int AS value FROM llm_call_logs WHERE tailoring_id = '$tailoring_id'::uuid",
+          "rawSql": "SELECT ROUND(AVG(latency_ms))::int AS value FROM llm_call_logs WHERE tailoring_id = NULLIF('$tailoring_id', '')::uuid",
           "format": "table"
         }
       ],
@@ -299,7 +299,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT\n  prompt_name,\n  model,\n  call_type,\n  COUNT(*)                    AS calls,\n  SUM(input_tokens)           AS input_tokens,\n  SUM(cached_tokens)          AS cached_tokens,\n  SUM(output_tokens)          AS output_tokens,\n  ROUND(AVG(latency_ms))::int AS avg_latency_ms,\n  ROUND(SUM(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 8) AS cost_usd\nFROM llm_call_logs\nWHERE tailoring_id = '$tailoring_id'::uuid\nGROUP BY prompt_name, model, call_type\nORDER BY cost_usd DESC NULLS LAST",
+          "rawSql": "SELECT\n  prompt_name,\n  model,\n  call_type,\n  COUNT(*)                    AS calls,\n  SUM(input_tokens)           AS input_tokens,\n  SUM(cached_tokens)          AS cached_tokens,\n  SUM(output_tokens)          AS output_tokens,\n  ROUND(AVG(latency_ms))::int AS avg_latency_ms,\n  ROUND(SUM(\n    CASE model\n      WHEN 'gpt-5.4-mini' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 0.75  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.08  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 4.50  / 1000000.0\n      WHEN 'gpt-5.4' THEN\n        (COALESCE(input_tokens,0) - COALESCE(cached_tokens,0)) * 2.50  / 1000000.0\n        + COALESCE(cached_tokens,0)                                     * 0.25  / 1000000.0\n        + COALESCE(output_tokens,0)                                     * 15.00 / 1000000.0\n      WHEN 'text-embedding-3-small' THEN\n        COALESCE(input_tokens,0)                                        * 0.025 / 1000000.0\n      ELSE 0\n    END\n  ), 8) AS cost_usd\nFROM llm_call_logs\nWHERE tailoring_id = NULLIF('$tailoring_id', '')::uuid\nGROUP BY prompt_name, model, call_type\nORDER BY cost_usd DESC NULLS LAST",
           "format": "table"
         }
       ],

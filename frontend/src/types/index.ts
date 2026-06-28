@@ -277,9 +277,17 @@ export interface ChunksResponse {
   chunks: JobChunk[]
 }
 
+export interface ProvenanceMetadata {
+  url?: string
+  label?: string
+  merge_candidate_id?: string
+  similarity_score?: number
+  [key: string]: string | number | undefined
+}
+
 export interface ExperienceClaim {
   id: string
-  source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'partial_response' | 'additional_experience'
+  source_type: 'resume' | 'github' | 'user_input' | 'gap_response' | 'partial_response' | 'additional_experience' | 'github_pr'
   source_ref: string | null
   claim_type: 'work_experience' | 'skill' | 'project' | 'education' | 'other'
   content: string
@@ -287,7 +295,7 @@ export interface ExperienceClaim {
   group_id: string | null
   date_range: string | null
   keywords: string[] | null
-  provenance_metadata: Record<string, string> | null
+  provenance_metadata: ProvenanceMetadata | null
   original_content: string | null
   status: 'pending' | 'active' | 'archived'
   position: number
@@ -325,9 +333,11 @@ export interface GitHubClaimsSection {
 export interface ExperienceClaimsResponse {
   resume: ResumeClaimsSection | null
   github: GitHubClaimsSection | null
+  github_pr: ExperienceClaim[] | null
   user_input: ExperienceClaim[] | null
   gap_response: ExperienceClaim[] | null
   partial_response: ExperienceClaim[] | null
+  pending: ExperienceClaim[] | null
 }
 
 export interface ExperienceSourceStatus {
@@ -347,13 +357,12 @@ export interface ExperienceRecord {
   extracted_profile: SourcedProfile | null
   raw_resume_text: string | null
   error_message: string | null
-  github_username: string | null
-  github_repos: GitHubRepo[] | null
-  github_repo_details: GitHubRepoDetails | null
   user_input_text: string | null
   uploaded_at: string | null
   processed_at: string | null
   last_process_requested_at: string | null
   // New: per-source status (alongside legacy flat fields for backward compat)
   sources?: ExperienceSourceStatus[]
+  // GitHub App connection state (null = App not installed)
+  github_app_login?: string | null
 }

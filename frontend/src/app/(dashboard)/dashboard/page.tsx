@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   const hasExperience = !!(
     experience?.extracted_profile?.resume ||
     experience?.extracted_profile?.github ||
-    experience?.github_username
+    experience?.github_app_login
   );
 
   return (

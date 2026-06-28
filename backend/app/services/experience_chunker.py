@@ -608,9 +608,44 @@ def chunk_github_repo(
         )
         _delete_chunks(db, github_source.user_id, "github", source_ref=repo_name)
 
+    from app.services.claim_dedup import is_duplicate_by_source_ref, is_duplicate_claim
+
+    # Layer 1: pre-loop guard — if any claim already exists for this repo, skip entirely.
+    # Must run before the loop: autoflush would make the first inserted claim visible to
+    # subsequent iterations, causing all but the first chunk to be dropped.
+    if is_duplicate_by_source_ref(github_source.user_id, "github", repo_name, db):
+        logger.debug(
+            "chunk_github_repo_dedup_source_ref",
+            user_id=str(github_source.user_id),
+            repo_name=repo_name,
+        )
+        return 0
+
     raw = _github_repo_chunks(enriched_repo)
     now = datetime.now(timezone.utc)
+    inserted = 0
     for position, chunk_data in enumerate(raw):
+        content = chunk_data.get("content", "")
+
+        # Layer 2: semantic dedup — skip if content is near-identical to an existing active claim.
+        if content:
+            try:
+                if is_duplicate_claim(github_source.user_id, content, db):
+                    logger.debug(
+                        "chunk_github_repo_dedup_semantic",
+                        user_id=str(github_source.user_id),
+                        repo_name=repo_name,
+                    )
+                    continue
+            except Exception:
+                logger.warning(
+                    "chunk_github_repo_dedup_embed_failed",
+                    user_id=str(github_source.user_id),
+                    repo_name=repo_name,
+                    exc_info=True,
+                )
+                # Embedding failure is non-fatal — insert the claim anyway
+
         db.add(
             ExperienceClaim(
                 user_id=github_source.user_id,
@@ -623,19 +658,25 @@ def chunk_github_repo(
                 **chunk_data,
             )
         )
+        inserted += 1
 
-    logger.debug("chunk_github_repo_complete", chunk_count=len(raw), repo_name=repo_name)
-    return len(raw)
+    logger.debug("chunk_github_repo_complete", chunk_count=inserted, repo_name=repo_name)
+    return inserted
 
 
 def delete_github_chunks(db: Session, user_id: uuid.UUID, repo_name: str | None = None) -> int:
-    """Delete GitHub chunks for the given user.
+    """Delete GitHub repo-scan chunks for the given user.
 
     repo_name=None → delete ALL github chunks (used when disconnecting all GitHub).
     repo_name='foo' → delete only that repo's chunks.
     Does NOT commit — caller is responsible.
     """
     return _delete_chunks(db, user_id, "github", source_ref=repo_name)
+
+
+def delete_github_pr_chunks(db: Session, user_id: uuid.UUID) -> int:
+    """Delete all github_pr (webhook-captured PR) chunks for the given user. Does NOT commit."""
+    return _delete_chunks(db, user_id, "github_pr")
 
 
 def delete_resume_chunks(db: Session, user_id: uuid.UUID) -> int:

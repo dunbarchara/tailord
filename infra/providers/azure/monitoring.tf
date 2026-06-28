@@ -51,7 +51,12 @@ resource "azurerm_monitor_workspace" "main" {
 # -----------------------------
 # AZURE MANAGED GRAFANA
 # -----------------------------
+# Gated by var.grafana_enabled (default false) — destroy when not actively monitoring prod.
+# Log Analytics, Managed Prometheus, and Azure Monitor alerts run independently and
+# continue ingesting data while Grafana is down. Toggle via the observability.yml workflow;
+# keep TF_VAR_grafana_enabled in .env.azure in sync with the GRAFANA_ENABLED repo variable.
 resource "azurerm_dashboard_grafana" "main" {
+  count               = var.grafana_enabled ? 1 : 0
   name                = "${var.project_name}-grafana"
   resource_group_name = azurerm_resource_group.tailord.name
   location            = azurerm_resource_group.tailord.location
@@ -68,22 +73,36 @@ resource "azurerm_dashboard_grafana" "main" {
 }
 
 resource "azurerm_role_assignment" "grafana_admin" {
-  scope                = azurerm_dashboard_grafana.main.id
+  count                = var.grafana_enabled ? 1 : 0
+  scope                = azurerm_dashboard_grafana.main[0].id
   role_definition_name = "Grafana Admin"
   principal_id         = var.grafana_admin_object_id
 }
 
 resource "azurerm_role_assignment" "grafana_monitoring_reader" {
+  count                = var.grafana_enabled ? 1 : 0
   scope                = azurerm_resource_group.tailord.id
   role_definition_name = "Monitoring Reader"
-  principal_id         = azurerm_dashboard_grafana.main.identity[0].principal_id
+  principal_id         = azurerm_dashboard_grafana.main[0].identity[0].principal_id
 }
 
 resource "azurerm_role_assignment" "grafana_log_analytics_reader" {
+  count                = var.grafana_enabled ? 1 : 0
   scope                = azurerm_log_analytics_workspace.tailord.id
   role_definition_name = "Log Analytics Reader"
-  principal_id         = azurerm_dashboard_grafana.main.identity[0].principal_id
+  principal_id         = azurerm_dashboard_grafana.main[0].identity[0].principal_id
 }
+
+# CI dashboard deployment via OIDC is disabled to keep billing at 1 active user.
+# Dashboard updates are done locally via scripts/bootstrap-grafana.sh or deploy-dashboards.sh.
+# Re-enable when Grafana usage grows and the per-user cost is justified.
+#
+# resource "azurerm_role_assignment" "gha_grafana_admin" {
+#   count                = var.grafana_enabled ? 1 : 0
+#   scope                = azurerm_dashboard_grafana.main[0].id
+#   role_definition_name = "Grafana Admin"
+#   principal_id         = var.github_actions_sp_object_id
+# }
 
 # -----------------------------
 # ACTION GROUP

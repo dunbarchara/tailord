@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.clients.database import Base
@@ -234,9 +235,11 @@ class ExperienceSource(Base):
     )
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
     # Surface connection config (non-secret)
-    config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    config: Mapped[dict | None] = mapped_column(MutableDict.as_mutable(JSONB), nullable=True)
     # Pipeline artifacts + extracted content
-    source_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True, name="source_data")
+    source_data: Mapped[dict | None] = mapped_column(
+        MutableDict.as_mutable(JSONB), nullable=True, name="source_data"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -598,6 +601,38 @@ class ExperienceClaim(Base):
     group: Mapped["ExperienceGroup | None"] = relationship(
         "ExperienceGroup", back_populates="claims"
     )
+
+
+class CaptureSignal(Base):
+    """Raw inbound signal from an ambient capture source (GitHub PR, SMS, etc.).
+
+    Acts as an idempotency log and audit trail for the silent-capture pipeline.
+    One row per inbound event; status tracks whether it produced ExperienceClaim rows.
+    """
+
+    __tablename__ = "capture_signals"
+    __table_args__ = (
+        Index("ix_capture_signals_user_source", "user_id", "source_type", "source_ref"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # "github_pr" | "sms" | "linear_issue"
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # PR URL, SMS SID, etc. — idempotency key
+    source_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # pending | processed | skipped | failed
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    skip_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped["User"] = relationship("User")
 
 
 class JobChunk(Base):
