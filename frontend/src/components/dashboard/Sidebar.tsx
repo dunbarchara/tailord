@@ -495,7 +495,7 @@ export function Sidebar({
             {/* Primary nav */}
             <nav aria-label="Primary" className="flex flex-col gap-0.5">
               <NavItem icon={IconHome}   label="Home"          href={basePath}                    active={activeItem === 'Home'}          collapsed={isCollapsed} />
-              <NavItem icon={(p) => <Database {...p} size={18} strokeWidth={1.8} />} label="Sources" href={`${basePath}/sources`} active={activeItem === 'Sources'} collapsed={isCollapsed} />
+              {!isMock && <NavItem icon={(p) => <Database {...p} size={18} strokeWidth={1.8} />} label="Sources" href={`${basePath}/sources`} active={activeItem === 'Sources'} collapsed={isCollapsed} />}
               <NavItem icon={IconEditor} label="My Experience" href={`${basePath}/experience`}     active={activeItem === 'My Experience'} collapsed={isCollapsed} />
               <NavItem icon={(p) => <Globe {...p} size={18} strokeWidth={1.8} />} label="My Profile" href={`${basePath}/profile`} active={activeItem === 'My Profile'} collapsed={isCollapsed} />
             </nav>
