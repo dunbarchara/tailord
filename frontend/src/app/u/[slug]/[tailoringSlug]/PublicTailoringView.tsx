@@ -156,7 +156,7 @@ function CandidateFooter({
           )}
           {(authorName || authorTitle || authorEmail) && authorLinkedin && <span className="text-text-disabled">·</span>}
           {authorLinkedin && (
-            <a href={authorLinkedin} target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">LinkedIn</a>
+            <a href={authorLinkedin.startsWith('http') ? authorLinkedin : `https://${authorLinkedin}`} target="_blank" rel="noopener noreferrer" className="text-text-link hover:underline">LinkedIn</a>
           )}
         </p>
       )}
