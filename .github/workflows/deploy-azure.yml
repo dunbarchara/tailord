@@ -35,7 +35,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Generate image tag
       id: generate_tag
@@ -407,7 +407,7 @@ jobs:
   #     id-token: write
   #     contents: read
   #   steps:
-  #   - uses: actions/checkout@v6
+  #   - uses: actions/checkout@v7
   #   - name: Azure login (OIDC)
   #     uses: azure/login@v3
   #     with:
