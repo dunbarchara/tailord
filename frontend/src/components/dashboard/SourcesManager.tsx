@@ -5,7 +5,8 @@ import {
   ChevronDown, FileText, AlignLeft, Globe, Upload,
   Loader2, AlertCircle, X, RefreshCw, Check, Trash2, MessageSquare, ExternalLink,
 } from 'lucide-react';
-import { SiGithub, SiLinear, SiSlack, SiDiscord } from 'react-icons/si';
+import { SiGithub, SiLinear, SiDiscord } from 'react-icons/si';
+import { FaSlack } from 'react-icons/fa';
 import { toast } from 'sonner';
 import { cn, toastError, formatRelativeDate, formatElapsed } from '@/lib/utils';
 import type { ExperienceRecord } from '@/types';
@@ -1251,7 +1252,7 @@ export function SourcesManager() {
 
             {/* Slack — planned */}
             <SourceCard
-              logo={<SiSlack className="text-text-tertiary" style={{ width: 18, height: 18 }} />}
+              logo={<FaSlack className="text-text-tertiary" style={{ width: 18, height: 18 }} />}
               name="Slack"
               status="idle"
               meta="Send messages to the Tailord bot in any workspace"
