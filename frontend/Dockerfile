@@ -51,6 +51,9 @@ ENV NODE_ENV=production
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED=1
 
+# Remove global npm modules (including vulnerable tar package) to shrink image and satisfy scanner
+RUN rm -rf /usr/local/lib/node_modules/npm /opt/yarn-*
+
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
