@@ -32,12 +32,14 @@ dependencies = [
   "pgvector>=0.5.0",
   "structlog>=25.0.0",
   "prometheus-client>=0.26.0",
-  "opentelemetry-api>=1.44.0",
-  "opentelemetry-sdk>=1.27",
-  "opentelemetry-exporter-otlp-proto-grpc>=1.27",
-  "opentelemetry-exporter-otlp-proto-http>=1.27",
+  # opentelemetry-api/sdk upper bound: azure-monitor-opentelemetry-exporter pins ~=1.43.0;
+  # bump these only after azure-monitor-opentelemetry releases support for the new major.
+  "opentelemetry-api>=1.43.0,<1.44",
+  "opentelemetry-sdk>=1.43.0,<1.44",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.43.0,<1.44",
+  "opentelemetry-exporter-otlp-proto-http>=1.43.0,<1.44",
   "opentelemetry-exporter-prometheus>=0.48b0",
-  "azure-monitor-opentelemetry>=1.6.0",
+  "azure-monitor-opentelemetry>=1.8.9",
   "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
   "jinja2>=3.1.6",
 ]
