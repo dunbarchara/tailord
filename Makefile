@@ -38,6 +38,13 @@
         install install-backend install-frontend \
         eval-offline eval-record eval-live
 
+# Windows' GNU Make can't find sh.exe on PATH and falls back to cmd.exe, which
+# breaks recipes using bash syntax (e.g. PIPESTATUS in check-backend). macOS/Linux
+# already default to a bash-backed /bin/sh, so this only applies on Windows.
+ifeq ($(OS),Windows_NT)
+SHELL := C:/Program Files/Git/bin/bash.exe
+endif
+
 # ─── Install ───────────────────────────────────────────────────────────────────
 
 install-backend:
@@ -93,7 +100,7 @@ check-frontend:
 check-infra:
 	@echo ""
 	@echo "── checkov ──────────────────────────────────────────────────────"
-	uvx checkov \
+	uvx --from checkov checkov \
 		-d infra/providers/azure/ \
 		--framework terraform \
 		--compact \

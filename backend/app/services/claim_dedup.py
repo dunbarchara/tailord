@@ -72,7 +72,9 @@ def is_duplicate_claim(
     row = (
         db.query(
             ExperienceClaim,
-            (1 - ExperienceClaim.embedding.cosine_distance(candidate_embedding)).label("similarity"),
+            (1 - ExperienceClaim.embedding.cosine_distance(candidate_embedding)).label(
+                "similarity"
+            ),
         )
         .filter(
             ExperienceClaim.user_id == user_id,
