@@ -62,7 +62,8 @@ def test_identical_embedding_is_duplicate(db, approved_user):
             approved_user.id, "Led migration to microservices architecture", db
         )
 
-    assert result is True
+    assert result is not None
+    assert result.id == claim.id
 
 
 def test_unrelated_content_is_not_duplicate(db, approved_user):
@@ -81,16 +82,21 @@ def test_unrelated_content_is_not_duplicate(db, approved_user):
             threshold=0.92,
         )
 
-    assert result is False
+    assert result is None
 
 
-def test_pending_claim_not_considered(db, approved_user):
-    """Pending claims must not be considered duplicates — only active ones."""
+def test_pending_claim_is_considered(db, approved_user):
+    """Pending claims must be considered duplicates too, not just active ones.
+
+    Without this, an incoming claim is only checked against claims the user has
+    already reviewed and approved. In a passive-capture-then-review-later workflow,
+    nothing is "active" yet at capture time, so this check would otherwise never
+    catch duplicates piling up across unreviewed captures.
+    """
     from app.models.database import ExperienceClaim
     from app.services.claim_dedup import is_duplicate_claim
 
     claim = make_claim(db, approved_user, content="Deployed Kubernetes clusters")
-    # Override to pending after creation
     db.query(ExperienceClaim).filter(ExperienceClaim.id == claim.id).update({"status": "pending"})
     claim.embedding = NEAR_VECTOR
     db.commit()
@@ -98,17 +104,34 @@ def test_pending_claim_not_considered(db, approved_user):
     with patch("app.services.claim_dedup.embed_text", return_value=NEAR_VECTOR):
         result = is_duplicate_claim(approved_user.id, "Deployed Kubernetes clusters", db)
 
-    assert result is False
+    assert result is not None
+    assert result.id == claim.id
 
 
-def test_no_claims_returns_false(db, approved_user):
+def test_archived_claim_not_considered(db, approved_user):
+    """Archived (rejected or superseded) claims must not be considered duplicates."""
+    from app.models.database import ExperienceClaim
+    from app.services.claim_dedup import is_duplicate_claim
+
+    claim = make_claim(db, approved_user, content="Deployed Kubernetes clusters")
+    db.query(ExperienceClaim).filter(ExperienceClaim.id == claim.id).update({"status": "archived"})
+    claim.embedding = NEAR_VECTOR
+    db.commit()
+
+    with patch("app.services.claim_dedup.embed_text", return_value=NEAR_VECTOR):
+        result = is_duplicate_claim(approved_user.id, "Deployed Kubernetes clusters", db)
+
+    assert result is None
+
+
+def test_no_claims_returns_none(db, approved_user):
     """Empty DB → not a duplicate."""
     from app.services.claim_dedup import is_duplicate_claim
 
     with patch("app.services.claim_dedup.embed_text", return_value=NEAR_VECTOR):
         result = is_duplicate_claim(approved_user.id, "Anything", db)
 
-    assert result is False
+    assert result is None
 
 
 def test_claim_without_embedding_skipped(db, approved_user):
@@ -123,4 +146,4 @@ def test_claim_without_embedding_skipped(db, approved_user):
             approved_user.id, "Led migration to microservices architecture", db
         )
 
-    assert result is False
+    assert result is None

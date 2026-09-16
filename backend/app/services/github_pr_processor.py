@@ -373,21 +373,40 @@ def _process(
 
     # 10. Insert claims
     inserted = 0
+    deduped = 0
     for draft in result.claims:
-        # Semantic dedup
+        # Semantic dedup — roll duplicates up into the matched claim's merged_from
+        # rather than dropping them, so the signal is never silently lost and a
+        # future re-dedup pass has the raw material to reprocess from.
         try:
-            if is_duplicate_claim(signal.user_id, draft.content, db):
-                logger.info(
-                    "github_pr_processor: duplicate claim skipped",
-                    signal_id=str(signal_id),
-                    content_preview=draft.content[:60],
-                )
-                continue
+            duplicate_of = is_duplicate_claim(signal.user_id, draft.content, db)
         except Exception:
             logger.warning(
                 "github_pr_processor: dedup check failed, skipping claim",
                 signal_id=str(signal_id),
             )
+            continue
+
+        if duplicate_of is not None:
+            merged = list(duplicate_of.merged_from or [])
+            merged.append(
+                {
+                    "source_type": "github_pr",
+                    "source_ref": pr_url,
+                    "signal_id": str(signal.id),
+                    "content_snapshot": draft.content,
+                    "merged_at": now.isoformat(),
+                }
+            )
+            duplicate_of.merged_from = merged
+            duplicate_of.updated_at = now
+            logger.info(
+                "github_pr_processor: duplicate claim rolled up",
+                signal_id=str(signal_id),
+                target_claim_id=str(duplicate_of.id),
+                content_preview=draft.content[:60],
+            )
+            deduped += 1
             continue
 
         # Embed
@@ -430,5 +449,5 @@ def _process(
         "github_pr_processor: signal processed",
         signal_id=str(signal_id),
         claims_inserted=inserted,
-        claims_skipped=len(result.claims) - inserted,
+        claims_deduped=deduped,
     )

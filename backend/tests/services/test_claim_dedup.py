@@ -42,12 +42,12 @@ def test_source_ref_no_match_returns_false():
 # ---------------------------------------------------------------------------
 
 
-def _make_similarity_db(similarity: float | None) -> MagicMock:
-    """Mock db whose query chain returns the given similarity scalar."""
+def _make_similarity_db(row) -> MagicMock:
+    """Mock db whose query chain returns the given (claim, similarity) row, or None."""
     db = MagicMock()
     (
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.scalar.return_value
-    ) = similarity
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.first.return_value
+    ) = row
     return db
 
 
@@ -55,25 +55,27 @@ def test_similarity_at_threshold_is_duplicate():
     from app.services.claim_dedup import is_duplicate_claim
 
     threshold = 0.92
-    db = _make_similarity_db(threshold)
+    matched_claim = MagicMock()
+    db = _make_similarity_db((matched_claim, threshold))
 
     with patch("app.services.claim_dedup.embed_text", return_value=FIXED_VECTOR):
         result = is_duplicate_claim(
             USER_ID, "Led migration to microservices", db, threshold=threshold
         )
 
-    assert result is True
+    assert result is matched_claim
 
 
 def test_similarity_below_threshold_is_not_duplicate():
     from app.services.claim_dedup import is_duplicate_claim
 
-    db = _make_similarity_db(0.91)
+    matched_claim = MagicMock()
+    db = _make_similarity_db((matched_claim, 0.91))
 
     with patch("app.services.claim_dedup.embed_text", return_value=FIXED_VECTOR):
         result = is_duplicate_claim(USER_ID, "Led migration to microservices", db, threshold=0.92)
 
-    assert result is False
+    assert result is None
 
 
 def test_no_existing_claims_is_not_duplicate():
@@ -84,7 +86,7 @@ def test_no_existing_claims_is_not_duplicate():
     with patch("app.services.claim_dedup.embed_text", return_value=FIXED_VECTOR):
         result = is_duplicate_claim(USER_ID, "Built a feature end-to-end", db)
 
-    assert result is False
+    assert result is None
 
 
 def test_embed_text_raises_propagates():
@@ -100,7 +102,7 @@ def test_embed_text_raises_propagates():
 def test_embed_text_called_with_correct_context():
     from app.services.claim_dedup import is_duplicate_claim
 
-    db = _make_similarity_db(0.5)
+    db = _make_similarity_db((MagicMock(), 0.5))
 
     with patch("app.services.claim_dedup.embed_text", return_value=FIXED_VECTOR) as mock_embed:
         is_duplicate_claim(USER_ID, "Built CI/CD pipeline", db)
