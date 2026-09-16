@@ -46,11 +46,20 @@ def is_duplicate_claim(
     candidate_content: str,
     db: Session,
     threshold: float | None = None,
-) -> bool:
-    """Return True if the candidate content is semantically similar to an existing active claim.
+) -> ExperienceClaim | None:
+    """Return the nearest existing claim if it's a semantic duplicate, else None.
 
-    Embeds `candidate_content` and queries the nearest active claim by cosine distance.
-    Returns True when similarity >= threshold (default: settings.claim_dedup_threshold).
+    Embeds `candidate_content` and finds the nearest claim by cosine distance among
+    claims with status "active" OR "pending" — pending is included so duplicates are
+    caught across a capture-then-review cycle, not just against claims the user has
+    already approved. Without this, a passive-capture workflow where review happens
+    in occasional batches would never dedup two similar claims captured before either
+    was reviewed, since neither would be "active" yet.
+
+    Returns the matched ExperienceClaim when similarity >= threshold (default:
+    settings.claim_dedup_threshold), else None. Callers that find a match are expected
+    to roll the candidate up into it (e.g. append to `merged_from`) rather than discard
+    it outright, so the signal that produced it is never silently lost.
 
     Raises if embed_text raises (e.g. empty content, API failure) — callers decide
     whether to suppress or propagate.
@@ -60,18 +69,23 @@ def is_duplicate_claim(
 
     candidate_embedding = embed_text(candidate_content, embed_context="claim_dedup")
 
-    result = (
+    row = (
         db.query(
-            (1 - ExperienceClaim.embedding.cosine_distance(candidate_embedding)).label("similarity")
+            ExperienceClaim,
+            (1 - ExperienceClaim.embedding.cosine_distance(candidate_embedding)).label("similarity"),
         )
         .filter(
             ExperienceClaim.user_id == user_id,
-            ExperienceClaim.status == "active",
+            ExperienceClaim.status.in_(("active", "pending")),
             ExperienceClaim.embedding.isnot(None),
         )
         .order_by(ExperienceClaim.embedding.cosine_distance(candidate_embedding))
         .limit(1)
-        .scalar()
+        .first()
     )
 
-    return result is not None and result >= threshold
+    if row is None:
+        return None
+
+    claim, similarity = row
+    return claim if similarity >= threshold else None

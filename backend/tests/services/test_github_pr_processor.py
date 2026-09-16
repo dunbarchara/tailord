@@ -128,7 +128,7 @@ def mock_db():
     db._mock_get_llm_client = MagicMock(return_value=MagicMock())
     db._mock_llm_parse_with_retry = MagicMock(return_value=llm_result)
     db._mock_settings = MagicMock(llm_model="gpt-4o-mini", embedding_model="text-embedding-3-small")
-    db._mock_is_duplicate_claim = MagicMock(return_value=False)
+    db._mock_is_duplicate_claim = MagicMock(return_value=None)
     db._mock_get_or_create_group = MagicMock(return_value=MagicMock(id=uuid.uuid4()))
 
     # Queries: signal, source, max position
@@ -438,7 +438,7 @@ def test_happy_path_inserts_claims(mock_db):
     mock_db.commit.assert_called_once()
 
 
-def test_semantic_dedup_skips_duplicate_claim(mock_db):
+def test_semantic_dedup_rolls_up_duplicate_into_merged_from(mock_db):
     from sqlalchemy import func
 
     from app.models.database import CaptureSignal, ExperienceClaim, ExperienceSource
@@ -469,8 +469,9 @@ def test_semantic_dedup_skips_duplicate_claim(mock_db):
         claims=[claim1, claim2], skip_reason=None
     )
 
-    # First call to is_duplicate_claim → True (skip); second → False (insert)
-    mock_db._mock_is_duplicate_claim.side_effect = [True, False]
+    # First draft matches an existing claim (rolled up); second is new (inserted)
+    existing_claim = MagicMock(id=uuid.uuid4(), merged_from=None)
+    mock_db._mock_is_duplicate_claim.side_effect = [existing_claim, None]
 
     signal = mock_db._signal
 
@@ -495,8 +496,18 @@ def test_semantic_dedup_skips_duplicate_claim(mock_db):
         func=func,
     )
 
-    # Only one claim should be added (the non-duplicate)
+    # Only the non-duplicate claim is inserted as a new row
     assert mock_db.add.call_count == 1
+    # The duplicate is rolled up into the existing claim's merged_from, not dropped
+    assert existing_claim.merged_from == [
+        {
+            "source_type": "github_pr",
+            "source_ref": signal.source_ref,
+            "signal_id": str(signal.id),
+            "content_snapshot": "Built caching layer.",
+            "merged_at": existing_claim.merged_from[0]["merged_at"],
+        }
+    ]
     assert signal.status == "processed"
 
 
