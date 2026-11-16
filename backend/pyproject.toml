@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 
 dependencies = [
-  "fastapi==0.141.1",  # 0.136.3 flagged MAL-2026-4750; re-evaluate when a clean newer release is available
+  "fastapi==0.162.7",  # 0.136.3 flagged MAL-2026-4750; re-evaluate when a clean newer release is available
   "uvicorn[standard]",
   "playwright",
   "openai",
