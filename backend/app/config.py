@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -18,14 +19,17 @@ class Settings(BaseSettings):
     db_statement_timeout_ms: int = 30000  # milliseconds; 0 = disabled
 
     # ── LLM ───────────────────────────────────────────────────────────────────
-    # llm_base_url:    set for Azure AI Foundry or a local model; omit to use
-    #                  OpenAI directly.
-    # llm_api_version: required for Azure AI endpoints (e.g. 2024-05-01-preview);
-    #                  omit for OpenAI / local.
+    # Which model serves which task is configured in llm_models.json (required; see
+    # app/clients/llm_registry.py). llm_base_url / llm_api_key are the Foundry endpoint and
+    # key; llm_models.json references them by env var name, and embeddings reuse them.
+    # llm_registry_path overrides the default location (backend/llm_models.json).
     llm_base_url: str | None = None
     llm_api_key: str | None = None
-    llm_model: str = "gpt-4o-mini"
-    llm_api_version: str | None = None
+    llm_registry_path: str | None = None
+    # Retired: parsed only so a leftover .env / Terraform value produces a clear startup
+    # warning instead of a settings error. Nothing reads these; use llm_models.json.
+    llm_model_deprecated: str | None = Field(default=None, validation_alias="LLM_MODEL")
+    llm_api_version_deprecated: str | None = Field(default=None, validation_alias="LLM_API_VERSION")
 
     # ── Embeddings ────────────────────────────────────────────────────────────
     # embedding_base_url: falls back to llm_base_url if unset, then OpenAI default.
@@ -111,6 +115,10 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        # .env also carries values that llm_models.json references by name (provider API
+        # keys such as TYPESAFE_API_KEY, local LLM_TASK_* overrides). They are not Settings
+        # fields, so unknown keys must be ignored rather than rejected.
+        extra = "ignore"
 
 
 settings = Settings()

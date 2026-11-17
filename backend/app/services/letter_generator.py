@@ -1,7 +1,7 @@
 import structlog
 
-from app.clients.llm_client import get_llm_client
-from app.config import settings
+from app.clients.llm_client import resolve_llm
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import tailoring as prompt
 from app.schemas.llm_outputs import TailoringContent
@@ -145,9 +145,10 @@ def generate_letter(
                 f"output is too short ({total} chars) — write more detailed advocacy statements"
             )
 
+    llm = resolve_llm(TaskName.LETTER_GENERATION)
     content = llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
+        llm.client,
+        model=llm.model,
         messages=[
             {"role": "system", "content": prompt.SYSTEM},
             {

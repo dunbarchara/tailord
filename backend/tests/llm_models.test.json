@@ -1,0 +1,14 @@
+{
+  "providers": {
+    "local": { "adapter": "openai_compat", "base_url": "http://localhost:1/v1" }
+  },
+  "models": {
+    "test-model": {
+      "provider": "local",
+      "model": "test-model",
+      "pricing": { "input": 1.0, "cached": 0.1, "output": 2.0 }
+    }
+  },
+  "defaults": { "generative": "test-model" },
+  "tasks": {}
+}

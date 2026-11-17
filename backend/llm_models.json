@@ -1,0 +1,15 @@
+{
+  "providers": {
+    "foundry": {
+      "adapter": "openai_compat",
+      "base_url_env": "LLM_BASE_URL",
+      "api_key_env": "LLM_API_KEY"
+    }
+  },
+  "models": {
+    "gpt-5.4": { "provider": "foundry", "model": "gpt-5.4" },
+    "gpt-5.4-mini": { "provider": "foundry", "model": "gpt-5.4-mini" }
+  },
+  "defaults": { "generative": "gpt-5.4" },
+  "tasks": {}
+}

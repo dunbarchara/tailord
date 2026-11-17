@@ -59,7 +59,7 @@ def test_generate_question_gap_returns_llm_result():
         context="Python is core to this backend role",
     )
     with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_result):
-        with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
+        with patch("app.services.gap_analyzer.resolve_llm", return_value=MagicMock()):
             result = _generate_question(
                 "gap",
                 requirement="Python 3+ experience",
@@ -77,7 +77,7 @@ def test_generate_question_gap_includes_requirement_in_prompt():
     with patch(
         "app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_result
     ) as mock_llm:
-        with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
+        with patch("app.services.gap_analyzer.resolve_llm", return_value=MagicMock()):
             _generate_question(
                 "gap",
                 requirement="Kubernetes orchestration",
@@ -103,7 +103,7 @@ def test_run_gap_analysis_zero_gaps_empty_result():
 
     with patch("app.clients.database.SessionLocal", return_value=db):
         with patch("app.services.gap_analyzer.llm_parse_with_retry") as mock_llm:
-            with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
+            with patch("app.services.gap_analyzer.resolve_llm", return_value=MagicMock()):
                 with patch(
                     "app.services.gap_analyzer.sources_to_profile_dict",
                     return_value={"resume": {"summary": "Engineer"}},
@@ -142,7 +142,7 @@ def test_run_gap_analysis_sourced_count_excludes_score_zero():
 
     with patch("app.clients.database.SessionLocal", return_value=db):
         with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_gap_q):
-            with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
+            with patch("app.services.gap_analyzer.resolve_llm", return_value=MagicMock()):
                 with patch(
                     "app.services.gap_analyzer.sources_to_profile_dict",
                     return_value={"resume": {"summary": "Engineer"}},
@@ -176,7 +176,7 @@ def test_run_gap_analysis_gap_content_in_output():
 
     with patch("app.clients.database.SessionLocal", return_value=db):
         with patch("app.services.gap_analyzer.llm_parse_with_retry", return_value=mock_gap_q):
-            with patch("app.services.gap_analyzer.get_llm_client", return_value=MagicMock()):
+            with patch("app.services.gap_analyzer.resolve_llm", return_value=MagicMock()):
                 with patch(
                     "app.services.gap_analyzer.sources_to_profile_dict",
                     return_value={"resume": {"summary": "Engineer"}},

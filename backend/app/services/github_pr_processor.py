@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 
 import structlog
 
+from app.core.llm_tasks import TaskName
+
 logger = structlog.get_logger(__name__)
 
 
@@ -28,7 +30,7 @@ def process_github_pr_signal(signal_id: uuid.UUID) -> None:
     from app.clients.database import SessionLocal
     from app.clients.embedding_client import embed_text
     from app.clients.github_client import get_github_client
-    from app.clients.llm_client import get_llm_client
+    from app.clients.llm_client import resolve_llm
     from app.config import settings
     from app.core.llm_utils import llm_parse_with_retry
     from app.models.database import CaptureSignal, ExperienceClaim, ExperienceSource
@@ -49,7 +51,7 @@ def process_github_pr_signal(signal_id: uuid.UUID) -> None:
             db=db,
             embed_text=embed_text,
             get_github_client=get_github_client,
-            get_llm_client=get_llm_client,
+            resolve_llm=resolve_llm,
             llm_parse_with_retry=llm_parse_with_retry,
             settings=settings,
             SYSTEM=SYSTEM,
@@ -229,7 +231,7 @@ def _process(
     db,
     embed_text,
     get_github_client,
-    get_llm_client,
+    resolve_llm,
     llm_parse_with_retry,
     settings,
     SYSTEM,
@@ -331,9 +333,10 @@ def _process(
         },
     ]
 
+    llm = resolve_llm(TaskName.GITHUB_PR_EXTRACTION)
     result = llm_parse_with_retry(
-        get_llm_client(),
-        settings.llm_model,
+        llm.client,
+        llm.model,
         messages,
         PRClaimExtractionResult,
         TEMPERATURE,

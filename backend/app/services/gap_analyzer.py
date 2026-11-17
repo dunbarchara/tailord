@@ -2,8 +2,8 @@ from typing import Literal
 
 import structlog
 
-from app.clients.llm_client import get_llm_client
-from app.config import settings
+from app.clients.llm_client import resolve_llm
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import gap_analysis as prompt
 from app.schemas.gaps import GapAnalysis, GapQuestion, ProfileGapWithChunk
@@ -223,9 +223,10 @@ def _generate_question(
         if not r.question_for_candidate.strip():
             raise ValueError("question_for_candidate is empty")
 
+    llm = resolve_llm(TaskName.GAP_ANALYSIS)
     return llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
+        llm.client,
+        model=llm.model,
         messages=[
             {"role": "system", "content": sys_prompt},
             {

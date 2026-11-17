@@ -1,7 +1,19 @@
+import threading
+from dataclasses import dataclass
+
 import structlog
 from openai import OpenAI
 
-from app.config import settings, use_managed_identity
+from app.clients.llm_registry import (
+    ModelSpec,
+    Registry,
+    get_registry,
+    reset_registry,
+    resolve_spec,
+    validate_registry,
+)
+from app.config import settings
+from app.core.llm_tasks import TaskName
 
 logger = structlog.get_logger(__name__)
 
@@ -11,35 +23,45 @@ logger = structlog.get_logger(__name__)
 LLM_TIMEOUT_SECONDS = 120
 
 
+@dataclass(frozen=True)
+class ResolvedLLM:
+    """The client and model id to use for one task, plus the spec it came from."""
+
+    client: OpenAI
+    model: str
+    spec: ModelSpec
+    task: TaskName | None = None
+
+
 def validate_llm_config() -> None:
-    if settings.environment in ("staging", "production"):
-        if not settings.llm_base_url:
-            raise RuntimeError(
-                "LLM_BASE_URL must be set in staging and production (injected by Terraform)"
-            )
-    elif not settings.llm_api_key and not settings.llm_base_url:
-        raise RuntimeError(
-            "LLM not configured: set LLM_BASE_URL (for a local endpoint) "
-            "or LLM_API_KEY (for OpenAI direct)"
+    """Fail startup unless llm_models.json is present, valid, and fully routable."""
+    if settings.llm_model_deprecated or settings.llm_api_version_deprecated:
+        logger.warning(
+            "llm_legacy_env_ignored",
+            detail="LLM_MODEL / LLM_API_VERSION are no longer read; "
+            "configure models and providers in llm_models.json",
         )
+    errors, warnings = validate_registry(get_registry())
+    for warning in warnings:
+        logger.warning("llm_registry_warning", detail=warning)
+    if errors:
+        raise RuntimeError("Invalid LLM model configuration:\n  - " + "\n  - ".join(errors))
 
 
-def get_llm_client() -> OpenAI:
+def _build_client(spec: ModelSpec) -> OpenAI:
     """
-    Returns an OpenAI-compatible client. Three modes:
+    Build an OpenAI-compatible client for a model spec. Three modes:
 
-    1. Azure AI Foundry + Managed Identity (no API key):
-       LLM_BASE_URL set, LLM_API_KEY absent, staging/production environment.
+    1. Azure AI Foundry + Managed Identity (auth="managed_identity"):
        Uses DefaultAzureCredential with the ai.azure.com scope — no api_version needed.
 
-    2. OpenAI / Azure AI Foundry with explicit key:
-       LLM_API_KEY set. Standard OpenAI client with configurable base_url.
+    2. OpenAI / Azure AI Foundry with explicit key (auth="api_key"):
+       Standard OpenAI client with configurable base_url.
 
     3. Local model (Ollama, LM Studio, etc.):
-       LLM_BASE_URL set to a local endpoint. LLM_API_KEY omitted or set to a
-       placeholder. Uses the generic OpenAI client.
+       base_url set to a local endpoint, API key omitted or a placeholder.
     """
-    if use_managed_identity():
+    if spec.auth == "managed_identity":
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         token_provider = get_bearer_token_provider(
@@ -47,27 +69,66 @@ def get_llm_client() -> OpenAI:
             "https://ai.azure.com/.default",
         )
         logger.debug(
-            "get_llm_client: Azure AI Foundry + Managed Identity base_url=%s model=%s timeout=%ss",
-            settings.llm_base_url,
-            settings.llm_model,
-            LLM_TIMEOUT_SECONDS,
+            "llm_client_built",
+            mode="managed_identity",
+            model_name=spec.name,
+            base_url=spec.base_url,
+            model=spec.model,
+            timeout=LLM_TIMEOUT_SECONDS,
         )
         return OpenAI(
             api_key=token_provider,
-            base_url=settings.llm_base_url,
+            base_url=spec.base_url,
             timeout=LLM_TIMEOUT_SECONDS,
         )
 
     logger.debug(
-        "get_llm_client: base_url=%s model=%s api_version=%s timeout=%ss",
-        settings.llm_base_url or "(openai default)",
-        settings.llm_model,
-        settings.llm_api_version or "(none)",
-        LLM_TIMEOUT_SECONDS,
+        "llm_client_built",
+        mode="api_key",
+        model_name=spec.name,
+        base_url=spec.base_url or "(openai default)",
+        model=spec.model,
+        api_version=spec.api_version or "(none)",
+        timeout=LLM_TIMEOUT_SECONDS,
     )
     return OpenAI(
-        api_key=settings.llm_api_key or "local-dev",
-        base_url=settings.llm_base_url or None,
+        api_key=spec.api_key or "local-dev",
+        base_url=spec.base_url or None,
         timeout=LLM_TIMEOUT_SECONDS,
-        default_query={"api-version": settings.llm_api_version} if settings.llm_api_version else {},
+        default_query={"api-version": spec.api_version} if spec.api_version else {},
     )
+
+
+# One client per distinct connection (adapter + endpoint + auth + key), shared across
+# threads and across models served by the same provider. OpenAI clients are thread-safe
+# and stateless per call (every request carries its full message list), and sharing one
+# reuses the HTTP connection pool and, under managed identity, the cached bearer token.
+# Keying on the connection (not the model name) also keeps per-user registries, if they
+# are ever added, from colliding. Rotating a key requires a process restart.
+_clients: dict[tuple, OpenAI] = {}
+_clients_lock = threading.Lock()
+
+
+def _client_for(spec: ModelSpec) -> OpenAI:
+    key = spec.connection_key()
+    client = _clients.get(key)
+    if client is None:
+        with _clients_lock:
+            client = _clients.get(key)
+            if client is None:
+                client = _build_client(spec)
+                _clients[key] = client
+    return client
+
+
+def resolve_llm(task: TaskName, registry: Registry | None = None) -> ResolvedLLM:
+    """Resolve the client and model id for a task via llm_models.json."""
+    spec = resolve_spec(task, registry)
+    return ResolvedLLM(client=_client_for(spec), model=spec.model, spec=spec, task=task)
+
+
+def reset_llm_caches() -> None:
+    """Drop cached registry and clients (tests, or after changing settings)."""
+    with _clients_lock:
+        _clients.clear()
+    reset_registry()

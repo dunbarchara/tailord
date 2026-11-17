@@ -76,20 +76,38 @@ Implication: `chunk_matching` currently returns score + rationale + blurb + sema
 
 Prerequisite for both evals and Jev. Today every call site does `get_llm_client()` + `settings.llm_model` (single global endpoint/model).
 
-- [ ] Define a `TaskName` enum covering every LLM call site (profile_extraction, profile_identity, job_extraction, job_bounds, chunk_matching, gap_analysis, letter_generation, github_enrichment, github_pr_extraction, resume_polish, user_input_parse, …)
-- [ ] Define a `TaskKind`: `system_one` (classification/scoring: output is a choice among known options) vs `generative` (free text / structured extraction). Each `TaskName` declares its kind. Today every call site is `generative`; `system_one` tasks arrive as tasks are split (e.g. chunk classification).
-- [ ] Define a model registry as a single JSON file (`backend/llm_models.json`, no secrets): `models` (named entries: `adapter`, deployment/model id, `base_url`, `api_key_env` or managed identity, optional `pricing`), `defaults` (one model per kind: `generative`, `system_one`), and `tasks` (optional per-task overrides). No `tier` field: cost classification of models is an eval-run concern, not a property of a model.
-- [ ] Adapters declare which kinds they support (`openai_compat`: both, via structured output; `jev`: `system_one` only). Assigning a model to a task of an unsupported kind fails validation.
-- [ ] `resolve_llm(task) -> ResolvedLLM`: per-task override → kind default → global default derived from existing env (`LLM_MODEL`, `LLM_BASE_URL`, …). With no file present, behavior is identical to today (no infra change). Unknown task/entry/unsupported kind fails loudly at startup, not mid-request.
-- [ ] Clients cached per model spec (thread-safe, stateless per call, connection pooling, managed-identity token caching); cache clearable for tests
-- [ ] **Pricing is expected for every model that runs.** `pricing` is optional in the schema (not always known up front) but: startup validation fails in staging/production if any routed model lacks pricing (warns locally); `compute_cost_usd` logs a warning once per unpriced model instead of silently returning `None`; the existing `llm_pricing.py` table is the built-in catalog and a spec's `pricing` overrides it. Cost visibility to users is a core product feature.
-- [ ] Refactor call sites to take a resolved config; `llm_parse_with_retry` / `llm_parse` keep their signatures where possible; metrics labels already carry `model` and `prompt_type`
-- [ ] Extend `tailoring.models` (already `{"letter": model}`) to record the model that ran each task
-- [ ] Keep Azure Managed Identity path in `llm_client.py` working per registry entry
-- [ ] Tests: resolution order, override precedence, fallback, bad config
-- [ ] Update `CLAUDE.md` / `.claude/rules/backend.md` with the routing convention
+- [x] Define a `TaskName` enum covering every LLM call site (profile_extraction, profile_identity, job_extraction, job_bounds, chunk_matching, gap_analysis, letter_generation, github_enrichment, github_pr_extraction, resume_polish, user_input_parse, …)
+- [x] Define a `TaskKind`: `system_one` (classification/scoring: output is a choice among known options) vs `generative` (free text / structured extraction). Each `TaskName` declares its kind. Today every call site is `generative`; `system_one` tasks arrive as tasks are split (e.g. chunk classification).
+- [x] Define a model registry as a single JSON file (`backend/llm_models.json`, no secrets): `models` (named entries: `adapter`, deployment/model id, `base_url`, `api_key_env` or managed identity, optional `pricing`), `defaults` (one model per kind: `generative`, `system_one`), and `tasks` (optional per-task overrides). No `tier` field: cost classification of models is an eval-run concern, not a property of a model.
+- [x] Adapters declare which kinds they support (`openai_compat`: both, via structured output; `jev`: `system_one` only — only `openai_compat` is registered so far, the `jev` adapter lands in Day 3). Assigning a model to a task of an unsupported kind fails validation.
+- [x] `resolve_llm(task) -> ResolvedLLM`: per-task override → kind default → global default derived from existing env (`LLM_MODEL`, `LLM_BASE_URL`, …). With no file present, behavior is identical to today (no infra change). Unknown task/entry/unsupported kind fails loudly at startup, not mid-request.
+- [x] Clients cached per model spec (thread-safe, stateless per call, connection pooling, managed-identity token caching); cache clearable for tests
+- [x] **Pricing is expected for every model that runs.** `pricing` is optional in the schema (not always known up front) but: startup validation fails in staging/production if any routed model lacks pricing (warns locally); `compute_cost_usd` logs a warning once per unpriced model instead of silently returning `None`; the existing `llm_pricing.py` table is the built-in catalog and a spec's `pricing` overrides it. Cost visibility to users is a core product feature.
+- [x] Refactor call sites to take a resolved config; `llm_parse_with_retry` / `llm_parse` keep their signatures where possible; metrics labels already carry `model` and `prompt_type`
+- [x] Extend `tailoring.models` (already `{"letter": model}`) to record the model that ran each task
+- [x] Keep Azure Managed Identity path in `llm_client.py` working per registry entry
+- [x] Tests: resolution order, override precedence, fallback, bad config
+- [x] Update `CLAUDE.md` / `.claude/rules/backend.md` with the routing convention
 
 Constraint: all LLM calls still go through `llm_client.py` and `llm_parse_with_retry(..., response_model=...)`; no inline `OpenAI(...)`.
+
+Implementation notes (done 2026-11-17):
+- `app/core/llm_tasks.py` (TaskName/TaskKind), `app/clients/llm_registry.py` (file schema, loading, validation, resolution), `app/clients/llm_client.py` (`resolve_llm`, clients cached per connection, `reset_llm_caches`), `backend/llm_models.json` (staging/production config) and `backend/llm_models.dev.json` (local dev config).
+- **A registry file is required.** `ENVIRONMENT=local` loads `llm_models.dev.json`; staging/production load `llm_models.json` (only this one is copied into the image, and the `COPY` fails the build without it). `LLM_REGISTRY_PATH` overrides explicitly (tests, evals). Missing/invalid file stops startup; startup logs the active path. No env fallback: `settings.llm_model` was removed (`LLM_MODEL`/`LLM_API_VERSION` are parsed only to emit an "ignored" warning). `get_llm_client()` was removed.
+- **Providers vs models.** A provider is a connection (adapter, `base_url` or `base_url_env`, `auth`, `api_key_env`); a model is an id + pricing on one provider. Endpoints and keys are referenced by env var name (process env first, then local `.env`), so one committed file works in every environment. `auth: auto` = API key if present, else Managed Identity in staging/production, else keyless local.
+- Committed defaults: prod file `gpt-5.4` (production's current model, so prod behavior is unchanged); dev file `gpt-5.4-mini` plus local LM Studio models. Shared providers/models must stay identical in both files (enforced by a test); dev only adds local providers/models and its own defaults.
+- **Local-only env overrides** (process env or gitignored `.env`): `LLM_DEFAULT_<KIND>=<model>` and `LLM_TASK_<TASK>=<model>`. Precedence: `LLM_TASK_*` > file `tasks` > `LLM_DEFAULT_*` > file `defaults`. Unknown names are startup errors (no silent typos); ignored with a warning when `ENVIRONMENT` is staging/production; applied overrides are logged at startup.
+- `Settings` now ignores unknown `.env` keys (`extra = "ignore"`), required so `.env` can hold provider keys named by `api_key_env` (e.g. `TYPESAFE_API_KEY`) and the overrides above. Side effect: a typo in a declared setting's name in `.env` is no longer rejected.
+- Tests run against `tests/llm_models.test.json` (set in `tests/conftest.py`), never the developer's file.
+- `tailoring.models` is now `{letter, job_extraction, job_bounds, chunk_matching}` (JSONB, no migration). Debug-log field `llm_model` became `llm_models`.
+- `tests/eval/eval_runner.py` and `scripts/test_foundry.py` now resolve the `chunk_matching` model through the registry.
+- Pre-existing: `make check-backend` fails under `/bin/sh` (`PIPESTATUS` in the bandit recipe); runs with `make SHELL=/bin/bash check-backend`.
+- `pricing` accepts an optional `per_tokens` (default 1,000,000) so a provider's price sheet can be copied verbatim (e.g. per-1K); rates are normalized to per-1M at load. Not yet modeled: cache-write rates (add with Claude on Foundry), tiered long-context pricing.
+- Follow-up (infra, not done): Terraform still sets `LLM_MODEL` / `LLM_API_VERSION`; they are now inert and can be removed from `infra/providers/azure/main.tf` and `variables.tf`. Production reads `LLM_BASE_URL` (already set) and uses Managed Identity (no `LLM_API_KEY`).
+
+Design choices made for later extension (not implemented yet):
+- **Other clouds** (AWS Bedrock, Google Vertex): a new provider entry with a new `adapter` and `auth` value (e.g. `aws_iam`, `gcp_adc`); model entries are unchanged. Adapters declare the task kinds they can serve.
+- **Bring-your-own LLM:** `Registry` is built from a plain structure and `resolve_llm(task, registry=...)` accepts any registry, so a per-user registry (stored in the DB, credentials encrypted like `UserIntegration`) can be layered over the global one. Clients are cached by connection (endpoint + auth + key), not model name, so per-user connections cannot collide. Needs before shipping: SSRF protection for user-supplied `base_url`s, spend/rate limits, and cost reporting for unpriced user models.
 
 ## Day 2 — Datasets
 

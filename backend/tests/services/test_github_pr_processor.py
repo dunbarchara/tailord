@@ -78,7 +78,7 @@ def _run_processor(signal_id, db):
         db=db,
         embed_text=db._mock_embed_text,
         get_github_client=db._mock_get_github_client,
-        get_llm_client=db._mock_get_llm_client,
+        resolve_llm=db._mock_resolve_llm,
         llm_parse_with_retry=db._mock_llm_parse_with_retry,
         settings=db._mock_settings,
         SYSTEM=SYSTEM,
@@ -125,9 +125,9 @@ def mock_db():
     db._mock_get_github_client = MagicMock(
         return_value=MagicMock(get_pr_commits=MagicMock(return_value=_make_commits()))
     )
-    db._mock_get_llm_client = MagicMock(return_value=MagicMock())
+    db._mock_resolve_llm = MagicMock(return_value=MagicMock())
     db._mock_llm_parse_with_retry = MagicMock(return_value=llm_result)
-    db._mock_settings = MagicMock(llm_model="gpt-4o-mini", embedding_model="text-embedding-3-small")
+    db._mock_settings = MagicMock(embedding_model="text-embedding-3-small")
     db._mock_is_duplicate_claim = MagicMock(return_value=None)
     db._mock_get_or_create_group = MagicMock(return_value=MagicMock(id=uuid.uuid4()))
 
@@ -173,9 +173,9 @@ def test_signal_not_found_exits_cleanly():
     db.query.return_value.filter.return_value.first.return_value = None
     db._mock_embed_text = MagicMock()
     db._mock_get_github_client = MagicMock()
-    db._mock_get_llm_client = MagicMock()
+    db._mock_resolve_llm = MagicMock()
     db._mock_llm_parse_with_retry = MagicMock()
-    db._mock_settings = MagicMock(llm_model="gpt-4o-mini", embedding_model="text-embedding-3-small")
+    db._mock_settings = MagicMock(embedding_model="text-embedding-3-small")
     db._mock_is_duplicate_claim = MagicMock()
     db._mock_get_or_create_group = MagicMock()
 
@@ -184,7 +184,7 @@ def test_signal_not_found_exits_cleanly():
         db=db,
         embed_text=db._mock_embed_text,
         get_github_client=db._mock_get_github_client,
-        get_llm_client=db._mock_get_llm_client,
+        resolve_llm=db._mock_resolve_llm,
         llm_parse_with_retry=db._mock_llm_parse_with_retry,
         settings=db._mock_settings,
         SYSTEM=SYSTEM,
@@ -231,9 +231,9 @@ def test_no_experience_source_marks_signal_failed():
     db.query.side_effect = query_side_effect
     db._mock_embed_text = MagicMock()
     db._mock_get_github_client = MagicMock()
-    db._mock_get_llm_client = MagicMock()
+    db._mock_resolve_llm = MagicMock()
     db._mock_llm_parse_with_retry = MagicMock()
-    db._mock_settings = MagicMock(llm_model="gpt-4o-mini", embedding_model="text-embedding-3-small")
+    db._mock_settings = MagicMock(embedding_model="text-embedding-3-small")
     db._mock_is_duplicate_claim = MagicMock()
     db._mock_get_or_create_group = MagicMock()
 
@@ -242,7 +242,7 @@ def test_no_experience_source_marks_signal_failed():
         db=db,
         embed_text=db._mock_embed_text,
         get_github_client=db._mock_get_github_client,
-        get_llm_client=db._mock_get_llm_client,
+        resolve_llm=db._mock_resolve_llm,
         llm_parse_with_retry=db._mock_llm_parse_with_retry,
         settings=db._mock_settings,
         SYSTEM=SYSTEM,
@@ -297,9 +297,9 @@ def test_github_api_error_marks_signal_failed():
 
     db._mock_embed_text = MagicMock()
     db._mock_get_github_client = MagicMock(return_value=github_client)
-    db._mock_get_llm_client = MagicMock()
+    db._mock_resolve_llm = MagicMock()
     db._mock_llm_parse_with_retry = MagicMock()
-    db._mock_settings = MagicMock(llm_model="gpt-4o-mini", embedding_model="text-embedding-3-small")
+    db._mock_settings = MagicMock(embedding_model="text-embedding-3-small")
     db._mock_is_duplicate_claim = MagicMock()
     db._mock_get_or_create_group = MagicMock()
 
@@ -308,7 +308,7 @@ def test_github_api_error_marks_signal_failed():
         db=db,
         embed_text=db._mock_embed_text,
         get_github_client=db._mock_get_github_client,
-        get_llm_client=db._mock_get_llm_client,
+        resolve_llm=db._mock_resolve_llm,
         llm_parse_with_retry=db._mock_llm_parse_with_retry,
         settings=db._mock_settings,
         SYSTEM=SYSTEM,
@@ -363,9 +363,9 @@ def test_llm_skip_reason_marks_signal_skipped():
     db._mock_get_github_client = MagicMock(
         return_value=MagicMock(get_pr_commits=MagicMock(return_value=_make_commits()))
     )
-    db._mock_get_llm_client = MagicMock()
+    db._mock_resolve_llm = MagicMock()
     db._mock_llm_parse_with_retry = MagicMock(return_value=llm_result)
-    db._mock_settings = MagicMock(llm_model="gpt-4o-mini", embedding_model="text-embedding-3-small")
+    db._mock_settings = MagicMock(embedding_model="text-embedding-3-small")
     db._mock_is_duplicate_claim = MagicMock()
     db._mock_get_or_create_group = MagicMock()
 
@@ -374,7 +374,7 @@ def test_llm_skip_reason_marks_signal_skipped():
         db=db,
         embed_text=db._mock_embed_text,
         get_github_client=db._mock_get_github_client,
-        get_llm_client=db._mock_get_llm_client,
+        resolve_llm=db._mock_resolve_llm,
         llm_parse_with_retry=db._mock_llm_parse_with_retry,
         settings=db._mock_settings,
         SYSTEM=SYSTEM,
@@ -415,7 +415,7 @@ def test_happy_path_inserts_claims(mock_db):
         db=mock_db,
         embed_text=mock_db._mock_embed_text,
         get_github_client=mock_db._mock_get_github_client,
-        get_llm_client=mock_db._mock_get_llm_client,
+        resolve_llm=mock_db._mock_resolve_llm,
         llm_parse_with_retry=mock_db._mock_llm_parse_with_retry,
         settings=mock_db._mock_settings,
         SYSTEM=SYSTEM,
@@ -480,7 +480,7 @@ def test_semantic_dedup_rolls_up_duplicate_into_merged_from(mock_db):
         db=mock_db,
         embed_text=mock_db._mock_embed_text,
         get_github_client=mock_db._mock_get_github_client,
-        get_llm_client=mock_db._mock_get_llm_client,
+        resolve_llm=mock_db._mock_resolve_llm,
         llm_parse_with_retry=mock_db._mock_llm_parse_with_retry,
         settings=mock_db._mock_settings,
         SYSTEM=SYSTEM,
@@ -532,7 +532,7 @@ def test_embed_text_failure_inserts_claim_without_embedding(mock_db):
         db=mock_db,
         embed_text=mock_db._mock_embed_text,
         get_github_client=mock_db._mock_get_github_client,
-        get_llm_client=mock_db._mock_get_llm_client,
+        resolve_llm=mock_db._mock_resolve_llm,
         llm_parse_with_retry=mock_db._mock_llm_parse_with_retry,
         settings=mock_db._mock_settings,
         SYSTEM=SYSTEM,
@@ -596,7 +596,7 @@ def test_commit_filtering_only_includes_user_commits(mock_db):
         db=mock_db,
         embed_text=mock_db._mock_embed_text,
         get_github_client=mock_db._mock_get_github_client,
-        get_llm_client=mock_db._mock_get_llm_client,
+        resolve_llm=mock_db._mock_resolve_llm,
         llm_parse_with_retry=mock_db._mock_llm_parse_with_retry,
         settings=mock_db._mock_settings,
         SYSTEM=SYSTEM,

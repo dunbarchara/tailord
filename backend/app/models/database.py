@@ -317,7 +317,7 @@ class Tailoring(Base):
     generation_telemetry: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Notion export JSONB. Keys: container_page_id, page_id, page_url, posting_page_id, posting_page_url.
     notion_export: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    # LLM models used. Keys: letter (scoring model planned).
+    # Model id used per pipeline task. Keys: letter, job_extraction, job_bounds, chunk_matching.
     models: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Resume draft JSONB. Populated by POST /tailorings/{id}/resume/generate.
     # Shape: ResumeDraft — sections, skills_claim_ids, education_group_ids, contact_override, warnings.

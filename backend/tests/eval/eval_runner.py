@@ -32,8 +32,9 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_BACKEND_DIR))
 
 from app.clients.embedding_client import embed_text  # noqa: E402
-from app.clients.llm_client import get_llm_client  # noqa: E402
+from app.clients.llm_client import resolve_llm  # noqa: E402
 from app.config import settings  # noqa: E402
+from app.core.llm_tasks import TaskName  # noqa: E402
 from app.core.llm_utils import llm_parse_with_retry  # noqa: E402
 from app.prompts import chunk_matching as prompt  # noqa: E402
 from app.schemas.matching import ChunkMatchBatch  # noqa: E402
@@ -47,6 +48,14 @@ _FIXTURES_DIR = _EVAL_DIR / "fixtures"
 _RESULTS_FILE = _EVAL_DIR / "RESULTS.md"
 _CACHE_DIR = _EVAL_DIR / "cache"
 _CACHE_FILE = _CACHE_DIR / "scores.json"
+
+
+def _eval_model() -> str:
+    """Model id the chunk-matching task is routed to in llm_models.json."""
+    from app.clients.llm_registry import resolve_spec
+
+    return resolve_spec(TaskName.CHUNK_MATCHING).model
+
 
 _SCORE_LABELS = {2: "STRONG", 1: "PARTIAL", 0: "GAP", -1: "N/A"}
 
@@ -271,9 +280,10 @@ def _run_fixture_llm(fixture: dict, profiles: dict[str, EvalCandidateProfile]) -
     chunks_block = "\n".join(
         f"{i}. [{c['chunk_type'].upper()}] {c['content']}" for i, c in enumerate(chunks, start=1)
     )
+    llm = resolve_llm(TaskName.CHUNK_MATCHING)
     result = llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
+        llm.client,
+        model=llm.model,
         messages=[
             {"role": "system", "content": prompt.SYSTEM},
             {
@@ -434,9 +444,10 @@ def _run_fixture_vector(
 
         grouped_context = _build_grouped_context(top_k_chunks)
 
+        llm = resolve_llm(TaskName.CHUNK_MATCHING)
         result = llm_parse_with_retry(
-            get_llm_client(),
-            model=settings.llm_model,
+            llm.client,
+            model=llm.model,
             messages=[
                 {"role": "system", "content": prompt.SYSTEM},
                 {
@@ -614,7 +625,7 @@ def main() -> None:
 
     print(
         f"\nEval run — {run_date}"
-        f"  |  model: {settings.llm_model}"
+        f"  |  model: {_eval_model()}"
         f"  |  embedding: {settings.embedding_model}"
         f"  |  K={k}"
     )
@@ -698,7 +709,7 @@ def main() -> None:
     if run_llm and run_vec:
         _write_results_md(
             run_date,
-            settings.llm_model,
+            _eval_model(),
             settings.embedding_model,
             fixtures,
             llm_results,
@@ -709,7 +720,7 @@ def main() -> None:
     if args.record:
         _save_score_cache(
             run_date,
-            settings.llm_model,
+            _eval_model(),
             settings.embedding_model,
             k,
             llm_results,

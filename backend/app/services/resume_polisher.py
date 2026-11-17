@@ -2,8 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import BaseModel
 
-from app.clients.llm_client import get_llm_client
-from app.config import settings
+from app.clients.llm_client import resolve_llm
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 from app.models.database import ExperienceClaim
 from app.prompts import resume_polish as prompt
@@ -27,7 +27,7 @@ def polish_bullets(
     One LLM call per bullet (stateless, parallel via ThreadPoolExecutor).
     Returns {claim_id: BulletPolishResult}.
     """
-    client = get_llm_client()
+    llm = resolve_llm(TaskName.RESUME_POLISH)
     claim_map = {str(c.id): c for c in claims}
     results: dict[str, BulletPolishResult] = {}
 
@@ -44,8 +44,8 @@ def polish_bullets(
             }
         ]
         result = llm_parse_with_retry(
-            client=client,
-            model=settings.llm_model,
+            client=llm.client,
+            model=llm.model,
             messages=messages,
             response_model=_BulletResult,
             temperature=prompt.TEMPERATURE,

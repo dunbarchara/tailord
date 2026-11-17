@@ -28,6 +28,8 @@ RUN uv run playwright install --with-deps chromium
 
 # ---------- Copy application code ----------
 COPY app ./app
+# Required: the app refuses to start without it, and this fails the build if it is missing.
+COPY llm_models.json ./llm_models.json
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 COPY entrypoint.sh ./entrypoint.sh

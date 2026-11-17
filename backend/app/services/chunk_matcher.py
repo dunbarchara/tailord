@@ -8,8 +8,9 @@ import openai
 import structlog
 from sqlalchemy import text
 
-from app.clients.llm_client import get_llm_client
+from app.clients.llm_client import resolve_llm
 from app.config import settings
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import chunk_matching as prompt
 from app.schemas.matching import ChunkMatchBatch, ChunkMatchResult
@@ -467,9 +468,10 @@ def _score_chunk_vector(
     grouped_context = _build_grouped_context(top_k_chunks)
 
     force_score_note = prompt.FORCE_SCORE_NOTE if force_score else ""
+    llm = resolve_llm(TaskName.CHUNK_MATCHING)
     result = llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
+        llm.client,
+        model=llm.model,
         messages=[
             {"role": "system", "content": prompt.SYSTEM},
             {
@@ -752,9 +754,10 @@ def enrich_job_chunks(
                     f"{idx}. [{c.chunk_type.upper()}] {c.content}"
                     for idx, c in enumerate(batch, start=1)
                 )
+                llm = resolve_llm(TaskName.CHUNK_MATCHING)
                 result = llm_parse_with_retry(
-                    get_llm_client(),
-                    model=settings.llm_model,
+                    llm.client,
+                    model=llm.model,
                     messages=[
                         {"role": "system", "content": prompt.SYSTEM},
                         {
@@ -995,9 +998,10 @@ def re_enrich_single_chunk(
             chunks_block = f"1. [{chunk.chunk_type.upper()}] {chunk.content}"
             force_score_note = prompt.FORCE_SCORE_NOTE if force_score else ""
 
+            llm = resolve_llm(TaskName.CHUNK_MATCHING)
             result = llm_parse_with_retry(
-                get_llm_client(),
-                model=settings.llm_model,
+                llm.client,
+                model=llm.model,
                 messages=[
                     {"role": "system", "content": prompt.SYSTEM},
                     {
@@ -1180,9 +1184,10 @@ def refresh_job_chunks(
                     f"{idx}. [{c.chunk_type.upper()}] {c.content}"
                     for idx, c in enumerate(batch, start=1)
                 )
+                llm = resolve_llm(TaskName.CHUNK_MATCHING)
                 result = llm_parse_with_retry(
-                    get_llm_client(),
-                    model=settings.llm_model,
+                    llm.client,
+                    model=llm.model,
                     messages=[
                         {"role": "system", "content": prompt.SYSTEM},
                         {

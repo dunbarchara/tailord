@@ -58,9 +58,7 @@ def _run_enrich(job_id, chunks, llm_result, mock_db=None):
                 with patch(
                     "app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result
                 ):
-                    with patch(
-                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
-                    ):
+                    with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                         with patch(
                             "app.services.chunk_matcher.format_sourced_profile",
                             return_value="formatted profile",
@@ -161,9 +159,7 @@ def test_batch_error_increments_error_count():
                     "app.services.chunk_matcher.llm_parse_with_retry",
                     side_effect=RuntimeError("LLM down"),
                 ):
-                    with patch(
-                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
-                    ):
+                    with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                         with patch(
                             "app.services.chunk_matcher.format_sourced_profile",
                             return_value="profile",
@@ -204,9 +200,7 @@ def test_batch_error_pads_chunks_with_minus_one():
                     "app.services.chunk_matcher.llm_parse_with_retry",
                     side_effect=RuntimeError("LLM down"),
                 ):
-                    with patch(
-                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
-                    ):
+                    with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                         with patch(
                             "app.services.chunk_matcher.format_sourced_profile",
                             return_value="profile",
@@ -245,7 +239,7 @@ def test_re_enrich_updates_chunk_fields_in_place():
 
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result):
-            with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+            with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                 with patch(
                     "app.services.chunk_matcher.format_sourced_profile",
                     return_value="profile",
@@ -520,9 +514,7 @@ def _run_enrich_vector(job_id, chunks, llm_result, experience_id=None):
                 with patch(
                     "app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result
                 ):
-                    with patch(
-                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
-                    ):
+                    with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                         with patch(
                             "app.services.chunk_matcher._retrieve_top_k_experience_chunks",
                             return_value=[dummy_exp_chunk],
@@ -533,7 +525,6 @@ def _run_enrich_vector(job_id, chunks, llm_result, experience_id=None):
                                 with patch("app.services.chunk_matcher.settings") as mock_settings:
                                     mock_settings.matching_mode = "vector"
                                     mock_settings.vector_top_k = 8
-                                    mock_settings.llm_model = "gpt-4o-mini"
                                     mock_settings.embedding_model = "text-embedding-3-small"
                                     mock_settings.chunk_scorer_concurrency = 8
                                     enrich_job_chunks(
@@ -601,9 +592,7 @@ def test_vector_mode_falls_back_to_llm_when_no_experience_id():
                 with patch(
                     "app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result
                 ):
-                    with patch(
-                        "app.services.chunk_matcher.get_llm_client", return_value=MagicMock()
-                    ):
+                    with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                         with patch(
                             "app.services.chunk_matcher.format_sourced_profile",
                             return_value="profile",
@@ -612,7 +601,6 @@ def test_vector_mode_falls_back_to_llm_when_no_experience_id():
                                 with patch("app.services.chunk_matcher.settings") as mock_settings:
                                     mock_settings.matching_mode = "vector"
                                     mock_settings.vector_top_k = 8
-                                    mock_settings.llm_model = "gpt-4o-mini"
                                     mock_settings.embedding_model = "text-embedding-3-small"
                                     mock_settings.chunk_scorer_concurrency = 8
                                     # No experience_id — should fall back to llm path
@@ -657,7 +645,7 @@ def test_re_enrich_vector_path_updates_chunk_fields():
 
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result):
-            with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+            with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                 with patch(
                     "app.services.chunk_matcher._retrieve_top_k_experience_chunks",
                     return_value=[dummy_exp_chunk],
@@ -668,7 +656,6 @@ def test_re_enrich_vector_path_updates_chunk_fields():
                         with patch("app.services.chunk_matcher.settings") as mock_settings:
                             mock_settings.matching_mode = "vector"
                             mock_settings.vector_top_k = 8
-                            mock_settings.llm_model = "gpt-4o-mini"
                             mock_settings.embedding_model = "text-embedding-3-small"
                             re_enrich_single_chunk("fake-chunk-id", {}, user_id=experience_id)
 
@@ -1017,7 +1004,7 @@ def test_refresh_does_not_modify_semantic_type():
 
     with patch("app.clients.database.SessionLocal", return_value=mock_db):
         with patch("app.services.chunk_matcher.llm_parse_with_retry", return_value=llm_result):
-            with patch("app.services.chunk_matcher.get_llm_client", return_value=MagicMock()):
+            with patch("app.services.chunk_matcher.resolve_llm", return_value=MagicMock()):
                 with patch(
                     "app.services.chunk_matcher.format_sourced_profile",
                     return_value="profile",

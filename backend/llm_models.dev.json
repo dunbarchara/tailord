@@ -1,0 +1,34 @@
+{
+  "providers": {
+    "foundry": {
+      "adapter": "openai_compat",
+      "base_url_env": "LLM_BASE_URL",
+      "api_key_env": "LLM_API_KEY"
+    },
+    "local": {
+      "adapter": "openai_compat",
+      "base_url": "http://localhost:1234/v1"
+    }
+  },
+  "models": {
+    "gpt-5.4": { "provider": "foundry", "model": "gpt-5.4" },
+    "gpt-5.4-mini": { "provider": "foundry", "model": "gpt-5.4-mini" },
+    "local-gemma-3-12b": {
+      "provider": "local",
+      "model": "google/gemma-3-12b",
+      "pricing": { "input": 0.0, "output": 0.0 }
+    },
+    "local-qwen2.5-vl-32b": {
+      "provider": "local",
+      "model": "qwen2.5-vl-32b-instruct",
+      "pricing": { "input": 0.0, "output": 0.0 }
+    },
+    "local-phi-4-mini": {
+      "provider": "local",
+      "model": "microsoft_phi-4-mini-instruct",
+      "pricing": { "input": 0.0, "output": 0.0 }
+    }
+  },
+  "defaults": { "generative": "gpt-5.4-mini" },
+  "tasks": {}
+}

@@ -1,8 +1,8 @@
 import re
 from datetime import date
 
-from app.clients.llm_client import get_llm_client
-from app.config import settings
+from app.clients.llm_client import resolve_llm
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 from app.prompts import profile_extraction as extraction_prompt
 from app.prompts import profile_identity as identity_prompt
@@ -91,12 +91,11 @@ def _render_experience_summary(structure: ExtractedStructure) -> str:
 
 
 def extract_profile(text: str) -> dict:
-    client = get_llm_client()
-
     # Step 1: structural extraction
+    extraction_llm = resolve_llm(TaskName.PROFILE_EXTRACTION)
     structure = llm_parse_with_retry(
-        client,
-        model=settings.llm_model,
+        extraction_llm.client,
+        model=extraction_llm.model,
         messages=[
             {"role": "system", "content": extraction_prompt.SYSTEM},
             {"role": "user", "content": extraction_prompt.USER_TEMPLATE.format(resume_text=text)},
@@ -112,9 +111,10 @@ def extract_profile(text: str) -> dict:
     yoe_label = _format_yoe_label(yoe)
 
     # Step 2: identity generation with computed YoE injected
+    identity_llm = resolve_llm(TaskName.PROFILE_IDENTITY)
     identity = llm_parse_with_retry(
-        client,
-        model=settings.llm_model,
+        identity_llm.client,
+        model=identity_llm.model,
         messages=[
             {"role": "system", "content": identity_prompt.SYSTEM},
             {

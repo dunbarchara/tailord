@@ -249,13 +249,16 @@ def main() -> None:
 
     # Print endpoint info before running
     from app.clients.llm_client import LLM_TIMEOUT_SECONDS
-    from app.config import settings
     from app.core.model_config import get_json_mode
 
     print("\nEndpoint configuration:")
-    print(f"  model    : {settings.llm_model}")
-    print(f"  base_url : {settings.llm_base_url or '(OpenAI default)'}")
-    print(f"  json_mode: {get_json_mode(settings.llm_model).value}")
+    from app.clients.llm_registry import resolve_spec
+    from app.core.llm_tasks import TaskName
+
+    spec = resolve_spec(TaskName.CHUNK_MATCHING)
+    print(f"  model    : {spec.model} (provider {spec.provider}, auth {spec.auth})")
+    print(f"  base_url : {spec.base_url or '(OpenAI default)'}")
+    print(f"  json_mode: {get_json_mode(spec.model).value}")
     print(f"  timeout  : {LLM_TIMEOUT_SECONDS}s")
 
     tasks_to_run = list(TASKS.items()) if args.task == "all" else [(args.task, TASKS[args.task])]

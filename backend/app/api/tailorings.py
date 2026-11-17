@@ -18,10 +18,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_api_key
+from app.clients.llm_registry import generation_models, resolve_spec
 from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
 from app.core.extract import extract_markdown_content, validate_job_content
+from app.core.llm_tasks import TaskName
 from app.core.playwright_helper import get_html_content, get_rendered_content
 from app.core.token_utils import truncate_to_tokens
 from app.core.url_validation import validate_job_url
@@ -165,7 +167,9 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
 
     ats_markdown = try_ats_fetch(url)
     if ats_markdown:
-        job_markdown = truncate_to_tokens(ats_markdown, max_tokens=12_000, model=settings.llm_model)
+        job_markdown = truncate_to_tokens(
+            ats_markdown, max_tokens=12_000, model=resolve_spec(TaskName.JOB_EXTRACTION).model
+        )
         logger.info("ats_fetch_success", url=url)
         JOB_SCRAPE_TOTAL.labels(method="ats", outcome="success").inc()
         return "", job_markdown, True, ""
@@ -196,7 +200,9 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
             detail="Couldn't fetch that job posting. The URL may be behind a login or bot protection.",
         )
     # Cap before validation so the validator sees the same text the LLM would.
-    job_markdown = truncate_to_tokens(job_markdown, max_tokens=12_000, model=settings.llm_model)
+    job_markdown = truncate_to_tokens(
+        job_markdown, max_tokens=12_000, model=resolve_spec(TaskName.JOB_EXTRACTION).model
+    )
     valid, reason = validate_job_content(job_markdown, html=html)
     if not valid:
         logger.warning("job_content_invalid", url=url, reason=reason, scrape_method=scrape_method)
@@ -218,7 +224,7 @@ async def _scrape_job_url(url: str) -> tuple[str, str, bool, str]:
                 markdown_preview=job_markdown[:300],
             )
             job_markdown = truncate_to_tokens(
-                job_markdown, max_tokens=12_000, model=settings.llm_model
+                job_markdown, max_tokens=12_000, model=resolve_spec(TaskName.JOB_EXTRACTION).model
             )
             valid, reason = validate_job_content(job_markdown, html=html)
             if not valid:
@@ -373,7 +379,7 @@ def _finalize_tailoring(
                     {
                         "correlation_id": correlation_id,
                         "matching_mode": settings.matching_mode,
-                        "llm_model": settings.llm_model,
+                        "llm_models": generation_models(),
                         "is_manual": is_manual,
                     },
                     user_id=user_id,
@@ -821,7 +827,7 @@ def _finalize_tailoring(
             now = datetime.now(timezone.utc)
             tailoring.generated_output = generated_output
             tailoring.letter_content = letter_content
-            tailoring.models = {"letter": settings.llm_model}
+            tailoring.models = generation_models()
             tailoring.generation_status = "ready"
             tailoring.generation_stage = None
             tailoring.generated_at = now
@@ -878,7 +884,7 @@ def _finalize_tailoring(
                 "total_duration_ms": total_duration_ms,
                 "phase_durations": phase_durations,
                 "matching_mode": settings.matching_mode,
-                "llm_model": settings.llm_model,
+                "llm_models": generation_models(),
                 "batch_count": _captured_telemetry.get("batch_count"),
                 "batch_errors": _captured_telemetry.get("batch_errors"),
             },
@@ -957,7 +963,9 @@ async def _stream_tailoring(
                 # Manual path: use provided description directly, no scraping.
                 html = ""
                 job_markdown = truncate_to_tokens(
-                    request.description, max_tokens=12_000, model=settings.llm_model
+                    request.description,
+                    max_tokens=12_000,
+                    model=resolve_spec(TaskName.JOB_EXTRACTION).model,
                 )
             else:
                 # URL path: scrape and optionally validate.
@@ -1285,7 +1293,7 @@ def _run_letter_regen(
             return
         tailoring.generated_output = generated_output
         tailoring.letter_content = letter_content
-        tailoring.models = {"letter": settings.llm_model}
+        tailoring.models = generation_models()
         tailoring.generation_status = "ready"
         tailoring.generation_stage = None
         tailoring.generated_at = now
@@ -2089,7 +2097,8 @@ def get_tailoring_debug_info(
 
     _debug_telemetry = tailoring.generation_telemetry or {}
     return {
-        "model": (tailoring.models or {}).get("letter") or settings.llm_model,
+        "model": (tailoring.models or {}).get("letter")
+        or resolve_spec(TaskName.LETTER_GENERATION).model,
         "generation_duration_ms": _debug_telemetry.get("duration_ms"),
         "detect_bounds_ms": _debug_telemetry.get("detect_bounds_ms"),
         "chunk_batch_count": _debug_telemetry.get("batch_count"),

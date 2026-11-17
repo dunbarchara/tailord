@@ -178,6 +178,8 @@ frontend/src/app/
 | `backend/app/main.py` | FastAPI app factory |
 | `backend/app/config.py` | Pydantic Settings (env vars) |
 | `backend/app/clients/llm_client.py` | OpenAI SDK wrapper (configurable `LLM_BASE_URL`) |
+| `backend/app/clients/llm_registry.py` | Per-task model routing from a **required** registry file — `llm_models.dev.json` when `ENVIRONMENT=local`, `llm_models.json` in staging/production (providers → models → defaults/tasks); `resolve_llm(task)`; local-only `LLM_DEFAULT_<KIND>` / `LLM_TASK_<TASK>` overrides via env/.env; validates routing, env vars and pricing at startup. `LLM_MODEL` is retired |
+| `backend/app/core/llm_tasks.py` | `TaskName` (one per LLM call site) and `TaskKind` (`generative` / `system_one`) |
 | `backend/app/clients/storage_client.py` | Storage abstraction — `AzureStorageClient` / `S3StorageClient` |
 | `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `AuthIdentity`, `UserProfile`, `UserIntegration`, `ExperienceSource`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
 | `backend/app/api/experience.py` | ExperienceSource CRUD, GitHub enrichment, SSE processing stream |

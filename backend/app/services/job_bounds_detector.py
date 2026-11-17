@@ -4,8 +4,8 @@ import structlog
 from pydantic import BaseModel
 
 import app.prompts.job_bounds as prompt
-from app.clients.llm_client import get_llm_client
-from app.config import settings
+from app.clients.llm_client import resolve_llm
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 
 logger = structlog.get_logger(__name__)
@@ -24,15 +24,15 @@ def detect_job_content_bounds(markdown: str) -> JobContentBounds:
     be located in the markdown via str.find() / str.rfind(). Falls back to
     JobContentBounds() (both anchors null — use full markdown) on any failure.
     """
-    client = get_llm_client()
+    llm = resolve_llm(TaskName.JOB_BOUNDS)
     messages = [
         {"role": "system", "content": prompt.SYSTEM},
         {"role": "user", "content": prompt.USER_TEMPLATE.format(markdown=markdown)},
     ]
     try:
         bounds = llm_parse_with_retry(
-            client,
-            settings.llm_model,
+            llm.client,
+            llm.model,
             messages,
             response_model=JobContentBounds,
             temperature=prompt.TEMPERATURE,

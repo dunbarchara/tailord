@@ -14,11 +14,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
-from app.clients.llm_client import get_llm_client
+from app.clients.llm_client import resolve_llm
 from app.clients.storage_client import get_storage_client
-from app.config import settings
 from app.core.deps_database import get_db
 from app.core.deps_user import require_approved_user
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 from app.metrics import (
     EXPERIENCE_PHASE_DURATION_MS,
@@ -699,9 +699,10 @@ def parse_user_input(
     if _is_short_input(text):
         return {"chunks": [text]}
 
+    llm = resolve_llm(TaskName.USER_INPUT_PARSE)
     result = llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
+        llm.client,
+        model=llm.model,
         messages=[
             {"role": "system", "content": parse_prompt.SYSTEM},
             {"role": "user", "content": parse_prompt.USER_TEMPLATE.format(text=text)},

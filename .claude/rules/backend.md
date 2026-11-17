@@ -7,5 +7,6 @@ globs: backend/**
 - Storage: always use `StorageClient` abstraction. Never import `azure.*` or `boto3` directly outside `clients/storage_*.py`.
 - New DB columns require an Alembic migration — never `Base.metadata.create_all()`.
 - LLM calls go through `llm_client.py`. Never instantiate `OpenAI`/`AzureOpenAI` inline.
+- Pick the model per task: `llm = resolve_llm(TaskName.X)` then `llm_parse_with_retry(llm.client, llm.model, ...)`. Never read model names/keys from settings or env at a call site. New LLM call site → add a `TaskName` in `app/core/llm_tasks.py`. Routing lives only in the registry file (`backend/llm_models.dev.json` locally, `backend/llm_models.json` in staging/production — keep shared providers/models identical in both; a test enforces it). Providers = connection + auth, models = id + pricing; secrets/endpoints are referenced by env var name, never stored. Every routed model needs pricing. Per-developer routing tweaks go in `.env` (`LLM_TASK_<TASK>=<model>`, local only), never in the tracked files.
 - All LLM calls must use `llm_parse_with_retry(..., response_model=SomePydanticModel)`. Never use raw `json.loads()` on LLM output — no validation, no retry on malformed output.
 - Background work: use FastAPI `BackgroundTasks`. Never `asyncio.create_task()` inside a request handler.

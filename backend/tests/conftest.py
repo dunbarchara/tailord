@@ -18,8 +18,23 @@ from app.config import settings  # noqa: E402
 
 # Inject test secrets into the settings singleton
 settings.api_key = "test-key"
+# Tests route LLM calls through a fixed registry, never the developer's own llm_models.json.
+settings.llm_registry_path = os.path.join(os.path.dirname(__file__), "llm_models.test.json")
 settings.notion_client_id = "test-notion-client-id"
 settings.notion_client_secret = "test-notion-client-secret"
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_llm_caches():
+    """Registry and client caches are process-global; isolate every test from them."""
+    from app.clients.llm_client import reset_llm_caches
+
+    reset_llm_caches()
+    yield
+    reset_llm_caches()
+
 
 # ---------------------------------------------------------------------------
 # Auth header constants (used by both unit and integration tests)

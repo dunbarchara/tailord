@@ -1,8 +1,8 @@
 import structlog
 
-from app.clients.llm_client import get_llm_client
-from app.config import settings
+from app.clients.llm_client import resolve_llm
 from app.core.extract import extract_jsonld, extract_meta_signals
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse
 from app.prompts import job_extraction as prompt
 from app.schemas.llm_outputs import ExtractedJob
@@ -62,10 +62,10 @@ def extract_job(job_markdown: str, html: str | None = None) -> dict:
 
     hints_block = _format_hints_block(hints)
 
-    client = get_llm_client()
+    llm = resolve_llm(TaskName.JOB_EXTRACTION)
     result = llm_parse(
-        client,
-        model=settings.llm_model,
+        llm.client,
+        model=llm.model,
         messages=[
             {"role": "system", "content": prompt.SYSTEM},
             {

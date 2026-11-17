@@ -6,8 +6,9 @@ import structlog
 import structlog.contextvars
 
 from app.clients.github_client import GitHubClient
-from app.clients.llm_client import get_llm_client
+from app.clients.llm_client import resolve_llm
 from app.config import settings
+from app.core.llm_tasks import TaskName
 from app.core.llm_utils import llm_parse_with_retry
 from app.metrics import GITHUB_ENRICHMENT_DURATION_MS, GITHUB_ENRICHMENT_TOTAL
 from app.prompts.github_enrichment import PROMPT_NAME, SYSTEM, TEMPERATURE, USER_TEMPLATE
@@ -54,9 +55,10 @@ def _llm_enrich_repo(
         readme=readme or "No README found.",
         manifests=_format_manifests(manifests),
     )
+    llm = resolve_llm(TaskName.GITHUB_ENRICHMENT)
     return llm_parse_with_retry(
-        get_llm_client(),
-        model=settings.llm_model,
+        llm.client,
+        model=llm.model,
         messages=[
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": user_prompt},
