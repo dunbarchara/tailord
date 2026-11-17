@@ -21,6 +21,15 @@ updates:
       # eslint-config-next with ESLint 10 support.
       - dependency-name: "eslint"
         versions: ["10.x"]
+      # typescript-eslint (via eslint-config-next) throws on TS 7.x at load time.
+      # Unblock when typescript-eslint supports TS >=7.1 (typescript-eslint#10940).
+      - dependency-name: "typescript"
+        versions: ["7.x"]
+      # exporter-trace-otlp-http 0.300+ peers @opentelemetry/api ^1.10, but
+      # sdk-trace-node/resources/core 2.12 peer api <1.10 — npm ci fails with
+      # ERESOLVE. Unblock when the 2.x SDK packages accept api 1.10.
+      - dependency-name: "@opentelemetry/exporter-trace-otlp-http"
+        versions: [">=0.300.0"]
 
   # --- BACKEND (uv) ---
   - package-ecosystem: uv
