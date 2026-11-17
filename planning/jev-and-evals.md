@@ -77,8 +77,12 @@ Implication: `chunk_matching` currently returns score + rationale + blurb + sema
 Prerequisite for both evals and Jev. Today every call site does `get_llm_client()` + `settings.llm_model` (single global endpoint/model).
 
 - [ ] Define a `TaskName` enum covering every LLM call site (profile_extraction, profile_identity, job_extraction, job_bounds, chunk_matching, gap_analysis, letter_generation, github_enrichment, github_pr_extraction, resume_polish, user_input_parse, …)
-- [ ] Define a model registry: named entries with `provider`/adapter type, `base_url`, model id, auth mode (API key vs Managed Identity), price per 1M input/output tokens. Format: YAML or JSON in-repo; secrets via env, never in the file.
-- [ ] `resolve_model(task) -> ResolvedModel`: per-task override (env/config) → falls back to global default (`LLM_MODEL` etc.). Unknown task or entry fails loudly at startup, not mid-request.
+- [ ] Define a `TaskKind`: `system_one` (classification/scoring: output is a choice among known options) vs `generative` (free text / structured extraction). Each `TaskName` declares its kind. Today every call site is `generative`; `system_one` tasks arrive as tasks are split (e.g. chunk classification).
+- [ ] Define a model registry as a single JSON file (`backend/llm_models.json`, no secrets): `models` (named entries: `adapter`, deployment/model id, `base_url`, `api_key_env` or managed identity, optional `pricing`), `defaults` (one model per kind: `generative`, `system_one`), and `tasks` (optional per-task overrides). No `tier` field: cost classification of models is an eval-run concern, not a property of a model.
+- [ ] Adapters declare which kinds they support (`openai_compat`: both, via structured output; `jev`: `system_one` only). Assigning a model to a task of an unsupported kind fails validation.
+- [ ] `resolve_llm(task) -> ResolvedLLM`: per-task override → kind default → global default derived from existing env (`LLM_MODEL`, `LLM_BASE_URL`, …). With no file present, behavior is identical to today (no infra change). Unknown task/entry/unsupported kind fails loudly at startup, not mid-request.
+- [ ] Clients cached per model spec (thread-safe, stateless per call, connection pooling, managed-identity token caching); cache clearable for tests
+- [ ] **Pricing is expected for every model that runs.** `pricing` is optional in the schema (not always known up front) but: startup validation fails in staging/production if any routed model lacks pricing (warns locally); `compute_cost_usd` logs a warning once per unpriced model instead of silently returning `None`; the existing `llm_pricing.py` table is the built-in catalog and a spec's `pricing` overrides it. Cost visibility to users is a core product feature.
 - [ ] Refactor call sites to take a resolved config; `llm_parse_with_retry` / `llm_parse` keep their signatures where possible; metrics labels already carry `model` and `prompt_type`
 - [ ] Extend `tailoring.models` (already `{"letter": model}`) to record the model that ran each task
 - [ ] Keep Azure Managed Identity path in `llm_client.py` working per registry entry
@@ -116,7 +120,8 @@ Constraint: all LLM calls still go through `llm_client.py` and `llm_parse_with_r
   - Projection caveat: early progress can mislead (items/models are not uniform in cost), so progress is weighted by estimated cost per item, not item count
   - `abort` (default when non-interactive, so background runs never hang): stop cleanly
   - Either way, partial results are written and the exact resume command is printed (results are cached per task/model/item/run, so no paid call is repeated)
-- [ ] **Model selection**: a suites file maps each task to its model list; CLI `--models` / `--exclude` override it. Registry entries carry a `tier` (`cheap` | `premium`); premium models never run unless named explicitly (no wildcard can trigger them).
+- [ ] **Model selection**: a suites file maps each task to an explicit model list (no wildcards); CLI `--models` / `--exclude` override it. Which models count as "cheap" for the harness-vetting phase is just the suite contents, not model metadata.
+- [ ] **Unpriced models**: the dry run flags any model lacking pricing, shows its cost as unknown (excluded from totals), and warns that the spend cap cannot cover it. Running it requires an explicit `--allow-unpriced` opt-in.
 - [ ] Metrics:
   - Quality: accuracy, macro-F1, per-class precision/recall, confusion matrix — reported **separately against each label source**
   - Calibration: ECE / reliability buckets, accuracy at confidence thresholds (key for Jev; for others use logprobs or self-reported confidence where available, else mark N/A)
@@ -132,7 +137,7 @@ Constraint: all LLM calls still go through `llm_client.py` and `llm_parse_with_r
 
 - [ ] Collect candidate model list with prices (Foundry price sheet, Jev console); fill the registry
 - [ ] **Vet harness first on the cheap pair** (`gpt-5.4-mini`, `jev-1.14.0`): dry-run estimate, capped run, deliberately low cap to exercise pause/abort/resume, compare actual vs estimated cost to tune the 1.5× padding
-- [ ] Deploy chosen Foundry models; record deployment names and `tier` in the registry
+- [ ] Deploy chosen Foundry models; record deployment names and pricing in the registry
 - [ ] Second run adds larger/premium models: dry-run estimate → user approves the printed command with its cap
 - [ ] Run: `semantic_type` classification, match score, job bounds (if time)
 - [ ] Write up results vs both silver label sets; call out where label sources disagree
