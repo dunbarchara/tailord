@@ -1,0 +1,18 @@
+{
+  "name": "tailord",
+  "private": true,
+  "description": "Tailord monorepo — root dev orchestration only. App dependencies live in frontend/ and backend/.",
+  "scripts": {
+    "dev": "node scripts/dev-preflight.mjs --target=all && npm run dev:servers",
+    "dev:servers": "concurrently -k -n api,web -c blue,magenta \"cd backend && uv run uvicorn app.main:app --reload\" \"npm --prefix frontend run dev\"",
+    "dev:api": "node scripts/dev-preflight.mjs --target=api && cd backend && uv run uvicorn app.main:app --reload",
+    "dev:web": "node scripts/dev-preflight.mjs --target=web && npm --prefix frontend run dev",
+    "dev:infra": "node scripts/dev-preflight.mjs --target=infra",
+    "dev:down": "docker compose -f backend/docker-compose.yml down",
+    "dev:reset": "node scripts/dev-preflight.mjs --target=infra --reset",
+    "dev:approve": "cd backend && uv run python dev_approve.py"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
+  }
+}

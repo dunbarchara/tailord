@@ -19,6 +19,21 @@ tailord/
 
 ## Dev Commands
 
+**Everything** (from repo root — start Docker Desktop first):
+```
+npm ci                 # one-time: installs root dev tooling (concurrently)
+npm run dev            # preflight + backend + frontend, prints all service URLs
+npm run dev:infra      # preflight only (Docker stack + migrations), no servers
+npm run dev:api        # preflight + backend only
+npm run dev:web        # preflight + frontend only
+npm run dev:down       # stop the Docker stack
+npm run dev:reset      # wipe local DB/storage/observability volumes, re-migrate (asks first)
+npm run dev:approve    # approve a user locally (backend/dev_approve.py)
+```
+Preflight (`scripts/dev-preflight.mjs`): checks Docker, env files, ports 3000/8000 → `docker compose up -d --wait` → `npm ci`/`uv sync --frozen` if lockfiles changed → `alembic upgrade head` → creates `app_test` DB → ensures Playwright Chromium.
+
+Manual equivalents, if needed:
+
 **Frontend** (from `frontend/`):
 ```
 npm run dev      # Next.js dev server on :3000
@@ -31,7 +46,6 @@ npm run lint
 docker compose up -d                                    # infra + full observability stack (required first)
 uv run alembic upgrade head                             # apply pending migrations
 uv run uvicorn app.main:app --reload                    # FastAPI dev server on :8000
-alloy run alloy-native.config --storage.path=/tmp/alloy-native-data  # log shipping (separate terminal)
 ```
 
 **Local observability** (all running after `docker compose up -d`):
@@ -44,12 +58,12 @@ Alloy UI     http://localhost:12345  pipeline graph (metrics + traces)
 ```
 
 Signal routing:
-- **Logs**: backend writes `logs/app.jsonl` → native Alloy (`alloy-native.config`) → Loki
+- **Logs**: backend writes `logs/app.jsonl` → Docker Alloy (bind-mounts `backend/logs` read-only, tails the file) → Loki
 - **Metrics**: Docker Alloy scrapes `:8000/metrics` every 15s → remote_write → Prometheus
 - **Traces**: backend sends OTLP → Docker Alloy `:4317/4318` → Tempo
 - **Frontend**: stdout only (terminal) — no structured local observability; in production, Azure Container Apps captures stdout to Azure Monitor
 
-Why native Alloy for logs: inotify does not fire inside Docker containers on macOS bind mounts (even with VirtioFS). Native Alloy uses FSEvents and detects file changes correctly. Install once via `brew install grafana/grafana/alloy`.
+Logs work on WSL and macOS with no native Alloy install — the Docker Alloy tails the bind-mounted file. Explore logs in Grafana → Explore → Loki, query `{job="tailord-backend"}`.
 
 ---
 
