@@ -196,6 +196,35 @@ if (needsApi) {
   const pw = run("uv", ["run", "playwright", "install", "chromium"], { cwd: BACKEND, capture: true });
   if (pw.status !== 0) fail("playwright install chromium failed", out(pw));
   ok("Chromium installed");
+
+  // The binary downloading is not enough: on Linux/WSL it also needs OS libraries
+  // (libnspr4, libnss3, ...) that `playwright install` does not provide. Launch it once to verify.
+  const probe = `
+import asyncio
+from playwright.async_api import async_playwright
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch(headless=True)
+        await b.close()
+asyncio.run(main())
+`;
+  const launch = run("uv", ["run", "python", "-c", probe], { cwd: BACKEND, capture: true });
+  if (launch.status !== 0) {
+    const log = out(launch);
+    const lib = log.match(/error while loading shared libraries: (\S+?):/)?.[1];
+    let hint;
+    if (lib || process.platform === "linux") {
+      hint =
+        (lib ? `Chromium can't start: missing system library ${lib}.\n  ` : "Chromium failed to launch.\n  ") +
+        "Install Playwright's Linux dependencies (needs sudo; common on fresh WSL/Ubuntu):\n" +
+        `    ${cyan('cd backend && sudo env "PATH=$PATH" uv run playwright install-deps chromium')}\n` +
+        "  Then re-run this command.";
+    } else {
+      hint = `Chromium failed to launch. Try: ${cyan("cd backend && uv run playwright install --force chromium")}\n${dim(log.trim().split("\n").slice(-8).join("\n"))}`;
+    }
+    fail("Playwright can't launch Chromium (job-URL scraping will fail)", hint);
+  }
+  ok("Chromium launches");
 }
 
 // ── 7. Endpoints ─────────────────────────────────────────────────────────────
