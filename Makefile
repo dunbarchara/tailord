@@ -38,11 +38,14 @@
         install install-backend install-frontend \
         eval-offline eval-record eval-live
 
-# Windows' GNU Make can't find sh.exe on PATH and falls back to cmd.exe, which
-# breaks recipes using bash syntax (e.g. PIPESTATUS in check-backend). macOS/Linux
-# already default to a bash-backed /bin/sh, so this only applies on Windows.
+# Recipes use bash syntax (e.g. PIPESTATUS in check-backend), so pin the shell.
+# Windows' GNU Make can't find sh.exe on PATH and falls back to cmd.exe; Debian/Ubuntu
+# (including WSL) default /bin/sh to dash, which lacks PIPESTATUS; macOS's /bin/sh is
+# bash in POSIX mode. Pinning bash everywhere avoids all three.
 ifeq ($(OS),Windows_NT)
 SHELL := C:/Program Files/Git/bin/bash.exe
+else
+SHELL := /bin/bash
 endif
 
 # ─── Install ───────────────────────────────────────────────────────────────────
