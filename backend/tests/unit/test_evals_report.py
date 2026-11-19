@@ -123,8 +123,11 @@ def test_stale_results_are_ignored(tmp_path):
 def test_markdown_has_the_comparison_table_and_per_model_sections(results):
     r = report.build_report(TASK, ITEMS, root=results)
     md = report.render_markdown(r, list(TASK.labels))
-    assert "| model | coverage | acc vs agreed | acc vs silver:opus | acc vs silver:sonnet |" in md
-    assert "| strong | 100% | 100.0%" in md and "## weak" in md
+    assert (
+        "| model | coverage | no answer | acc vs agreed | acc vs silver:opus | acc vs silver:sonnet |"
+        in md
+    )
+    assert "| strong | 100% | 0 | 100.0%" in md and "## weak" in md
     assert "Errors: ValidationError x1" in md
     assert "p = 0.250 (no significant difference)" in md
     assert "If only answers at or above a confidence were kept" in md  # strong only
@@ -162,3 +165,44 @@ def test_classes_absent_from_the_data_render_as_na_not_zero(tmp_path):
         report.build_report(task, ITEMS[:2], root=tmp_path), list(task.labels)
     )
     assert "| c | n/a | n/a | n/a | 0 |" in md and "| a | 1.00 | 1.00 | 1.00 | 2 |" in md
+
+
+def test_rate_limited_items_are_excluded_from_scores_flagged_and_not_counted_as_wrong(tmp_path):
+    seed(
+        tmp_path,
+        "m",
+        [
+            rec("i0", "a"),
+            rec("i1", "a"),
+            rec("i2", None, error="RateLimitError", cost=None),
+            rec("i3", None, error="RateLimitError", cost=None),
+        ],
+    )
+    r = report.build_report(TASK, ITEMS, root=tmp_path)
+    m = r["models"]["m"]
+    assert m["unanswered"] == 2 and m["unanswered_by_type"] == {"RateLimitError": 2}
+    assert m["quality"]["agreed"]["n"] == 2 and m["quality"]["agreed"]["accuracy"] == 1.0
+    assert m["quality"]["agreed"]["n_errors"] == 0  # not wrong: never answered
+    assert m["coverage"] == 0.5 and m["reliability"]["error_rate"] == 0.0
+    md = report.render_markdown(r, list(TASK.labels))
+    assert "**INCOMPLETE:** m has 2 item(s) with no answer yet" in md
+    assert "No answer (transient, excluded from scores): RateLimitError x2" in md
+
+
+def test_model_errors_still_count_as_wrong_but_pairwise_skips_unanswered_items(tmp_path):
+    seed(tmp_path, "a", [rec("i0", "a"), rec("i1", "a"), rec("i2", "b"), rec("i3", "b")])
+    seed(
+        tmp_path,
+        "b",
+        [
+            rec("i0", "a"),
+            rec("i1", None, error="RateLimitError", cost=None),
+            rec("i2", None, error="ValidationError"),
+            rec("i3", "b"),
+        ],
+    )
+    r = report.build_report(TASK, ITEMS, root=tmp_path)
+    assert r["models"]["b"]["quality"]["agreed"]["n_errors"] == 1  # ValidationError only
+    pair = r["pairwise_agreed"][0]
+    assert pair["n"] == 3  # i1 dropped: b never answered it
+    assert pair["only_a_correct"] == 1 and pair["only_b_correct"] == 0  # i2

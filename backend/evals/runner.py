@@ -24,6 +24,9 @@ from evals.tasks.base import ClassificationTask, EvalItem
 
 RESULTS_DIR = DATA_DIR.parent / "results"
 CALIBRATION_MIN_RECORDS = 20
+MAX_REQUEUES = 3  # in-run retries of a call that failed transiently (rate limit, connection)
+THROTTLE_RECOVERY_STREAK = 10  # successes in a row before concurrency creeps back up
+THROTTLE_MAX_WAIT_S = 30.0
 CAP_PADDING = 1.5  # suggested cap = estimate x this (schema retries, estimation error)
 TOP_UP_PADDING = 1.2
 
@@ -233,6 +236,8 @@ class RunStats:
     aborted: bool = False
     remaining: int = 0
     cap: float = 0.0  # the cap in force when the run ended
+    throttles: int = 0  # transient failures that made the runner back off
+    unresolved: int = 0  # calls still failing transiently after every in-run retry
 
     @property
     def progress(self) -> float:
@@ -294,8 +299,16 @@ def execute(
     results_root: Path = RESULTS_DIR,
     out: Callable[[str], None] = print,
     clock: Callable[[], float] = time.time,
+    backoff_base: float = 2.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> RunStats:
-    """Run the plan's units, appending each result as it completes."""
+    """Run the plan's units, appending each result as it completes.
+
+    Transient failures (rate limits, connection errors) are not model answers: the runner
+    halves its concurrency, waits with exponential backoff, and requeues the call up to
+    MAX_REQUEUES times. Concurrency creeps back up after a streak of successes. Calls that
+    still fail are counted in `stats.unresolved` and are retried by simply running again."""
     task = plan.task
     stores = {m: ResultStore(task.name, m, results_root) for m in adapters}
     prices = {m: price_for(m) for m in adapters}
@@ -303,28 +316,56 @@ def execute(
     queue = list(plan.units)
     pos = 0
     inflight: dict[Future, tuple[str, str, int]] = {}
+    requeues: dict[tuple[str, str, int], int] = {}
+    limit = concurrency
+    cooldown_until = 0.0
+    consecutive = streak = 0
     next_report = 0.1
 
     def finish(fut: Future) -> None:
-        nonlocal next_report
-        model, item_id, run = inflight.pop(fut)
+        nonlocal next_report, limit, cooldown_until, consecutive, streak
+        unit = inflight.pop(fut)
+        model, item_id, run = unit
         result: CallResult = fut.result()
-        price = prices[model]
-        cost = cost_usd(price, result.tokens_in, result.tokens_out)
-        record = {
-            "task": task.name,
-            "model": model,
-            "item_id": item_id,
-            "run": run,
-            "input_hash": input_hash(task, items_by_id[item_id]),
-            **{k: v for k, v in asdict(result).items()},
-            "cost_usd": cost,
-            "ts": clock(),
-        }
-        stores[model].append(record)
+        cost = cost_usd(prices[model], result.tokens_in, result.tokens_out)
+        stores[model].append(
+            {
+                "task": task.name,
+                "model": model,
+                "item_id": item_id,
+                "run": run,
+                "input_hash": input_hash(task, items_by_id[item_id]),
+                **asdict(result),
+                "cost_usd": cost,
+                "ts": clock(),
+            }
+        )
         stats.calls += 1
         stats.spend += cost or 0.0
-        stats.est_done += plan.unit_cost[(model, item_id, run)]
+
+        if result.error in TRANSIENT_ERRORS:
+            stats.throttles += 1
+            consecutive += 1
+            streak = 0
+            wait_s = min(THROTTLE_MAX_WAIT_S, backoff_base * 2**consecutive)
+            if limit > 1:
+                limit = max(1, limit // 2)
+                out(
+                    f"  {result.error}: slowing to {limit} concurrent call(s), waiting {wait_s:.0f}s"
+                )
+            cooldown_until = monotonic() + wait_s
+            if requeues.get(unit, 0) < MAX_REQUEUES:
+                requeues[unit] = requeues.get(unit, 0) + 1
+                queue.append((model, items_by_id[item_id], run))
+                return  # not final: progress and remaining are unchanged
+            stats.unresolved += 1
+        else:
+            consecutive = 0
+            streak += 1
+            if streak >= THROTTLE_RECOVERY_STREAK and limit < concurrency:
+                limit, streak = limit + 1, 0
+
+        stats.est_done += plan.unit_cost[unit]
         stats.remaining -= 1
         stats.errors += 0 if result.ok else 1
         if stats.progress >= next_report:
@@ -342,7 +383,7 @@ def execute(
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         while pos < len(queue) or inflight:
-            while len(inflight) < concurrency and can_dispatch():
+            while len(inflight) < limit and monotonic() >= cooldown_until and can_dispatch():
                 model, item, run = queue[pos]
                 pos += 1
                 fut = pool.submit(adapters[model].run, task, items_by_id[item.id])
@@ -351,8 +392,11 @@ def execute(
                 done, _ = wait(list(inflight), return_when=FIRST_COMPLETED)
                 for fut in done:
                     finish(fut)
-            elif pos < len(queue):  # nothing in flight and the next call does not fit
-                stats.cap_hits += 1
+            elif pos < len(queue):
+                if can_dispatch():  # affordable, but backing off after a rate limit
+                    sleep(min(max(cooldown_until - monotonic(), 0.0), 1.0))
+                    continue
+                stats.cap_hits += 1  # nothing in flight and the next call does not fit
                 stats.cap = cap
                 new_cap = on_cap(stats, cap)
                 if new_cap is None:

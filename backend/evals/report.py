@@ -15,7 +15,7 @@ from itertools import combinations
 from pathlib import Path
 
 from evals import metrics
-from evals.runner import RESULTS_DIR, ResultStore, input_hash
+from evals.runner import RESULTS_DIR, TRANSIENT_ERRORS, ResultStore, input_hash
 from evals.tasks.base import ClassificationTask, EvalItem
 
 
@@ -23,10 +23,18 @@ def _ok(record: dict) -> bool:
     return not record.get("error")
 
 
+def _unanswered(record: dict) -> bool:
+    """A transient failure (rate limit, connection): no model answer was ever obtained, so
+    it says nothing about the model's quality and is excluded from every quality metric."""
+    return record.get("error") in TRANSIENT_ERRORS
+
+
 def model_report(task: ClassificationTask, items: list[EvalItem], records: dict) -> dict:
     """One model's metrics. `records` is ResultStore.load() output for the model."""
     by_id = {i.id: i for i in items}
-    results = [r for r in records.values() if r["item_id"] in by_id]  # every run
+    all_results = [r for r in records.values() if r["item_id"] in by_id]
+    unanswered = [r for r in all_results if _unanswered(r)]
+    results = [r for r in all_results if not _unanswered(r)]  # every run that got an answer
     first = [r for r in results if r["run"] == 0]  # one sample per item
     sources = sorted({s for i in items for s in i.labels})
     quality, calib, subsets = {}, {}, {}
@@ -77,6 +85,8 @@ def model_report(task: ClassificationTask, items: list[EvalItem], records: dict)
         )
     return {
         "accuracy_by_run": acc_by_run,
+        "unanswered": len({r["item_id"] for r in unanswered} - {r["item_id"] for r in results}),
+        "unanswered_by_type": dict(Counter(r["error"] for r in unanswered)),
         "n_results": len(results),
         "coverage": len({r["item_id"] for r in results}) / len(items)
         if items
@@ -109,7 +119,11 @@ def pairwise(task_items: list[EvalItem], loaded: dict[str, dict]) -> list[dict]:
         both = [
             i
             for i in task_items
-            if (i.id, 0) in loaded[a] and (i.id, 0) in loaded[b] and "agreed" in i.labels
+            if (i.id, 0) in loaded[a]
+            and (i.id, 0) in loaded[b]
+            and not _unanswered(loaded[a][(i.id, 0)])
+            and not _unanswered(loaded[b][(i.id, 0)])
+            and "agreed" in i.labels
         ]
 
         def correct(model: str, item: EvalItem) -> bool:
@@ -185,15 +199,26 @@ def render_markdown(report: dict, labels: list[str]) -> str:
         f"# Eval report: {report['task']}",
         "",
         f"{report['n_items']} items. Quality is against each label source separately, on each "
-        "item's first run; an item whose call failed counts as wrong.",
+        "item's first run; an item whose model gave an invalid answer counts as wrong. Items "
+        "with no answer because of rate limits or connection errors are excluded, not wrong.",
         "",
+    ]
+    incomplete = {m: r["unanswered"] for m, r in models.items() if r["unanswered"]}
+    if incomplete:
+        lines += [
+            "> **INCOMPLETE:** "
+            + "; ".join(f"{m} has {n} item(s) with no answer yet" for m, n in incomplete.items())
+            + ". Scores below exclude them. Run the same command again to retry only those.",
+            "",
+        ]
+    lines += [
         "## Comparison",
         "",
-        "| model | coverage | "
+        "| model | coverage | no answer | "
         + " | ".join(f"acc vs {s}" for s in sources)
         + " | macro-F1 (agreed) | ECE | p50 ms | p95 ms | $/1k items | errors | retried |"
         " consistency |",
-        "|" + "---|" * (len(sources) + 10),
+        "|" + "---|" * (len(sources) + 11),
     ]
     for m, r in models.items():
         accs = []
@@ -203,7 +228,7 @@ def render_markdown(report: dict, labels: list[str]) -> str:
             accs.append(f"{q['accuracy']:.1%} ({lo:.1%}-{hi:.1%})")
         ece = (r["calibration"].get("agreed") or {}).get("ece")
         lines.append(
-            f"| {m} | {r['coverage']:.0%} | "
+            f"| {m} | {r['coverage']:.0%} | {r['unanswered']} | "
             + " | ".join(accs)
             + f" | {r['quality']['agreed']['macro_f1']:.3f} | "
             + ("n/a" if ece is None else f"{ece:.3f}")
@@ -241,6 +266,9 @@ def render_markdown(report: dict, labels: list[str]) -> str:
             f"Latency p50 {_ms(r['latency_ms']['p50'])} ms, max {_ms(r['latency_ms']['max'])} ms.",
             "",
         ]
+        if r["unanswered_by_type"]:
+            counts = ", ".join(f"{k} x{v}" for k, v in r["unanswered_by_type"].items())
+            lines += [f"No answer (transient, excluded from scores): {counts}", ""]
         if len(r["accuracy_by_run"]) > 1:
             per_run = ", ".join(
                 f"run {x['run']}: {x['accuracy']:.1%}" for x in r["accuracy_by_run"]

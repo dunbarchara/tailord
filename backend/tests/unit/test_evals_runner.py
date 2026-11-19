@@ -277,3 +277,79 @@ def test_resume_command_drops_max_spend_and_its_value(argv, expected):
     from evals import __main__ as cli
 
     assert cli._without_max_spend(argv) == expected
+
+
+# ── rate limits ───────────────────────────────────────────────────────────────
+
+
+class Flaky(Fake):
+    """Rate limits the first `failures` calls (thread-safe), then answers normally."""
+
+    def __init__(self, model, failures):
+        super().__init__(model)
+        self.failures = failures
+        self.active = 0
+        self.max_active = 0
+        self.lock = __import__("threading").Lock()
+
+    def run(self, task, item):
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            fail = self.failures > 0
+            self.failures -= 1 if fail else 0
+        try:
+            if fail:
+                return CallResult(error="RateLimitError")
+            return super().run(task, item)
+        finally:
+            with self.lock:
+                self.active -= 1
+
+
+def throttled_run(tmp_path, adapter, **kwargs):
+    plan = plan_for({"m1": adapter}, tmp_path)
+    return plan, runner.execute(
+        plan,
+        {"m1": adapter},
+        BY_ID,
+        10,
+        results_root=tmp_path,
+        backoff_base=0.0,
+        sleep=lambda s: None,
+        **kwargs,
+    )
+
+
+def test_rate_limited_calls_are_requeued_and_eventually_answered(tmp_path):
+    adapter = Flaky("m1", failures=4)
+    plan, stats = throttled_run(tmp_path, adapter, concurrency=4)
+    stored = runner.ResultStore("toy", "m1", tmp_path).load()
+    assert len(stored) == 6 and all(r["error"] is None for r in stored.values())
+    assert stats.unresolved == 0 and stats.throttles == 4 and stats.errors == 0
+    assert stats.remaining == 0 and stats.calls == 10  # 6 answers + 4 failed attempts
+    assert plan_for({"m1": Fake("m1")}, tmp_path).units == []
+
+
+def test_failed_attempts_neither_count_as_progress_nor_cost_anything(tmp_path):
+    adapter = Flaky("m1", failures=2)
+    _, stats = throttled_run(tmp_path, adapter, concurrency=8)
+    assert stats.est_done == pytest.approx(stats.est_total) and stats.progress == pytest.approx(1.0)
+    assert stats.spend == pytest.approx(0.6)  # failed attempts cost nothing
+
+
+def test_persistent_rate_limits_are_reported_as_unresolved_not_as_wrong_answers(tmp_path):
+    adapter = Flaky("m1", failures=10**6)  # never succeeds
+    _, stats = throttled_run(tmp_path, adapter, concurrency=2)
+    assert stats.unresolved == 6 and stats.errors == 6 and stats.remaining == 0
+    assert stats.calls == 6 * (runner.MAX_REQUEUES + 1)
+    # A later run retries exactly those items.
+    assert len(plan_for({"m1": Fake("m1")}, tmp_path).units) == 6
+
+
+def test_no_time_is_wasted_when_there_are_no_rate_limits(tmp_path):
+    slept = []
+    adapters = {"m1": Fake("m1")}
+    plan = plan_for(adapters, tmp_path)
+    runner.execute(plan, adapters, BY_ID, 10, results_root=tmp_path, sleep=slept.append)
+    assert slept == []

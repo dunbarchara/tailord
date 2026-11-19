@@ -99,6 +99,16 @@ def cmd_run(args) -> int:
             f"\n{stats.calls} calls, ${stats.spend:.4f} spent, {stats.errors} errors"
             f"{', cap hit' if stats.cap_hits else ''}."
         )
+        if stats.throttles:
+            print(f"Backed off {stats.throttles} time(s) after rate limits or connection errors.")
+        if stats.unresolved:
+            exit_code = max(exit_code, 4)
+            print(
+                f"WARNING: {stats.unresolved} call(s) still failed after retries (rate limits or "
+                "connection errors), so those items have NO answer yet and are not scored. "
+                "Run the same command again to retry only those; try a lower --concurrency "
+                "if it keeps happening."
+            )
         if stats.overshoot > 0:
             print(
                 f"Spend exceeded the cap by ${stats.overshoot:.4f} (calls cost more than estimated)."
