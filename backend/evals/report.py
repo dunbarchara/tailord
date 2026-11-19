@@ -1,8 +1,12 @@
 """Turn stored run results into a comparison report (JSON + markdown).
 
-Reads evals/results/<task>/<fingerprint>/<model>.jsonl. Quality is reported separately
+Reads evals/results/<task>/<model>.jsonl, keeping only results whose input hash still
+matches the current task and item (stale results are ignored). Quality is reported separately
 against every label source (never a blend), plus on the items every source agrees on versus
 the contested ones, so a model is not blamed for noise in the labels themselves.
+
+Quality, calibration and significance use each item's first run only, so repeats never inflate
+the sample size; repeats feed the consistency metric and the per-run accuracy line.
 """
 
 import json
@@ -11,7 +15,7 @@ from itertools import combinations
 from pathlib import Path
 
 from evals import metrics
-from evals.runner import RESULTS_DIR, ResultStore
+from evals.runner import RESULTS_DIR, ResultStore, input_hash
 from evals.tasks.base import ClassificationTask, EvalItem
 
 
@@ -22,13 +26,14 @@ def _ok(record: dict) -> bool:
 def model_report(task: ClassificationTask, items: list[EvalItem], records: dict) -> dict:
     """One model's metrics. `records` is ResultStore.load() output for the model."""
     by_id = {i.id: i for i in items}
-    results = [r for r in records.values() if r["item_id"] in by_id]
+    results = [r for r in records.values() if r["item_id"] in by_id]  # every run
+    first = [r for r in results if r["run"] == 0]  # one sample per item
     sources = sorted({s for i in items for s in i.labels})
     quality, calib, subsets = {}, {}, {}
     for source in sources:
         pairs = [
             (by_id[r["item_id"]].labels[source], r["prediction"] if _ok(r) else None)
-            for r in results
+            for r in first
             if source in by_id[r["item_id"]].labels
         ]
         quality[source] = metrics.classification_quality(pairs, list(task.labels))
@@ -37,7 +42,7 @@ def model_report(task: ClassificationTask, items: list[EvalItem], records: dict)
                 max(r["probabilities"].values()),
                 r["prediction"] == by_id[r["item_id"]].labels[source],
             )
-            for r in results
+            for r in first
             if _ok(r) and r.get("probabilities")
         ]
         calib[source] = metrics.calibration(samples) if samples else None
@@ -50,7 +55,7 @@ def model_report(task: ClassificationTask, items: list[EvalItem], records: dict)
     ):
         pairs = [
             (by_id[r["item_id"]].labels["agreed"], r["prediction"] if _ok(r) else None)
-            for r in results
+            for r in first
             if "agreed" in by_id[r["item_id"]].labels and pick(by_id[r["item_id"]])
         ]
         subsets[name] = metrics.classification_quality(pairs, list(task.labels)) if pairs else None
@@ -61,9 +66,21 @@ def model_report(task: ClassificationTask, items: list[EvalItem], records: dict)
     costs = [r["cost_usd"] for r in results]
     priced = all(c is not None for c in costs) and bool(costs)
     errors = [r for r in results if not _ok(r)]
+    acc_by_run = []
+    for run in sorted({r["run"] for r in results}):
+        rows = [r for r in results if r["run"] == run and "agreed" in by_id[r["item_id"]].labels]
+        right = sum(
+            1 for r in rows if _ok(r) and r["prediction"] == by_id[r["item_id"]].labels["agreed"]
+        )
+        acc_by_run.append(
+            {"run": run, "n": len(rows), "accuracy": right / len(rows) if rows else 0.0}
+        )
     return {
+        "accuracy_by_run": acc_by_run,
         "n_results": len(results),
-        "coverage": len(results) / len(items) if items else 0.0,
+        "coverage": len({r["item_id"] for r in results}) / len(items)
+        if items
+        else 0.0,  # distinct items run
         "quality": quality,
         "calibration": calib,
         "agreed_subsets": subsets,
@@ -117,21 +134,32 @@ def pairwise(task_items: list[EvalItem], loaded: dict[str, dict]) -> list[dict]:
 def build_report(
     task: ClassificationTask,
     items: list[EvalItem],
-    fp: str,
     models: list[str] | None = None,
     root: Path = RESULTS_DIR,
+    all_items: bool = False,
 ) -> dict:
-    directory = root / task.name / fp
-    names = models or sorted(p.stem for p in directory.glob("*.jsonl"))
-    loaded = {m: ResultStore(task.name, fp, m, root).load() for m in names}
-    loaded = {m: r for m, r in loaded.items() if r}
+    """Report on every model with results. By default the scope is the items that have a
+    current result from at least one model; `all_items` scores against the full item set
+    (so a partial run shows its true coverage)."""
+    names = models or sorted(p.stem for p in (root / task.name).glob("*.jsonl"))
+    hashes = {i.id: input_hash(task, i) for i in items}
+    loaded = {}
+    for m in names:
+        current = {
+            k: r
+            for k, r in ResultStore(task.name, m, root).load().items()
+            if r.get("input_hash") == hashes.get(k[0])
+        }
+        if current:
+            loaded[m] = current
+    covered = {k[0] for records in loaded.values() for k in records}
+    scope = items if all_items else [i for i in items if i.id in covered]
     return {
         "task": task.name,
-        "fingerprint": fp,
-        "n_items": len(items),
-        "models": {m: model_report(task, items, r) for m, r in loaded.items()},
-        "pairwise_agreed": pairwise(items, loaded),
-        "label_sources": sorted({s for i in items for s in i.labels}),
+        "n_items": len(scope),
+        "models": {m: model_report(task, scope, r) for m, r in loaded.items()},
+        "pairwise_agreed": pairwise(scope, loaded),
+        "label_sources": sorted({s for i in scope for s in i.labels}),
     }
 
 
@@ -156,8 +184,8 @@ def render_markdown(report: dict, labels: list[str]) -> str:
     lines = [
         f"# Eval report: {report['task']}",
         "",
-        f"Inputs `{report['fingerprint']}`, {report['n_items']} items. Quality is against each "
-        "label source separately; an item whose call failed counts as wrong.",
+        f"{report['n_items']} items. Quality is against each label source separately, on each "
+        "item's first run; an item whose call failed counts as wrong.",
         "",
         "## Comparison",
         "",
@@ -213,6 +241,11 @@ def render_markdown(report: dict, labels: list[str]) -> str:
             f"Latency p50 {_ms(r['latency_ms']['p50'])} ms, max {_ms(r['latency_ms']['max'])} ms.",
             "",
         ]
+        if len(r["accuracy_by_run"]) > 1:
+            per_run = ", ".join(
+                f"run {x['run']}: {x['accuracy']:.1%}" for x in r["accuracy_by_run"]
+            )
+            lines += [f"Accuracy by run (agreed labels): {per_run}", ""]
         if r["reliability"]["errors_by_type"]:
             lines += [
                 "Errors: "
@@ -234,6 +267,9 @@ def render_markdown(report: dict, labels: list[str]) -> str:
         lines += ["| class | precision | recall | F1 | support |", "|---|---|---|---|---|"]
         for label in labels:
             c = q["per_class"][label]
+            if not c["support"] and not c["predicted"]:  # class absent from this data
+                lines.append(f"| {label} | n/a | n/a | n/a | 0 |")
+                continue
             lines.append(
                 f"| {label} | {c['precision']:.2f} | {c['recall']:.2f} | {c['f1']:.2f} | {c['support']} |"
             )

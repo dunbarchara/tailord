@@ -5,6 +5,10 @@ from typing import Any, Protocol
 
 from evals.tasks.base import ClassificationTask, EvalItem
 
+# Bump when an adapter's prompt template, temperature or question format changes in a way the
+# task definition does not capture. Results from earlier versions stop counting as done.
+PROMPT_VERSION = 1
+
 
 @dataclass
 class CallResult:

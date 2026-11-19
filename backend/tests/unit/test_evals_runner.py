@@ -49,13 +49,22 @@ def run(adapters, tmp_path, cap, **kwargs):
     return plan, runner.execute(plan, adapters, BY_ID, cap, results_root=tmp_path, **kwargs)
 
 
-def test_fingerprint_tracks_task_and_inputs():
-    base = runner.fingerprint(TASK, ITEMS)
-    assert base == runner.fingerprint(TASK, ITEMS)
-    changed_item = [EvalItem("i0", {"n": 99}, {}), *ITEMS[1:]]
-    assert runner.fingerprint(TASK, changed_item) != base
+def test_input_hash_tracks_the_task_and_each_items_own_input():
+    base = runner.input_hash(TASK, ITEMS[0])
+    assert base == runner.input_hash(TASK, ITEMS[0])
+    assert runner.input_hash(TASK, EvalItem("i0", {"n": 99}, {})) != base
     retitled = ClassificationTask("toy", TASK.labels, "Different.", str)
-    assert runner.fingerprint(retitled, ITEMS) != base
+    assert runner.input_hash(retitled, ITEMS[0]) != base
+    relabeled = ClassificationTask("toy", {"a": "x"}, TASK.instructions, str)
+    assert runner.input_hash(relabeled, ITEMS[0]) != base
+    # Other items changing, or being added, does not touch this item's identity.
+    assert runner.input_hash(TASK, ITEMS[0]) == base != runner.input_hash(TASK, ITEMS[1])
+
+
+def test_prompt_version_bump_invalidates_results(monkeypatch):
+    before = runner.input_hash(TASK, ITEMS[0])
+    monkeypatch.setattr(runner, "PROMPT_VERSION", 2)
+    assert runner.input_hash(TASK, ITEMS[0]) != before
 
 
 def test_plan_prices_work_interleaves_models_and_suggests_a_cap(tmp_path):
@@ -86,32 +95,41 @@ def test_full_run_stores_results_and_a_second_run_has_nothing_to_do(tmp_path):
     plan, stats = run(adapters, tmp_path, cap=10)
     assert stats.calls == 6 and stats.spend == pytest.approx(0.6) and not stats.aborted
     assert len(adapters["m1"].calls) == 6
-    stored = runner.ResultStore("toy", plan.fp, "m1", tmp_path).load()
+    stored = runner.ResultStore("toy", "m1", tmp_path).load()
     assert len(stored) == 6 and stored[("i3", 0)]["cost_usd"] == pytest.approx(0.1)
+    assert stored[("i3", 0)]["input_hash"] == runner.input_hash(TASK, BY_ID["i3"])
     assert plan_for(adapters, tmp_path).units == []  # resume repeats no paid call
 
 
-def test_cap_stops_dispatching_aborts_and_resumes_without_repeating_calls(tmp_path):
+def test_cap_stops_before_the_call_that_would_exceed_it_and_resume_repeats_nothing(tmp_path):
     adapters = {"m1": Fake("m1")}
     plan, stats = run(adapters, tmp_path, cap=0.25, concurrency=1)
-    assert stats.aborted and stats.cap_hits == 1
-    assert stats.calls == 3 and stats.remaining == 3  # crossed the cap on the third call
-    # Resume: only the unfinished items are planned and called.
+    # Two calls fit ($0.20); a third would reach $0.30 > $0.25, so it is never made.
+    assert stats.aborted and stats.cap_hits == 1 and stats.overshoot == 0
+    assert stats.calls == 2 and stats.remaining == 4 and stats.cap == 0.25
     adapters2 = {"m1": Fake("m1")}
     plan2, stats2 = run(adapters2, tmp_path, cap=10)
-    assert sorted(adapters2["m1"].calls) == ["i3", "i4", "i5"] and not stats2.aborted
+    assert sorted(adapters2["m1"].calls) == ["i2", "i3", "i4", "i5"] and not stats2.aborted
 
 
-def test_overshoot_is_bounded_by_concurrency(tmp_path):
-    many = [EvalItem(f"j{n}", {"n": n}, {}) for n in range(40)]  # far more work than the cap
+def test_in_flight_calls_are_reserved_so_concurrency_cannot_overshoot_the_cap(tmp_path):
+    many = [EvalItem(f"j{n}", {}, {}) for n in range(40)]  # far more work than the cap
     adapters = {"m1": Fake("m1")}
     plan = plan_for(adapters, tmp_path, items=many)
     stats = runner.execute(
-        plan, adapters, {i.id: i for i in many}, 0.25, concurrency=4, results_root=tmp_path
+        plan, adapters, {i.id: i for i in many}, 0.25, concurrency=8, results_root=tmp_path
     )
-    assert stats.aborted and stats.remaining > 0
-    # At most `concurrency - 1` calls can already be in flight when the cap is crossed.
-    assert 0.25 <= stats.spend <= 0.25 + 3 * 0.1 + 0.1 + 1e-9
+    assert stats.aborted and stats.calls == 2  # 3 x $0.10 would break the cap, however many workers
+    assert stats.spend == pytest.approx(0.2) and stats.overshoot == 0
+
+
+def test_underestimated_calls_can_still_overshoot_and_it_is_reported(tmp_path):
+    expensive = CallResult(
+        prediction="a", tokens_in=CALL_TOKENS * 3, tokens_out=0
+    )  # 3x the estimate
+    adapters = {"m1": Fake("m1", {i.id: expensive for i in ITEMS})}
+    _, stats = run(adapters, tmp_path, cap=0.25, concurrency=2)
+    assert stats.overshoot > 0 and stats.spend > 0.25
 
 
 def test_pause_can_raise_the_cap_and_continue(tmp_path):
@@ -123,7 +141,30 @@ def test_pause_can_raise_the_cap_and_continue(tmp_path):
 
     _, stats = run({"m1": Fake("m1")}, tmp_path, cap=0.25, concurrency=1, on_cap=decide)
     assert not stats.aborted and stats.calls == 6 and stats.cap_hits == 1
-    assert seen == [(0.5, 0.25)]
+    assert seen == [(0.33, 0.25)]
+
+
+def test_a_cap_below_the_first_call_pauses_immediately_with_a_sane_projection(tmp_path):
+    seen = []
+
+    def decide(stats, cap):
+        seen.append(stats.projected_total)
+        return None
+
+    _, stats = run({"m1": Fake("m1")}, tmp_path, cap=0.05, on_cap=decide)
+    assert stats.calls == 0 and stats.aborted
+    assert seen == [pytest.approx(0.6)]  # the plan's estimate, not 0 or a division error
+
+
+def test_results_are_reused_when_the_item_set_changes_but_not_when_an_input_does(tmp_path):
+    adapters = {"m1": Fake("m1")}
+    run(adapters, tmp_path, cap=10)  # all six items done
+    more = ITEMS + [EvalItem("i6", {"n": 6}, {})]
+    plan = plan_for(adapters, tmp_path, items=more)
+    assert [i.id for _, i, _ in plan.units] == ["i6"]  # only the new item needs paying for
+    edited = [EvalItem("i0", {"n": 123}, {}), *ITEMS[1:]]
+    plan = plan_for(adapters, tmp_path, items=edited)
+    assert [i.id for _, i, _ in plan.units] == ["i0"]  # i0's input changed, so its result is stale
 
 
 def test_transient_errors_are_retried_on_resume_but_model_errors_are_kept(tmp_path):
@@ -150,11 +191,20 @@ def test_repeats_are_separate_units(tmp_path):
 
 def test_estimate_recalibrates_from_observed_overhead(tmp_path):
     adapters = {"m1": Fake("m1")}
-    # Observed calls used 40 tokens more than the payload count, versus the default of 5.
     items = ITEMS + [EvalItem(f"x{n}", {"n": n}, {}) for n in range(25)]
-    store = runner.ResultStore("toy", runner.fingerprint(TASK, items), "m1", tmp_path)
+    # Observed calls used 40 tokens more than the payload count, versus the default of 5.
+    store = runner.ResultStore("toy", "m1", tmp_path)
     for n in range(25):
-        store.append({"item_id": f"x{n}", "run": 0, "tokens_in": CALL_TOKENS + 35, "error": None})
+        item = items[6 + n]
+        store.append(
+            {
+                "item_id": item.id,
+                "run": 0,
+                "input_hash": runner.input_hash(TASK, item),
+                "tokens_in": CALL_TOKENS + 35,
+                "error": None,
+            }
+        )
     plan = runner.build_plan(TASK, items, adapters, results_root=tmp_path)
     assert "observed overhead from 25 calls" in plan.models[0].basis
     assert plan.models[0].est_tokens_in == 6 * (CALL_TOKENS - 5 + 40)
@@ -210,3 +260,20 @@ def test_dry_run_never_calls_a_model(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Dry run (nothing called)" in out and "--max-spend" in out
     assert fake.calls == []
+
+
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (
+            ["run", "--suite", "vet", "--max-spend", "0.004", "--on-cap", "abort"],
+            "run --suite vet --on-cap abort",
+        ),
+        (["run", "--max-spend=0.5", "--limit", "40"], "run --limit 40"),
+        (["run", "--suite", "vet"], "run --suite vet"),
+    ],
+)
+def test_resume_command_drops_max_spend_and_its_value(argv, expected):
+    from evals import __main__ as cli
+
+    assert cli._without_max_spend(argv) == expected

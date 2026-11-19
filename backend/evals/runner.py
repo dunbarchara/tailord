@@ -12,13 +12,13 @@ import json
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import mean
 
-from evals.adapters.base import Adapter, CallResult
+from evals.adapters.base import PROMPT_VERSION, Adapter, CallResult
 from evals.store import DATA_DIR, canonical
 from evals.tasks.base import ClassificationTask, EvalItem
 
@@ -45,16 +45,23 @@ TRANSIENT_ERRORS = frozenset(
 # ── Results on disk ───────────────────────────────────────────────────────────
 
 
-def fingerprint(task: ClassificationTask, items: Iterable[EvalItem]) -> str:
-    """Identity of exactly what models are asked. Any change to the task definition or the
-    frozen inputs yields a new results directory, so stale answers are never mixed in."""
-    h = hashlib.sha256()
-    h.update(
-        canonical({"name": task.name, "labels": task.labels, "ins": task.instructions}).encode()
-    )
-    for item in items:
-        h.update(canonical({"id": item.id, "input": item.input}).encode())
-    return h.hexdigest()[:12]
+def task_hash(task: ClassificationTask) -> str:
+    """Identity of the task as models see it: its name, labels and instructions, plus the
+    adapters' prompt version. Changing any of them invalidates earlier results."""
+    payload = {
+        "name": task.name,
+        "labels": task.labels,
+        "ins": task.instructions,
+        "prompt_version": PROMPT_VERSION,
+    }
+    return hashlib.sha256(canonical(payload).encode()).hexdigest()[:12]
+
+
+def input_hash(task: ClassificationTask, item: EvalItem) -> str:
+    """Identity of one question put to a model. A stored result is reused only while this
+    still matches, so results survive adding or removing other items but never go stale."""
+    payload = {"task": task_hash(task), "id": item.id, "input": item.input}
+    return hashlib.sha256(canonical(payload).encode()).hexdigest()[:12]
 
 
 def is_done(record: dict) -> bool:
@@ -62,11 +69,12 @@ def is_done(record: dict) -> bool:
 
 
 class ResultStore:
-    """Append-only JSONL per (task, fingerprint, model). The last record for a
-    (item, run) wins, so a retried transient failure supersedes its earlier record."""
+    """Append-only JSONL per (task, model). The last record for an (item, run) wins, so a
+    retried transient failure, or a rerun after the input changed, supersedes the earlier
+    record. Each record carries the `input_hash` it answered."""
 
-    def __init__(self, task: str, fp: str, model: str, root: Path = RESULTS_DIR) -> None:
-        self.path = root / task / fp / f"{model}.jsonl"
+    def __init__(self, task: str, model: str, root: Path = RESULTS_DIR) -> None:
+        self.path = root / task / f"{model}.jsonl"
         self._lock = threading.Lock()
 
     def load(self) -> dict[tuple[str, int], dict]:
@@ -115,7 +123,6 @@ class ModelPlan:
 @dataclass
 class Plan:
     task: ClassificationTask
-    fp: str
     models: list[ModelPlan]
     units: list[tuple[str, EvalItem, int]] = field(
         repr=False, default_factory=list
@@ -144,7 +151,10 @@ def _overhead(
     deltas = [
         r["tokens_in"] - adapter.payload_tokens(task, by_id[r["item_id"]])
         for r in store.load().values()
-        if r["item_id"] in by_id and not r.get("error") and r["tokens_in"]
+        if r["item_id"] in by_id
+        and r.get("input_hash") == input_hash(task, by_id[r["item_id"]])
+        and not r.get("error")
+        and r["tokens_in"]
     ]
     if len(deltas) >= CALIBRATION_MIN_RECORDS:
         return mean(deltas), f"observed overhead from {len(deltas)} calls"
@@ -158,12 +168,16 @@ def build_plan(
     repeats: int = 1,
     results_root: Path = RESULTS_DIR,
 ) -> Plan:
-    fp = fingerprint(task, items)
-    plan = Plan(task=task, fp=fp, models=[])
+    plan = Plan(task=task, models=[])
     per_model: dict[str, list[tuple[EvalItem, int]]] = {}
+    hashes = {item.id: input_hash(task, item) for item in items}
     for model, adapter in adapters.items():
-        store = ResultStore(task.name, fp, model, results_root)
-        done = {k for k, r in store.load().items() if is_done(r)}
+        store = ResultStore(task.name, model, results_root)
+        done = {
+            k
+            for k, r in store.load().items()
+            if is_done(r) and r.get("input_hash") == hashes.get(k[0])
+        }
         per_model[model] = [
             (item, run) for item in items for run in range(repeats) if (item.id, run) not in done
         ]
@@ -218,6 +232,7 @@ class RunStats:
     cap_hits: int = 0
     aborted: bool = False
     remaining: int = 0
+    cap: float = 0.0  # the cap in force when the run ended
 
     @property
     def progress(self) -> float:
@@ -225,7 +240,12 @@ class RunStats:
 
     @property
     def projected_total(self) -> float:
-        return self.spend / self.progress if self.progress else self.spend
+        # Before anything has finished there is no actual spend to extrapolate from.
+        return self.spend / self.progress if self.est_done else self.est_total
+
+    @property
+    def overshoot(self) -> float:
+        return max(self.spend - self.cap, 0.0)
 
 
 # on_cap decides what happens when the cap is reached: returns the new cap, or None to stop.
@@ -242,7 +262,7 @@ def interactive_decision(
     est_spent = stats.est_done
     ratio = stats.spend / est_spent if est_spent else float("nan")
     out(
-        f"\nSpend cap reached: ${stats.spend:.4f} spent of ${cap:.4f}.\n"
+        f"\nSpend cap reached: ${stats.spend:.4f} spent of ${cap:.4f}; the next call would exceed it.\n"
         f"Progress {stats.progress:.0%} (weighted by estimated cost), {stats.remaining} calls left.\n"
         f"Estimated so far ${est_spent:.4f}, actual ${stats.spend:.4f} (actual/estimate {ratio:.2f}x).\n"
         f"Projected total ${stats.projected_total:.4f}; suggested top-up ${top_up:.4f} "
@@ -277,7 +297,7 @@ def execute(
 ) -> RunStats:
     """Run the plan's units, appending each result as it completes."""
     task = plan.task
-    stores = {m: ResultStore(task.name, plan.fp, m, results_root) for m in adapters}
+    stores = {m: ResultStore(task.name, m, results_root) for m in adapters}
     prices = {m: price_for(m) for m in adapters}
     stats = RunStats(est_total=sum(plan.unit_cost.values()), remaining=len(plan.units))
     queue = list(plan.units)
@@ -296,6 +316,7 @@ def execute(
             "model": model,
             "item_id": item_id,
             "run": run,
+            "input_hash": input_hash(task, items_by_id[item_id]),
             **{k: v for k, v in asdict(result).items()},
             "cost_usd": cost,
             "ts": clock(),
@@ -310,9 +331,18 @@ def execute(
             out(f"  {stats.progress:.0%}  {stats.calls} calls  ${stats.spend:.4f}")
             next_report = (int(stats.progress * 10) + 1) / 10
 
+    def can_dispatch() -> bool:
+        """Dispatch only if the cap still holds after counting what is already in flight, so
+        the cap is not overshot by a whole batch of concurrent calls."""
+        if pos >= len(queue):
+            return False
+        model, item, run = queue[pos]
+        reserved = sum(plan.unit_cost[key] for key in inflight.values())
+        return stats.spend + reserved + plan.unit_cost[(model, item.id, run)] <= cap
+
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         while pos < len(queue) or inflight:
-            while pos < len(queue) and len(inflight) < concurrency and stats.spend < cap:
+            while len(inflight) < concurrency and can_dispatch():
                 model, item, run = queue[pos]
                 pos += 1
                 fut = pool.submit(adapters[model].run, task, items_by_id[item.id])
@@ -321,13 +351,15 @@ def execute(
                 done, _ = wait(list(inflight), return_when=FIRST_COMPLETED)
                 for fut in done:
                     finish(fut)
-            if stats.spend >= cap and pos < len(queue) and not inflight:
+            elif pos < len(queue):  # nothing in flight and the next call does not fit
                 stats.cap_hits += 1
+                stats.cap = cap
                 new_cap = on_cap(stats, cap)
                 if new_cap is None:
                     stats.aborted = True
                     break
                 cap = new_cap
+    stats.cap = cap
     return stats
 
 

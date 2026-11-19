@@ -6,7 +6,8 @@
     uv run python -m evals report --task semantic_type
 
 Spend is opt-in: without --max-spend nothing paid is called. Results are cached per task,
-input fingerprint and model, so re-running only fills what is missing.
+model and item (keyed by a hash of the task and that item's input), so re-running only fills
+what is missing and a stale result is never reused.
 """
 
 import argparse
@@ -23,6 +24,19 @@ from evals.tasks import TASKS
 from evals.tasks.semantic_type import load_items
 
 LOADERS = {"semantic_type": load_items}
+
+
+def _without_max_spend(argv: list[str]) -> str:
+    """The command line minus --max-spend and its value (both `--max-spend X` and `=X`)."""
+    kept, skip = [], False
+    for arg in argv:
+        if skip:
+            skip = False
+        elif arg == "--max-spend":
+            skip = True
+        elif not arg.startswith("--max-spend="):
+            kept.append(shlex.quote(arg))
+    return " ".join(kept)
 
 
 def _selection(args) -> dict[str, list[str]]:
@@ -55,7 +69,7 @@ def cmd_run(args) -> int:
             items = items[: args.limit]
         adapters = {m: adapter_for(m) for m in models}
         plan = runner.build_plan(task, items, adapters, repeats=args.repeats)
-        print(f"\nTask {task.name}: {len(items)} items x {args.repeats} run(s), inputs {plan.fp}")
+        print(f"\nTask {task.name}: {len(items)} items x {args.repeats} run(s)")
         print(runner.format_plan(plan))
         if plan.unpriced_models and not args.allow_unpriced:
             print("\nRefusing to run unpriced models without --allow-unpriced.")
@@ -85,15 +99,18 @@ def cmd_run(args) -> int:
             f"\n{stats.calls} calls, ${stats.spend:.4f} spent, {stats.errors} errors"
             f"{', cap hit' if stats.cap_hits else ''}."
         )
+        if stats.overshoot > 0:
+            print(
+                f"Spend exceeded the cap by ${stats.overshoot:.4f} (calls cost more than estimated)."
+            )
         if stats.aborted:
             exit_code = 3
-            rerun = " ".join(
-                shlex.quote(a) for a in sys.argv[1:] if not a.startswith("--max-spend")
-            )
             print(
                 f"Stopped at the cap with {stats.remaining} calls left. Results so far are saved; resume with:"
             )
-            print(f"  uv run python -m evals {rerun} --max-spend <new cap>")
+            print(
+                f"  uv run python -m evals {_without_max_spend(sys.argv[1:])} --max-spend <new cap>"
+            )
     return exit_code
 
 
@@ -103,25 +120,13 @@ def cmd_report(args) -> int:
     if args.task not in TASKS:
         raise SystemExit(f"unknown task '{args.task}'; defined: {', '.join(TASKS)}")
     task, items = TASKS[args.task], LOADERS[args.task]()
-    task_dir = runner.RESULTS_DIR / task.name
-    fp = args.fingerprint or runner.fingerprint(task, items)
-    if not (task_dir / fp).exists():
-        known = (
-            sorted(task_dir.glob("*"), key=lambda p: p.stat().st_mtime) if task_dir.exists() else []
-        )
-        if args.fingerprint or not known:
-            raise SystemExit(
-                f"no results for inputs {fp}. Known fingerprints: "
-                f"{', '.join(p.name for p in known) or 'none'}"
-            )
-        # A --limit run fingerprints its subset of items; report the latest results.
-        fp = known[-1].name
-        print(f"(no results for the full item set; reporting the latest run, inputs {fp})\n")
-    directory = task_dir / fp
     models = args.models.split(",") if args.models else None
-    report = report_mod.build_report(task, items, fp, models)
+    report = report_mod.build_report(task, items, models, all_items=args.all_items)
     if not report["models"]:
-        raise SystemExit("no results to report on")
+        raise SystemExit(
+            f"no current results for task '{task.name}' (run it first, or the task or inputs changed)"
+        )
+    directory = runner.RESULTS_DIR / task.name
     _, md_path = report_mod.write_report(report, list(task.labels), directory)
     print(md_path.read_text(encoding="utf-8"))
     print(f"\nWritten: {md_path} and report.json")
@@ -152,7 +157,11 @@ def main() -> int:
     run.add_argument("--allow-unpriced", action="store_true")
     rep = sub.add_parser("report", help="metrics and a comparison table from stored results")
     rep.add_argument("--task", required=True)
-    rep.add_argument("--fingerprint", help="inputs fingerprint (default: the current inputs)")
+    rep.add_argument(
+        "--all-items",
+        action="store_true",
+        help="score against the full item set (default: items with a result), so partial runs show their coverage",
+    )
     rep.add_argument("--models", help="comma-separated; default: every model with results")
     rep.add_argument("--out", help="also copy the markdown here (e.g. a path under planning/)")
     args = ap.parse_args()
