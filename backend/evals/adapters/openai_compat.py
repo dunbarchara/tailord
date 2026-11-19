@@ -24,6 +24,7 @@ from app.core.llm_utils import (
 )
 from evals.adapters.base import CallResult
 from evals.tasks.base import ClassificationTask, EvalItem
+from evals.tokens import count_tokens
 
 TEMPERATURE = 0.0  # classification should not be creative; supports_temperature is honoured
 
@@ -53,6 +54,8 @@ def system_prompt(task: ClassificationTask) -> str:
 
 
 class OpenAICompatAdapter:
+    overhead_tokens = 10  # chat message framing; measured on gpt-5.4-mini
+
     def __init__(self, model_name: str) -> None:
         """`model_name` is a registry name (e.g. "gpt-5.4-mini")."""
         resolved = resolve_model(model_name)
@@ -94,3 +97,9 @@ class OpenAICompatAdapter:
             error=error,
             detail=detail,
         )
+
+    def payload_tokens(self, task: ClassificationTask, item: EvalItem) -> int:
+        return count_tokens(system_prompt(task)) + count_tokens(task.render_state(item.input))
+
+    def expected_output_tokens(self, task: ClassificationTask) -> int:
+        return 12  # '{"label":"<category>"}'

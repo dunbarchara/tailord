@@ -28,5 +28,15 @@ class CallResult:
 
 class Adapter(Protocol):
     model: str  # registry name, e.g. "jev-1.14.0"
+    # Fixed per-call input tokens the API adds around our payload (message framing, a
+    # vendor's own prompt template). A default calibrated from real calls; the runner replaces
+    # it with the observed average once results exist.
+    overhead_tokens: int
 
     def run(self, task: ClassificationTask, item: EvalItem) -> CallResult: ...
+
+    def payload_tokens(self, task: ClassificationTask, item: EvalItem) -> int:
+        """Tokens of what we send for this item, counted locally (no API call)."""
+
+    def expected_output_tokens(self, task: ClassificationTask) -> int:
+        """Typical billed output tokens per call, for cost estimates."""

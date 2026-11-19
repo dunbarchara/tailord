@@ -130,3 +130,4 @@ planning/private/
 # Eval embedding cache (large, reproducible)
 backend/evals/data/cache/
 backend/evals/data/requests/
+backend/evals/results/

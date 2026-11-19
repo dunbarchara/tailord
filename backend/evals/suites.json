@@ -1,0 +1,7 @@
+{
+  "suites": {
+    "vet": {
+      "semantic_type": ["gpt-5.4-mini", "jev-1.14.0"]
+    }
+  }
+}
