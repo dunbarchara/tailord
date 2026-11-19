@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.clients import llm_client, llm_registry
+from app.clients.jev_client import JevClient
 from app.clients.llm_client import resolve_llm, validate_llm_config
 from app.clients.llm_registry import ModelSpec, get_registry, load_registry
 from app.config import settings
@@ -332,14 +333,36 @@ class TestValidation:
         with pytest.raises(RuntimeError, match="cannot serve generative"):
             validate_llm_config()
 
-    def test_app_cannot_resolve_a_client_for_a_jev_model_yet(self, use_config):
+    def test_jev_model_resolves_to_the_shared_jev_client(self, use_config, monkeypatch):
+        monkeypatch.setenv("TEST_KEY", "ts-secret")
         use_config(
-            providers={"t": {"adapter": "jev", "base_url": "http://t"}},
+            providers={
+                "t": {"adapter": "jev", "base_url": "http://t.invalid", "api_key_env": "TEST_KEY"}
+            },
             models={"jev": {"provider": "t", "model": "jev-1", "pricing": PRICED}},
             defaults={"generative": "jev"},
         )
-        with pytest.raises(NotImplementedError, match="adapter 'jev'"):
+        llm = resolve_llm(TaskName.JOB_BOUNDS)
+        assert isinstance(llm.client, JevClient) and llm.model == "jev-1"
+        assert resolve_llm(TaskName.GAP_ANALYSIS).client is llm.client  # cached per connection
+
+    def test_jev_model_without_key_fails_clearly(self, use_config):
+        use_config(
+            providers={
+                "t": {"adapter": "jev", "base_url": "http://t.invalid", "api_key_env": "TEST_KEY"}
+            },
+            models={"jev": {"provider": "t", "model": "jev-1", "pricing": PRICED}},
+            defaults={"generative": "jev"},
+        )
+        with pytest.raises(RuntimeError, match="TEST_KEY is not set"):
             resolve_llm(TaskName.JOB_BOUNDS)
+
+    def test_resolve_model_by_name_outside_any_task(self, use_config):
+        use_config()
+        llm = llm_client.resolve_model("big")
+        assert llm.model == "big-deploy" and llm.task is None
+        with pytest.raises(LookupError, match="not in the registry"):
+            llm_client.resolve_model("nope")
 
     def test_unrouted_model_problems_are_ignored(self, use_config):
         use_config(

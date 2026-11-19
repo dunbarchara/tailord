@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import structlog
 from openai import OpenAI
 
+from app.clients.jev_client import JevClient
 from app.clients.llm_registry import (
     ModelSpec,
     Registry,
@@ -27,7 +28,8 @@ LLM_TIMEOUT_SECONDS = 120
 class ResolvedLLM:
     """The client and model id to use for one task, plus the spec it came from."""
 
-    client: OpenAI
+    # OpenAI-compatible for adapter "openai_compat"; JevClient for adapter "jev".
+    client: OpenAI | JevClient
     model: str
     spec: ModelSpec
     task: TaskName | None = None
@@ -48,9 +50,13 @@ def validate_llm_config() -> None:
         raise RuntimeError("Invalid LLM model configuration:\n  - " + "\n  - ".join(errors))
 
 
-def _build_client(spec: ModelSpec) -> OpenAI:
+def _build_client(spec: ModelSpec) -> OpenAI | JevClient:
     """
-    Build an OpenAI-compatible client for a model spec. Three modes:
+    Build the client for a model spec, by adapter.
+
+    Adapter "jev" (TypeSafe System One): JevClient with the provider's API key.
+
+    Adapter "openai_compat": an OpenAI-compatible client. Three modes:
 
     1. Azure AI Foundry + Managed Identity (auth="managed_identity"):
        Uses DefaultAzureCredential with the ai.azure.com scope — no api_version needed.
@@ -61,6 +67,13 @@ def _build_client(spec: ModelSpec) -> OpenAI:
     3. Local model (Ollama, LM Studio, etc.):
        base_url set to a local endpoint, API key omitted or a placeholder.
     """
+    if spec.adapter == "jev":
+        if not spec.api_key:
+            raise RuntimeError(
+                f"model '{spec.name}': API key env var {spec.api_key_env} is not set"
+            )
+        return JevClient(spec.api_key, spec.base_url, timeout=LLM_TIMEOUT_SECONDS)
+
     if spec.auth == "managed_identity":
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
@@ -105,11 +118,11 @@ def _build_client(spec: ModelSpec) -> OpenAI:
 # reuses the HTTP connection pool and, under managed identity, the cached bearer token.
 # Keying on the connection (not the model name) also keeps per-user registries, if they
 # are ever added, from colliding. Rotating a key requires a process restart.
-_clients: dict[tuple, OpenAI] = {}
+_clients: dict[tuple, OpenAI | JevClient] = {}
 _clients_lock = threading.Lock()
 
 
-def _client_for(spec: ModelSpec) -> OpenAI:
+def _client_for(spec: ModelSpec) -> OpenAI | JevClient:
     key = spec.connection_key()
     client = _clients.get(key)
     if client is None:
@@ -124,15 +137,16 @@ def _client_for(spec: ModelSpec) -> OpenAI:
 def resolve_llm(task: TaskName, registry: Registry | None = None) -> ResolvedLLM:
     """Resolve the client and model id for a task via llm_models.json."""
     spec = resolve_spec(task, registry)
-    if spec.adapter != "openai_compat":
-        # Only the OpenAI-compatible client exists in the app today. The eval harness
-        # builds its own clients for other adapters (e.g. jev). Production integration of
-        # a System One adapter is a later step and needs its own client here.
-        raise NotImplementedError(
-            f"task '{task}' is routed to model '{spec.name}' (adapter '{spec.adapter}'), "
-            "which the app cannot call yet; only 'openai_compat' models are supported"
-        )
     return ResolvedLLM(client=_client_for(spec), model=spec.model, spec=spec, task=task)
+
+
+def resolve_model(name: str, registry: Registry | None = None) -> ResolvedLLM:
+    """Resolve a registry model by name, outside any task (the eval harness benchmarks
+    models the registry does not route anything to)."""
+    spec = (registry or get_registry()).models.get(name)
+    if spec is None:
+        raise LookupError(f"model '{name}' is not in the registry")
+    return ResolvedLLM(client=_client_for(spec), model=spec.model, spec=spec, task=None)
 
 
 def reset_llm_caches() -> None:

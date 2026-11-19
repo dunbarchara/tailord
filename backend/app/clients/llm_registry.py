@@ -79,8 +79,8 @@ _TASK_PREFIX = "LLM_TASK_"
 
 # Which task kinds each adapter can serve. openai_compat serves classification via
 # structured output. `jev` (TypeSafe's System One API) answers typed choice/score questions
-# and generates no text, so it can only serve SYSTEM_ONE tasks. The eval harness has a jev
-# client (backend/evals); the app does not yet, see ResolvedLLM in llm_client.py.
+# and generates no text, so it can only serve SYSTEM_ONE tasks. Its client is
+# app/clients/jev_client.py, shared by the app and the eval harness.
 ADAPTER_KINDS: dict[str, frozenset[TaskKind]] = {
     "openai_compat": frozenset({TaskKind.GENERATIVE, TaskKind.SYSTEM_ONE}),
     "jev": frozenset({TaskKind.SYSTEM_ONE}),

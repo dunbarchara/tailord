@@ -1,6 +1,7 @@
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Type, TypeVar
 
 import structlog
@@ -9,6 +10,19 @@ from pydantic import BaseModel
 logger = structlog.get_logger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass(frozen=True)
+class LLMCallStats:
+    """What one model call cost and took. Callers that need it (the eval harness) pass a
+    list as `stats_sink`; one entry is appended per call, including calls whose output then
+    fails validation, because those are billed too."""
+
+    input_tokens: int
+    output_tokens: int
+    cached_tokens: int
+    latency_ms: int
+    finish_reason: str | None
 
 
 class LLMRefusalError(Exception):
@@ -42,6 +56,23 @@ def _format_messages(messages: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+def _record_stats(
+    sink: list[LLMCallStats] | None, usage, finish_reason: str | None, elapsed_s: float
+) -> None:
+    if sink is None:
+        return
+    details = getattr(usage, "prompt_tokens_details", None)
+    sink.append(
+        LLMCallStats(
+            input_tokens=usage.prompt_tokens,
+            output_tokens=usage.completion_tokens,
+            cached_tokens=(getattr(details, "cached_tokens", 0) or 0) if details else 0,
+            latency_ms=int(elapsed_s * 1000),
+            finish_reason=finish_reason,
+        )
+    )
+
+
 def llm_parse(
     client,
     model: str,
@@ -49,6 +80,7 @@ def llm_parse(
     response_model: Type[T],
     temperature: float,
     prompt_name: str | None = None,
+    stats_sink: list[LLMCallStats] | None = None,
 ) -> T:
     """
     Call the LLM and return a validated Pydantic object.
@@ -102,6 +134,7 @@ def llm_parse(
             message = completion.choices[0].message
             usage = completion.usage
             finish_reason = completion.choices[0].finish_reason
+            _record_stats(stats_sink, usage, finish_reason, elapsed)
 
             if message.refusal:
                 logger.warning(
@@ -129,6 +162,7 @@ def llm_parse(
             usage = resp.usage
             finish_reason = resp.choices[0].finish_reason
             raw_content = resp.choices[0].message.content
+            _record_stats(stats_sink, usage, finish_reason, elapsed)  # before validation can fail
             result = response_model.model_validate_json(strip_json_fences(raw_content))
 
         span.set_attribute("llm.input_tokens", usage.prompt_tokens)
@@ -318,6 +352,7 @@ def llm_parse_with_retry(
     validate_fn: Callable[[T], None] | None = None,
     max_retries: int = 2,
     prompt_name: str | None = None,
+    stats_sink: list[LLMCallStats] | None = None,
 ) -> T:
     """
     Like llm_parse(), but retries up to max_retries times when validate_fn raises
@@ -336,7 +371,13 @@ def llm_parse_with_retry(
     for attempt in range(max_retries + 1):
         try:
             result = llm_parse(
-                client, model, current_messages, response_model, temperature, prompt_name
+                client,
+                model,
+                current_messages,
+                response_model,
+                temperature,
+                prompt_name,
+                stats_sink,
             )
             if validate_fn is not None:
                 validate_fn(result)
