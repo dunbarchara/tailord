@@ -196,6 +196,20 @@ BODY_RENDERERS = {
 }
 
 
+DEPARTMENTS = {
+    "design": "Design",
+    "marketing": "Marketing",
+    "sales": "Sales",
+    "recruiting": "People",
+    "finance": "Finance",
+    "customer_success": "Customer Success",
+    "data": "Data",
+    "ml": "Machine Learning",
+    "security": "Security",
+    "mobile": "Engineering",
+}
+
+
 def _jsonld_safe(body: str) -> str:
     return json.dumps(body)[1:-1]
 
@@ -207,6 +221,7 @@ def render(posting: Posting) -> str:
     slug = re.sub(r"[^a-z0-9]+", "", meta["company"].lower())
     job_id = str(int(hashlib.sha1(meta["id"].encode()).hexdigest()[:8], 16) % 10_000_000)
     fill = {
+        "DEPARTMENT": DEPARTMENTS.get(meta["role_family"], "Engineering"),
         "TITLE": meta["title"],
         "COMPANY": meta["company"],
         "COMPANY_SLUG": slug,
@@ -232,7 +247,9 @@ def render(posting: Posting) -> str:
     )
     out = out.replace("{{BODY_HTML}}", body)
     out = re.sub(
-        r"\{\{(TITLE|COMPANY|COMPANY_SLUG|LOCATION|JOB_ID|JOB_URL|JOB_SLUG)\}\}", sub_slot, out
+        r"\{\{(DEPARTMENT|TITLE|COMPANY|COMPANY_SLUG|LOCATION|JOB_ID|JOB_URL|JOB_SLUG)\}\}",
+        sub_slot,
+        out,
     )
     return out
 

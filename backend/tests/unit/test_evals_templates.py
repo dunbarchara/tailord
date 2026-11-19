@@ -10,7 +10,21 @@ TEMPLATES = sorted((DATA_DIR / "templates").glob("*.html"))
 BODY = "<h2>Responsibilities</h2><ul><li>Build zebra-grade APIs</li></ul>"
 FILL = {s: f"x-{s.lower()}" for s in SLOTS} | {"BODY_HTML": BODY}
 # Real names that were in the captured pages; none may survive scrubbing.
-REAL_NAMES = ("anthropic", "palantir", "notion", "gitlab", "rivr", "clera", "nvidia", "amazon")
+REAL_NAMES = (
+    "anthropic",
+    "palantir",
+    "notion",
+    "gitlab",
+    "rivr",
+    "clera",
+    "nvidia",
+    "amazon",
+    "sanctuary",
+    "granola",
+    "physical ai",
+    "knowledge graph",
+    "talent pool",
+)
 
 
 def _fill(html: str) -> str:

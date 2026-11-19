@@ -23,6 +23,7 @@ from evals.store import DATA_DIR
 
 TEMPLATES_DIR = DATA_DIR / "templates"
 SLOTS = (
+    "DEPARTMENT",
     "TITLE",
     "COMPANY",
     "COMPANY_SLUG",
@@ -49,6 +50,14 @@ def _clean(soup: BeautifulSoup, keep_jsonld: bool = True) -> None:
     for m in soup.find_all("meta"):
         if m.get("property") in ("og:image", "og:url") or m.get("name") in ("twitter:image",):
             m.decompose()
+        # Descriptive meta tags carry the real posting's text; the page body is the source.
+        elif (
+            m.get("name") in ("description", "title", "twitter:description", "twitter:title")
+            or m.get("property") in ("og:description", "og:title", "title")
+        ) and "{{" not in (m.get("content") or ""):
+            m.decompose()
+    for ad in soup.select("aside.listing-ad"):
+        ad.decompose()
 
 
 def _set(el, text: str) -> None:
@@ -132,6 +141,9 @@ def lever(soup):
     _set(soup.select_one("div.posting-headline h2"), "{{TITLE}}")
     cats = soup.select("div.posting-categories div.location")
     _set(cats[0], "{{LOCATION}}")
+    dept = soup.select_one("div.posting-categories div.department")
+    if dept:
+        _set(dept, "{{DEPARTMENT}} /")
     # Body = every content section after the header; Lever renders each as a titled block.
     sections = soup.select("div.content div.section-wrapper.page-full-width:not(.accent-section)")
     for extra in sections[1:]:
@@ -147,9 +159,10 @@ def ashby(soup):
     for a in soup.select("a[href]"):
         if a["href"].startswith("/") and "notion" in a["href"]:
             a["href"] = a["href"].replace("notion", "{{COMPANY_SLUG}}")
-    loc = soup.select_one("div.ashby-job-posting-left-pane p")
-    if loc:
-        _set(loc, "{{LOCATION}}")
+    left = soup.select("div.ashby-job-posting-left-pane p")
+    if left:
+        _set(left[0], "{{LOCATION}}")
+        _set(left[-1], "{{DEPARTMENT}}")
     _slot_body(soup.select_one("div.ashby-job-posting-description"))
 
 
@@ -227,7 +240,14 @@ SCRUB = {
         ("rivr", "{{COMPANY_SLUG}}"),
         ("10570674", "{{JOB_ID}}"),
     ],
-    "weworkremotely": [("GitLab", "{{COMPANY}}"), ("gitlab", "{{COMPANY_SLUG}}")],
+    "weworkremotely": [
+        ("Backend Engineer, Knowledge Graph", "{{TITLE}}"),
+        ("-backend-engineer-knowledge-graph", "-{{JOB_SLUG}}"),
+        ("Sanctuary Computer", "Northwind Labs"),
+        ("sanctuary-computer", "northwind-labs"),
+        ("GitLab", "{{COMPANY}}"),
+        ("gitlab", "{{COMPANY_SLUG}}"),
+    ],
     "remoteok": [
         ("Clera", "{{COMPANY}}"),
         ("clera", "{{COMPANY_SLUG}}"),
@@ -237,6 +257,15 @@ SCRUB = {
         ("NVIDIA", "{{COMPANY}}"),
         ("nvidia", "{{COMPANY_SLUG}}"),
         ("JR2015623", "{{JOB_ID}}"),
+    ],
+}
+
+
+# Case-insensitive leftovers (slugs, search fields) of the real posting's title.
+SCRUB_REGEX = {
+    "remoteok": [
+        (r"(remote-)?expert-talent-pool-physical-ai-?", "{{JOB_SLUG}}-"),
+        (r"expert\s+talent\s+pool\s+physical\s+ai", "{{TITLE}}"),
     ],
 }
 
@@ -267,6 +296,8 @@ def build(raw_dir: Path) -> None:
         html = re.sub(r"\n\s*\n+", "\n", html)
         for real, slot in SCRUB[name]:
             html = html.replace(real, slot)
+        for pattern, slot in SCRUB_REGEX.get(name, []):
+            html = re.sub(pattern, slot, html, flags=re.I)
         (TEMPLATES_DIR / f"{name}.html").write_text(html, encoding="utf-8")
         print(f"{name}: {len(html):,} bytes, slots={[s for s in SLOTS if '{{' + s + '}}' in html]}")
 

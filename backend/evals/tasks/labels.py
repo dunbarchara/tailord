@@ -1,20 +1,19 @@
 """Label sets and their definitions, written once and used by label-request generation,
 scoring, and every adapter (an LLM prompt, or Jev `choice`/`score` criteria).
 
-Definitions mirror the production prompt (app/prompts/chunk_matching.py)."""
+Definitions copy the production prompt (app/prompts/chunk_matching.py)."""
 
 SEMANTIC_TYPES: dict[str, str] = {
-    "job_requirement": "A qualification, skill, experience level, or responsibility the "
-    "candidate is expected to have or perform.",
-    "role_description": "What the role does day to day, team context, or the mission of the "
-    "position, without stating a candidate requirement.",
-    "company_description": "About the company: mission, product, history, culture, values.",
-    "compensation": "Salary, equity, bonus, benefits, perks, or other compensation information.",
-    "location": "Office location, remote or hybrid policy, travel, or work authorization by place.",
-    "application_info": "How to apply, hiring process, deadlines, recruiter contact, or other "
-    "page chrome unrelated to the job itself.",
-    "legal": "Equal opportunity statements, privacy notices, and other legal boilerplate.",
-    "other": "Anything that fits none of the above.",
+    "job_requirement": "a skill, qualification, or experience requirement the candidate must "
+    "demonstrate",
+    "role_description": "responsibilities, duties, what the person will do day-to-day",
+    "company_description": "information about the company (products, scale, mission, culture, "
+    "team)",
+    "compensation": "salary range, equity, bonuses, 401K, benefits, PTO",
+    "location": "office location, remote/hybrid policy, relocation",
+    "application_info": "how to apply, EEO statements, deadlines, contact details",
+    "legal": "legal boilerplate, criminal history disclosures, compliance text",
+    "other": "anything that doesn't fit the above",
 }
 
 # Match score semantics (production scale): -1 not scorable, 0 gap, 1 partial, 2 strong.

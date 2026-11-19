@@ -126,3 +126,7 @@ misc/
 
 # Private planning notes (real user feedback, pricing, internal URLs — never public)
 planning/private/
+
+# Eval embedding cache (large, reproducible)
+backend/evals/data/cache/
+backend/evals/data/requests/

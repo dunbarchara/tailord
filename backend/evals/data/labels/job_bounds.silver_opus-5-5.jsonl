@@ -1,0 +1,30 @@
+{"item_id":"amzn-01","label":{"end":93,"start":41},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Compensation paragraph (93) follows the EEO paragraph (89); span kept contiguous to include compensation, so EEO line 89 falls inside. Alternative end 85 if EEO cut takes priority. Line 1 is the page title before nav, so start at Description heading.","task":"job_bounds"}
+{"item_id":"ashby-01","label":{"end":69,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Line 69 mixes the hybrid work policy (substantive) with an EEO/accommodation sentence; included for the work policy. Alternative end 65.","task":"job_bounds"}
+{"item_id":"ashby-02","label":{"end":65,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"ashby-03","label":{"end":65,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"ashby-04","label":{"end":67,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Line 67 combines compensation with EEO boilerplate in one paragraph; included for the compensation.","task":"job_bounds"}
+{"item_id":"ashby-05","label":{"end":61,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"ashby-06","label":{"end":57,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-01","label":{"end":55,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-02","label":{"end":59,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-03","label":{"end":53,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-04","label":{"end":61,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-05","label":{"end":53,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"About Metao company section (51-53) is included; EEO paragraph starts at 55.","task":"job_bounds"}
+{"item_id":"gh-06","label":{"end":41,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-07","label":{"end":47,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"'Our values' heading (49-51) is actually EEO/accommodation boilerplate, not culture content, so it is excluded.","task":"job_bounds"}
+{"item_id":"gh-08","label":{"end":65,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Salary range (65) follows the Accommodations and EEO/Fair Chance block (55-63); span kept contiguous to include compensation. Alternative end 53 if EEO cut takes priority.","task":"job_bounds"}
+{"item_id":"lever-01","label":{"end":61,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-02","label":{"end":57,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-03","label":{"end":17,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Whole posting is one paragraph on line 17, ending with a brief EEO sentence that cannot be split at line granularity.","task":"job_bounds"}
+{"item_id":"lever-04","label":{"end":53,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-05","label":{"end":57,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-06","label":{"end":49,"start":5},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"rok-01","label":{"end":109,"start":109},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Entire description is crammed into one table cell on line 109, with a short EEO sentence and apply link inside it. Title only appears in the page header (3) and listing row (107), both surrounded by nav/listing chrome, so start is set at the description cell.","task":"job_bounds"}
+{"item_id":"site-01","label":{"end":59,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"site-02","label":{"end":55,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"site-03","label":{"end":97,"start":41},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Pay & Benefits (97) follows the EEO paragraph (93); span kept contiguous to include compensation. Alternative end 89 if EEO cut takes priority.","task":"job_bounds"}
+{"item_id":"wd-01","label":{"end":59,"start":3},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"wd-02","label":{"end":57,"start":3},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":"Line 61 combines the application deadline with EEO boilerplate; excluded as mostly legal. Alternative end 61.","task":"job_bounds"}
+{"item_id":"wd-03","label":{"end":65,"start":3},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"wwr-01","label":{"end":59,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}
+{"item_id":"wwr-02","label":{"end":61,"start":7},"label_source":"silver:opus-5-5","labeled_at":"2026-11-19T05:30:03+00:00","note":null,"task":"job_bounds"}

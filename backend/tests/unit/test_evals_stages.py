@@ -69,10 +69,19 @@ def test_postings_stay_under_production_truncation_limit(built):
 
 
 def test_committed_artifacts_are_current(built):
-    """Frozen inputs must match what the code stages produce from the committed postings."""
+    """Frozen inputs must match what the code stages produce from the committed postings
+    (and, once label round 1 is agreed, the agreed bounds)."""
+    from evals.labeling import labels_path
+    from evals.store import read_labels
+
     md, ck = built
-    stages.build_chunks_artifact(md, ck)
+    agreed = labels_path("job_bounds", "agreed")
+    bounds = None
+    if agreed.exists():
+        bounds = {r.item_id: (r.label["start"], r.label["end"]) for r in read_labels(agreed)}
+    stages.build_chunks_artifact(md, ck, bounds_by_posting=bounds)
     for committed, fresh in ((stages.MARKDOWN_PATH, md), (stages.CHUNKS_PATH, ck)):
         assert read_artifact(committed)[0].content_hash == read_artifact(fresh)[0].content_hash, (
-            f"stale {committed.name}: run `uv run python -m evals.stages`"
+            f"stale {committed.name}: run `uv run python -m evals.stages` or "
+            "`python -m evals.labeling rebuild-chunks`"
         )

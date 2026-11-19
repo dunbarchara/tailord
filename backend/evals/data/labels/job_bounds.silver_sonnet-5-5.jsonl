@@ -1,0 +1,30 @@
+{"item_id":"amzn-01","label":{"end":93,"start":41},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":"compensation paragraph follows the EEO paragraph; span must be contiguous so EEO is inside","task":"job_bounds"}
+{"item_id":"ashby-01","label":{"end":69,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":"EEO sentence is inside the final paragraph","task":"job_bounds"}
+{"item_id":"ashby-02","label":{"end":65,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"ashby-03","label":{"end":65,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"ashby-04","label":{"end":67,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":"EEO sentence is inside the compensation paragraph","task":"job_bounds"}
+{"item_id":"ashby-05","label":{"end":61,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"ashby-06","label":{"end":57,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-01","label":{"end":55,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-02","label":{"end":59,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-03","label":{"end":53,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-04","label":{"end":61,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-05","label":{"end":53,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-06","label":{"end":41,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"gh-07","label":{"end":47,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":"'Our values' section is accommodation/EEO text, excluded","task":"job_bounds"}
+{"item_id":"gh-08","label":{"end":65,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":"salary range follows the EEO block, so the span includes it","task":"job_bounds"}
+{"item_id":"lever-01","label":{"end":61,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-02","label":{"end":57,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-03","label":{"end":17,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-04","label":{"end":53,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-05","label":{"end":57,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"lever-06","label":{"end":49,"start":5},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"rok-01","label":{"end":109,"start":107},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":"job row (title, company, tags) through the description cell","task":"job_bounds"}
+{"item_id":"site-01","label":{"end":59,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"site-02","label":{"end":55,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"site-03","label":{"end":97,"start":41},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":"pay paragraph follows the EEO paragraph, so the span includes it","task":"job_bounds"}
+{"item_id":"wd-01","label":{"end":59,"start":3},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"wd-02","label":{"end":57,"start":3},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"wd-03","label":{"end":65,"start":3},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"wwr-01","label":{"end":59,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
+{"item_id":"wwr-02","label":{"end":57,"start":7},"label_source":"silver:sonnet-5-5","labeled_at":"2026-11-19T05:19:18+00:00","note":null,"task":"job_bounds"}
