@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>{{TITLE}} — {{COMPANY}} Careers</title>
+<meta name="description" content="Join {{COMPANY}} as {{TITLE}}."><meta property="og:title" content="{{TITLE}} — {{COMPANY}}">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"JobPosting","title":"{{TITLE}}","description":"{{BODY_HTML}}","hiringOrganization":{"@type":"Organization","name":"{{COMPANY}}","sameAs":"https://{{COMPANY_SLUG}}.example.com"},"jobLocation":{"@type":"Place","address":"{{LOCATION}}"}}</script>
+</head><body>
+<header class="site-header"><a class="logo" href="/">{{COMPANY}}</a>
+<nav><a href="/product">Product</a><a href="/pricing">Pricing</a><a href="/customers">Customers</a><a href="/blog">Blog</a><a href="/careers" aria-current="page">Careers</a><a class="btn" href="/demo">Book a demo</a></nav></header>
+<div class="cookie-banner" role="dialog">We use cookies to improve your experience. <button>Accept all</button> <button>Manage</button></div>
+<main><section class="hero"><p class="eyebrow">Careers</p><h1>{{TITLE}}</h1><p class="meta">{{LOCATION}} · Full-time</p><a class="btn primary" href="{{JOB_URL}}/apply">Apply for this role</a></section>
+<article class="job-body">{{BODY_HTML}}</article>
+<aside class="share"><h3>Know someone great?</h3><p>Share this role: <a href="#">LinkedIn</a> <a href="#">X</a> <a href="#">Copy link</a></p></aside>
+<section class="more-roles"><h2>Other open roles</h2><ul><li><a href="#">Account Executive</a></li><li><a href="#">Customer Success Manager</a></li><li><a href="#">Staff Designer</a></li></ul></section></main>
+<footer><p>© {{COMPANY}}, Inc. All rights reserved.</p><p><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/security">Security</a></p></footer>
+</body></html>

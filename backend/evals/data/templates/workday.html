@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html data-react-helmet="dir,lang" dir="ltr" lang="en-US"><head>
+<title>{{TITLE}}</title>
+<meta content="chrome=1;IE=EDGE" http-equiv="X-UA-Compatible"/>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=2.0" name="viewport"/>
+<meta content="{{TITLE}}" name="title" property="og:title"/>
+<meta content="{{BODY_HTML}}" name="description" property="og:description"/>
+<meta content="website" property="og:type"/>
+<script type="application/ld+json">{
+ "hiringOrganization": {
+  "@type": "Organization",
+  "name": "{{COMPANY}}",
+  "sameAs": "https://{{COMPANY_SLUG}}.example.com"
+ },
+ "identifier": {
+  "@type": "PropertyValue",
+  "name": "{{COMPANY}}",
+  "value": "{{JOB_ID}}"
+ },
+ "datePosted": "2026-08-02",
+ "employmentType": "FULL_TIME",
+ "title": "{{TITLE}}",
+ "description": "{{BODY_HTML}}",
+ "@context": "http://schema.org",
+ "@type": "JobPosting",
+ "jobLocation": {
+  "@type": "Place",
+  "address": "{{LOCATION}}"
+ }
+}</script>
+</head>
+<body>
+<div id="root"><div data-automation-id="jobPostingPage">
+<header data-automation-id="header"><a data-automation-id="logoLink" href="/">{{COMPANY}} Careers</a>
+<nav><a href="/">Search for Jobs</a><a data-automation-id="utilityButtonSignIn">Sign In</a></nav></header>
+<main><div data-automation-id="jobPostingHeader"><h2 data-automation-id="jobPostingHeader">{{TITLE}}</h2>
+<div data-automation-id="locations"><dt>locations</dt><dd>{{LOCATION}}</dd></div>
+<div data-automation-id="postedOn"><dt>time type</dt><dd>Full time</dd></div>
+<div data-automation-id="requisitionId"><dt>job requisition id</dt><dd>{{JOB_ID}}</dd></div>
+<a data-automation-id="adventureButton" href="{{JOB_URL}}/apply">Apply</a></div>
+<div data-automation-id="jobPostingDescription">{{BODY_HTML}}</div></main>
+<footer><a href="#">Privacy Policy</a><a href="#">Terms of Use</a></footer></div></div>
+</body></html>

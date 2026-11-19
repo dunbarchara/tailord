@@ -111,15 +111,39 @@ Design choices made for later extension (not implemented yet):
 
 ## Day 2 — Datasets
 
-- [ ] Create `backend/evals/` (separate from `app/`, not run in CI by default)
-- [ ] Fixture corpus: `backend/evals/data/postings/` — frozen markdown/text per posting with a stable id. Mix: generated mock postings (varied seniority, domain, structure, messiness) + scrubbed snapshots. Target 30–50 postings to start.
-- [ ] Run existing `extract_chunks` over the corpus to produce the chunk-level dataset (chunk id, text, position, posting id)
-- [ ] Candidate profile fixtures (2–3 synthetic profiles of different shapes) for match-score tasks
-- [ ] Dataset schema: versioned JSONL, one record per item, with `label`, `label_source` (`silver:sonnet` | `silver:<stronger-model>` | `gold:human`), `labeled_at`
-- [ ] Label request generator: emits self-contained prompt files (task definition, label options with descriptions, items) that a stronger Claude model can fill in with no repo context
-- [ ] Sonnet silver labeling pass for `semantic_type` and match score
-- [ ] Stronger-model labeling pass (user-prompted), imported through the same schema
-- [ ] Agreement report between the two label sources (Cohen's kappa + disagreement list). Disagreements are the interesting items to review later.
+Principles:
+- **Each task is benchmarked in isolation on frozen input artifacts.** The harness never chains tasks with one model. Every artifact records provenance: producing task, model (or code git sha), upstream artifact content hash, parameters.
+- **Workflow:** benchmark a task, choose a standard model, `promote` its output as the next task's input, benchmark the next task. Any task that uses an LLM is benchmarkable; the artifact framework is generic and Day 2 builds the job-side chain first.
+- **Provisional upstream artifacts** (agreed): until a standard is chosen, each upstream artifact is derived from agreed silver labels (the stronger model's label wins on disagreement) and marked `provisional`. `promote` replaces it later with provenance; nothing downstream is restructured.
+- **Items are keyed by (chunk id, profile id)** so more profiles can be added later without changing layout. One profile for now: reuse `alex-chen-backend-engineer` (schema in `tests/eval/profile_schema.py`).
+
+Chain:
+
+```
+HTML posting -> markdown (code) -> [job_bounds] -> chunks (code) -> [semantic_type]
+profile claims -> embeddings -> retrieval (frozen once, k=8) -> [match_score]
+```
+
+- `job_bounds`: label = start/end line of the core job content (more robust than anchor strings). Scored by line overlap and boundary exactness; the production fallback (null anchors, use everything) counts as its own outcome. A System One per-line keep/drop reformulation may be added so Jev can compete.
+- `semantic_type`: the 8-way chunk classification.
+- `match_score`: -1/0/1/2 scoring using the production retrieval path. The retrieval artifact stores the production prompt inputs verbatim (candidate header, requirement, grouped context) plus embedding model, k and profile id, so every model sees byte-identical input. Retrieval is computed once (embedding cost estimate shown and approved first) using in-memory cosine like `tests/eval`.
+
+Postings (persisted HTML repository, `backend/evals/data/`):
+- Board templates captured from live Greenhouse / Lever / Ashby / Workday / company career pages (DOM skeleton and chrome: nav, cookie banners, EEO footer, apply buttons, JSON-LD) into `templates/`.
+- Posting content is hand-written by Claude (not script-generated), modeled on the style of well-known postings, under **tongue-in-cheek mock company names** (e.g. "Googleo", "Notiono", "Microsofto") so size tier is obvious and nothing is misattributed. Big tech, mid-size, and startup tiers.
+- Corpus 30 postings (phase A: 12 across all boards and sizes, then phase B: 18), about 1,000 chunks and about 400 scored pairs. Boards: Greenhouse 8, Lever 6, Ashby 6, Workday 3, company sites 4, aggregator-style 3. About 24 engineering-adjacent roles, 6 non-engineering. `manifest.jsonl` records board, company tier, role family, seniority.
+
+Labeling: three rounds in order (job_bounds, semantic_type, match_score). Each has a Sonnet silver pass and a stronger non-Sonnet Claude pass; sources are free-form strings (`silver:sonnet-5-5`, `silver:<model>`, `gold:human`). Label-request files contain no predictions (avoid anchoring). Agreement via Cohen's kappa plus a disagreement list. After each round the next stage's inputs are rebuilt from the agreed labels.
+
+Steps:
+- [x] 1. Scaffold `backend/evals/` (separate from `app/` and from `tests/eval`, not run in CI): artifact + provenance schemas, item ids, label files, label definitions in `tasks/*.py`
+- [x] 2. Captured board templates from live pages (7 templates in `backend/evals/data/templates/`, scrubbed, with slots; see its README)
+- [x] 3a. Wrote phase A postings (12): sources in `backend/evals/data/postings/src/*.md`, rendered to board-style HTML by `python -m evals.render_postings` (`html/`, `manifest.jsonl`); about 400 chunks
+- [x] 3b. Wrote phase B postings (18): 30 postings total, 916 chunks; deliberately messy cases included (single unbroken paragraph, all-caps headings, very short posting, heavy legal boilerplate, aggregator chrome)
+- [ ] 4. Code stages: HTML to markdown via production extractor; bounds application and chunking via production code; git sha as provenance
+- [ ] 5. Frozen retrieval artifact for match_score (after cost estimate approval)
+- [ ] 6. Label rounds 1 to 3 with import, agreement reports, stats
+- [ ] 7. Unit tests: hashes, provenance, import validation, kappa (no live LLM calls)
 
 ## Day 3 — Eval harness
 
