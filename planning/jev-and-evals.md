@@ -140,7 +140,7 @@ Steps:
 - [x] 2. Captured board templates from live pages (7 templates in `backend/evals/data/templates/`, scrubbed, with slots; see its README)
 - [x] 3a. Wrote phase A postings (12): sources in `backend/evals/data/postings/src/*.md`, rendered to board-style HTML by `python -m evals.render_postings` (`html/`, `manifest.jsonl`); about 400 chunks
 - [x] 3b. Wrote phase B postings (18): 30 postings total, 916 chunks; deliberately messy cases included (single unbroken paragraph, all-caps headings, very short posting, heavy legal boilerplate, aggregator chrome)
-- [ ] 4. Code stages: HTML to markdown via production extractor; bounds application and chunking via production code; git sha as provenance
+- [x] 4. Code stages (`backend/evals/stages.py`): HTML to markdown via the production extractor; line-range bounds application and chunking via production `extract_chunks`; artifacts in `data/artifacts/` with git-sha provenance. Chunks are provisional (no bounds applied yet = production fallback, 916 core chunks); rebuilt with agreed bounds after label round 1. Bounds lines are 1-indexed inclusive. Regenerate artifacts after committing so the recorded sha is clean (it shows `+dirty` otherwise)
 - [ ] 5. Frozen retrieval artifact for match_score (after cost estimate approval)
 - [ ] 6. Label rounds 1 to 3 with import, agreement reports, stats
 - [ ] 7. Unit tests: hashes, provenance, import validation, kappa (no live LLM calls)
