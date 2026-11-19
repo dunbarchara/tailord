@@ -89,6 +89,19 @@ class TestRegistryIsRequired:
         for name, model in prod["models"].items():
             assert dev["models"].get(name) == model, f"model '{name}' differs in dev"
 
+    @pytest.mark.parametrize(
+        "path", [llm_registry.DEV_REGISTRY_PATH, llm_registry.PROD_REGISTRY_PATH]
+    )
+    def test_jev_models_are_priced_and_read_their_key_from_env(self, path, monkeypatch):
+        monkeypatch.setenv("TYPESAFE_API_KEY", "ts-secret")
+        registry = load_registry(path)
+        spec = registry.models["jev-1.14.0"]
+        assert spec.adapter == "jev" and spec.auth == "api_key"
+        assert spec.api_key == "ts-secret" and "ts-secret" not in repr(spec)
+        assert spec.pricing is not None and spec.pricing.output == 0.0
+        # Pinned versions only: the alias moves under us.
+        assert not any("latest" in name for name in registry.models)
+
     def test_legacy_llm_model_env_is_warned_about(self, use_config, monkeypatch):
         use_config()
         monkeypatch.setattr(settings, "llm_model_deprecated", "gpt-5.4")
@@ -300,6 +313,33 @@ class TestValidation:
             defaults={"generative": "mini", "system_one": "cls"},
         )
         validate_llm_config()
+
+    def test_jev_adapter_serves_only_system_one(self):
+        assert llm_registry.ADAPTER_KINDS["jev"] == frozenset({TaskKind.SYSTEM_ONE})
+
+    def test_generative_task_routed_to_jev_model_fails_validation(self, use_config):
+        use_config(
+            providers={
+                "p": {"base_url": "http://x"},
+                "t": {"adapter": "jev", "base_url": "http://t", "api_key_env": "TEST_KEY"},
+            },
+            models={
+                "mini": {"provider": "p", "model": "m", "pricing": PRICED},
+                "jev": {"provider": "t", "model": "jev-1", "pricing": PRICED},
+            },
+            tasks={"job_bounds": "jev"},
+        )
+        with pytest.raises(RuntimeError, match="cannot serve generative"):
+            validate_llm_config()
+
+    def test_app_cannot_resolve_a_client_for_a_jev_model_yet(self, use_config):
+        use_config(
+            providers={"t": {"adapter": "jev", "base_url": "http://t"}},
+            models={"jev": {"provider": "t", "model": "jev-1", "pricing": PRICED}},
+            defaults={"generative": "jev"},
+        )
+        with pytest.raises(NotImplementedError, match="adapter 'jev'"):
+            resolve_llm(TaskName.JOB_BOUNDS)
 
     def test_unrouted_model_problems_are_ignored(self, use_config):
         use_config(

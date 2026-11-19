@@ -5,6 +5,12 @@
       "base_url_env": "LLM_BASE_URL",
       "api_key_env": "LLM_API_KEY"
     },
+    "typesafe": {
+      "adapter": "jev",
+      "base_url": "https://api.typesafe.ai",
+      "auth": "api_key",
+      "api_key_env": "TYPESAFE_API_KEY"
+    },
     "local": {
       "adapter": "openai_compat",
       "base_url": "http://localhost:1234/v1"
@@ -13,6 +19,11 @@
   "models": {
     "gpt-5.4": { "provider": "foundry", "model": "gpt-5.4" },
     "gpt-5.4-mini": { "provider": "foundry", "model": "gpt-5.4-mini" },
+    "jev-1.14.0": {
+      "provider": "typesafe",
+      "model": "jev-1.14.0",
+      "pricing": { "input": 0.042, "output": 0.0 }
+    },
     "local-gemma-3-12b": {
       "provider": "local",
       "model": "google/gemma-3-12b",

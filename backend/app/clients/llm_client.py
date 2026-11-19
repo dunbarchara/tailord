@@ -124,6 +124,14 @@ def _client_for(spec: ModelSpec) -> OpenAI:
 def resolve_llm(task: TaskName, registry: Registry | None = None) -> ResolvedLLM:
     """Resolve the client and model id for a task via llm_models.json."""
     spec = resolve_spec(task, registry)
+    if spec.adapter != "openai_compat":
+        # Only the OpenAI-compatible client exists in the app today. The eval harness
+        # builds its own clients for other adapters (e.g. jev). Production integration of
+        # a System One adapter is a later step and needs its own client here.
+        raise NotImplementedError(
+            f"task '{task}' is routed to model '{spec.name}' (adapter '{spec.adapter}'), "
+            "which the app cannot call yet; only 'openai_compat' models are supported"
+        )
     return ResolvedLLM(client=_client_for(spec), model=spec.model, spec=spec, task=task)
 
 

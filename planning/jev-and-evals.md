@@ -65,7 +65,7 @@ Implication: `chunk_matching` currently returns score + rationale + blurb + sema
   - Currently deployed: `gpt-5.4`, `gpt-5.4-mini`
   - Newer GPT family (to deploy): gpt-5.6 through gpt-6.2 in terra / luna / sol / astra flavors
   - Claude on Foundry (to deploy): fable, sonnet, opus, haiku
-  - Jev: `jev-1.14.0` (and `jev-1.13.0` if useful as a version comparison)
+  - Jev: `jev-1.14.0` (`jev-1.13.0` dropped: same price, no reason to use it)
   - High-tier models are benchmark-only (never production candidates). Spend is opt-in: every run prints an estimate first and only spends when the user re-runs with an explicit `--max-spend` cap (see Day 3).
   - Harness is vetted on the cheap pair (`gpt-5.4-mini`, `jev-1.14.0`) before any premium model is run.
 - **Milestone for today**: benchmarks running end to end. Production Jev integration is a separate follow-up discussion.
@@ -146,6 +146,9 @@ Steps:
 - [x] 7. Unit tests written alongside each step (store, templates, postings, stages, retrieval, labeling; 83 tests, no live LLM calls)
 
 ## Day 3 — Eval harness
+
+
+Scaffolding done (before the harness): `typesafe` provider (`adapter: jev`, `base_url: https://api.typesafe.ai`, key from `TYPESAFE_API_KEY`) and model `jev-1.14.0` (pinned version, no `latest`; `jev-1.13.0` is priced the same, so there is no reason to benchmark it) in both registry files. `jev` serves only `system_one` tasks, so routing a generative task to it fails validation; `resolve_llm` raises `NotImplementedError` for non-`openai_compat` adapters because the app has no Jev client yet (the eval harness builds its own). Staging/production do not require the key until a task is routed to a Jev model. Pricing `input: 0.042` per 1M tokens, `output: 0.0` is from Jev's public pricing and **unverified**: confirm against the TypeSafe console before trusting cost numbers.
 
 - [ ] Task registry: each task = input builder, output schema, scorer, and (for classification) label set with descriptions
 - [ ] Adapter interface: `run(task, item) -> {prediction, confidence?, probabilities?, tokens_in, tokens_out, latency_ms, error?}`
