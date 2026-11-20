@@ -27,7 +27,7 @@ SEMANTIC_TYPE = ClassificationTask(
     render_state=render_state,
 )
 
-LABEL_SOURCES = ("silver:sonnet-5-5", "silver:opus-5-5", "agreed")
+LABEL_SOURCES = ("silver:sonnet-5-5", "silver:opus-5-5", "agreed", "adjudicated")
 
 
 def load_items() -> list[EvalItem]:

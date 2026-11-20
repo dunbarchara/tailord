@@ -97,7 +97,7 @@ def test_calibration_only_where_a_model_reports_probabilities(results):
 
 
 def test_pairwise_mcnemar_counts_discordant_items(results):
-    pair = report.build_report(TASK, ITEMS, root=results)["pairwise_agreed"][0]
+    pair = report.build_report(TASK, ITEMS, root=results)["pairwise"][0]
     # strong right on i1, i2, i3 where weak is wrong; weak never right where strong is wrong.
     assert (pair["a"], pair["b"]) == ("strong", "weak")
     assert pair["only_a_correct"] == 3 and pair["only_b_correct"] == 0
@@ -203,6 +203,39 @@ def test_model_errors_still_count_as_wrong_but_pairwise_skips_unanswered_items(t
     )
     r = report.build_report(TASK, ITEMS, root=tmp_path)
     assert r["models"]["b"]["quality"]["agreed"]["n_errors"] == 1  # ValidationError only
-    pair = r["pairwise_agreed"][0]
+    pair = r["pairwise"][0]
     assert pair["n"] == 3  # i1 dropped: b never answered it
     assert pair["only_a_correct"] == 1 and pair["only_b_correct"] == 0  # i2
+
+
+def test_adjudicated_labels_become_the_reference_and_are_scored_alongside_agreed(tmp_path):
+    # i3 is relabeled from b to a after review; "strong" answered b there, "weak" answered a.
+    items = [*ITEMS[:3], EvalItem("i3", {}, {**ITEMS[3].labels, "adjudicated": "a"})]
+    items = [
+        EvalItem(
+            i.id,
+            i.input,
+            {**i.labels, "adjudicated": i.labels.get("adjudicated", i.labels["agreed"])},
+        )
+        for i in items
+    ]
+    seed(tmp_path, "strong", [rec("i0", "a"), rec("i1", "a"), rec("i2", "b"), rec("i3", "b")])
+    seed(tmp_path, "weak", [rec("i0", "a"), rec("i1", "a"), rec("i2", "b"), rec("i3", "a")])
+    r = report.build_report(TASK, items, root=tmp_path)
+    assert r["reference"] == "adjudicated"
+    strong, weak = r["models"]["strong"]["quality"], r["models"]["weak"]["quality"]
+    assert strong["agreed"]["accuracy"] == 1.0 and strong["adjudicated"]["accuracy"] == 0.75
+    assert weak["agreed"]["accuracy"] == 0.75 and weak["adjudicated"]["accuracy"] == 1.0
+    sources = {p["source"] for p in r["pairwise"]}
+    assert sources == {"agreed", "adjudicated"}
+    md = report.render_markdown(r, list(TASK.labels))
+    assert "use the **adjudicated** labels" in md and "macro-F1 (adjudicated)" in md
+    assert "- vs adjudicated labels:" in md and "- vs agreed labels:" in md
+
+
+def test_contested_items_ignore_the_adjudicated_source(tmp_path):
+    # Adjudication changes labels, not whether the independent silver sources disagreed.
+    items = [EvalItem(i.id, i.input, {**i.labels, "adjudicated": "a"}) for i in ITEMS]
+    seed(tmp_path, "m", [rec(i.id, "a") for i in ITEMS])
+    m = report.build_report(TASK, items, root=tmp_path)["models"]["m"]
+    assert m["agreed_subsets"]["contested"]["n"] == 1  # only i3, where sonnet and opus split

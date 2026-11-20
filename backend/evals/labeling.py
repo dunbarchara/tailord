@@ -13,6 +13,7 @@ repo context can fill them in. Responses are JSONL, one `{"id": ..., "label": ..
     uv run python -m evals.labeling report job_bounds silver:sonnet-5-5 silver:<other>
     uv run python -m evals.labeling agree job_bounds --primary silver:<other> --secondary silver:sonnet-5-5
     uv run python -m evals.labeling rebuild-chunks            # apply agreed bounds
+    uv run python -m evals.labeling adjudicate                # corrections on top of the agreed set
 """
 
 import argparse
@@ -202,6 +203,51 @@ def agreed_labels(
     return out
 
 
+ADJUDICATIONS_PATH = LABELS_DIR / "adjudications.json"
+
+
+def adjudicated_labels(
+    task: str, base: list[LabelRecord], overrides: dict[str, dict]
+) -> list[LabelRecord]:
+    """The agreed labels with reviewed corrections applied. Every override must name an
+    existing item, carry a valid label for it, and give a reason; silver and agreed label
+    files are never touched, so the effect of the corrections stays measurable."""
+    items = {i["id"]: i for i in items_for(task)}
+    unknown = [i for i in overrides if i not in items]
+    if unknown:
+        raise ValueError(f"adjudication names unknown items: {unknown[:5]}")
+    out = []
+    for r in base:
+        override = overrides.get(r.item_id)
+        label, note = r.label, None
+        if override:
+            if not override.get("reason"):
+                raise ValueError(f"{r.item_id}: an adjudication needs a reason")
+            if err := validate_label(task, override["label"], items[r.item_id]):
+                raise ValueError(f"{r.item_id}: {err}")
+            label = override["label"]
+            note = f"was {r.label!r} ({r.label_source}); {override['reason']}"
+        out.append(
+            LabelRecord(
+                task=task, item_id=r.item_id, label=label, label_source="adjudicated", note=note
+            )
+        )
+    return out
+
+
+def write_adjudicated(path: Path = ADJUDICATIONS_PATH) -> dict[str, int]:
+    """Build <task>.adjudicated.jsonl for every task listed in adjudications.json."""
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    changed = {}
+    for task, overrides in spec.items():
+        base = read_labels(labels_path(task, "agreed"))
+        records = adjudicated_labels(task, base, overrides)
+        write_labels(labels_path(task, "adjudicated"), records)
+        before = {r.item_id: r.label for r in base}
+        changed[task] = sum(1 for r in records if r.label != before[r.item_id])
+    return changed
+
+
 def label_stats(records: list[LabelRecord]) -> dict:
     if records and isinstance(records[0].label, dict):
         spans = [r.label["end"] - r.label["start"] + 1 for r in records]
@@ -366,6 +412,7 @@ def main() -> None:
     ag.add_argument("--primary", required=True)
     ag.add_argument("--secondary", required=True)
     sub.add_parser("rebuild-chunks")
+    sub.add_parser("adjudicate", help="apply data/labels/adjudications.json to the agreed labels")
     args = ap.parse_args()
 
     if args.cmd == "request":
@@ -383,6 +430,11 @@ def main() -> None:
         out = labels_path(args.task, "agreed")
         write_labels(out, agreed_labels(args.task, p, s))
         print("wrote", out, label_stats(read_labels(out)))
+    elif args.cmd == "adjudicate":
+        for task, n in write_adjudicated().items():
+            print(
+                f"{task}: {n} label(s) changed from the agreed set -> {labels_path(task, 'adjudicated')}"
+            )
     elif args.cmd == "rebuild-chunks":
         print("chunks", rebuild_chunks_from_bounds()[:12])
 

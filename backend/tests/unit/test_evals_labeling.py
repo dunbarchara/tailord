@@ -121,3 +121,55 @@ def test_committed_silver_bounds_are_valid_for_current_markdown():
     items = {i["id"]: i for i in labeling.items_for("job_bounds")}
     for r in labeling.read_labels(labeling.labels_path("job_bounds", "silver:sonnet-5-5")):
         assert labeling.validate_label("job_bounds", r.label, items[r.item_id]) is None
+
+
+def _agreed(task, labels):
+    return [_rec(task, iid, label, "agreed") for iid, label in labels.items()]
+
+
+def test_adjudication_applies_overrides_keeps_the_rest_and_records_why(fake_items):
+    base = _agreed("semantic_type", {f"p:{i}": "job_requirement" for i in range(4)})
+    out = labeling.adjudicated_labels(
+        "semantic_type", base, {"p:1": {"label": "other", "reason": "section label"}}
+    )
+    assert [r.label for r in out] == [
+        "job_requirement",
+        "other",
+        "job_requirement",
+        "job_requirement",
+    ]
+    assert all(r.label_source == "adjudicated" for r in out)
+    assert "was 'job_requirement'" in out[1].note and "section label" in out[1].note
+    assert out[0].note is None
+
+
+def test_adjudication_rejects_unknown_items_bad_labels_and_missing_reasons(fake_items):
+    base = _agreed("semantic_type", {f"p:{i}": "other" for i in range(4)})
+    with pytest.raises(ValueError, match="unknown items"):
+        labeling.adjudicated_labels(
+            "semantic_type", base, {"zzz": {"label": "other", "reason": "x"}}
+        )
+    with pytest.raises(ValueError, match="unknown semantic_type"):
+        labeling.adjudicated_labels(
+            "semantic_type", base, {"p:0": {"label": "bogus", "reason": "x"}}
+        )
+    with pytest.raises(ValueError, match="needs a reason"):
+        labeling.adjudicated_labels("semantic_type", base, {"p:0": {"label": "legal"}})
+
+
+def test_committed_adjudications_are_valid_and_leave_the_silver_labels_alone():
+    spec = json.loads(labeling.ADJUDICATIONS_PATH.read_text())
+    for task, overrides in spec.items():
+        agreed = {
+            r.item_id: r.label for r in labeling.read_labels(labeling.labels_path(task, "agreed"))
+        }
+        adjudicated = labeling.read_labels(labeling.labels_path(task, "adjudicated"))
+        assert len(adjudicated) == len(agreed)
+        changed = {r.item_id for r in adjudicated if r.label != agreed[r.item_id]}
+        assert changed <= set(overrides) and changed  # only reviewed items differ
+        assert all(r.note for r in adjudicated if r.item_id in changed)
+        # Regenerating from the committed spec reproduces the committed file.
+        again = labeling.adjudicated_labels(
+            task, labeling.read_labels(labeling.labels_path(task, "agreed")), overrides
+        )
+        assert [(r.item_id, r.label) for r in again] == [(r.item_id, r.label) for r in adjudicated]

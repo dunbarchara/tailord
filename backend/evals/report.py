@@ -29,8 +29,11 @@ def _unanswered(record: dict) -> bool:
     return record.get("error") in TRANSIENT_ERRORS
 
 
-def model_report(task: ClassificationTask, items: list[EvalItem], records: dict) -> dict:
-    """One model's metrics. `records` is ResultStore.load() output for the model."""
+def model_report(
+    task: ClassificationTask, items: list[EvalItem], records: dict, reference: str = "agreed"
+) -> dict:
+    """One model's metrics. `records` is ResultStore.load() output for the model. `reference`
+    is the label source used for the subsets and per-run accuracy."""
     by_id = {i.id: i for i in items}
     all_results = [r for r in records.values() if r["item_id"] in by_id]
     unanswered = [r for r in all_results if _unanswered(r)]
@@ -55,16 +58,16 @@ def model_report(task: ClassificationTask, items: list[EvalItem], records: dict)
         ]
         calib[source] = metrics.calibration(samples) if samples else None
 
-    # Contested = the individual label sources disagree with each other on the item.
-    raw = [s for s in sources if s != "agreed"]
+    # Contested = the independent (silver) label sources disagree with each other on the item.
+    raw = [s for s in sources if s.startswith("silver:")]
     for name, pick in (
         ("unanimous", lambda i: len({i.labels[s] for s in raw}) == 1),
         ("contested", lambda i: len({i.labels[s] for s in raw}) > 1),
     ):
         pairs = [
-            (by_id[r["item_id"]].labels["agreed"], r["prediction"] if _ok(r) else None)
+            (by_id[r["item_id"]].labels[reference], r["prediction"] if _ok(r) else None)
             for r in first
-            if "agreed" in by_id[r["item_id"]].labels and pick(by_id[r["item_id"]])
+            if reference in by_id[r["item_id"]].labels and pick(by_id[r["item_id"]])
         ]
         subsets[name] = metrics.classification_quality(pairs, list(task.labels)) if pairs else None
 
@@ -76,9 +79,9 @@ def model_report(task: ClassificationTask, items: list[EvalItem], records: dict)
     errors = [r for r in results if not _ok(r)]
     acc_by_run = []
     for run in sorted({r["run"] for r in results}):
-        rows = [r for r in results if r["run"] == run and "agreed" in by_id[r["item_id"]].labels]
+        rows = [r for r in results if r["run"] == run and reference in by_id[r["item_id"]].labels]
         right = sum(
-            1 for r in rows if _ok(r) and r["prediction"] == by_id[r["item_id"]].labels["agreed"]
+            1 for r in rows if _ok(r) and r["prediction"] == by_id[r["item_id"]].labels[reference]
         )
         acc_by_run.append(
             {"run": run, "n": len(rows), "accuracy": right / len(rows) if rows else 0.0}
@@ -112,8 +115,10 @@ def model_report(task: ClassificationTask, items: list[EvalItem], records: dict)
     }
 
 
-def pairwise(task_items: list[EvalItem], loaded: dict[str, dict]) -> list[dict]:
-    """Exact McNemar between each pair of models on the agreed labels, over items both ran."""
+def pairwise(
+    task_items: list[EvalItem], loaded: dict[str, dict], source: str = "agreed"
+) -> list[dict]:
+    """Exact McNemar between each pair of models on one label source, over items both ran."""
     out = []
     for a, b in combinations(loaded, 2):
         both = [
@@ -123,17 +128,18 @@ def pairwise(task_items: list[EvalItem], loaded: dict[str, dict]) -> list[dict]:
             and (i.id, 0) in loaded[b]
             and not _unanswered(loaded[a][(i.id, 0)])
             and not _unanswered(loaded[b][(i.id, 0)])
-            and "agreed" in i.labels
+            and source in i.labels
         ]
 
         def correct(model: str, item: EvalItem) -> bool:
             r = loaded[model][(item.id, 0)]
-            return _ok(r) and r["prediction"] == item.labels["agreed"]
+            return _ok(r) and r["prediction"] == item.labels[source]
 
         only_a = sum(1 for i in both if correct(a, i) and not correct(b, i))
         only_b = sum(1 for i in both if correct(b, i) and not correct(a, i))
         out.append(
             {
+                "source": source,
                 "a": a,
                 "b": b,
                 "n": len(both),
@@ -168,12 +174,22 @@ def build_report(
             loaded[m] = current
     covered = {k[0] for records in loaded.values() for k in records}
     scope = items if all_items else [i for i in items if i.id in covered]
+    sources = sorted({s for i in scope for s in i.labels})
+    # The adjudicated labels (silver errors corrected after review) are the best truth we
+    # have; without them the agreed labels are. Detail sections use this reference.
+    reference = "adjudicated" if "adjudicated" in sources else "agreed"
     return {
         "task": task.name,
         "n_items": len(scope),
-        "models": {m: model_report(task, scope, r) for m, r in loaded.items()},
-        "pairwise_agreed": pairwise(scope, loaded),
-        "label_sources": sorted({s for i in scope for s in i.labels}),
+        "reference": reference,
+        "models": {m: model_report(task, scope, r, reference) for m, r in loaded.items()},
+        "pairwise": [
+            p
+            for src in ("agreed", "adjudicated")
+            if src in sources
+            for p in pairwise(scope, loaded, src)
+        ],
+        "label_sources": sources,
     }
 
 
@@ -195,12 +211,14 @@ def _ms(x: float | None) -> str:
 def render_markdown(report: dict, labels: list[str]) -> str:
     models = report["models"]
     sources = report["label_sources"]
+    ref = report["reference"]
     lines = [
         f"# Eval report: {report['task']}",
         "",
         f"{report['n_items']} items. Quality is against each label source separately, on each "
         "item's first run; an item whose model gave an invalid answer counts as wrong. Items "
-        "with no answer because of rate limits or connection errors are excluded, not wrong.",
+        "with no answer because of rate limits or connection errors are excluded, not wrong. "
+        f"Per-class, confusion and calibration tables use the **{ref}** labels.",
         "",
     ]
     incomplete = {m: r["unanswered"] for m, r in models.items() if r["unanswered"]}
@@ -216,7 +234,8 @@ def render_markdown(report: dict, labels: list[str]) -> str:
         "",
         "| model | coverage | no answer | "
         + " | ".join(f"acc vs {s}" for s in sources)
-        + " | macro-F1 (agreed) | ECE | p50 ms | p95 ms | $/1k items | errors | retried |"
+        + f" | macro-F1 ({ref}) | ECE |"
+        " p50 ms | p95 ms | $/1k items | errors | retried |"
         " consistency |",
         "|" + "---|" * (len(sources) + 11),
     ]
@@ -226,11 +245,11 @@ def render_markdown(report: dict, labels: list[str]) -> str:
             q = r["quality"][s]
             lo, hi = q["accuracy_ci"]
             accs.append(f"{q['accuracy']:.1%} ({lo:.1%}-{hi:.1%})")
-        ece = (r["calibration"].get("agreed") or {}).get("ece")
+        ece = (r["calibration"].get(ref) or {}).get("ece")
         lines.append(
             f"| {m} | {r['coverage']:.0%} | {r['unanswered']} | "
             + " | ".join(accs)
-            + f" | {r['quality']['agreed']['macro_f1']:.3f} | "
+            + f" | {r['quality'][ref]['macro_f1']:.3f} | "
             + ("n/a" if ece is None else f"{ece:.3f}")
             + f" | {_ms(r['latency_ms']['p50'])} | {_ms(r['latency_ms']['p95'])} | "
             + f"{_usd(r['cost']['per_1k_items_usd'])} | {_pct(r['reliability']['error_rate'])} | "
@@ -245,19 +264,19 @@ def render_markdown(report: dict, labels: list[str]) -> str:
         "",
     ]
 
-    if report["pairwise_agreed"]:
-        lines += ["## Pairwise (agreed labels, exact McNemar)", ""]
-        for p in report["pairwise_agreed"]:
+    if report["pairwise"]:
+        lines += ["## Pairwise (exact McNemar)", ""]
+        for p in report["pairwise"]:
             verdict = "no significant difference" if p["p_value"] >= 0.05 else "significant"
             lines.append(
-                f"- {p['a']} vs {p['b']} on {p['n']} items: only {p['a']} right on "
+                f"- vs {p['source']} labels: {p['a']} vs {p['b']} on {p['n']} items: only {p['a']} right on "
                 f"{p['only_a_correct']}, only {p['b']} right on {p['only_b_correct']}; "
                 f"p = {p['p_value']:.3f} ({verdict})"
             )
         lines.append("")
 
     for m, r in models.items():
-        q = r["quality"]["agreed"]
+        q = r["quality"][ref]
         lines += [
             f"## {m}",
             "",
@@ -273,7 +292,7 @@ def render_markdown(report: dict, labels: list[str]) -> str:
             per_run = ", ".join(
                 f"run {x['run']}: {x['accuracy']:.1%}" for x in r["accuracy_by_run"]
             )
-            lines += [f"Accuracy by run (agreed labels): {per_run}", ""]
+            lines += [f"Accuracy by run ({ref} labels): {per_run}", ""]
         if r["reliability"]["errors_by_type"]:
             lines += [
                 "Errors: "
@@ -288,7 +307,7 @@ def render_markdown(report: dict, labels: list[str]) -> str:
         ]
         if parts:
             lines += [
-                "Accuracy on items all label sources agree on vs contested items (agreed labels): "
+                "Accuracy on items all label sources agree on vs contested items ({ref} labels): "
                 + "; ".join(parts),
                 "",
             ]
@@ -301,7 +320,7 @@ def render_markdown(report: dict, labels: list[str]) -> str:
             lines.append(
                 f"| {label} | {c['precision']:.2f} | {c['recall']:.2f} | {c['f1']:.2f} | {c['support']} |"
             )
-        lines += ["", "Confusion (rows gold = agreed, columns predicted; non-zero cells only):", ""]
+        lines += ["", f"Confusion (rows gold = {ref}, columns predicted; non-zero cells only):", ""]
         cells = [
             f"{g} -> {p}: {n}"
             for g, row in q["confusion"].items()
@@ -309,11 +328,11 @@ def render_markdown(report: dict, labels: list[str]) -> str:
             if g != p
         ]
         lines += ["- " + c for c in sorted(cells)] if cells else ["No errors."]
-        cal = r["calibration"].get("agreed")
+        cal = r["calibration"].get(ref)
         if cal:
             lines += [
                 "",
-                "Calibration on the top-class probability (agreed labels):",
+                f"Calibration on the top-class probability ({ref} labels):",
                 "",
                 "| confidence | n | mean conf | accuracy |",
                 "|---|---|---|---|",

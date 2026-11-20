@@ -1,0 +1,70 @@
+{
+  "semantic_type": {
+    "amzn-01:23": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    },
+    "gh-02:16": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    },
+    "site-03:25": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    },
+    "wd-01:13": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    },
+    "wd-01:16": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    },
+    "wd-03:15": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    },
+    "wd-03:17": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    },
+    "wwr-02:6": {
+      "label": "other",
+      "reason": "a pure section label, lead-in or banner: it says nothing a candidate could have or lack, and the label set has no header class, so `other` applies. Both silver labelers labeled it by the section it introduces."
+    }
+  },
+  "match_score": {
+    "amzn-01:23:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    },
+    "gh-02:16:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    },
+    "site-03:25:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    },
+    "wd-01:13:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    },
+    "wd-01:16:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    },
+    "wd-03:15:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    },
+    "wd-03:17:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    },
+    "wwr-02:6:alex-chen-backend-engineer": {
+      "label": -1,
+      "reason": "a section label or banner is not a requirement, so it is not scored (the agreed set gave two of these a 2, a strong match)."
+    }
+  }
+}

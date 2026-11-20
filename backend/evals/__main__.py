@@ -21,9 +21,14 @@ import structlog
 from evals import runner
 from evals.adapters import adapter_for
 from evals.tasks import TASKS
+from evals.tasks.real import load_real_items
 from evals.tasks.semantic_type import load_items
 
-LOADERS = {"semantic_type": load_items}
+LOADERS = {
+    "semantic_type": load_items,
+    "real_semantic_type": load_real_items,
+    "real_section_label": load_real_items,
+}
 
 
 def _without_max_spend(argv: list[str]) -> str:
@@ -130,6 +135,11 @@ def cmd_report(args) -> int:
     if args.task not in TASKS:
         raise SystemExit(f"unknown task '{args.task}'; defined: {', '.join(TASKS)}")
     task, items = TASKS[args.task], LOADERS[args.task]()
+    if not any(i.labels for i in items):
+        raise SystemExit(
+            f"task '{task.name}' has no gold labels, so there is nothing to score; "
+            "see `python -m evals.probes.section_labels summarize`"
+        )
     models = args.models.split(",") if args.models else None
     report = report_mod.build_report(task, items, models, all_items=args.all_items)
     if not report["models"]:

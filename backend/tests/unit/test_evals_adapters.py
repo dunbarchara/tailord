@@ -64,7 +64,10 @@ def test_task_registry_and_state_rendering():
 def test_items_load_with_every_label_source():
     items = load_items()
     assert len(items) == 478
-    assert all(set(i.labels) == {"silver:sonnet-5-5", "silver:opus-5-5", "agreed"} for i in items)
+    assert all(
+        set(i.labels) == {"silver:sonnet-5-5", "silver:opus-5-5", "agreed", "adjudicated"}
+        for i in items
+    )
     assert all(i.labels["agreed"] in SEMANTIC_TYPE.labels for i in items)
     assert len({i.id for i in items}) == 478
 
