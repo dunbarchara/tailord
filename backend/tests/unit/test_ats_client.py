@@ -2,7 +2,15 @@
 
 from unittest.mock import MagicMock, patch
 
-from app.core.ats_client import _parse_greenhouse_url, _parse_lever_url, try_ats_fetch
+import pytest
+
+from app.core.ats_client import (
+    _greenhouse_to_markdown,
+    _parse_greenhouse_url,
+    _parse_lever_url,
+    _unescape_if_escaped,
+    try_ats_fetch,
+)
 
 # ---------------------------------------------------------------------------
 # _parse_greenhouse_url
@@ -110,6 +118,41 @@ def test_try_ats_fetch_greenhouse_success(mock_get):
     # Verify correct API URL was called
     called_url = mock_get.call_args[0][0]
     assert "boards-api.greenhouse.io/v1/boards/coreweave/jobs/4577764006" in called_url
+
+
+# What the live Greenhouse API actually returns: the body is HTML-entity-escaped.
+ESCAPED_CONTENT = (
+    "&lt;div class=&quot;content-intro&quot;&gt;&lt;h3&gt;About Us&lt;/h3&gt;"
+    "&lt;p&gt;We build things &amp;amp; ship them.&lt;/p&gt;&lt;/div&gt;"
+    "&lt;p&gt;&lt;strong&gt;What you&#39;ll do&lt;/strong&gt;&lt;/p&gt;"
+    "&lt;ul&gt;&lt;li&gt;Build APIs&lt;/li&gt;&lt;li&gt;Own on-call&lt;/li&gt;&lt;/ul&gt;"
+)
+
+
+def test_greenhouse_escaped_content_becomes_clean_markdown_not_literal_html():
+    markdown = _greenhouse_to_markdown(
+        {"title": "Backend Engineer", "location": {"name": "Remote"}, "content": ESCAPED_CONTENT}
+    )
+    assert "<" not in markdown and "&lt;" not in markdown and "class=" not in markdown
+    assert "We build things & ship them." in markdown  # entities inside the text survive once
+    assert "* Build APIs" in markdown and "* Own on-call" in markdown  # real list items
+    assert "About Us" in markdown and "What you'll do" in markdown
+
+
+def test_greenhouse_already_plain_html_is_left_alone():
+    markdown = _greenhouse_to_markdown(
+        {"title": "T", "content": "<p>Use &lt;b&gt; tags &amp; escape them.</p>"}
+    )
+    assert "Use <b> tags & escape them." in markdown  # entities in real text decode once
+
+
+@pytest.mark.parametrize("content", ["", "no markup at all", "<p>plain</p>"])
+def test_unescape_helper_ignores_content_that_is_not_escaped(content):
+    assert _unescape_if_escaped(content) == content
+
+
+def test_unescape_helper_unescapes_only_real_escaped_markup():
+    assert _unescape_if_escaped("&lt;p&gt;a &amp;amp; b&lt;/p&gt;") == "<p>a &amp; b</p>"
 
 
 @patch("app.core.ats_client.requests.get")

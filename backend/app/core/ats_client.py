@@ -4,6 +4,7 @@ Fetches structured job data from public ATS APIs without relying on Playwright,
 bypassing JS-embed hydration timing issues (e.g. Greenhouse-embedded career pages).
 """
 
+import html
 import logging
 import re
 from urllib.parse import parse_qs, urlparse
@@ -64,6 +65,16 @@ def _parse_lever_url(url: str) -> tuple[str, str] | None:
     return None
 
 
+def _unescape_if_escaped(content: str) -> str:
+    """Greenhouse's public API returns `content` HTML-entity-escaped (`&lt;p&gt;...`). Left
+    as is, the markdown converter sees plain text and the posting reaches the chunker and the
+    LLM as literal HTML source. Unescape only when the content really is escaped (entities, no
+    real tags) so already-plain HTML, and entities that belong to the text, are untouched."""
+    if "<" not in content and "&lt;" in content:
+        return html.unescape(content)
+    return content
+
+
 def _greenhouse_to_markdown(data: dict) -> str:
     """Convert a Greenhouse job API response to markdown."""
     parts: list[str] = []
@@ -76,7 +87,7 @@ def _greenhouse_to_markdown(data: dict) -> str:
     if location:
         parts.append(f"**Location:** {location}")
 
-    content_html = data.get("content", "")
+    content_html = _unescape_if_escaped(data.get("content", ""))
     if content_html:
         content_md = extract_markdown_content(content_html)
         if content_md:
