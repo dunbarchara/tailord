@@ -1,6 +1,6 @@
 # Jev + LLM Evals + Per-Task Model Routing
 
-Status: planning (started 2026-11-17)
+Status: phase complete 2026-11-20 (started 2026-11-17); open work in "Carry forward" at the end
 
 Three linked goals:
 
@@ -9,6 +9,18 @@ Three linked goals:
 3. Support **mixed models per task** with a global default and per-task overrides.
 
 Order of work matters: routing → eval harness → Jev adapter in the harness → (later, separate discussion) Jev in production, gated on eval results.
+
+---
+
+## Status (2026-11-20): this phase is complete; open work is in "Carry forward"
+
+| Goal | Outcome |
+|---|---|
+| 1. Integrate Jev where its capabilities fit | **Groundwork done, production routing deferred by design.** `typesafe` provider and `jev-1.14.0` in the registry, one shared client (`app/clients/jev_client.py`) used by the app and the harness, the `system_one` task kind and the `jev` adapter rules. The evals say Jev belongs: about 10x cheaper and faster than `gpt-5.4-mini` on chunk classification with no significant accuracy difference, calibrated confidence, and it flags section labels that slip through as paragraphs. Routing a task to it is the separate design discussion (Carry forward, P2). |
+| 2. Model-agnostic eval pipeline | **Done for classification tasks.** `backend/evals/` (see its README): runner with an opt-in spend cap, resumable per-item results, rate-limit handling, metrics, comparison report, label tooling, a frozen 30-posting corpus and a real-postings probe. First benchmark: `semantic_type`, 478 items, in `planning/results/`. |
+| 3. Mixed models per task | **Done (Day 1).** Required registry files, per-task overrides, per-kind defaults, local `.env` overrides, a per-user registry seam. |
+
+By-products: the harness exposed two production bugs, both fixed (Greenhouse job content reached the chunker as literal HTML; markdown headings deeper than `###` leaked through as paragraphs). The premium comparison (`gpt-5.4`) is done and changes nothing: it is no better than `gpt-5.4-mini` on classification.
 
 ---
 
@@ -148,7 +160,7 @@ Steps:
 ## Day 3 — Eval harness
 
 
-Scaffolding done (before the harness): `typesafe` provider (`adapter: jev`, `base_url: https://api.typesafe.ai`, key from `TYPESAFE_API_KEY`) and model `jev-1.14.0` (pinned version, no `latest`; `jev-1.13.0` is priced the same, so there is no reason to benchmark it) in both registry files. `jev` serves only `system_one` tasks, so routing a generative task to it fails validation; `resolve_llm` dispatches by adapter to one shared client per provider connection: `openai_compat` gives an OpenAI client, `jev` gives `app/clients/jev_client.py`'s `JevClient` (used by both the app and the eval harness; client logic is never duplicated in `evals/`). `resolve_model(name)` resolves a registry model outside any task, for benchmarks. Staging/production do not require the key until a task is routed to a Jev model. Pricing `input: 0.042` per 1M tokens, `output: 0.0` is from Jev's public pricing and **unverified**: confirm against the TypeSafe console before trusting cost numbers.
+Scaffolding done (before the harness): `typesafe` provider (`adapter: jev`, `base_url: https://api.typesafe.ai`, key from `TYPESAFE_API_KEY`) and model `jev-1.14.0` (pinned version, no `latest`; `jev-1.13.0` is priced the same, so there is no reason to benchmark it) in both registry files. `jev` serves only `system_one` tasks, so routing a generative task to it fails validation; `resolve_llm` dispatches by adapter to one shared client per provider connection: `openai_compat` gives an OpenAI client, `jev` gives `app/clients/jev_client.py`'s `JevClient` (used by both the app and the eval harness; client logic is never duplicated in `evals/`). `resolve_model(name)` resolves a registry model outside any task, for benchmarks. Staging/production do not require the key until a task is routed to a Jev model. Pricing `input: 0.042` per 1M tokens, `output: 0.0` (verified in the TypeSafe console).
 
 - [~] Task registry: `evals/tasks/` has `ClassificationTask` (labels with descriptions, instructions, state renderer) and the `semantic_type` task with items loaded from the frozen chunks plus every label source. `match_score` (ordinal) and `job_bounds` (span) task types still to add; scorer/metrics come with the runner
 - [x] Adapter interface (`evals/adapters/base.py`: `Adapter` protocol, `CallResult`): `run(task, item) -> {prediction, confidence?, probabilities?, tokens_in, tokens_out, latency_ms, error?}`
@@ -181,53 +193,47 @@ Scaffolding done (before the harness): `typesafe` provider (`adapter: jev`, `bas
 
 ## Day 4 — First benchmarks
 
-Status (2026-11-19): `semantic_type` is benchmarked on the cheap pair over all 478 items (results and takeaways in "Takeaways and TODOs" at the end). Premium models, `match_score` and `job_bounds` are still to do.
+Done for `semantic_type` on three models (cheap pair plus `gpt-5.4`); everything else is under "Carry forward".
 
-- [ ] Collect candidate model list with prices (Foundry price sheet, Jev console); fill the registry. Only `gpt-5.4`, `gpt-5.4-mini` and `jev-1.14.0` are registered; the Jev price ($0.042 per 1M input) is unverified
+- [x] Candidate prices: `gpt-5.4`, `gpt-5.4-mini` and `jev-1.14.0` are registered and priced (Jev pricing verified in the TypeSafe console). More models: Carry forward
 - [x] **Vet harness first on the cheap pair** (`gpt-5.4-mini`, `jev-1.14.0`): dry-run estimate, capped run, deliberately low cap to exercise pause/abort/resume, compare actual vs estimated cost to tune the 1.5× padding. Done on a 40-item slice (abort at a low cap, resume, interactive pause with a custom cap and `continue`, repeats); estimates matched actual spend to the cent (1.00x), so the 1.5x padding stays as a safety margin. Vetting found and fixed: cap overshoot from concurrent calls (now reserves in-flight cost), whole-set fingerprint keys (now per-item hashes), repeats inflating confidence intervals (first run only), and a wrong resume command. The full run then found Azure rate limiting at concurrency 8 (164 failed calls), now handled by backoff, requeue and an INCOMPLETE report banner
-- [ ] Deploy chosen Foundry models; record deployment names and pricing in the registry
-- [ ] Second run adds larger/premium models: dry-run estimate → user approves the printed command with its cap
-- [~] Run: `semantic_type` classification, match score, job bounds (if time). `semantic_type` done on the cheap pair (full 478 items: `gpt-5.4-mini` 98.5%, `jev-1.14.0` 96.9%, no significant difference, Jev about 10x cheaper and faster). Still to do: `semantic_type` on the premium models, and `match_score` and `job_bounds`, which need new task types in the harness (ordinal scores; spans)
-- [x] Write up results vs both silver label sets; call out where label sources disagree. Done: `planning/results/semantic_type-cheap-pair.md` (generated report plus a header on how to read it). Earlier note: The report scores every label source separately and splits unanimous from contested items, but only 5 of 478 items are contested for `semantic_type`, so the sources barely differ there. The real finding is label error (8 heading-like chunks, see the TODOs). A committed summary table is pending the label adjudication
-- [ ] Evaluate the split-call design (Jev classify + generative blurb) vs the current single call on quality and cost
-
-## Later — Jev in production (separate discussion)
-
-- [ ] Decide per task based on eval results; ship behind per-task routing so rollback is a config change
-- [ ] Use Jev confidence for "uncertain match" handling (fallback to a stronger model below a threshold)
-- [ ] Split `chunk_matching` into classify/score + conditional blurb generation
-- [ ] Re-run evals on model version bumps (pinned ids, never aliases)
-- [ ] Optional: hand-labeled gold set; LLM-as-judge for generative tasks (letter, blurb)
+- [x] Second run adds a larger model: `gpt-5.4` on all 478 items for $0.3553 (estimate $0.3556), no errors; no better than `gpt-5.4-mini`, not significantly different from either model. Full report: `planning/results/semantic_type.md`
+- [~] Run `semantic_type`, match score, job bounds: `semantic_type` done on the cheap pair (`gpt-5.4-mini` 98.5% vs `jev-1.14.0` 96.9% on the agreed labels, 96.9% vs 98.1% on the adjudicated; no significant difference; Jev about 10x cheaper and faster). `match_score` and `job_bounds` need new task types: Carry forward
+- [x] Write up results vs both silver label sets; call out where label sources disagree. Done: `planning/results/semantic_type.md` (generated report plus a header on how to read it). Earlier note: The report scores every label source separately and splits unanimous from contested items, but only 5 of 478 items are contested for `semantic_type`, so the sources barely differ there. The real finding is label error (8 heading-like chunks, see the TODOs). A committed summary table is pending the label adjudication
+- [~] Evaluate the split-call design (Jev classify + generative blurb) against the current single call: Carry forward
 
 ---
 
 ## Open questions
 
-- [~] Exact Jev rate limits for our org — check developer console before a larger run. No 429s were seen in about 520 Jev calls at concurrency 8, so the limit is above that
 - [x] `httpx` is a direct dependency (`httpx>=0.28.0` in pyproject); `JevClient` uses it
-- [ ] Does Foundry expose logprobs for the GPT/Claude deployments (affects calibration metrics for non-Jev models)?
-- [ ] Scrubbing policy for snapshot postings (company names, recruiter contacts)
 - [x] Cap scope: total cap per run only. Inputs are versioned, so a user can run one model at a time for per-model budgeting. Revisit only if needed.
 - [x] `continue` at the cap prompt: suggests a progress-based top-up (remaining fraction of projected total + 20% padding), not the original amount; custom value also accepted
+- [x] Jev price: $0.042 per 1M input tokens, $0 output, verified in the TypeSafe console (2026-11-20)
+- [~] Jev rate limits for our org: no 429s in about 1,500 Jev calls at concurrency 8, so the limit is above that; not probed higher
+- [~] Foundry logprobs, and the scrubbing policy for real-posting snapshots: Carry forward
 
 ---
 
-## Takeaways and TODOs (revisit)
+## Takeaways
 
-Captured after the first full `semantic_type` benchmark on the cheap pair (478 items, frozen inputs, agreed labels = Opus on disagreement). Revisit and tick off; much of this reshapes Day 4 and the production discussion.
+Captured after the first full `semantic_type` benchmark on the cheap pair (478 items, frozen inputs; "agreed" = Opus's label where the two silver labelers disagree).
 
 ### Where we landed
 
-| | gpt-5.4-mini | jev-1.14.0 |
-|---|---|---|
-| Accuracy vs agreed labels | 98.5% (97.0-99.3) | 96.9% (94.9-98.1) |
-| Accuracy if the 8 heading-like chunks below are corrected to `other` | 96.9% (94.9-98.1) | 98.1% (96.5-99.0) |
-| Significance (exact McNemar) | p = 0.077 as labeled; p = 0.21 corrected | |
-| Median latency | 778 ms | 80 ms |
-| Cost per 1k items | about $0.22 | about $0.023 (price unverified) |
-| Calibration | none reported | ECE 0.015; confidence >= 0.9 answers 91% of items at 99.8% accuracy; >= 0.7 answers 96% at 99.1% |
+| | gpt-5.4 | gpt-5.4-mini | jev-1.14.0 |
+|---|---|---|---|
+| Accuracy vs agreed labels | 98.3% (96.7-99.1) | 98.5% (97.0-99.3) | 96.9% (94.9-98.1) |
+| Accuracy vs adjudicated labels (8 heading-like chunks corrected to `other`) | 97.5% (95.7-98.6) | 96.9% (94.9-98.1) | 98.1% (96.5-99.0) |
+| Macro-F1 (adjudicated) | 0.859 | 0.822 | 0.945 |
+| Section labels and banners found (of 10 `other`) | 4 | 0 | 8 |
+| Significance (exact McNemar, all pairs) | none significant on either label set (smallest p = 0.077) | | |
+| Median latency | 928 ms | 778 ms | 80 ms |
+| Cost per 1k items | about $0.74 | about $0.22 | about $0.023 |
+| Calibration | none reported | none reported | ECE 0.021; every error has confidence < 0.7; >= 0.7 answers 96% of items at 100% accuracy |
 
-- **Jev has a place in Tailord.** Roughly 10x cheaper and 10x faster than `gpt-5.4-mini` on classification, with accuracy statistically indistinguishable and confidence we can route on. The ranking itself flips with a handful of label decisions, so do not over-claim an accuracy winner from n = 478.
+- **Jev has a place in Tailord.** About 10x cheaper and faster than `gpt-5.4-mini` (30x cheaper than `gpt-5.4`) on classification, with accuracy statistically indistinguishable and confidence we can route on. The premium model buys nothing detectable here: `gpt-5.4` is no better than `gpt-5.4-mini` on either label set. The ranking shifts with a handful of label decisions, so do not claim an accuracy winner from n = 478.
+- **Confidence is usable but a bigger fallback model is not a free win.** All 9 of Jev's errors are below 0.7 confidence, so answers at >= 0.7 are 100% accurate on 95.8% of items. Escalating the low-confidence rest to `gpt-5.4` gives 98.1%, the same as Jev alone (it fixes 6 of Jev's 9 errors and breaks as many correct low-confidence answers), at 14x lower cost than `gpt-5.4` everywhere. Hard items here are label-boundary cases, so confidence is better used to flag or review than to escalate. In-sample threshold; re-check on a larger set.
 - **Jev caught section headers that slipped through as paragraphs.** Lines such as "Required Qualifications:", "Minimum Qualifications:", "Your responsibilities" and "We're looking for someone who has:" are chunked as `paragraph` (only `##` headings become skipped `header` chunks) and reach the scoring LLM in production. Jev called all but one of these `other`; both silver labelers, and `gpt-5.4-mini` on the two it answered, labeled them by the section they introduce. This looks like an existing bug with postings in the wild, and Jev could be the fix.
 - **The harness paid for itself.** It surfaced the label problem above, a rate-limit failure mode (Azure throttled `gpt-5.4-mini` at concurrency 8, 164 failed calls, now handled by backoff, requeue and an INCOMPLETE report banner), overshoot of the spend cap, and inflated confidence intervals from repeats. Estimates matched actual spend to the cent.
 
@@ -238,34 +244,42 @@ Captured after the first full `semantic_type` benchmark on the cheap pair (478 i
 - As the app behaves today (Greenhouse content escaped): 895 chunks, 802 reach an LLM. Jev flagged 89 (11%) as section labels at P >= 0.5, in 17 of 24 postings; 81 of the 89 are HTML-wrapped headings from the Greenhouse bug above, 8 are plain text on Lever (e.g. "Core Responsibilities", "SWE principles include:", a bold-only bullet). Probe cost $0.036 for 1,604 calls.
 - With the Greenhouse content unescaped (the fix, now in `ats_client.py`): 932 chunks, 772 reach an LLM, with 160 header chunks instead of 93. Jev flagged **22 chunks (2.8%) as section labels at P >= 0.5, in 11 of 24 postings** (14 chunks, 1.8%, in 7 postings at P >= 0.9; 6 at >= 0.99). Probe cost $0.021 for 952 calls ($0.056 for the whole probe).
 - My single-reviewer read of the 22 flags (a rough estimate, not a gold label): about 15 are true section labels or lead-ins ("Core Responsibilities", "SWE principles include:", "Examples of accommodations include but are not limited to:", "The base salary range for this position is:", a bold-only bullet), 2 are ambiguous ("More about X: <url>"), and 5 are false positives, all short Title Case benefit bullets ("Mental Health & Coaching Benefits", "Paid vacations and holidays"). At P >= 0.9 about 12 of 14 are correct. Misses seen: bold-only bullets such as `**AI**` / `**Robotics**` (P about 0.16) and a tagline heading that scored 0.35-0.54 depending on context. Rough recall on the label-like lines I could find is about 70-75%.
+- Both defects found here are fixed: Greenhouse content is now unescaped (`ats_client.py`), and `#{1,6}` headings are recognized (`chunk_extractor.py`; the real sample goes from 160 to 166 headers and 772 to 766 chunks reaching an LLM; the frozen eval corpus is unchanged).
 - **Roughly 4 in 10 postings still send at least one section label to the scoring LLM as an ordinary paragraph after the escaping fix**, but it is about 2% of chunks, so the escaping bug (98% of Greenhouse chunks) was the much bigger problem. Six of the 22 flags are markdown `####` headings: the chunker's header pattern is `^#{1,3}\s+`, so level-4 and deeper headings become paragraph chunks (checked directly). A one-line regex change fixes those without a model; the remaining plain-text labels (about 10) are where a classifier adds value.
 
-### TODOs: labels and evals
+---
 
-- [x] **Adjudicate the 8 heading-like chunks** (done 2026-11-20: `evals/data/labels/adjudications.json` -> `*.adjudicated.jsonl`; the report scores agreed and adjudicated side by side; summary in `planning/results/semantic_type-cheap-pair.md`). Original task: add an `adjudicated` label source (keep silver and agreed untouched; report both side by side). semantic_type -> `other`, match_score -> -1: `wd-01:13`, `wd-01:16`, `wd-03:15`, `wd-03:17`, `gh-02:16`, `site-03:25`, `wwr-02:6`, `amzn-01:23`. Note Opus scored `wd-01:13` and `wd-01:16` as 2 (strong match) in the agreed match_score set; a heading cannot be a match.
-- [ ] **End-to-end review of the classification scheme.** The label set has no section-header class and `other` is a catch-all. Decide: keep `other`, add an explicit rule for section labels, lead-ins and banners, or add a `section_header` class. Then run the clarified wording as its own experiment (a task-text change invalidates results and costs about $0.13 to re-run on the vet pair) to see which models the instruction fixes.
-- [ ] **Review the remaining disagreements:** the 12 items only `gpt-5.4-mini` got right, the 4 only Jev got right, the 3 both missed (`site-03:22`, `wd-01:5`, `wwr-02:4`), team-description paragraphs (role vs company; `gpt-5.4-mini` confuses 3), and the "AI Auto-Apply / Save job" chrome lines (`other` vs `application_info`; both models say `application_info`).
-- [ ] **Audit match_score agreed labels** for non-requirement chunks; consider making `semantic_type` imply -1 for `other`, `legal`, `compensation`, `location` and `application_info`.
-- [ ] **Corpus realism.** The 30 postings were written by Claude from real board templates and the same family of models labeled them. Add scrubbed snapshots of real postings so the benchmark does not flatter models that share that style, and so we see how often header-as-paragraph really occurs.
-- [ ] **Benchmark the remaining tasks:** `match_score` (ordinal; Jev `score` question or 4-way `choice`) and `job_bounds` (Jev per-line keep/drop). The harness only has classification tasks today.
-- [ ] **Add the larger Foundry and Claude models** to the suite once labels are settled (dry run first, explicit cap). `jev-1.13.0` was dropped: same price as 1.14.0.
-- [ ] **Verify Jev pricing** in the TypeSafe console ($0.042 per 1M input tokens, $0 output is assumed); cost comparisons depend on it.
-- [ ] **Foundry logprobs** (open question above): needed for a calibration comparison with non-Jev models.
-- [ ] Decide whether to keep our `JevClient` (httpx) or adopt TypeSafe's official Python SDK, which has its own retries.
+## Carry forward (prioritized)
 
-### TODOs: product (Tailord)
+Everything still open from this plan lives here.
 
-- [ ] **Fix a production bug found by the real-postings probe (2026-11-20): Greenhouse job content reaches the chunker and the LLM as literal HTML.** The Greenhouse public API returns `content` HTML-entity-escaped (`&lt;p&gt;...`), and `_greenhouse_to_markdown` in `app/core/ats_client.py` passes it to `extract_markdown_content` without `html.unescape`. In a sample of 12 real Greenhouse postings fetched through `try_ats_fetch`, 98% of the chunks that reach an LLM (506 of 518) contained raw HTML markup (about 90-230 literal tags per posting), headings stayed `<h2>` / `<p><strong>` text instead of becoming `##` header chunks, and lists were not recognized as bullets (204 bullets vs 482 once unescaped). The unit test passes because its fixture uses unescaped HTML. Fix: unescape before converting, and add a test with a realistically escaped fixture. Expect existing Greenhouse tailorings to score differently after the fix.
+### P0: production correctness found along the way
 
-- [ ] **Chunker: treat `####` and deeper markdown headings as headers.** `_HEADER_RE` in `app/services/chunk_extractor.py` is `^#{1,3}\s+`, so level-4+ headings (common in Greenhouse content) become paragraph chunks that get scored. Extend to `#{1,6}` (and check `normalize_markdown`), with a test. About a quarter of the flagged section labels in the real-postings probe were this.
-- [~] **Header-in-paragraph detection with Jev.** Measured (see "Real-postings probe"): about 2% of chunks, in about 4 in 10 postings, after the Greenhouse fix; Jev's section-label question has roughly 85-90% precision at P >= 0.9 on a small single-reviewer read and misses bold-only bullets. Still to do: add a labeled real-postings set (so precision and recall are measured, not eyeballed), decide the threshold and the fallback for uncertain chunks, and prototype the pre-filter. Beware false positives on short Title Case benefit bullets; a rule such as "paragraph chunk, no sentence punctuation, P >= 0.9" is the likely starting point.
-- [ ] **Classify before scoring.** Add a `system_one` task for chunk semantic type routed through the registry (`defaults.system_one`), and skip generative scoring for chunks that are not requirements or responsibilities. In this corpus 106 of 478 chunks (22%) are neither, so the saving is a hypothesis to quantify on real postings.
-- [ ] **Confidence routing.** Below roughly 0.7-0.9 confidence, fall back to a stronger generative model or keep the chunk; pick the threshold from the calibration table on a larger set.
-- [ ] **Split `chunk_matching`** into classify/score plus conditional blurb generation (existing item in "Later"), and compare it with the single call on quality, cost and latency.
-- [ ] **Production client work** needed before any routing change: a registry `system_one` default, alerting on `TYPESAFE_API_KEY`, and rate-limit handling (the shared `JevClient` already retries 429/529).
+- [x] Greenhouse job content was reaching the chunker and the LLM as literal HTML (the API returns it entity-escaped; `ats_client._greenhouse_to_markdown` now unescapes it, with tests). Expect Greenhouse tailorings to chunk and score differently after this
+- [x] Markdown headings deeper than `###` leaked through as paragraph chunks (`chunk_extractor._HEADER_RE` is now `#{1,6}`, with tests)
 
-### TODOs: housekeeping
+### P1: finish the evidence
 
-- [ ] Remove the inert `LLM_MODEL` / `LLM_API_VERSION` from Terraform (Day 1 follow-up).
-- [ ] Cache-write pricing for Claude models when they are added.
-- [ ] Per-model concurrency overrides in `suites.json`, if Foundry throttling keeps recurring at the default.
+- [x] **Run `gpt-5.4` on `semantic_type`** (done 2026-11-20; see Takeaways and `planning/results/semantic_type.md`)
+- [ ] **Benchmark `match_score` and `job_bounds`.** The harness has only classification tasks. `match_score` is ordinal (Jev `score` question vs a 4-way `choice`); `job_bounds` is a span (Jev per-line keep/drop). This is where the generative models should earn their cost
+- [ ] **Review the classification scheme end to end.** The label set has no section-header class and `other` is a catch-all. Decide between keeping `other`, an explicit rule for section labels, lead-ins and banners, or a `section_header` class; then run the clarified wording as its own experiment (a task-text change invalidates results and costs about $0.13 on the cheap pair)
+- [ ] **Review remaining label disagreements:** the 12 items only `gpt-5.4-mini` got right, the 4 only Jev got right, the 3 both missed (`site-03:22`, `wd-01:5`, `wwr-02:4`), role vs company for team descriptions, and the "AI Auto-Apply / Save job" chrome lines (`other` vs `application_info`)
+- [ ] **Audit `match_score` agreed labels** for non-requirement chunks (consider making `semantic_type` imply -1 for `other`, `legal`, `compensation`, `location`, `application_info`)
+- [ ] **Real postings with gold labels.** The 30-posting corpus was written by Claude and labeled by the same model family. Label a scrubbed real sample so precision and recall of the section-label detector are measured, not eyeballed, and decide the scrubbing policy (company names, recruiter contacts) before any snapshot is committed
+- [ ] **More models:** larger Foundry GPT and Claude deployments (registry entries, prices, cache-write pricing for Claude); check whether Foundry exposes logprobs, for a calibration comparison with non-Jev models
+
+### P2: production integration (the separate design discussion)
+
+- [ ] **Header-in-paragraph detection with Jev.** After both fixes, about 2% of chunks and about 4 in 10 postings still send a section label to the scoring LLM as a paragraph; Jev's section-label question was roughly 85-90% precise at P >= 0.9 on a small single-reviewer read and missed bold-only bullets. Pick a threshold and a fallback for uncertain chunks; beware false positives on short Title Case benefit bullets (a rule such as "paragraph chunk, no sentence punctuation, P >= 0.9" is the likely start)
+- [ ] **Classify before scoring.** A `system_one` task for chunk semantic type routed through the registry (`defaults.system_one`), skipping generative scoring for chunks that are not requirements or responsibilities (106 of 478, 22%, in the mock corpus: a hypothesis to quantify on real postings)
+- [ ] **Confidence routing:** on this data, confidence >= 0.7 is 100% accurate on 96% of items, but escalating the rest to `gpt-5.4` did not beat Jev alone (98.1% both), so decide what low-confidence chunks should do (keep, flag, skip scoring, or review) rather than assuming a stronger model fixes them; choose the threshold on a larger, real-posting calibration set
+- [ ] **Split `chunk_matching`** into classify/score plus conditional blurb generation, and compare it with the single call on quality, cost and latency
+- [ ] **Production client work:** a registry `system_one` default, alerting on `TYPESAFE_API_KEY`, rollback as a config change, and re-running the evals on model version bumps (pinned ids, never aliases)
+
+### P3: housekeeping
+
+- [ ] Remove the inert `LLM_MODEL` / `LLM_API_VERSION` from Terraform (Day 1 follow-up)
+- [ ] Per-model concurrency overrides in `suites.json` if Foundry throttling keeps recurring
+- [ ] Decide whether to keep our `JevClient` (httpx) or adopt TypeSafe's official Python SDK, which has its own retries
+- [ ] Probe Jev rate limits above concurrency 8 before a much larger run
+- [ ] Optional: a hand-labeled gold set; LLM-as-judge for generative tasks (letter, blurb)

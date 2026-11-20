@@ -1,11 +1,25 @@
 {
   "suites": {
     "vet": {
-      "semantic_type": ["gpt-5.4-mini", "jev-1.14.0"]
+      "semantic_type": [
+        "gpt-5.4-mini",
+        "jev-1.14.0"
+      ]
     },
     "real-probe": {
-      "real_section_label": ["jev-1.14.0"],
-      "real_semantic_type": ["jev-1.14.0"]
+      "real_section_label": [
+        "jev-1.14.0"
+      ],
+      "real_semantic_type": [
+        "jev-1.14.0"
+      ]
+    },
+    "compare": {
+      "semantic_type": [
+        "gpt-5.4-mini",
+        "jev-1.14.0",
+        "gpt-5.4"
+      ]
     }
   }
 }

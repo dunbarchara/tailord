@@ -10,7 +10,7 @@ class RawChunk:
     section: str | None
 
 
-_HEADER_RE = re.compile(r"^#{1,3}\s+(.+)")
+_HEADER_RE = re.compile(r"^#{1,6}\s+(.+)")  # h1-h6: h4+ are common in ATS content
 _BARE_BULLET_RE = re.compile(r"^([-*+•]|\d+\.)\s*$")
 _BULLET_RE = re.compile(r"^([-*+•]|\d+\.)\s+(.*)")
 _UNICODE_GLYPH_RE = re.compile(r"^[▪▸►▶◆◇◦·•‣⁃]\s*(.*)")
@@ -20,7 +20,7 @@ def normalize_markdown(markdown: str) -> str:
     """Canonicalize raw scraped markdown before parsing.
 
     - rstrip() each line (trailing whitespace)
-    - All header variants (# / ## / ###) → "## <content>"
+    - All header variants (# through ######) → "## <content>"
     - All bullet variants (- * + • 1. etc.) with content → "- <content>"
     - Empty bullets (marker, no content) → "" (blank line)
     - Unicode glyph line starters (▸ ▪ etc.) → "- <content>" or "" if empty

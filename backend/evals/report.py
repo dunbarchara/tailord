@@ -307,7 +307,7 @@ def render_markdown(report: dict, labels: list[str]) -> str:
         ]
         if parts:
             lines += [
-                "Accuracy on items all label sources agree on vs contested items ({ref} labels): "
+                f"Accuracy on items all silver label sources agree on vs contested items ({ref} labels): "
                 + "; ".join(parts),
                 "",
             ]

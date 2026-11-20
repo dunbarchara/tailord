@@ -180,6 +180,8 @@ frontend/src/app/
 | `backend/app/clients/llm_client.py` | OpenAI SDK wrapper (configurable `LLM_BASE_URL`) |
 | `backend/app/clients/llm_registry.py` | Per-task model routing from a **required** registry file — `llm_models.dev.json` when `ENVIRONMENT=local`, `llm_models.json` in staging/production (providers → models → defaults/tasks); `resolve_llm(task)`; local-only `LLM_DEFAULT_<KIND>` / `LLM_TASK_<TASK>` overrides via env/.env; validates routing, env vars and pricing at startup. `LLM_MODEL` is retired |
 | `backend/app/core/llm_tasks.py` | `TaskName` (one per LLM call site) and `TaskKind` (`generative` / `system_one`) |
+| `backend/app/clients/jev_client.py` | The only client for TypeSafe's System One API (Jev): choice/score questions, retries, typed errors. Used by the app (via `resolve_llm`, adapter `jev`) and the eval harness; never duplicate it |
+| `backend/evals/` | Eval harness (`uv run python -m evals run|report`; see `backend/evals/README.md`): compares models per task on frozen inputs and label sets, with an opt-in spend cap |
 | `backend/app/clients/storage_client.py` | Storage abstraction — `AzureStorageClient` / `S3StorageClient` |
 | `backend/app/models/database.py` | SQLAlchemy ORM: `User`, `AuthIdentity`, `UserProfile`, `UserIntegration`, `ExperienceSource`, `Job`, `Tailoring`, `LlmTriggerLog`, `TailoringDebugLog` |
 | `backend/app/api/experience.py` | ExperienceSource CRUD, GitHub enrichment, SSE processing stream |

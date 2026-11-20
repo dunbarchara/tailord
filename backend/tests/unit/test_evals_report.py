@@ -133,6 +133,11 @@ def test_markdown_has_the_comparison_table_and_per_model_sections(results):
     assert "If only answers at or above a confidence were kept" in md  # strong only
 
 
+def test_markdown_has_no_unrendered_placeholders(results):
+    md = report.render_markdown(report.build_report(TASK, ITEMS, root=results), list(TASK.labels))
+    assert "{ref}" not in md and not any(tok in md for tok in ("{m}", "{r[", "{p["))
+
+
 def test_write_report_creates_json_and_markdown(results):
     r = report.build_report(TASK, ITEMS, root=results)
     json_path, md_path = report.write_report(r, list(TASK.labels), results / "toy")

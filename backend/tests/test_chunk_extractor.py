@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.chunk_extractor import extract_chunks, normalize_markdown
 
 
@@ -81,6 +83,36 @@ def test_normalize_hash_variants():
     assert result[2].content == "Deep Level"
     assert result[1].section == "Top Level"
     assert result[3].section == "Deep Level"
+
+
+def test_deep_markdown_headings_are_headers_not_paragraphs():
+    """h4-h6 headings (common in ATS job content) must not leak through as paragraph chunks
+    that the scoring LLM would then score."""
+    md = (
+        "## About the role\n\n#### **Responsibilities**\n- Build the API surface\n\n"
+        "###### Nice to have\n- Experience with Kafka\n"
+    )
+    result = extract_chunks(md)
+    headers = [c for c in result if c.chunk_type == "header"]
+    assert [h.content for h in headers] == [
+        "About the role",
+        "**Responsibilities**",
+        "Nice to have",
+    ]
+    assert not [c for c in result if c.chunk_type == "paragraph"]
+    bullets = {c.content: c.section for c in result if c.chunk_type == "bullet"}
+    assert bullets == {
+        "Build the API surface": "**Responsibilities**",
+        "Experience with Kafka": "Nice to have",
+    }
+
+
+@pytest.mark.parametrize(
+    "line", ["#hashtag stays text here", "####### seven hashes is not a header", "#### "]
+)
+def test_non_headings_with_hashes_are_not_headers(line):
+    result = extract_chunks(line + "\n")
+    assert not [c for c in result if c.chunk_type == "header"]
 
 
 def test_normalize_empty_bullets_become_blank():
